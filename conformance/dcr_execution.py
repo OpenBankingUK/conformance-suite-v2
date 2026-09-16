@@ -22,6 +22,15 @@ from joserfc.errors import InvalidKeyTypeError, JoseError
 
 from conformance.approved_releases import ApprovedReleasePolicy
 from conformance.catalogue import CatalogueExecutionStep, CatalogueTestCase, CompiledTestPlan
+from conformance.configuration_contracts import (
+    ExecutionManifest,
+    ExecutionManifestAssertion,
+    ExecutionManifestStep,
+    RequestBaseUrlSource,
+    RequestModification,
+    StableId,
+    SuiteReleaseArtifactResolver,
+)
 from conformance.execution_log import ExecutionLogger
 from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
@@ -34,6 +43,7 @@ from conformance.results import (
     StepResult,
     build_smoke_check_result,
 )
+from conformance.schema_validation import validate_json_instance_against_response_schema
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
 
 _ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
@@ -122,7 +132,7 @@ class DcrCatalogueExecutionAdapter:
             certification eligibility.
     """
 
-    compiled_plan: CompiledTestPlan
+    compiled_plan: CompiledTestPlan | None
     config: DcrPlanConfiguration
     execution_logger: ExecutionLogger
     client: httpx.Client | None = None
@@ -144,6 +154,8 @@ class DcrCatalogueExecutionAdapter:
             DcrExecutionError: If the adapter is used with a non-DCR plan or
                 transport configuration cannot be initialized.
         """
+        if self.compiled_plan is None:
+            raise DcrExecutionError("Legacy DCR execution requires a compiled plan")
         self._validate_plan_boundary()
         started_at = datetime.now(UTC)
         owned_client = self.client is None
@@ -261,6 +273,8 @@ class DcrCatalogueExecutionAdapter:
         Returns:
             Ordered shared step results.
         """
+        if self.compiled_plan is None:
+            raise DcrExecutionError("Legacy DCR execution requires a compiled plan")
         grouped_cases: dict[str, list[CatalogueTestCase]] = {}
         for test_case in self.compiled_plan.test_cases:
             if test_case.trace_group is None:
@@ -1288,6 +1302,8 @@ class DcrCatalogueExecutionAdapter:
             scenario_id: Parent scenario id used for log correlation.
             state: Scenario-local client state to clean up.
         """
+        if self.compiled_plan is None:
+            return
         selected_delete = any(
             endpoint.method == "DELETE" for endpoint in self.compiled_plan.traceability.selected_endpoints
         )
@@ -1505,6 +1521,8 @@ class DcrCatalogueExecutionAdapter:
                 duplicate identifiers, violates endpoint gates, or a full
                 selection differs from the pinned 10/34/79 inventory.
         """
+        if self.compiled_plan is None:
+            raise DcrExecutionError("Legacy DCR execution requires a compiled plan")
         key = self.compiled_plan.catalogue_key
         if key.api not in {"dcr", "dynamic-client-registration"} or key.version not in {"v3.4", "3.4"}:
             raise DcrExecutionError("DCR execution adapter requires the Open Banking DCR 3.4 catalogue")
@@ -1532,6 +1550,463 @@ class DcrCatalogueExecutionAdapter:
                 raise DcrExecutionError(
                     "Full DCR endpoint selection must compile exactly 10 scenarios, 34 cases, 79 steps"
                 )
+
+
+@dataclass
+class DcrManifestExecutionAdapter:
+    """Execute DCR protocol exchanges declared by immutable manifest steps."""
+
+    manifest: ExecutionManifest
+    config: DcrPlanConfiguration
+    execution_logger: ExecutionLogger
+    artifact_resolver: SuiteReleaseArtifactResolver
+    approved_release_policy: ApprovedReleasePolicy | None = None
+    result_traceability: ResultTraceabilitySource | None = None
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC)
+    jwt_id_factory: Callable[[], str] = lambda: uuid4().hex
+
+    def run(self) -> SmokeCheckResult:
+        """Run one public result observation per immutable DCR manifest step."""
+        started_at = datetime.now(UTC)
+        protocol = DcrCatalogueExecutionAdapter(
+            compiled_plan=None,
+            config=self.config,
+            execution_logger=self.execution_logger,
+            clock=self.clock,
+            jwt_id_factory=self.jwt_id_factory,
+        )
+        active_client = build_dcr_mtls_client(self.config)
+        protocol.client = active_client
+        state = DcrScenarioState()
+        outputs: dict[StableId, JsonValue] = {}
+        results: list[StepResult] = []
+        statuses: dict[str, CheckStatus] = {}
+        try:
+            for step in self.manifest.steps:
+                failed_dependency = next(
+                    (
+                        str(dependency_id)
+                        for dependency_id in step.dependency_ids
+                        if statuses.get(str(dependency_id)) != "passed"
+                    ),
+                    None,
+                )
+                if failed_dependency is not None:
+                    result = StepResult(
+                        name=str(step.id),
+                        status="skipped",
+                        message=f"Skipped: prerequisite step {failed_dependency} did not pass",
+                        details={"skipReason": "failed-prerequisite"},
+                        mandatory=True,
+                    )
+                else:
+                    result = self._execute_step(protocol, step, state, outputs)
+                statuses[str(step.id)] = result.status
+                results.append(result)
+            self._best_effort_cleanup(protocol, state)
+        finally:
+            active_client.close()
+            protocol.client = None
+        return build_smoke_check_result(
+            results,
+            started_at=started_at,
+            certification_coverage="complete",
+            approved_release_policy=self.approved_release_policy,
+            result_traceability=self.result_traceability,
+        )
+
+    def _execute_step(
+        self,
+        protocol: DcrCatalogueExecutionAdapter,
+        step: ExecutionManifestStep,
+        state: DcrScenarioState,
+        outputs: dict[StableId, JsonValue],
+    ) -> StepResult:
+        step_id = str(step.id)
+        self.execution_logger.emit("step-started", step_id=step_id)
+        try:
+            response, evidence, request_headers = self._exchange(protocol, step, state, outputs)
+            assertion_details, passed = self._evaluate_assertions(
+                step,
+                response=response,
+                request_headers=request_headers,
+            )
+            details: JsonObject = dict(evidence)
+            details["assertions"] = assertion_details
+            result = StepResult(
+                name=step_id,
+                status="passed" if passed else "failed",
+                message=("DCR manifest assertions passed" if passed else "One or more DCR manifest assertions failed"),
+                url=response.url,
+                status_code=response.status_code,
+                details=details,
+                mandatory=True,
+            )
+            if passed:
+                _capture_dcr_outputs(step, response=response, state=state, outputs=outputs)
+        except (DcrExecutionError, JsonHttpClientError, HttpsUrlValidationError, ValueError) as error:
+            self.execution_logger.emit(
+                "application-error",
+                step_id=step_id,
+                payload={"message": str(error)},
+            )
+            result = StepResult(
+                name=step_id,
+                status="failed",
+                message=str(error),
+                mandatory=True,
+            )
+        self.execution_logger.emit(
+            "step-completed",
+            step_id=step_id,
+            payload={"status": result.status, "message": result.message},
+        )
+        return result
+
+    def _exchange(
+        self,
+        protocol: DcrCatalogueExecutionAdapter,
+        step: ExecutionManifestStep,
+        state: DcrScenarioState,
+        outputs: Mapping[StableId, JsonValue],
+    ) -> tuple[JsonHttpResponse, JsonObject, Mapping[str, str]]:
+        request = step.request
+        operation = _manifest_catalogue_step(step)
+        if request.base_url_source is RequestBaseUrlSource.DCR_REGISTRATION:
+            if request.method.value != "POST":
+                raise DcrExecutionError("DCR registration instructions require POST")
+            overrides = _dcr_registration_overrides(request.modifications, now=protocol._utc_now())
+            compact, claims = protocol.build_registration_jose(overrides=overrides)
+            state.signed_registration_jose = compact
+            state.registration_claims = claims
+            registration_headers = {"Accept": "application/json", "Content-Type": "application/jose"}
+            response, evidence = protocol._send(
+                operation,
+                "POST",
+                protocol._require_discovery().registration_endpoint,
+                headers=registration_headers,
+                raw_body=compact.encode(),
+            )
+            state.last_response = response
+            state.registration_response = dict(response.body)
+            if response.status_code == 201:
+                protocol._validate_registration_response(response.body, state, require_consistency=True)
+                state.client_id = _required_string(response.body, "client_id", location="registration response")
+                state.client_secret = _optional_string(
+                    response.body,
+                    "client_secret",
+                    location="registration response",
+                )
+                state.registration_access_token = _optional_string(
+                    response.body,
+                    "registration_access_token",
+                    location="registration response",
+                )
+                registration_client_uri = _optional_string(
+                    response.body,
+                    "registration_client_uri",
+                    location="registration response",
+                )
+                state.management_url = registration_client_uri or (
+                    f"{protocol._require_discovery().registration_endpoint.rstrip('/')}/{state.client_id}"
+                )
+                state.deleted = False
+            return response, evidence, registration_headers
+
+        if request.base_url_source is not RequestBaseUrlSource.DCR_MANAGEMENT:
+            raise DcrExecutionError(f"Unsupported DCR request base source: {request.base_url_source}")
+        for binding in request.state_bindings:
+            value = outputs.get(binding.output_id)
+            if value is None:
+                raise DcrExecutionError(f"Manifest state output {binding.output_id!s} is unavailable")
+            if binding.type == "authorization-access-token":
+                if not isinstance(value, str):
+                    raise DcrExecutionError(f"Manifest state output {binding.output_id!s} is not a token")
+                state.client_credentials_access_token = value
+            elif binding.type == "authorization-client-id":
+                if not isinstance(value, str):
+                    raise DcrExecutionError(f"Manifest state output {binding.output_id!s} is not a client ID")
+                state.client_id = value
+        produces_access_token = any(output.source == "authorization-access-token" for output in step.outputs)
+        binds_authorization_client_id = any(
+            binding.type == "authorization-client-id" for binding in request.state_bindings
+        )
+        binds_access_token = any(binding.type == "authorization-access-token" for binding in request.state_bindings)
+        if request.authorization_profile is not None and (
+            state.client_credentials_access_token is None
+            or produces_access_token
+            or (binds_authorization_client_id and not binds_access_token)
+        ):
+            form, token_headers = protocol._token_request(state, protocol._require_discovery())
+            token_response, _token_evidence = protocol._send(
+                operation,
+                "POST",
+                protocol._require_discovery().token_endpoint,
+                headers=token_headers,
+                form_body=form,
+            )
+            if token_response.status_code != 200:
+                raise DcrExecutionError(
+                    f"Client-credentials token endpoint returned HTTP {token_response.status_code}, expected 200"
+                )
+            state.client_credentials_access_token = _required_string(
+                token_response.body,
+                "access_token",
+                location="token response",
+            )
+        management_url = _dcr_management_url(protocol, step, state)
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if not _omits_authorization(request.modifications):
+            token = _required_state_allow_empty(
+                state.client_credentials_access_token,
+                "clientCredentialsAccessToken",
+            )
+            headers["Authorization"] = "Bearer" if not token else f"Bearer {token}"
+        raw_body: bytes | None = None
+        if request.method.value == "PUT":
+            compact, claims = protocol.build_registration_jose(overrides={})
+            state.signed_registration_jose = compact
+            state.registration_claims = claims
+            raw_body = compact.encode()
+            headers["Content-Type"] = "application/jose"
+        response, evidence = protocol._send(
+            operation,
+            request.method.value,
+            management_url,
+            headers=headers,
+            raw_body=raw_body,
+        )
+        state.last_response = response
+        state.registration_response = dict(response.body)
+        if request.method.value == "DELETE" and response.status_code == 204:
+            state.deleted = True
+        return response, evidence, headers
+
+    def _evaluate_assertions(
+        self,
+        step: ExecutionManifestStep,
+        *,
+        response: JsonHttpResponse,
+        request_headers: Mapping[str, str],
+    ) -> tuple[list[JsonValue], bool]:
+        details: list[JsonValue] = []
+        passed = True
+        for assertion in step.assertions:
+            assertion_passed, message = self._evaluate_assertion(
+                step,
+                assertion,
+                response=response,
+                request_headers=request_headers,
+            )
+            detail: JsonObject = {
+                "assertionId": str(assertion.id),
+                "status": "passed" if assertion_passed else "failed",
+                "message": message,
+            }
+            self.execution_logger.emit(
+                "assertion-evaluated",
+                step_id=str(step.id),
+                payload=detail,
+            )
+            details.append(detail)
+            passed = passed and assertion_passed
+        return details, passed
+
+    def _evaluate_assertion(
+        self,
+        step: ExecutionManifestStep,
+        assertion: ExecutionManifestAssertion,
+        *,
+        response: JsonHttpResponse,
+        request_headers: Mapping[str, str],
+    ) -> tuple[bool, str]:
+        if assertion.type == "http-status":
+            matched = response.status_code == assertion.expected_status
+            return matched, f"Expected HTTP {assertion.expected_status}; received HTTP {response.status_code}"
+        if assertion.type == "http-status-any-of":
+            expected_statuses = assertion.expected_statuses or ()
+            matched = response.status_code in expected_statuses
+            return matched, f"Expected one of {list(expected_statuses)}; received HTTP {response.status_code}"
+        if assertion.type == "response-schema":
+            if assertion.schema_source_id is None:
+                raise DcrExecutionError(f"Schema assertion {assertion.id!s} has no source")
+            artifact = self.artifact_resolver.resolved_artifacts.get(assertion.schema_source_id)
+            if artifact is None or not isinstance(artifact.document, Mapping):
+                raise DcrExecutionError(f"Schema assertion {assertion.id!s} has no resolved source")
+            message = validate_json_instance_against_response_schema(
+                source="bundled_openapi",
+                document=str(assertion.schema_source_id),
+                schema_ref=assertion.schema_ref,
+                inline_schema=None,
+                document_root=artifact.document,
+                instance=response.body,
+            )
+            return message is None, "Response matches release-bound schema" if message is None else message
+        if assertion.type in {"json-present", "json-absent", "json-value"}:
+            present, value = _dcr_json_pointer(response.body, assertion.json_pointer or "")
+            if assertion.type == "json-present":
+                return present, f"JSON value {assertion.json_pointer} is {'present' if present else 'absent'}"
+            if assertion.type == "json-absent":
+                return not present, f"JSON value {assertion.json_pointer} is {'present' if present else 'absent'}"
+            matched = present and value == assertion.expected_value
+            return matched, f"JSON value {assertion.json_pointer} matched expected value: {matched}"
+        if assertion.header_name is None:
+            raise DcrExecutionError(f"Header assertion {assertion.id!s} has no header name")
+        actual = next(
+            (value for name, value in response.headers.items() if name.lower() == assertion.header_name.lower()),
+            None,
+        )
+        if assertion.type == "header-present":
+            return actual is not None, f"Response header {assertion.header_name} is present: {actual is not None}"
+        expected_header = next(
+            (value for name, value in request_headers.items() if name.lower() == assertion.header_name.lower()),
+            None,
+        )
+        return (
+            actual == expected_header and expected_header is not None,
+            f"Response header {assertion.header_name} matched request",
+        )
+
+    def _best_effort_cleanup(
+        self,
+        protocol: DcrCatalogueExecutionAdapter,
+        state: DcrScenarioState,
+    ) -> None:
+        if state.deleted or state.management_url is None or not state.client_credentials_access_token:
+            return
+        cleanup_step = CatalogueExecutionStep(
+            step_id="dcr-manifest-cleanup",
+            definition_id="delete-client",
+            name="Best-effort DCR cleanup",
+            kind="http",
+            behavior="Delete a client left by manifest execution",
+            legacy_operation="manifest-cleanup",
+            sensitive=True,
+        )
+        try:
+            protocol._send(
+                cleanup_step,
+                "DELETE",
+                state.management_url,
+                headers={
+                    "Accept": "application/json",
+                    "Authorization": f"Bearer {state.client_credentials_access_token}",
+                },
+            )
+        except DcrExecutionError, JsonHttpClientError, HttpsUrlValidationError:
+            return
+
+
+def _manifest_catalogue_step(step: ExecutionManifestStep) -> CatalogueExecutionStep:
+    return CatalogueExecutionStep(
+        step_id=str(step.id),
+        definition_id="manifest-request",
+        name=step.name,
+        kind="http",
+        behavior="Execute the immutable DCR manifest request",
+        legacy_operation="execution-manifest",
+        sensitive=True,
+    )
+
+
+def _dcr_registration_overrides(
+    modifications: tuple[RequestModification, ...],
+    *,
+    now: datetime,
+) -> JsonObject:
+    overrides: JsonObject = {}
+    for modification in modifications:
+        if modification.location != "jws-claim" or modification.operation != "replace":
+            continue
+        if modification.target not in {"/exp", "/iss", "/token_endpoint_auth_method"}:
+            raise DcrExecutionError(f"Unsupported DCR JWS claim target: {modification.target}")
+        claim = modification.target.removeprefix("/")
+        if modification.generator is not None:
+            if str(modification.generator) != "expired-unix-time":
+                raise DcrExecutionError(f"Unsupported DCR JWS generator: {modification.generator!s}")
+            overrides[claim] = int((now - timedelta(minutes=1)).timestamp())
+        elif modification.value is not None:
+            overrides[claim] = modification.value
+        else:
+            raise DcrExecutionError(f"DCR JWS modification {modification.id!s} has no value")
+    return overrides
+
+
+def _dcr_management_url(
+    protocol: DcrCatalogueExecutionAdapter,
+    step: ExecutionManifestStep,
+    state: DcrScenarioState,
+) -> str:
+    unknown_client = next(
+        (
+            modification
+            for modification in step.request.modifications
+            if modification.location == "path-parameter"
+            and modification.target == "ClientId"
+            and modification.operation in {"replace", "generate"}
+        ),
+        None,
+    )
+    if unknown_client is None:
+        return _required_state(state.management_url, "registration management URL")
+    if unknown_client.value is not None:
+        client_id = unknown_client.value
+    elif str(unknown_client.generator) == "unknown-client-id":
+        client_id = f"unknown-{uuid4().hex}"
+    else:
+        raise DcrExecutionError(f"Unsupported DCR client identifier generator: {unknown_client.generator!s}")
+    return f"{protocol._require_discovery().registration_endpoint.rstrip('/')}/{client_id}"
+
+
+def _omits_authorization(modifications: tuple[RequestModification, ...]) -> bool:
+    return any(
+        modification.operation == "omit"
+        and modification.location == "header"
+        and (modification.target or "").lower() == "authorization"
+        for modification in modifications
+    )
+
+
+def _dcr_json_pointer(document: JsonValue, pointer: str) -> tuple[bool, JsonValue | None]:
+    if not pointer.startswith("/"):
+        raise DcrExecutionError(f"Invalid DCR assertion JSON Pointer: {pointer}")
+    current = document
+    for raw_token in pointer[1:].split("/"):
+        token = raw_token.replace("~1", "/").replace("~0", "~")
+        if isinstance(current, Mapping) and token in current:
+            current = current[token]
+            continue
+        if isinstance(current, list) and token.isdigit() and int(token) < len(current):
+            current = current[int(token)]
+            continue
+        return False, None
+    return True, current
+
+
+def _capture_dcr_outputs(
+    step: ExecutionManifestStep,
+    *,
+    response: JsonHttpResponse,
+    state: DcrScenarioState,
+    outputs: dict[StableId, JsonValue],
+) -> None:
+    for output in step.outputs:
+        if output.source == "authorization-access-token":
+            token = _required_state(
+                state.client_credentials_access_token,
+                "clientCredentialsAccessToken",
+            )
+            outputs[output.id] = (
+                f"invalidated-{uuid4().hex}" if step.request.invalidate_produced_authorization_token else token
+            )
+            continue
+        if output.source == "response-json" and output.json_pointer is not None:
+            present, value = _dcr_json_pointer(response.body, output.json_pointer)
+            if not present or value is None:
+                raise DcrExecutionError(f"Manifest output {output.id!s} could not resolve {output.json_pointer}")
+            outputs[output.id] = value
+            continue
+        raise DcrExecutionError(f"Unsupported DCR manifest output source: {output.source}")
 
 
 def build_dcr_mtls_client(config: DcrPlanConfiguration, *, timeout_seconds: float = 10.0) -> httpx.Client:

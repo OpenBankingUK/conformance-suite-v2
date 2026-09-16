@@ -32,15 +32,22 @@ from conformance.approved_releases import ApprovedReleasePolicy
 from conformance.assertions import AssertionResult, evaluate_assertion
 from conformance.catalogue import (
     CatalogueAssertion,
+    CatalogueRequestHeader,
     CatalogueRequestStep,
     CatalogueTestCase,
     CompiledTestPlan,
     RuntimeInputRequirement,
 )
 from conformance.configuration_contracts import (
+    ExecutionManifest,
+    ExecutionManifestAssertion,
+    ExecutionManifestStep,
     LegacyExecutionEngine,
     PreparedExecutionManifest,
-    adapt_compiled_plan_to_execution_manifest,
+    RequestBaseUrlSource,
+    RequestModification,
+    StableId,
+    SuiteReleaseArtifactResolver,
     validate_execution_manifest_compatibility,
 )
 from conformance.context import (
@@ -55,7 +62,7 @@ from conformance.context import (
     resolve_in_structure,
     resolve_placeholders,
 )
-from conformance.dcr_execution import DcrCatalogueExecutionAdapter
+from conformance.dcr_execution import DcrCatalogueExecutionAdapter, DcrManifestExecutionAdapter
 from conformance.execution_log import ExecutionLogger, NullExecutionLogger, is_developer_mode_enabled, new_run_id
 from conformance.execution_schedule import ExecutionGroup, build_execution_schedule
 from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
@@ -553,23 +560,48 @@ def run_compiled_test_plan(
     Returns:
         Smoke-check result populated with catalogue traceability metadata.
     """
-    prepared_manifest = adapt_compiled_plan_to_execution_manifest(
+    logger_sink: ExecutionLogger = execution_logger or NullExecutionLogger()
+    logger_sink.emit(
+        "run-started",
+        payload={
+            "catalogue": {
+                "standard": compiled_plan.catalogue_key.standard,
+                "version": compiled_plan.catalogue_key.version,
+                "api": compiled_plan.catalogue_key.api,
+                "catalogueVersion": compiled_plan.catalogue_version,
+            },
+        },
+    )
+    if compiled_plan.catalogue_key.api in {"dcr", "dynamic-client-registration"}:
+        dcr_adapter = DcrCatalogueExecutionAdapter(
+            compiled_plan=compiled_plan,
+            config=parse_dcr_execution_runtime_inputs(runtime_inputs),
+            execution_logger=logger_sink,
+            approved_release_policy=approved_release_policy,
+        )
+        if dcr_clock is not None:
+            dcr_adapter.clock = dcr_clock
+        if dcr_jwt_id_factory is not None:
+            dcr_adapter.jwt_id_factory = dcr_jwt_id_factory
+        return dcr_adapter.run()
+    synthetic_manifest = _compiled_plan_to_manifest(
         compiled_plan,
         runtime_inputs=runtime_inputs,
         runtime_input_base_dir=runtime_input_base_dir,
+        runtime_config=runtime_config,
     )
-    return run_execution_manifest(
-        prepared_manifest,
+    return _run_manifest_v1(
+        synthetic_manifest,
         client=client,
-        execution_logger=execution_logger,
-        run_id=run_id,
-        auth_session_store=auth_session_store,
+        execution_logger=logger_sink,
+        plan=TestPlan.default_plan_from_manifest(synthetic_manifest),
+        run_id=run_id or _logger_run_id(logger_sink) or new_run_id(),
+        auth_session_store=auth_session_store or AuthSessionStore(),
         runtime_config=runtime_config,
         fapi_signing_config=fapi_signing_config,
         mtls_client_configured=mtls_client_configured,
         approved_release_policy=approved_release_policy,
-        dcr_clock=dcr_clock,
-        dcr_jwt_id_factory=dcr_jwt_id_factory,
+        compiled_plan=compiled_plan,
     )
 
 
@@ -587,14 +619,8 @@ def run_execution_manifest(
     dcr_clock: Callable[[], datetime] | None = None,
     dcr_jwt_id_factory: Callable[[], str] | None = None,
 ) -> SmokeCheckResult:
-    """Execute resolved work through an explicit compatibility engine.
-
-    The runner consumes only the immutable execution-manifest boundary. The
-    temporary prepared binding keeps the existing compiled catalogue graph and
-    runtime inputs available to the legacy Read/Write and DCR implementations
-    without exposing participant-plan types to runner code.
-    """
-    compiled_plan = prepared_manifest.compiled_plan
+    """Execute only work declared by one immutable execution manifest."""
+    manifest = prepared_manifest.manifest
     runtime_inputs = prepared_manifest.runtime_inputs
     runtime_input_base_dir = prepared_manifest.runtime_input_base_dir
     validate_execution_manifest_compatibility(prepared_manifest)
@@ -604,22 +630,19 @@ def run_execution_manifest(
     logger_sink.emit(
         "run-started",
         payload={
-            "catalogue": {
-                "standard": compiled_plan.catalogue_key.standard,
-                "version": compiled_plan.catalogue_key.version,
-                "api": compiled_plan.catalogue_key.api,
-                "catalogueVersion": compiled_plan.catalogue_version,
-            },
+            "executionManifestId": str(manifest.id),
+            "suiteReleaseId": str(manifest.provenance.suite_release_id),
         },
     )
     try:
         if prepared_manifest.engine is LegacyExecutionEngine.DCR:
-            dcr_adapter = DcrCatalogueExecutionAdapter(
-                compiled_plan=compiled_plan,
+            dcr_adapter = DcrManifestExecutionAdapter(
+                manifest=manifest,
                 config=parse_dcr_execution_runtime_inputs(runtime_inputs),
                 execution_logger=logger_sink,
                 approved_release_policy=approved_release_policy,
                 result_traceability=prepared_manifest.result_traceability,
+                artifact_resolver=prepared_manifest.artifact_resolver,
             )
             if dcr_clock is not None:
                 dcr_adapter.clock = dcr_clock
@@ -627,27 +650,24 @@ def run_execution_manifest(
                 dcr_adapter.jwt_id_factory = dcr_jwt_id_factory
             result = dcr_adapter.run()
         else:
-            if compiled_plan.catalogue_key.api in {"dcr", "dynamic-client-registration"}:
-                raise ValueError("DCR compiled plans require the DCR compatibility engine")
-            synthetic_manifest = _compiled_plan_to_manifest(
-                compiled_plan,
+            runtime_manifest = _execution_manifest_to_runtime_manifest(
+                manifest,
                 runtime_inputs=runtime_inputs,
                 runtime_input_base_dir=runtime_input_base_dir,
                 runtime_config=runtime_config,
-                sensitive_json_pointers_by_observation_id=(prepared_manifest.sensitive_json_pointers_by_observation_id),
+                artifact_resolver=prepared_manifest.artifact_resolver,
             )
-            result = _run_manifest_v1(
-                synthetic_manifest,
+            result = _run_authoritative_execution_manifest(
+                manifest,
+                runtime_manifest,
                 client=client,
                 execution_logger=logger_sink,
-                plan=TestPlan.default_plan_from_manifest(synthetic_manifest),
                 run_id=effective_run_id,
                 auth_session_store=effective_store,
                 runtime_config=runtime_config,
                 fapi_signing_config=fapi_signing_config,
                 mtls_client_configured=mtls_client_configured,
                 approved_release_policy=approved_release_policy,
-                compiled_plan=compiled_plan,
                 result_traceability=prepared_manifest.result_traceability,
             )
     except Exception as error:
@@ -667,6 +687,734 @@ def run_execution_manifest(
         },
     )
     return result
+
+
+def _execution_manifest_to_runtime_manifest(
+    manifest: ExecutionManifest,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    runtime_config: RuntimeConfig | None,
+    artifact_resolver: SuiteReleaseArtifactResolver,
+) -> Manifest:
+    """Lower immutable manifest instructions into the private HTTP runtime."""
+    steps: list[V1Step] = []
+    acquired_token_ids: set[str] = set()
+    for manifest_step in manifest.steps:
+        request = manifest_step.request
+        if request.required_token_id is None or request.required_token_scope is None:
+            continue
+        token_id = str(request.required_token_id)
+        if token_id in acquired_token_ids:
+            continue
+        steps.append(
+            _catalogue_client_credentials_token_step(
+                token_id=token_id,
+                scope=request.required_token_scope,
+            )
+        )
+        acquired_token_ids.add(token_id)
+
+    input_values = {item.id: item.value for item in manifest.inputs if item.value is not None}
+    sensitive_input_ids = {item.id for item in manifest.inputs if item.redacted}
+    ais_profiles = tuple(
+        profile
+        for profile, token_id in _AIS_PERMISSION_PROFILE_TOKEN_IDS.items()
+        if any(request_step.request.required_token_id == token_id for request_step in manifest.steps)
+    )
+    for manifest_step in manifest.steps:
+        runtime_step = _execution_manifest_step_to_runtime_step(
+            manifest_step,
+            input_values=input_values,
+            sensitive_input_ids=sensitive_input_ids,
+            runtime_inputs=runtime_inputs,
+            runtime_input_base_dir=runtime_input_base_dir,
+            runtime_config=runtime_config,
+            artifact_resolver=artifact_resolver,
+        )
+        steps.append(runtime_step)
+        if ais_profiles and any(
+            modification.generator == "ais-account-access-consent"
+            for modification in manifest_step.request.modifications
+        ):
+            steps.extend(
+                _execution_manifest_ais_authorization_steps(
+                    runtime_step,
+                    profiles=ais_profiles,
+                )
+            )
+        if manifest_step.request.psu_authorization is not None:
+            steps.extend(_execution_manifest_psu_steps(manifest_step))
+    return Manifest(
+        schema_version="v1",
+        name=f"Execution manifest {manifest.id!s}",
+        certification_coverage="complete",
+        steps=tuple(steps),
+    )
+
+
+def _run_authoritative_execution_manifest(
+    manifest: ExecutionManifest,
+    runtime_manifest: Manifest,
+    *,
+    client: httpx.Client,
+    execution_logger: ExecutionLogger,
+    run_id: str,
+    auth_session_store: AuthSessionStore,
+    runtime_config: RuntimeConfig | None,
+    fapi_signing_config: FapiSigningConfig | None,
+    mtls_client_configured: bool,
+    approved_release_policy: ApprovedReleasePolicy | None,
+    result_traceability: ResultTraceabilitySource | None,
+) -> SmokeCheckResult:
+    """Execute manifest dependencies sequentially and hide nested protocol helpers."""
+    started_at = datetime.now(UTC)
+    context = ExecutionContext(config=runtime_config)
+    signing_service = _LazyFapiSigningService(fapi_signing_config)
+    signature_cache = _ResponseSignatureJwksCache(client)
+    stable_ids = {str(step.id) for step in manifest.steps}
+    runtime_steps = list(runtime_manifest.steps)
+    setup_steps: list[V1Step] = []
+    while runtime_steps and runtime_steps[0].id not in stable_ids:
+        setup_steps.append(runtime_steps.pop(0))
+
+    failed_token_ids: set[str] = set()
+    for setup_step in setup_steps:
+        setup_result, context = _execute_v1_manifest_step(
+            setup_step,
+            context=context,
+            client=client,
+            execution_logger=execution_logger,
+            run_id=run_id,
+            auth_session_store=auth_session_store,
+            fapi_signing_config=fapi_signing_config,
+            fapi_signing_service=signing_service,
+            mtls_client_configured=mtls_client_configured,
+            response_signature_jwks_cache=signature_cache,
+        )
+        if setup_result.status not in {"passed", "warn"} and isinstance(setup_step, ManifestStep):
+            if setup_step.produces_token_id is not None:
+                failed_token_ids.add(setup_step.produces_token_id)
+
+    units: dict[str, tuple[V1Step, tuple[V1Step, ...]]] = {}
+    index = 0
+    while index < len(runtime_steps):
+        primary = runtime_steps[index]
+        if primary.id not in stable_ids:
+            raise ValueError(f"Protocol instruction {primary.id} has no owning manifest step")
+        index += 1
+        helpers: list[V1Step] = []
+        while index < len(runtime_steps) and runtime_steps[index].id not in stable_ids:
+            helpers.append(runtime_steps[index])
+            index += 1
+        units[primary.id] = (primary, tuple(helpers))
+
+    results: list[StepResult] = []
+    statuses: dict[str, str] = {}
+    for stable_step in manifest.steps:
+        step_id = str(stable_step.id)
+        failed_dependency = next(
+            (
+                str(dependency_id)
+                for dependency_id in stable_step.dependency_ids
+                if statuses.get(str(dependency_id)) not in {"passed", "warn"}
+            ),
+            None,
+        )
+        token_id = None if stable_step.request.required_token_id is None else str(stable_step.request.required_token_id)
+        skip_reason = (
+            f"prerequisite step {failed_dependency} did not pass"
+            if failed_dependency is not None
+            else (
+                f"token acquisition {token_id} did not pass"
+                if token_id is not None and token_id in failed_token_ids
+                else None
+            )
+        )
+        if skip_reason is not None:
+            execution_logger.emit("step-started", step_id=step_id)
+            result = StepResult(
+                name=step_id,
+                status="skipped",
+                message=f"Skipped: {skip_reason}",
+                details={"skipReason": "failed-prerequisite"},
+                mandatory=True,
+            )
+            execution_logger.emit(
+                "step-completed",
+                step_id=step_id,
+                payload={"status": result.status, "message": result.message},
+            )
+        else:
+            try:
+                primary, unit_helpers = units[step_id]
+            except KeyError as error:
+                raise ValueError(f"Manifest step {step_id} has no runtime request") from error
+            result, context = _execute_v1_manifest_step(
+                primary,
+                context=context,
+                client=client,
+                execution_logger=execution_logger,
+                run_id=run_id,
+                auth_session_store=auth_session_store,
+                fapi_signing_config=fapi_signing_config,
+                fapi_signing_service=signing_service,
+                mtls_client_configured=mtls_client_configured,
+                response_signature_jwks_cache=signature_cache,
+            )
+            if result.status in {"passed", "warn"}:
+                for helper in unit_helpers:
+                    helper_result, context = _execute_v1_manifest_step(
+                        helper,
+                        context=context,
+                        client=client,
+                        execution_logger=execution_logger,
+                        run_id=run_id,
+                        auth_session_store=auth_session_store,
+                        fapi_signing_config=fapi_signing_config,
+                        fapi_signing_service=signing_service,
+                        mtls_client_configured=mtls_client_configured,
+                        response_signature_jwks_cache=signature_cache,
+                    )
+                    if helper_result.status not in {"passed", "warn"}:
+                        result = replace(
+                            result,
+                            status="failed",
+                            message=f"Nested protocol instruction {helper.id} failed: {helper_result.message}",
+                        )
+                        break
+        statuses[step_id] = result.status
+        results.append(result)
+    return build_smoke_check_result(
+        results,
+        started_at=started_at,
+        approved_release_policy=approved_release_policy,
+        certification_coverage="complete",
+        result_traceability=result_traceability,
+    )
+
+
+def _execution_manifest_step_to_runtime_step(
+    manifest_step: ExecutionManifestStep,
+    *,
+    input_values: Mapping[StableId, object],
+    sensitive_input_ids: set[StableId],
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    runtime_config: RuntimeConfig | None,
+    artifact_resolver: SuiteReleaseArtifactResolver,
+) -> ManifestStep:
+    """Build one private runtime step from one immutable manifest step."""
+    stable_step = manifest_step
+    request = stable_step.request
+    request_step = CatalogueRequestStep(
+        step_id=str(stable_step.id),
+        name=stable_step.name,
+        method=request.method.value,
+        path=request.path,
+        query_parameters=request.query_templates,
+        runtime_input_refs=request.runtime_input_refs,
+        headers=tuple(
+            CatalogueRequestHeader(
+                name=header.name,
+                input_id=header.runtime_input_ref,
+                generated_value=("uuid4" if header.generated_value is not None else None),
+            )
+            for header in request.header_templates
+            if header.literal_value is None
+        ),
+        body_template=_mutable_manifest_json(request.json_body_template),
+        generated_values={name: strategy.value for name, strategy in request.generated_values.items()},
+        required_token_id=(None if request.required_token_id is None else str(request.required_token_id)),
+        produced_token_id=(None if request.produced_token_id is None else str(request.produced_token_id)),
+        detached_jws_omit_claims=(
+            () if request.detached_jws is None else tuple(claim.value for claim in request.detached_jws.omitted_claims)
+        ),
+        detached_jws_profile=(None if request.detached_jws is None else request.detached_jws.profile.value),
+    )
+    generated_header_values = _catalogue_generated_header_values(request_step)
+    generated_runtime_values = _catalogue_generated_runtime_values(request_step)
+    url = _execution_manifest_request_url(
+        request_step,
+        source=request.base_url_source,
+        runtime_inputs=runtime_inputs,
+        runtime_config=runtime_config,
+        generated_runtime_values=generated_runtime_values,
+    )
+    headers = (
+        _catalogue_request_headers(
+            request_step,
+            runtime_inputs=runtime_inputs,
+            runtime_input_base_dir=runtime_input_base_dir,
+            requirements={},
+            generated_header_values=generated_header_values,
+            generated_runtime_values=generated_runtime_values,
+        )
+        or {}
+    )
+    for header in request.header_templates:
+        if header.literal_value is not None:
+            headers[header.name] = _resolve_catalogue_template_string(
+                header.literal_value,
+                generated_runtime_values=generated_runtime_values,
+                runtime_inputs=runtime_inputs,
+            )
+    body = _catalogue_request_body(
+        request_step,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=runtime_input_base_dir,
+        requirements={},
+        generated_runtime_values=generated_runtime_values,
+    )
+    if request.form_body_template is not None:
+        body = FormBody(
+            fields={
+                name: _resolve_catalogue_template_string(
+                    value,
+                    generated_runtime_values=generated_runtime_values,
+                    runtime_inputs=runtime_inputs,
+                )
+                for name, value in request.form_body_template.items()
+            }
+        )
+    url, headers, body, detached_jws = _apply_execution_request_contract(
+        stable_step,
+        url=url,
+        headers=headers,
+        body=body,
+        input_values=input_values,
+        sensitive_input_ids=sensitive_input_ids,
+    )
+    assertions = tuple(
+        _execution_manifest_assertion_to_runtime(
+            assertion,
+            request_headers=headers,
+            artifact_resolver=artifact_resolver,
+        )
+        for assertion in stable_step.assertions
+    )
+    return ManifestStep(
+        id=str(stable_step.id),
+        name=stable_step.name,
+        request=ManifestRequest(
+            method=request.method.value,
+            url=url,
+            headers=headers or None,
+            body=body,
+            detached_jws=detached_jws,
+        ),
+        assertions=assertions,
+        mandatory=True,
+        group="manifest",
+        phase="execution",
+        token_endpoint_auth_policy=(
+            None
+            if request.token_endpoint_auth is None
+            else TokenEndpointAuthPolicy(source=request.token_endpoint_auth.source.value)
+        ),
+        required_token_id=(None if request.required_token_id is None else str(request.required_token_id)),
+        produces_token_id=(None if request.produced_token_id is None else str(request.produced_token_id)),
+        response_signature_policy=(
+            None
+            if request.response_signature is None
+            else ResponseSignaturePolicy(source=request.response_signature.source.value)
+        ),
+    )
+
+
+def _execution_manifest_request_url(
+    request_step: CatalogueRequestStep,
+    *,
+    source: RequestBaseUrlSource | None,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_config: RuntimeConfig | None,
+    generated_runtime_values: Mapping[str, str],
+) -> str:
+    if source is RequestBaseUrlSource.DISCOVERY:
+        if runtime_config is None or runtime_config.discovery_url is None:
+            raise ValueError("Manifest discovery request requires runtime config discoveryUrl")
+        return runtime_config.discovery_url
+    if source is RequestBaseUrlSource.TOKEN:
+        return "${config.oauth.tokenEndpoint}"
+    if source is not RequestBaseUrlSource.RESOURCE:
+        raise ValueError(f"Unsupported Read/Write request base URL source: {source}")
+    return _catalogue_request_url(
+        request_step,
+        runtime_inputs=runtime_inputs,
+        runtime_config=runtime_config,
+        generated_runtime_values=generated_runtime_values,
+    )
+
+
+def _apply_execution_request_contract(
+    manifest_step: ExecutionManifestStep,
+    *,
+    url: str,
+    headers: dict[str, str],
+    body: JsonBody | FormBody | None,
+    input_values: Mapping[StableId, object],
+    sensitive_input_ids: set[StableId],
+) -> tuple[str, dict[str, str], JsonBody | FormBody | None, DetachedJwsPolicy | None]:
+    stable_step = manifest_step
+    request = stable_step.request
+    sensitive_pointers: list[str] = []
+    for binding in request.input_bindings:
+        if binding.input_id in sensitive_input_ids and binding.type == "json-body":
+            sensitive_pointers.append(binding.target)
+        value = input_values.get(binding.input_id)
+        if value is None:
+            continue
+        if binding.type == "json-body":
+            if not isinstance(body, JsonBody):
+                raise ValueError(f"Manifest input binding {binding.input_id!s} requires a JSON body")
+            mutable_body = _mutable_manifest_json(body.value)
+            _set_json_pointer_value(mutable_body, binding.target, _binding_value(value, str(binding.transform)))
+            body = JsonBody(value=mutable_body)
+        elif binding.type == "query-parameter":
+            separator = "&" if "?" in url else "?"
+            url = f"{url}{separator}{urlencode({binding.target: _binding_value(value, str(binding.transform))})}"
+        else:
+            raise ValueError(f"Unsupported manifest input binding type: {binding.type}")
+    detached_jws = (
+        None
+        if request.detached_jws is None
+        else DetachedJwsPolicy(
+            source=request.detached_jws.source.value,
+            omit_protected_headers=tuple(claim.value for claim in request.detached_jws.omitted_claims),
+            profile=request.detached_jws.profile.value,
+        )
+    )
+    for modification in request.modifications:
+        if modification.operation == "omit" and modification.location == "header" and modification.target is not None:
+            for name in tuple(headers):
+                if name.lower() == modification.target.lower():
+                    headers.pop(name)
+        elif modification.operation == "omit" and modification.location == "authorization":
+            for name in tuple(headers):
+                if name.lower() == "authorization":
+                    headers.pop(name)
+        elif modification.operation in {"replace", "generate", "invalidate"} and modification.location == "json-body":
+            if body is None and modification.operation == "generate" and modification.target in {"", "/"}:
+                body = JsonBody(value={})
+            if not isinstance(body, JsonBody) or modification.target is None:
+                raise ValueError(f"Manifest modification {modification.id!s} requires a JSON body target")
+            mutable_body = _mutable_manifest_json(body.value)
+            value = _manifest_modification_value(modification)
+            _set_json_pointer_value(mutable_body, modification.target, value)
+            body = JsonBody(value=mutable_body)
+        elif modification.operation in {"replace", "generate"} and modification.location == "path-parameter":
+            if modification.target is None:
+                raise ValueError(f"Manifest modification {modification.id!s} requires a path target")
+            replacement = str(_manifest_modification_value(modification))
+            url = url.replace(f"{{{modification.target}}}", replacement)
+        elif modification.operation == "omit" and modification.location == "detached-jws-claim":
+            if modification.target is None or detached_jws is None:
+                raise ValueError(f"Manifest modification {modification.id!s} requires detached JWS signing")
+            detached_jws = replace(
+                detached_jws,
+                omit_protected_headers=tuple(
+                    dict.fromkeys((*detached_jws.omit_protected_headers, modification.target))
+                ),
+            )
+        elif modification.operation == "invalidate" and modification.location == "detached-jws-signature":
+            detached_jws = None
+        elif modification.location in {"jws-claim", "request-body"}:
+            continue
+        elif modification.location not in {"header", "authorization"}:
+            raise ValueError(f"Unsupported manifest modification {modification.operation}/{modification.location}")
+    if isinstance(body, JsonBody) and sensitive_pointers:
+        body = JsonBody(
+            value=body.value,
+            sensitive_json_pointers=tuple(dict.fromkeys(sensitive_pointers)),
+        )
+    return url, headers, body, detached_jws
+
+
+def _binding_value(value: object, transform: str) -> JsonValue:
+    if transform in {"identity", "identity-string", "iso8601-local-date-time", "rfc3339-date-time"}:
+        return cast("JsonValue", value)
+    if transform == "standing-order-frequency-string":
+        frequency_type = getattr(value, "frequency_type", None)
+        if isinstance(frequency_type, str):
+            return frequency_type
+    if transform == "standing-order-frequency-object":
+        frequency_type = getattr(value, "frequency_type", None)
+        if isinstance(frequency_type, str):
+            result: JsonObject = {"frequencyType": frequency_type}
+            count = getattr(value, "count_per_period", None)
+            point = getattr(value, "point_in_time", None)
+            if count is not None:
+                result["countPerPeriod"] = count
+            if point is not None:
+                result["pointInTime"] = point
+            return result
+    raise ValueError(f"Unsupported manifest input transform: {transform}")
+
+
+def _manifest_modification_value(item: RequestModification) -> JsonValue:
+    if item.value is not None:
+        return item.value
+    generator = None if item.generator is None else str(item.generator)
+    if generator in {"uuid-v4", "uuid4-hex"}:
+        return str(uuid.uuid4()) if generator == "uuid-v4" else uuid.uuid4().hex
+    if generator == "invalid-resource-id":
+        return f"invalid-{uuid.uuid4()}"
+    if generator == "overlong-string-257":
+        return "x" * 257
+    if generator == "overlong-string-351":
+        return "x" * 351
+    if generator == "unique-payment-reference":
+        return f"REF-{uuid.uuid4().hex[:24]}"
+    if generator == "standing-order-frequency-count-and-point":
+        return {"frequencyType": "EvryDay", "countPerPeriod": 1, "pointInTime": "01"}
+    if generator in {
+        "next-day-date-time-offset",
+        "next-day-date-time-offset-milliseconds",
+        "next-day-date-time-utc",
+        "next-day-date-time-utc-milliseconds",
+        "rfc3339-date-time-offset",
+        "rfc3339-date-time-utc",
+    }:
+        value = datetime.now(UTC) + timedelta(days=1)
+        if generator.endswith("-utc"):
+            return value.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if generator.endswith("-utc-milliseconds"):
+            return value.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        return value.replace(microsecond=0).isoformat()
+    if generator == "ais-account-access-consent":
+        return _AIS_BASIC_ACCOUNT_ACCESS_CONSENT_BODY
+    if generator == "ais-empty-permissions-consent":
+        return {"Data": {"Permissions": []}, "Risk": {}}
+    if generator == "ais-invalid-transaction-permissions-consent":
+        return {"Data": {"Permissions": ["ReadTransactionsCredits"]}, "Risk": {}}
+    raise ValueError(f"Unsupported manifest generator: {generator}")
+
+
+def _set_json_pointer_value(document: JsonValue, pointer: str, value: JsonValue) -> None:
+    if not isinstance(document, dict):
+        raise ValueError("Manifest JSON body must be an object for pointer bindings")
+    if pointer in {"", "/"}:
+        if not isinstance(value, Mapping):
+            raise ValueError("Root JSON replacement must be an object")
+        document.clear()
+        document.update({str(key): _mutable_manifest_json(item) for key, item in value.items()})
+        return
+    if not pointer.startswith("/"):
+        raise ValueError(f"Invalid JSON Pointer target: {pointer}")
+    tokens = [token.replace("~1", "/").replace("~0", "~") for token in pointer[1:].split("/")]
+    current: JsonObject = document
+    for token in tokens[:-1]:
+        child = current.get(token)
+        if not isinstance(child, dict):
+            child = {}
+            current[token] = child
+        current = child
+    current[tokens[-1]] = _mutable_manifest_json(value)
+
+
+def _mutable_manifest_json(value: object) -> JsonValue:
+    if isinstance(value, Mapping):
+        return {str(key): _mutable_manifest_json(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_mutable_manifest_json(item) for item in value]
+    return cast("JsonValue", value)
+
+
+def _execution_manifest_assertion_to_runtime(
+    assertion: ExecutionManifestAssertion,
+    *,
+    request_headers: Mapping[str, str],
+    artifact_resolver: SuiteReleaseArtifactResolver,
+) -> ManifestAssertion:
+    assertion_id = str(assertion.id)
+    if assertion.type == "http-status":
+        return HttpStatusAssertion(type="http_status", expected=assertion.expected_status, id=assertion_id)
+    if assertion.type == "http-status-any-of":
+        return HttpStatusAssertion(
+            type="http_status",
+            expected_one_of=assertion.expected_statuses or (),
+            id=assertion_id,
+        )
+    if assertion.type == "response-schema":
+        if assertion.schema_source_id is None:
+            raise ValueError(f"Manifest assertion {assertion.id!s} has no schema source")
+        artifact = artifact_resolver.resolved_artifacts.get(assertion.schema_source_id)
+        if artifact is None or not isinstance(artifact.document, Mapping):
+            raise ValueError(f"Manifest assertion {assertion.id!s} has no resolved schema document")
+        return ResponseSchemaAssertion(
+            type="response_schema",
+            source="bundled_openapi",
+            document=str(assertion.schema_source_id),
+            schema_ref=assertion.schema_ref,
+            id=assertion_id,
+            document_root=artifact.document,
+        )
+    if assertion.type == "header-present":
+        return HeaderAssertion(
+            type="header",
+            name=assertion.header_name or "",
+            rule="present",
+            id=assertion_id,
+        )
+    if assertion.type == "header-equals-request":
+        header_name = assertion.header_name or ""
+        expected = next(
+            (value for name, value in request_headers.items() if name.lower() == header_name.lower()),
+            None,
+        )
+        if expected is None:
+            raise ValueError(f"Manifest assertion {assertion.id!s} references an absent request header")
+        return HeaderAssertion(
+            type="header",
+            name=header_name,
+            rule="equals",
+            value=expected,
+            id=assertion_id,
+        )
+    path = _json_pointer_to_dot_path(assertion.json_pointer or "")
+    if assertion.type == "json-value":
+        return JsonFieldAssertion(
+            type="json_field",
+            path=path,
+            rule="equals",
+            value=assertion.expected_value,
+            id=assertion_id,
+        )
+    if assertion.type == "json-present":
+        return JsonFieldAssertion(type="json_field", path=path, rule="required", id=assertion_id)
+    if assertion.type == "json-absent":
+        return JsonFieldAssertion(type="json_field", path=path, rule="absent", id=assertion_id)
+    raise ValueError(f"Unsupported execution-manifest assertion type: {assertion.type}")
+
+
+def _json_pointer_to_dot_path(pointer: str) -> str:
+    if not pointer.startswith("/"):
+        raise ValueError(f"Invalid JSON Pointer assertion path: {pointer}")
+    return ".".join(token.replace("~1", "/").replace("~0", "~") for token in pointer[1:].split("/"))
+
+
+def _execution_manifest_psu_steps(manifest_step: ExecutionManifestStep) -> tuple[V1Step, V1Step]:
+    stable_step = manifest_step
+    metadata = stable_step.request.psu_authorization
+    if metadata is None:
+        raise ValueError(f"Manifest step {stable_step.id!s} has no PSU authorization instruction")
+    authorization_scope = (
+        "openid fundsconfirmations"
+        if str(metadata.token_id) == _CBPII_FUNDS_CONFIRMATION_TOKEN_ID
+        else "openid payments"
+    )
+    authorization = PsuAuthorizationStep(
+        id=str(metadata.authorization_step_id),
+        name=metadata.authorization_step_name,
+        mode="manual",
+        authorization_endpoint="${config.oauth.authorizationEndpoint}",
+        client_id="${config.oauth.clientId}",
+        redirect_uri="${config.oauth.redirectUri}",
+        scope=authorization_scope,
+        request_object=GeneratedRequestObject(
+            source="fapi-signing",
+            audience="${config.oauth.issuer}",
+            openbanking_intent_id=f"${{steps.{stable_step.id!s}.response.body.Data.ConsentId}}",
+        ),
+        mandatory=True,
+        group="manifest",
+        phase="execution",
+    )
+    token = ManifestStep(
+        id=str(metadata.token_step_id),
+        name=f"Exchange {metadata.flow_label} authorisation code",
+        request=ManifestRequest(
+            method="POST",
+            url="${config.oauth.tokenEndpoint}",
+            body=FormBody(
+                fields={
+                    "grant_type": "authorization_code",
+                    "code": f"${{steps.{metadata.authorization_step_id!s}.response.body.code}}",
+                    "redirect_uri": "${config.oauth.redirectUri}",
+                    "client_id": "${config.oauth.clientId}",
+                }
+            ),
+        ),
+        assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+        mandatory=True,
+        group="manifest",
+        phase="execution",
+        token_endpoint_auth_policy=TokenEndpointAuthPolicy(source="fapi-signing"),
+        produces_token_id=str(metadata.token_id),
+    )
+    return authorization, token
+
+
+def _execution_manifest_ais_authorization_steps(
+    consent_step: ManifestStep,
+    *,
+    profiles: tuple[str, ...],
+) -> tuple[V1Step, ...]:
+    """Build explicit AIS consent, PSU, and token helpers from manifest token requirements."""
+    helpers: list[V1Step] = []
+    for profile in profiles:
+        profile_consent_id = (
+            consent_step.id if profile == "basic" else f"{consent_step.id}.{profile}-authorization-consent"
+        )
+        authorization_id = f"{consent_step.id}.{profile}-psu-authorization"
+        token_step_id = f"{consent_step.id}.{profile}-token-exchange"
+        if profile != "basic":
+            helpers.append(
+                replace(
+                    consent_step,
+                    id=profile_consent_id,
+                    name=f"Create AIS {profile} authorization consent",
+                    request=replace(
+                        consent_step.request,
+                        body=JsonBody(value=_AIS_ACCOUNT_ACCESS_CONSENT_BODIES[profile]),
+                    ),
+                    assertions=(HttpStatusAssertion(type="http_status", expected=201),),
+                )
+            )
+        helpers.extend(
+            (
+                PsuAuthorizationStep(
+                    id=authorization_id,
+                    name=f"Authorize AIS {profile} account access",
+                    mode="manual",
+                    authorization_endpoint="${config.oauth.authorizationEndpoint}",
+                    client_id="${config.oauth.clientId}",
+                    redirect_uri="${config.oauth.redirectUri}",
+                    scope="openid accounts",
+                    request_object=GeneratedRequestObject(
+                        source="fapi-signing",
+                        audience="${config.oauth.issuer}",
+                        openbanking_intent_id=(f"${{steps.{profile_consent_id}.response.body.Data.ConsentId}}"),
+                    ),
+                    mandatory=True,
+                    group="manifest",
+                    phase="execution",
+                ),
+                ManifestStep(
+                    id=token_step_id,
+                    name=f"Exchange AIS {profile} authorization code",
+                    request=ManifestRequest(
+                        method="POST",
+                        url="${config.oauth.tokenEndpoint}",
+                        body=FormBody(
+                            fields={
+                                "grant_type": "authorization_code",
+                                "code": f"${{steps.{authorization_id}.response.body.code}}",
+                                "redirect_uri": "${config.oauth.redirectUri}",
+                                "client_id": "${config.oauth.clientId}",
+                            }
+                        ),
+                    ),
+                    assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+                    mandatory=True,
+                    group="manifest",
+                    phase="execution",
+                    token_endpoint_auth_policy=TokenEndpointAuthPolicy(source="fapi-signing"),
+                    produces_token_id=_AIS_PERMISSION_PROFILE_TOKEN_IDS[profile],
+                ),
+            )
+        )
+    return tuple(helpers)
 
 
 def _compiled_plan_to_manifest(
@@ -4852,7 +5600,10 @@ def _build_assertion_step(
     )
     passed = all(assertion_result.passed for assertion_result in assertion_results)
     details: dict[str, JsonValue] = {
-        "assertions": [_assertion_result_to_json(assertion_result) for assertion_result in assertion_results],
+        "assertions": [
+            _assertion_result_to_json(assertion_result, assertion=assertion)
+            for assertion, assertion_result in zip(assertions, assertion_results, strict=True)
+        ],
     }
     if passed and warning is not None:
         details["warning"] = warning
@@ -4874,7 +5625,11 @@ def _build_assertion_step(
     )
 
 
-def _assertion_result_to_json(assertion_result: AssertionResult) -> JsonObject:
+def _assertion_result_to_json(
+    assertion_result: AssertionResult,
+    *,
+    assertion: ManifestAssertion,
+) -> JsonObject:
     """Convert an assertion result to the step details JSON shape.
 
     Args:
@@ -4883,7 +5638,10 @@ def _assertion_result_to_json(assertion_result: AssertionResult) -> JsonObject:
     Returns:
         JSON-serialisable dictionary with ``status`` and ``message`` keys.
     """
-    return {
+    detail: JsonObject = {
         "status": "passed" if assertion_result.passed else "failed",
         "message": assertion_result.message,
     }
+    if assertion.id is not None:
+        detail["assertionId"] = assertion.id
+    return detail

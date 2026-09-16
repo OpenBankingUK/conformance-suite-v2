@@ -254,6 +254,7 @@ class HttpStatusAssertion:
     type: Literal["http_status"]
     expected: int | None = None
     expected_one_of: tuple[int, ...] = ()
+    id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -281,6 +282,7 @@ class JsonFieldAssertion:
     min_items: int | None = None
     field: str | None = None
     fields: tuple[str, ...] = ()
+    id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -299,6 +301,7 @@ class HeaderAssertion:
     name: str
     rule: HeaderRule
     value: str | None = None
+    id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -322,6 +325,8 @@ class ResponseSchemaAssertion:
     schema_ref: str | None = None
     schema: Mapping[str, JsonValue] | None = None
     body_path: str | None = None
+    id: str | None = None
+    document_root: Mapping[str, JsonValue] | None = None
 
 
 @dataclass(frozen=True)
@@ -347,6 +352,7 @@ class LegacyFcsAssertion:
     last_if_all: tuple[Mapping[str, JsonValue], ...] = ()
     schema_document: str | None = None
     schema_refs: Mapping[int, str] = field(default_factory=lambda: MappingProxyType({}))
+    id: str | None = None
 
 
 ManifestAssertion = (

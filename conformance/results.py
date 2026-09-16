@@ -92,37 +92,23 @@ class ResultTraceabilitySource:
         execution_manifest: Stable runner-facing manifest used for the run.
         resolved_plan: Compiler output that selected and instantiated the work.
         participant_plan_snapshot: Secret-safe snapshot of participant intent.
-        result_observation_id_by_manifest_step_id: Compatibility mapping from
-            stable manifest step IDs to current public result step names.
     """
 
     execution_manifest: ExecutionManifest
     resolved_plan: ResolvedPlan
     participant_plan_snapshot: Mapping[str, JsonValue]
-    result_observation_id_by_manifest_step_id: Mapping[str, str]
 
     def __post_init__(self) -> None:
-        """Detach mutable mappings and require one observation ID per manifest step."""
+        """Detach mutable provenance and require matching immutable identities."""
         provenance = self.execution_manifest.provenance
         if provenance.resolved_plan_id != self.resolved_plan.id:
             raise ValueError("Execution-manifest provenance must identify the supplied resolved plan")
         if self.participant_plan_snapshot.get("id") != str(provenance.participant_plan_id):
             raise ValueError("Participant-plan snapshot must match execution-manifest provenance")
-        manifest_step_ids = {str(step.id) for step in self.execution_manifest.steps}
-        observation_mapping = dict(self.result_observation_id_by_manifest_step_id)
-        if set(observation_mapping) != manifest_step_ids:
-            raise ValueError("Result observation mapping must cover every execution-manifest step exactly")
-        if len(set(observation_mapping.values())) != len(observation_mapping):
-            raise ValueError("Result observation IDs must be unique")
         object.__setattr__(
             self,
             "participant_plan_snapshot",
             MappingProxyType(deepcopy(dict(self.participant_plan_snapshot))),
-        )
-        object.__setattr__(
-            self,
-            "result_observation_id_by_manifest_step_id",
-            MappingProxyType(observation_mapping),
         )
 
 
@@ -643,7 +629,6 @@ def _result_traceability_to_json_object(
     manifest = source.execution_manifest
     resolved_plan = source.resolved_plan
     result_by_observation_id = {step.name: step for step in steps}
-    mapped_observation_ids = set(source.result_observation_id_by_manifest_step_id.values())
 
     test_definitions: list[JsonValue] = []
     seen_test_definition_ids: set[str] = set()
@@ -664,8 +649,7 @@ def _result_traceability_to_json_object(
     manifest_steps: list[JsonValue] = []
     for manifest_step in manifest.steps:
         manifest_step_id = str(manifest_step.id)
-        observation_id = source.result_observation_id_by_manifest_step_id[manifest_step_id]
-        observation = result_by_observation_id.get(observation_id)
+        observation = result_by_observation_id.get(manifest_step_id)
         manifest_steps.append(
             {
                 "id": manifest_step_id,
@@ -674,7 +658,7 @@ def _result_traceability_to_json_object(
                 "coveredRequirementIds": [
                     str(requirement_id) for requirement_id in manifest_step.covered_requirement_ids
                 ],
-                "resultObservationId": observation_id,
+                "resultObservationId": manifest_step_id,
                 "resultStatus": observation.status if observation is not None else "missing",
             }
         )
@@ -722,11 +706,6 @@ def _result_traceability_to_json_object(
                 "relatedIds": [str(related_id) for related_id in finding.related_ids],
             }
             for finding in resolved_plan.findings
-        ],
-        "compatibilityObservations": [
-            {"resultObservationId": step.name, "status": step.status}
-            for step in steps
-            if step.name not in mapped_observation_ids
         ],
     }
 

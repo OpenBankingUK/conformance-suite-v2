@@ -17,7 +17,7 @@
       "uri": "conformance/configuration_contracts/catalogues/ais/v4_0_1/test-definitions.json"
     },
     {
-      "digest": "sha256:5e0cfab731ead173f0fa2562fa34e2a08bdf56469bf8f1dc8f5df811195bd75a",
+      "digest": "sha256:4345b1ce36649b4640f1dbaa797dd43d6ccf01b34e8eba640b67f062b292bc41",
       "id": "execution-manifest-v1",
       "kind": "json-schema",
       "mediaType": "application/schema+json",

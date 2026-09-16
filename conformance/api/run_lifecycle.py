@@ -151,7 +151,7 @@ def start_run(
     Raises:
         RunConflictError: If another run is already pending or running.
     """
-    planned_steps = _compiled_plan_steps_snapshot(prepared_execution_manifest.compiled_plan)
+    planned_steps = _execution_manifest_steps_snapshot(prepared_execution_manifest)
     record = run_store.create_run(
         planned_steps=planned_steps,
         plan_snapshot=plan_snapshot,
@@ -167,6 +167,25 @@ def start_run(
     initial_status = record.to_status_json()
     thread.start()
     return initial_status
+
+
+def _execution_manifest_steps_snapshot(
+    prepared: PreparedExecutionManifest,
+) -> tuple[RunPlanStep, ...]:
+    """Build the pending run directly from immutable manifest steps."""
+    return tuple(
+        RunPlanStep(
+            step_id=str(step.id),
+            name=step.name,
+            kind="http",
+            group="manifest",
+            phase="execution",
+            mandatory=True,
+            optional=False,
+            order=index,
+        )
+        for index, step in enumerate(prepared.manifest.steps)
+    )
 
 
 def _compiled_plan_steps_snapshot(compiled_plan: CompiledTestPlan) -> tuple[RunPlanStep, ...]:

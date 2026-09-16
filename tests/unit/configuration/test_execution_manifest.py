@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, datetime
-from types import MappingProxyType
 from typing import cast
 
 import pytest
@@ -168,15 +167,9 @@ def test_generation_rejects_non_topological_resolved_work() -> None:
         )
 
 
-@pytest.mark.parametrize(
-    ("failed_observation_id", "expected_status"),
-    [
-        (None, "passed"),
-        ("observation-2", "failed"),
-    ],
-)
+@pytest.mark.parametrize(("failed_step_index", "expected_status"), [(None, "passed"), (2, "failed")])
 def test_result_traceability_connects_stable_ids_for_passed_and_failed_runs(
-    failed_observation_id: str | None,
+    failed_step_index: int | None,
     expected_status: str,
 ) -> None:
     _suite, requirements, test_definitions, participant_plan, resolved = _resolved_inputs()
@@ -185,21 +178,16 @@ def test_result_traceability_connects_stable_ids_for_passed_and_failed_runs(
         execution_manifest=manifest,
         resolved_plan=resolved,
         participant_plan_snapshot=build_safe_participant_plan_snapshot(participant_plan, requirements),
-        result_observation_id_by_manifest_step_id=MappingProxyType(
-            {str(step.id): f"observation-{index}" for index, step in enumerate(manifest.steps)}
-        ),
     )
+    failed_observation_id = None if failed_step_index is None else str(manifest.steps[failed_step_index].id)
     observations = [
-        StepResult(name="setup-token-pis-payment-access", status="passed", message="setup passed"),
-        *[
-            StepResult(
-                name=observation_id,
-                status="failed" if observation_id == failed_observation_id else "passed",
-                message="request completed",
-                mandatory=True,
-            )
-            for observation_id in source.result_observation_id_by_manifest_step_id.values()
-        ],
+        StepResult(
+            name=str(step.id),
+            status="failed" if str(step.id) == failed_observation_id else "passed",
+            message="request completed",
+            mandatory=True,
+        )
+        for step in manifest.steps
     ]
 
     first = build_smoke_check_result(
@@ -242,15 +230,11 @@ def test_result_traceability_connects_stable_ids_for_passed_and_failed_runs(
     execution_manifest = cast(JsonObject, traceability["executionManifest"])
     manifest_steps = cast("list[JsonObject]", execution_manifest["steps"])
     assert [step["id"] for step in manifest_steps] == [step.id for step in manifest.steps]
-    assert [step["resultObservationId"] for step in manifest_steps] == list(
-        source.result_observation_id_by_manifest_step_id.values()
-    )
+    assert [step["resultObservationId"] for step in manifest_steps] == [step.id for step in manifest.steps]
     assert [step["resultStatus"] for step in manifest_steps] == [
         "failed" if step["resultObservationId"] == failed_observation_id else "passed" for step in manifest_steps
     ]
-    assert traceability["compatibilityObservations"] == [
-        {"resultObservationId": "setup-token-pis-payment-access", "status": "passed"}
-    ]
+    assert "compatibilityObservations" not in traceability
     assert traceability["compilerFindings"] == []
 
 
@@ -261,9 +245,6 @@ def test_result_traceability_preserves_compiler_findings() -> None:
         execution_manifest=manifest,
         resolved_plan=resolved,
         participant_plan_snapshot=build_safe_participant_plan_snapshot(participant_plan, requirements),
-        result_observation_id_by_manifest_step_id=MappingProxyType(
-            {str(step.id): f"observation-{index}" for index, step in enumerate(manifest.steps)}
-        ),
     )
     warning = CompilationFinding(
         code=StableId("compiler.policy.warning"),

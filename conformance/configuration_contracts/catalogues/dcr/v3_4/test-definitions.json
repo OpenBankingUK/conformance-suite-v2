@@ -13,7 +13,7 @@
         },
         {
           "id": "dcr.v34.assertion.registration.response-schema",
-          "schemaRef": "#/components/responses/OBClientRegistration1/content/application~1json/schema",
+          "schemaRef": "#/components/schemas/OBRegistrationProperties1",
           "schemaSourceId": "ob-dcr-v34.openapi",
           "type": "response-schema"
         },
@@ -290,7 +290,7 @@
         },
         {
           "id": "dcr.v34.assertion.retrieval.response-schema",
-          "schemaRef": "#/components/responses/OBClientRegistration1/content/application~1json/schema",
+          "schemaRef": "#/components/schemas/OBRegistrationProperties1",
           "schemaSourceId": "ob-dcr-v34.openapi",
           "type": "response-schema"
         },
@@ -476,7 +476,7 @@
         },
         {
           "id": "dcr.v34.assertion.update.response-schema",
-          "schemaRef": "#/components/responses/OBClientRegistration1/content/application~1json/schema",
+          "schemaRef": "#/components/schemas/OBRegistrationProperties1",
           "schemaSourceId": "ob-dcr-v34.openapi",
           "type": "response-schema"
         }
@@ -536,7 +536,7 @@
         },
         {
           "id": "dcr.v34.assertion.update-token-continuity.response-schema",
-          "schemaRef": "#/components/responses/OBClientRegistration1/content/application~1json/schema",
+          "schemaRef": "#/components/schemas/OBRegistrationProperties1",
           "schemaSourceId": "ob-dcr-v34.openapi",
           "type": "response-schema"
         }

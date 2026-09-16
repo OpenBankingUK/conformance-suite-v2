@@ -76,9 +76,7 @@ def test_shared_surface_prepares_resolved_manifest_and_legacy_execution(tmp_path
     assert len(prepared.execution_manifest.steps) == 5
     assert prepared.prepared_execution.manifest == prepared.execution_manifest
     assert prepared.prepared_execution.result_traceability is not None
-    assert len(prepared.prepared_execution.result_traceability.result_observation_id_by_manifest_step_id) == len(
-        prepared.execution_manifest.steps
-    )
+    assert prepared.prepared_execution.artifact_resolver.manifest == prepared.execution_manifest
     assert prepared.compiled_plan.traceability.generated_test_case_ids == (
         "pis-v4-domestic-standing-order-consent-create",
         "pis-v4-domestic-standing-order-consent-read",
@@ -146,10 +144,12 @@ def test_pis_predefined_inputs_lower_only_inside_compatibility_adapter(tmp_path:
     assert prepared.runtime_inputs["pisCreditorAccountIdentification"] == "08080021325698"
     assert prepared.runtime_inputs["pisInstructedAmountAmount"] == "10.00"
     assert prepared.runtime_inputs["pisStandingOrderFrequencyType"] == "WEEK"
+    sensitive_input_ids = {item.id for item in prepared.execution_manifest.inputs if item.redacted}
     masked_pointers = {
-        pointer
-        for pointers in prepared.prepared_execution.sensitive_json_pointers_by_observation_id.values()
-        for pointer in pointers
+        binding.target
+        for step in prepared.execution_manifest.steps
+        for binding in step.request.input_bindings
+        if binding.input_id in sensitive_input_ids and binding.type == "json-body"
     }
     assert masked_pointers == {
         "/Data/Initiation/CreditorAccount/Identification",
@@ -234,7 +234,7 @@ def test_missing_compatibility_operation_has_stable_reference_diagnostic(tmp_pat
         ParticipantSurfaceError,
         match=(
             r"Compatibility catalogue reference unresolved: no executable observation matches "
-            r"manifest step .* \(DELETE /account-access-consents/\{ConsentId\}\)"
+            r"manifest step .* \(DELETE .*account-access-consents/"
         ),
     ):
         _manifest_observation_ids(prepared.execution_manifest, compiled_without_delete)

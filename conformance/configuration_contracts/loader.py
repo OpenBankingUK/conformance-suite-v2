@@ -31,17 +31,27 @@ from conformance.configuration_contracts.models import (
     ArtifactReference,
     Capability,
     CompilationFinding,
+    DetachedJwsOmittedClaim,
+    DetachedJwsProfile,
+    DetachedJwsSource,
     Endpoint,
     EvidenceMode,
+    ExecutionDetachedJws,
     ExecutionEvidencePolicy,
     ExecutionManifest,
     ExecutionManifestAssertion,
+    ExecutionManifestHeader,
     ExecutionManifestInput,
     ExecutionManifestProvenance,
     ExecutionManifestRequest,
     ExecutionManifestStep,
+    ExecutionPsuAuthorization,
+    ExecutionResponseSignature,
+    ExecutionTokenEndpointAuth,
     FindingSeverity,
     FindingSourceDocument,
+    GeneratedHeaderValue,
+    GeneratedValueStrategy,
     HttpMethod,
     InputResolutionSource,
     NormativeReference,
@@ -50,6 +60,7 @@ from conformance.configuration_contracts.models import (
     ParticipantPlan,
     PredefinedInput,
     PredefinedInputValue,
+    RequestBaseUrlSource,
     RequestInputBinding,
     RequestModification,
     RequestStateBinding,
@@ -65,6 +76,7 @@ from conformance.configuration_contracts.models import (
     ResolvedPredefinedInput,
     ResolvedRequirement,
     ResolvedTestInstance,
+    ResponseSignatureSource,
     SelectionOrigin,
     Sha256Digest,
     SpecificationReference,
@@ -77,6 +89,7 @@ from conformance.configuration_contracts.models import (
     TestDefinitionCatalogue,
     TestOutput,
     TestRequest,
+    TokenEndpointAuthSource,
     ToolRelease,
 )
 from conformance.json_types import JsonObject, JsonValue
@@ -772,48 +785,124 @@ def execution_manifest_to_document(manifest: ExecutionManifest) -> JsonObject:
                 "id": str(step.id),
                 "name": step.name,
                 **({"outputs": [_test_output_to_document(output) for output in step.outputs]} if step.outputs else {}),
-                "request": {
-                    **(
-                        {"authorizationProfile": str(step.request.authorization_profile)}
-                        if step.request.authorization_profile is not None
-                        else {}
-                    ),
-                    **({"contentType": step.request.content_type} if step.request.content_type is not None else {}),
-                    "inputBindings": [
-                        {
-                            "inputId": str(binding.input_id),
-                            "target": binding.target,
-                            "transform": str(binding.transform),
-                            "type": binding.type,
-                        }
-                        for binding in step.request.input_bindings
-                    ],
-                    "method": step.request.method.value,
-                    "modifications": [
-                        _request_modification_to_document(modification) for modification in step.request.modifications
-                    ],
-                    "path": step.request.path,
-                    **(
-                        {
-                            "stateBindings": [
-                                _state_binding_to_document(binding) for binding in step.request.state_bindings
-                            ]
-                        }
-                        if step.request.state_bindings
-                        else {}
-                    ),
-                    **(
-                        {"transportProfile": str(step.request.transport_profile)}
-                        if step.request.transport_profile is not None
-                        else {}
-                    ),
-                },
+                "request": _execution_request_to_document(step.request),
                 "testDefinitionId": str(step.test_definition_id),
                 "testInstanceId": str(step.test_instance_id),
             }
             for step in manifest.steps
         ],
     }
+
+
+def _execution_request_to_document(request: ExecutionManifestRequest) -> JsonObject:
+    """Convert a request template without retaining immutable wrapper objects."""
+    return {
+        **(
+            {"authorizationProfile": str(request.authorization_profile)}
+            if request.authorization_profile is not None
+            else {}
+        ),
+        **({"baseUrlSource": request.base_url_source.value} if request.base_url_source is not None else {}),
+        **({"contentType": request.content_type} if request.content_type is not None else {}),
+        **(
+            {
+                "detachedJws": {
+                    "omittedClaims": [claim.value for claim in request.detached_jws.omitted_claims],
+                    "profile": request.detached_jws.profile.value,
+                    "source": request.detached_jws.source.value,
+                }
+            }
+            if request.detached_jws is not None
+            else {}
+        ),
+        **({"formBodyTemplate": dict(request.form_body_template)} if request.form_body_template is not None else {}),
+        **(
+            {"generatedValues": {name: strategy.value for name, strategy in request.generated_values.items()}}
+            if request.generated_values
+            else {}
+        ),
+        **(
+            {"headerTemplates": [_execution_header_to_document(header) for header in request.header_templates]}
+            if request.header_templates
+            else {}
+        ),
+        "inputBindings": [
+            {
+                "inputId": str(binding.input_id),
+                "target": binding.target,
+                "transform": str(binding.transform),
+                "type": binding.type,
+            }
+            for binding in request.input_bindings
+        ],
+        **(
+            {"jsonBodyTemplate": _mutable_json_value(request.json_body_template)}
+            if request.json_body_template is not None
+            else {}
+        ),
+        "method": request.method.value,
+        "modifications": [_request_modification_to_document(modification) for modification in request.modifications],
+        "path": request.path,
+        **({"producedTokenId": str(request.produced_token_id)} if request.produced_token_id is not None else {}),
+        **({"invalidateProducedAuthorizationToken": True} if request.invalidate_produced_authorization_token else {}),
+        **(
+            {
+                "psuAuthorization": {
+                    "authorizationStepId": str(request.psu_authorization.authorization_step_id),
+                    "authorizationStepName": request.psu_authorization.authorization_step_name,
+                    "flowLabel": request.psu_authorization.flow_label,
+                    "tokenId": str(request.psu_authorization.token_id),
+                    "tokenStepId": str(request.psu_authorization.token_step_id),
+                }
+            }
+            if request.psu_authorization is not None
+            else {}
+        ),
+        **({"queryTemplates": dict(request.query_templates)} if request.query_templates else {}),
+        **({"requiredTokenId": str(request.required_token_id)} if request.required_token_id is not None else {}),
+        **({"requiredTokenScope": request.required_token_scope} if request.required_token_scope is not None else {}),
+        **(
+            {"requiredPsuAuthorizationStepId": str(request.required_psu_authorization_step_id)}
+            if request.required_psu_authorization_step_id is not None
+            else {}
+        ),
+        **(
+            {"responseSignature": {"source": request.response_signature.source.value}}
+            if request.response_signature is not None
+            else {}
+        ),
+        **({"runtimeInputRefs": list(request.runtime_input_refs)} if request.runtime_input_refs else {}),
+        **(
+            {"stateBindings": [_state_binding_to_document(binding) for binding in request.state_bindings]}
+            if request.state_bindings
+            else {}
+        ),
+        **(
+            {"tokenEndpointAuth": {"source": request.token_endpoint_auth.source.value}}
+            if request.token_endpoint_auth is not None
+            else {}
+        ),
+        **({"transportProfile": str(request.transport_profile)} if request.transport_profile is not None else {}),
+    }
+
+
+def _execution_header_to_document(header: ExecutionManifestHeader) -> JsonObject:
+    """Render the exactly-one header value source."""
+    return {
+        "name": header.name,
+        **({"literalValue": header.literal_value} if header.literal_value is not None else {}),
+        **({"runtimeInputRef": header.runtime_input_ref} if header.runtime_input_ref is not None else {}),
+        **({"generatedValue": header.generated_value.value} if header.generated_value is not None else {}),
+    }
+
+
+def _mutable_json_value(value: JsonValue) -> JsonValue:
+    """Return ordinary JSON containers from recursively immutable model data."""
+    if isinstance(value, Mapping):
+        return {str(key): _mutable_json_value(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_mutable_json_value(item) for item in value]
+    return value
 
 
 def execution_manifest_id(manifest: ExecutionManifest) -> StableId:
@@ -1495,6 +1584,82 @@ def _execution_manifest_step_from_document(document: dict[str, object]) -> Execu
                 if (authorization_profile := cast(str | None, request.get("authorizationProfile"))) is None
                 else StableId(authorization_profile)
             ),
+            base_url_source=(
+                None
+                if (base_url_source := cast(str | None, request.get("baseUrlSource"))) is None
+                else RequestBaseUrlSource(base_url_source)
+            ),
+            query_templates=MappingProxyType(dict(cast(dict[str, str], request.get("queryTemplates", {})))),
+            header_templates=tuple(
+                _execution_header_from_document(header)
+                for header in cast(list[dict[str, object]], request.get("headerTemplates", []))
+            ),
+            json_body_template=(
+                cast(JsonValue, request["jsonBodyTemplate"]) if "jsonBodyTemplate" in request else None
+            ),
+            form_body_template=(
+                MappingProxyType(dict(cast(dict[str, str], request["formBodyTemplate"])))
+                if "formBodyTemplate" in request
+                else None
+            ),
+            runtime_input_refs=tuple(cast(list[str], request.get("runtimeInputRefs", []))),
+            generated_values=MappingProxyType(
+                {
+                    name: GeneratedValueStrategy(strategy)
+                    for name, strategy in cast(
+                        dict[str, str],
+                        request.get("generatedValues", {}),
+                    ).items()
+                }
+            ),
+            required_token_id=(
+                StableId(value) if (value := cast(str | None, request.get("requiredTokenId"))) is not None else None
+            ),
+            required_token_scope=cast(str | None, request.get("requiredTokenScope")),
+            produced_token_id=(
+                StableId(value) if (value := cast(str | None, request.get("producedTokenId"))) is not None else None
+            ),
+            invalidate_produced_authorization_token=cast(
+                bool,
+                request.get("invalidateProducedAuthorizationToken", False),
+            ),
+            detached_jws=_execution_detached_jws_from_document(cast(dict[str, object], request["detachedJws"]))
+            if "detachedJws" in request
+            else None,
+            token_endpoint_auth=(
+                ExecutionTokenEndpointAuth(
+                    source=TokenEndpointAuthSource(
+                        cast(str, cast(dict[str, object], request["tokenEndpointAuth"])["source"])
+                    )
+                )
+                if "tokenEndpointAuth" in request
+                else None
+            ),
+            response_signature=(
+                ExecutionResponseSignature(
+                    source=ResponseSignatureSource(
+                        cast(str, cast(dict[str, object], request["responseSignature"])["source"])
+                    )
+                )
+                if "responseSignature" in request
+                else None
+            ),
+            psu_authorization=(
+                _execution_psu_authorization_from_document(cast(dict[str, object], request["psuAuthorization"]))
+                if "psuAuthorization" in request
+                else None
+            ),
+            required_psu_authorization_step_id=(
+                StableId(value)
+                if (
+                    value := cast(
+                        str | None,
+                        request.get("requiredPsuAuthorizationStepId"),
+                    )
+                )
+                is not None
+                else None
+            ),
         ),
         assertions=tuple(_execution_assertion_from_document(assertion) for assertion in assertions),
         outputs=tuple(_test_output_from_document(output) for output in outputs),
@@ -1502,6 +1667,41 @@ def _execution_manifest_step_from_document(document: dict[str, object]) -> Execu
             request=EvidenceMode(cast(str, evidence["request"])),
             response=EvidenceMode(cast(str, evidence["response"])),
         ),
+    )
+
+
+def _execution_header_from_document(document: dict[str, object]) -> ExecutionManifestHeader:
+    """Map one schema-valid header template into its typed variant."""
+    generated_value = cast(str | None, document.get("generatedValue"))
+    return ExecutionManifestHeader(
+        name=cast(str, document["name"]),
+        literal_value=cast(str | None, document.get("literalValue")),
+        runtime_input_ref=cast(str | None, document.get("runtimeInputRef")),
+        generated_value=(GeneratedHeaderValue(generated_value) if generated_value is not None else None),
+    )
+
+
+def _execution_detached_jws_from_document(document: dict[str, object]) -> ExecutionDetachedJws:
+    """Map strict detached-JWS instructions."""
+    return ExecutionDetachedJws(
+        profile=DetachedJwsProfile(cast(str, document["profile"])),
+        omitted_claims=tuple(
+            DetachedJwsOmittedClaim(claim) for claim in cast(list[str], document.get("omittedClaims", []))
+        ),
+        source=DetachedJwsSource(cast(str, document["source"])),
+    )
+
+
+def _execution_psu_authorization_from_document(
+    document: dict[str, object],
+) -> ExecutionPsuAuthorization:
+    """Map nested PSU authorization helper metadata."""
+    return ExecutionPsuAuthorization(
+        authorization_step_id=StableId(cast(str, document["authorizationStepId"])),
+        authorization_step_name=cast(str, document["authorizationStepName"]),
+        token_step_id=StableId(cast(str, document["tokenStepId"])),
+        token_id=StableId(cast(str, document["tokenId"])),
+        flow_label=cast(str, document["flowLabel"]),
     )
 
 
@@ -1853,6 +2053,9 @@ def _validate_execution_manifest_semantics(
     artifact_ids = {artifact.id for artifact in manifest.provenance.artifacts}
     previous_step_ids: set[StableId] = set()
     previous_output_ids: set[StableId] = set()
+    previous_token_ids: set[StableId] = set()
+    previous_psu_authorization_step_ids: set[StableId] = set()
+    produced_token_ids: set[StableId] = set()
     diagnostics.extend(
         _duplicate_id_diagnostics(
             (
@@ -1899,6 +2102,62 @@ def _validate_execution_manifest_semantics(
                         object_kind="preceding execution output",
                     )
                 )
+        diagnostics.extend(_validate_execution_request_semantics(step.request, step_index=step_index))
+        if step.request.invalidate_produced_authorization_token and not any(
+            output.source == "authorization-access-token" for output in step.outputs
+        ):
+            diagnostics.append(
+                _diagnostic(
+                    DiagnosticCode.EXECUTION_MANIFEST_INCONSISTENT,
+                    "invalidateProducedAuthorizationToken requires an authorization-access-token output",
+                    instance_path=f"/steps/{step_index}/request/invalidateProducedAuthorizationToken",
+                )
+            )
+        if (
+            step.request.required_token_id is not None
+            and step.request.required_token_id not in previous_token_ids
+            and step.request.required_token_scope is None
+            and not any(
+                modification.location == "authorization" and modification.operation == "generate"
+                for modification in step.request.modifications
+            )
+        ):
+            diagnostics.append(
+                _unresolved_reference_diagnostic(
+                    step.request.required_token_id,
+                    instance_path=f"/steps/{step_index}/request/requiredTokenId",
+                    object_kind="preceding produced token",
+                )
+            )
+        if (
+            step.request.required_psu_authorization_step_id is not None
+            and step.request.required_psu_authorization_step_id not in previous_psu_authorization_step_ids
+        ):
+            diagnostics.append(
+                _unresolved_reference_diagnostic(
+                    step.request.required_psu_authorization_step_id,
+                    instance_path=f"/steps/{step_index}/request/requiredPsuAuthorizationStepId",
+                    object_kind="preceding PSU authorization",
+                )
+            )
+        step_token_ids = tuple(
+            token_id
+            for token_id in (
+                step.request.produced_token_id,
+                step.request.psu_authorization.token_id if step.request.psu_authorization is not None else None,
+            )
+            if token_id is not None
+        )
+        for token_id in step_token_ids:
+            if token_id in produced_token_ids:
+                diagnostics.append(
+                    _diagnostic(
+                        DiagnosticCode.DUPLICATE_ID,
+                        f"Stable ID {str(token_id)!r} is duplicated within produced execution token",
+                        instance_path=f"/steps/{step_index}/request/producedTokenId",
+                    )
+                )
+            produced_token_ids.add(token_id)
         for assertion_index, assertion in enumerate(step.assertions):
             if assertion.schema_source_id is not None and assertion.schema_source_id not in artifact_ids:
                 diagnostics.append(
@@ -1919,7 +2178,123 @@ def _validate_execution_manifest_semantics(
         )
         previous_step_ids.add(step.id)
         previous_output_ids.update(output.id for output in step.outputs)
+        previous_token_ids.update(step_token_ids)
+        if step.request.psu_authorization is not None:
+            previous_psu_authorization_step_ids.add(step.request.psu_authorization.authorization_step_id)
     return tuple(diagnostics)
+
+
+_RUNTIME_TEMPLATE_REFERENCE = re.compile(r"\$\{runtime\.([A-Za-z0-9._:-]+)\}")
+_GENERATED_TEMPLATE_REFERENCE = re.compile(r"\$\{generated\.([A-Za-z0-9._:-]+)\}")
+
+
+def _validate_execution_request_semantics(
+    request: ExecutionManifestRequest,
+    *,
+    step_index: int,
+) -> tuple[ConfigurationDiagnostic, ...]:
+    """Validate request-template relationships not expressible in JSON Schema."""
+    diagnostics: list[ConfigurationDiagnostic] = []
+    base_path = f"/steps/{step_index}/request"
+    diagnostics.extend(
+        _duplicate_id_diagnostics(
+            (
+                (header.name.lower(), f"{base_path}/headerTemplates/{index}/name")
+                for index, header in enumerate(request.header_templates)
+            ),
+            object_kind="case-insensitive request header",
+        )
+    )
+    runtime_refs = set(request.runtime_input_refs)
+    generated_names = set(request.generated_values)
+    template_strings = [
+        request.path,
+        *request.query_templates.values(),
+        *(header.literal_value for header in request.header_templates if header.literal_value is not None),
+        *(request.form_body_template.values() if request.form_body_template is not None else ()),
+        *_json_string_leaves(request.json_body_template),
+    ]
+    referenced_runtime_inputs = {
+        match.group(1) for template in template_strings for match in _RUNTIME_TEMPLATE_REFERENCE.finditer(template)
+    }
+    referenced_runtime_inputs.update(
+        header.runtime_input_ref for header in request.header_templates if header.runtime_input_ref is not None
+    )
+    for runtime_ref in sorted(referenced_runtime_inputs - runtime_refs):
+        diagnostics.append(
+            _diagnostic(
+                DiagnosticCode.REFERENCE_UNRESOLVED,
+                f"Referenced runtime input {runtime_ref!r} is not declared",
+                instance_path=f"{base_path}/runtimeInputRefs",
+            )
+        )
+    referenced_generated_values = {
+        match.group(1) for template in template_strings for match in _GENERATED_TEMPLATE_REFERENCE.finditer(template)
+    }
+    for generated_ref in sorted(referenced_generated_values - generated_names):
+        diagnostics.append(
+            _diagnostic(
+                DiagnosticCode.REFERENCE_UNRESOLVED,
+                f"Referenced generated value {generated_ref!r} is not declared",
+                instance_path=f"{base_path}/generatedValues",
+            )
+        )
+    if request.required_token_scope is not None and request.required_token_id is None:
+        diagnostics.append(
+            _diagnostic(
+                DiagnosticCode.EXECUTION_MANIFEST_INCONSISTENT,
+                "A required token scope requires requiredTokenId",
+                instance_path=f"{base_path}/requiredTokenScope",
+            )
+        )
+    if request.token_endpoint_auth is not None and (
+        request.method is not HttpMethod.POST or request.form_body_template is None
+    ):
+        diagnostics.append(
+            _diagnostic(
+                DiagnosticCode.EXECUTION_MANIFEST_INCONSISTENT,
+                "Token endpoint authentication requires a POST form request",
+                instance_path=f"{base_path}/tokenEndpointAuth",
+            )
+        )
+    if request.detached_jws is not None:
+        generates_json_body = any(
+            modification.location == "json-body"
+            and modification.operation == "generate"
+            and modification.target in {"", "/"}
+            for modification in request.modifications
+        )
+        if request.json_body_template is None and not generates_json_body:
+            diagnostics.append(
+                _diagnostic(
+                    DiagnosticCode.EXECUTION_MANIFEST_INCONSISTENT,
+                    "Detached JWS signing requires a JSON body template",
+                    instance_path=f"{base_path}/detachedJws",
+                )
+            )
+        if (
+            request.detached_jws.omitted_claims
+            and request.detached_jws.profile is not DetachedJwsProfile.OB_V3_1_4_PLUS
+        ):
+            diagnostics.append(
+                _diagnostic(
+                    DiagnosticCode.EXECUTION_MANIFEST_INCONSISTENT,
+                    "Detached JWS claim omission requires profile 'ob-v3.1.4+'",
+                    instance_path=f"{base_path}/detachedJws/omittedClaims",
+                )
+            )
+    return tuple(diagnostics)
+
+
+def _json_string_leaves(value: JsonValue | None) -> tuple[str, ...]:
+    """Return string leaves from mutable or immutable JSON containers."""
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, Mapping):
+        return tuple(leaf for item in value.values() for leaf in _json_string_leaves(item))
+    if isinstance(value, tuple | list):
+        return tuple(leaf for item in value for leaf in _json_string_leaves(item))
+    return ()
 
 
 def _validate_requirements_catalogue_semantics(

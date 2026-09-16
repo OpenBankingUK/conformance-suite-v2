@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Immutable execution manifests are now the sole work definition consumed by
+  the Read/Write and DCR runners. Manifests carry complete URL, query, header,
+  body, generated-value, OAuth, PSU, JWS, output, assertion, dependency, and
+  evidence instructions; suite-release artifacts and response-schema pointers
+  are digest-verified before network access. Results use manifest step IDs
+  directly and include only executed steps and evaluated manifest assertion
+  IDs, while protocol helper exchanges remain nested runtime details.
 - PIS v3.1.11 and v4.0.1 participant business data is now compiled through
   typed, catalogue-owned predefined inputs with reusable request bindings.
   Legacy PIS business aliases are rejected in `compatibilityRuntimeInputs`;

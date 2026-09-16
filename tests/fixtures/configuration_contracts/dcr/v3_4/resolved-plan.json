@@ -129,12 +129,12 @@
       "sourceDocument": "resolved-plan"
     }
   ],
-  "id": "resolved-plan:5dab47efc3a48883c68d2478402c00184f92d99665dcd0775023b944a04f6c28",
+  "id": "resolved-plan:59cec5a870721480d5d4c562379e70902ce895566e0f1a6b78ed1369fad9ca8d",
   "predefinedInputs": [],
   "provenance": {
     "artifacts": [
       {
-        "digest": "sha256:d33c439589621fc644944e973e06b972a340cf449416f221e18a30531b8b167e",
+        "digest": "sha256:4345b1ce36649b4640f1dbaa797dd43d6ccf01b34e8eba640b67f062b292bc41",
         "id": "execution-manifest-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -150,7 +150,7 @@
         "uri": "conformance/configuration_contracts/catalogues/dcr/v3_4/requirements.json"
       },
       {
-        "digest": "sha256:5568cd9b2cbf9f4911bd6e3bf4f43d9aa860b4d99e28c634b9e4e892747343e2",
+        "digest": "sha256:834c22b744fee455845e54d4b41a52b4eb6aabbf391c3c1d5b1dced058817def",
         "id": "obl.dcr-v34.tests",
         "kind": "test-definition-catalogue",
         "mediaType": "application/json",
