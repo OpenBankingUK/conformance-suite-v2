@@ -33,7 +33,7 @@
       "uri": "conformance/configuration_contracts/schemas/v1/resolved-plan.schema.json"
     },
     {
-      "digest": "sha256:d33c439589621fc644944e973e06b972a340cf449416f221e18a30531b8b167e",
+      "digest": "sha256:4345b1ce36649b4640f1dbaa797dd43d6ccf01b34e8eba640b67f062b292bc41",
       "id": "execution-manifest-v1",
       "kind": "json-schema",
       "mediaType": "application/schema+json",

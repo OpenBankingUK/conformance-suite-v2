@@ -14,6 +14,7 @@ import re
 from collections.abc import Mapping, Sequence
 from functools import cache
 from pathlib import Path
+from typing import cast
 
 from jsonschema import (  # type: ignore[import-untyped]  # jsonschema lacks bundled stubs.
     Draft4Validator,
@@ -77,6 +78,7 @@ def validate_json_instance_against_response_schema(
     document: str,
     schema_ref: str | None,
     inline_schema: Mapping[str, JsonValue] | None,
+    document_root: Mapping[str, JsonValue] | None = None,
     instance: JsonValue,
 ) -> str | None:
     """Validate a JSON instance against a configured response schema.
@@ -98,6 +100,7 @@ def validate_json_instance_against_response_schema(
             document=document,
             schema_ref=schema_ref,
             inline_schema=inline_schema,
+            document_root=document_root,
         )
     except SchemaValidationConfigurationError as error:
         return str(error)
@@ -115,6 +118,7 @@ def _prepared_schema(
     document: str,
     schema_ref: str | None,
     inline_schema: Mapping[str, JsonValue] | None,
+    document_root: Mapping[str, JsonValue] | None = None,
 ) -> JsonObject:
     """Load and prepare a response schema for validation.
 
@@ -133,6 +137,22 @@ def _prepared_schema(
     """
     if source != "bundled_openapi":
         raise SchemaValidationConfigurationError(f"Schema source {source!r} is not supported")
+
+    if document_root is not None:
+        if schema_ref is not None:
+            resolved_schema = _resolve_json_pointer(cast(JsonValue, document_root), schema_ref)
+        elif inline_schema is not None:
+            resolved_schema = _clone_mapping(inline_schema)
+        else:
+            raise SchemaValidationConfigurationError("Response schema assertion is missing schema configuration")
+        prepared_schema = _prepare_openapi_schema(
+            _clone_mapping(document_root),
+            resolved_schema,
+            seen_refs=(),
+        )
+        if not isinstance(prepared_schema, dict):
+            raise SchemaValidationConfigurationError("Resolved response schema must be a JSON object")
+        return prepared_schema
 
     if schema_ref is not None:
         return _prepared_schema_ref(source=source, document=document, schema_ref=schema_ref)
@@ -315,7 +335,7 @@ def _resolve_json_pointer(document: JsonValue, pointer: str) -> JsonValue:
             current_value = current_value[index]
             continue
         raise SchemaValidationConfigurationError(f"Schema reference {pointer!r} could not be resolved")
-    return copy.deepcopy(current_value)
+    return _clone_json_value(current_value)
 
 
 def _clone_mapping(mapping: Mapping[str, JsonValue]) -> JsonObject:
@@ -339,9 +359,9 @@ def _clone_json_value(value: JsonValue) -> JsonValue:
     Returns:
         Deep-cloned JSON value.
     """
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {key: _clone_json_value(member) for key, member in value.items()}
-    if isinstance(value, list):
+    if isinstance(value, tuple | list):
         return [_clone_json_value(member) for member in value]
     return value
 

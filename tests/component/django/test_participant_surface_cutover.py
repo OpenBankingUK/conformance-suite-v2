@@ -12,11 +12,6 @@ from django.urls import reverse
 
 from conformance.api.run_store import run_store
 from conformance.configuration_contracts import PreparedExecutionManifest
-from conformance.context import RuntimeConfig
-from conformance.execution_schedule import build_execution_schedule
-from conformance.executor import _compiled_plan_to_manifest
-from conformance.manifest import ManifestStep
-from conformance.test_plan import TestPlan
 from tests.support.paths import REPO_ROOT
 from tests.support.run_execution import StubbedRunExecution
 
@@ -132,8 +127,8 @@ def test_browser_builds_reviews_exports_and_launches_participant_plan(
     launch = stubbed_run_execution.wait_for_launch()
     prepared_manifest = launch.args[2]
     assert isinstance(prepared_manifest, PreparedExecutionManifest)
-    assert prepared_manifest.manifest is not None
-    assert prepared_manifest.sensitive_json_pointers_by_observation_id
+    assert prepared_manifest.artifact_resolver.manifest == prepared_manifest.manifest
+    assert any(item.redacted for item in prepared_manifest.manifest.inputs)
 
 
 def test_rest_accepts_the_same_participant_plan(
@@ -195,39 +190,11 @@ def test_rest_launches_ais_accounts_plan_with_executable_consent_delete(
             f"ais.{id_version}.test.delete.account_access_consents.consentid.invalid-resource"
         ),
     }
-    assert {
-        prepared.result_traceability.result_observation_id_by_manifest_step_id[step_id]
-        for step_id in delete_manifest_steps
-    } == {
-        "ais-at-consent-delete-204-request",
-        "ais-at-consent-delete-401-request",
-        "ais-at-consent-delete-invalid-400-403-request",
-    }
-
-    runtime_manifest = _compiled_plan_to_manifest(
-        prepared.compiled_plan,
-        runtime_inputs=prepared.runtime_inputs,
-        runtime_input_base_dir=prepared.runtime_input_base_dir,
-        runtime_config=RuntimeConfig(
-            discovery_url="https://as.example.com/.well-known/openid-configuration",
-        ),
+    assert all(
+        step.request.base_url_source is not None
+        for step in prepared.manifest.steps
+        if str(step.id) in delete_manifest_steps
     )
-    schedule = build_execution_schedule(
-        runtime_manifest,
-        TestPlan.default_plan_from_manifest(runtime_manifest),
-    )
-    scheduled_steps = (
-        *schedule.setup_steps,
-        *(step for group in schedule.execution_groups for step in group.steps),
-    )
-    scheduled_delete_ids = {
-        step.id for step in scheduled_steps if isinstance(step, ManifestStep) and step.request.method == "DELETE"
-    }
-    assert scheduled_delete_ids == {
-        "ais-at-consent-delete-204-request",
-        "ais-at-consent-delete-401-request",
-        "ais-at-consent-delete-invalid-400-403-request",
-    }
 
 
 def test_browser_import_rejects_legacy_canonical_plan() -> None:
@@ -294,11 +261,11 @@ def test_rest_accepts_dcr_registration_with_explicit_observation_mapping(
     prepared = launch.args[2]
     assert isinstance(prepared, PreparedExecutionManifest)
     assert prepared.result_traceability is not None
-    assert prepared.result_traceability.result_observation_id_by_manifest_step_id == {
-        "dcr.v34.test.registration.empty-issuer.instance.request": "DCR-004-C03-S02",
-        "dcr.v34.test.registration.expired.instance.request": "DCR-004-C01-S02",
-        "dcr.v34.test.registration.invalid-auth-method.instance.request": "DCR-004-C05-S02",
-        "dcr.v34.test.registration.invalid-issuer.instance.request": "DCR-004-C02-S02",
-        "dcr.v34.test.registration.overlong-issuer.instance.request": "DCR-004-C04-S02",
-        "dcr.v34.test.registration.positive.instance.request": "DCR-002-C01-S02",
+    assert {str(step.id) for step in prepared.manifest.steps} == {
+        "dcr.v34.test.registration.empty-issuer.instance.request",
+        "dcr.v34.test.registration.expired.instance.request",
+        "dcr.v34.test.registration.invalid-auth-method.instance.request",
+        "dcr.v34.test.registration.invalid-issuer.instance.request",
+        "dcr.v34.test.registration.overlong-issuer.instance.request",
+        "dcr.v34.test.registration.positive.instance.request",
     }

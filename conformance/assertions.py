@@ -353,6 +353,7 @@ def _evaluate_response_schema(assertion: ResponseSchemaAssertion, *, body: JsonO
         document=assertion.document,
         schema_ref=assertion.schema_ref,
         inline_schema=assertion.schema,
+        document_root=assertion.document_root,
         instance=instance,
     )
     if validation_message is None:

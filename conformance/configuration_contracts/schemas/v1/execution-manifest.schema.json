@@ -77,6 +77,137 @@
     "inputBinding": {
       "$ref": "https://schemas.openbanking.org.uk/conformance/v1/test-definition-catalogue.schema.json#/$defs/inputBinding"
     },
+    "detachedJws": {
+      "additionalProperties": false,
+      "properties": {
+        "omittedClaims": {
+          "items": {
+            "enum": [
+              "iat",
+              "iss",
+              "tan"
+            ]
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "profile": {
+          "enum": [
+            "legacy-b64-false",
+            "ob-v3.1.4+"
+          ]
+        },
+        "source": {
+          "const": "fapi-signing"
+        }
+      },
+      "required": [
+        "source",
+        "profile"
+      ],
+      "type": "object"
+    },
+    "generatedValue": {
+      "enum": [
+        "uuid4",
+        "uuid4-hex",
+        "invalid-resource-id",
+        "legacy-invalid-consent-id",
+        "invalid-access-token",
+        "next-day-date-offset",
+        "next-day-date-utc",
+        "next-day-date-time-offset",
+        "next-day-date-time-offset-milliseconds",
+        "next-day-date-time-utc",
+        "next-day-date-time-utc-milliseconds"
+      ]
+    },
+    "headerTemplate": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "literalValue": {
+              "type": "string"
+            },
+            "name": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "literalValue"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "runtimeInputRef": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "runtimeInputRef"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "generatedValue": {
+              "const": "uuid4"
+            },
+            "name": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "generatedValue"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "psuAuthorization": {
+      "additionalProperties": false,
+      "properties": {
+        "authorizationStepId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "authorizationStepName": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "flowLabel": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "tokenId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "tokenStepId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        }
+      },
+      "required": [
+        "authorizationStepId",
+        "authorizationStepName",
+        "tokenStepId",
+        "tokenId",
+        "flowLabel"
+      ],
+      "type": "object"
+    },
     "provenance": {
       "additionalProperties": false,
       "properties": {
@@ -136,15 +267,48 @@
         "authorizationProfile": {
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
+        "baseUrlSource": {
+          "enum": [
+            "resource",
+            "discovery",
+            "token",
+            "dcr-registration",
+            "dcr-management"
+          ]
+        },
         "contentType": {
           "pattern": "^[^\\s/]+/[^\\s/]+$",
           "type": "string"
+        },
+        "detachedJws": {
+          "$ref": "#/$defs/detachedJws"
+        },
+        "formBodyTemplate": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "generatedValues": {
+          "additionalProperties": {
+            "$ref": "#/$defs/generatedValue"
+          },
+          "type": "object"
+        },
+        "headerTemplates": {
+          "items": {
+            "$ref": "#/$defs/headerTemplate"
+          },
+          "type": "array"
         },
         "inputBindings": {
           "items": {
             "$ref": "#/$defs/inputBinding"
           },
           "type": "array"
+        },
+        "invalidateProducedAuthorizationToken": {
+          "type": "boolean"
         },
         "modifications": {
           "items": {
@@ -167,9 +331,73 @@
             "PUT"
           ]
         },
+        "jsonBodyTemplate": {
+          "type": [
+            "array",
+            "boolean",
+            "number",
+            "object",
+            "string"
+          ]
+        },
         "path": {
           "pattern": "^/",
           "type": "string"
+        },
+        "producedTokenId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "psuAuthorization": {
+          "$ref": "#/$defs/psuAuthorization"
+        },
+        "queryTemplates": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "requiredPsuAuthorizationStepId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "requiredTokenId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "requiredTokenScope": {
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._:-]+(?: [A-Za-z0-9._:-]+)*$",
+          "type": "string"
+        },
+        "responseSignature": {
+          "additionalProperties": false,
+          "properties": {
+            "source": {
+              "const": "discovery-jwks"
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "type": "object"
+        },
+        "runtimeInputRefs": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "tokenEndpointAuth": {
+          "additionalProperties": false,
+          "properties": {
+            "source": {
+              "const": "fapi-signing"
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "type": "object"
         },
         "transportProfile": {
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
@@ -180,6 +408,16 @@
         "path",
         "inputBindings",
         "modifications"
+      ],
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "jsonBodyTemplate",
+              "formBodyTemplate"
+            ]
+          }
+        }
       ],
       "type": "object"
     },

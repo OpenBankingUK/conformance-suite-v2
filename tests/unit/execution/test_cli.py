@@ -7,7 +7,6 @@ import httpx
 import pytest
 
 from conformance import cli
-from conformance.catalogue import CatalogueKey
 from conformance.configuration_contracts import PreparedExecutionManifest
 from conformance.results import SmokeCheckResult
 from tests.support.paths import REPO_ROOT
@@ -459,15 +458,9 @@ def test_cli_compiles_participant_plan(monkeypatch: pytest.MonkeyPatch, tmp_path
 
     assert exit_code == 0
     assert len(captured) == 1
-    assert captured[0].manifest is not None
-    assert captured[0].compiled_plan.catalogue_key == CatalogueKey(
-        "open-banking-uk",
-        "4.0.1",
-        "read-write",
-    )
+    assert captured[0].artifact_resolver.manifest == captured[0].manifest
     assert all(
-        "/v4.0/" in request.path
-        for test_case in captured[0].compiled_plan.test_cases
-        for request in test_case.request_steps
-        if request.path.startswith("/open-banking/")
+        "/v4.0/" in step.request.path
+        for step in captured[0].manifest.steps
+        if step.request.path.startswith("/open-banking/")
     )

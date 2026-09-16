@@ -62,6 +62,10 @@ def generate_execution_manifest(
     step_id_by_instance_id = {
         test_instance.id: StableId(f"{test_instance.id!s}.request") for test_instance in resolved_plan.test_instances
     }
+    provenance_artifact_ids = {artifact.id for artifact in resolved_plan.provenance.artifacts}
+    technical_source_ids = tuple(
+        source.id for source in requirements_catalogue.technical_sources if source.id in provenance_artifact_ids
+    )
 
     inputs: list[ExecutionManifestInput] = []
     for predefined_input in resolved_plan.predefined_inputs:
@@ -160,7 +164,15 @@ def generate_execution_manifest(
                         expected_status=assertion.expected_status,
                         expected_statuses=assertion.expected_statuses,
                         schema_ref=assertion.schema_ref,
-                        schema_source_id=assertion.schema_source_id,
+                        schema_source_id=(
+                            assertion.schema_source_id
+                            if assertion.schema_source_id is not None
+                            else (
+                                technical_source_ids[0]
+                                if assertion.type == "response-schema" and len(technical_source_ids) == 1
+                                else None
+                            )
+                        ),
                         header_name=assertion.header_name,
                         json_pointer=assertion.json_pointer,
                         expected_value=assertion.expected_value,

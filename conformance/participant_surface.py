@@ -28,8 +28,10 @@ from conformance.configuration_contracts import (
     load_requirements_catalogue,
     load_suite_release,
     load_test_definition_catalogue,
+    materialize_execution_manifest_requests,
     parse_participant_plan,
     participant_plan_to_document,
+    preflight_suite_release_artifacts,
     resolve_participant_plan,
     validate_execution_manifest_compatibility,
 )
@@ -309,6 +311,16 @@ def prepare_participant_plan_for_run(
             resolved_plan,
         )
         prepared_legacy = prepare_test_plan_for_run(compatibility_document, base_dir=base_dir)
+        observation_ids = (
+            MappingProxyType({str(step.id): str(step.id) for step in execution_manifest.steps})
+            if str(participant_plan.specification.requirements_scope) == "dcr"
+            else _manifest_observation_ids(execution_manifest, prepared_legacy.compiled_plan)
+        )
+        execution_manifest = materialize_execution_manifest_requests(
+            execution_manifest,
+            prepared_legacy.compiled_plan,
+            observation_ids=observation_ids,
+        )
     except (ExecutionManifestGenerationError, TestPlanValidationError) as error:
         raise ParticipantSurfaceError(f"Execution configuration is invalid: {error}") from error
     validation = TestPlanValidationResult(
@@ -329,6 +341,8 @@ def prepare_participant_plan_for_run(
         resolved_plan,
         execution_manifest,
         prepared_legacy,
+        observation_ids=observation_ids,
+        suite_release=catalogue.suite_release,
         safe_snapshot=safe_snapshot,
         runtime_input_base_dir=base_dir,
     )
@@ -352,24 +366,22 @@ def _prepare_execution_binding(
     manifest: ExecutionManifest,
     prepared_legacy: PreparedTestPlan,
     *,
+    observation_ids: Mapping[str, str],
+    suite_release: SuiteRelease,
     safe_snapshot: JsonObject,
     runtime_input_base_dir: Path,
 ) -> PreparedExecutionManifest:
-    observation_ids = _manifest_observation_ids(manifest, prepared_legacy.compiled_plan)
-    sensitive_json_pointers = _sensitive_json_pointers_by_observation_id(manifest, observation_ids)
     scope = str(participant_plan.specification.requirements_scope)
     prepared = PreparedExecutionManifest(
         manifest=manifest,
         engine=LegacyExecutionEngine.DCR if scope == "dcr" else LegacyExecutionEngine.READ_WRITE,
-        compiled_plan=prepared_legacy.compiled_plan,
         runtime_inputs=prepared_legacy.runtime_inputs,
         runtime_input_base_dir=runtime_input_base_dir,
-        sensitive_json_pointers_by_observation_id=sensitive_json_pointers,
+        artifact_resolver=preflight_suite_release_artifacts(manifest, suite_release),
         result_traceability=ResultTraceabilitySource(
             execution_manifest=manifest,
             resolved_plan=resolved_plan,
             participant_plan_snapshot=safe_snapshot,
-            result_observation_id_by_manifest_step_id=observation_ids,
         ),
     )
     validate_execution_manifest_compatibility(prepared)

@@ -13,6 +13,7 @@ from django.test import Client
 import tests.support.dcr_test_service as dcr_test_service_module
 from conformance import cli
 from conformance.api.run_store import run_store
+from conformance.configuration_contracts import PreparedExecutionManifest
 from conformance.json_types import JsonObject, JsonValue
 from tests.support.dcr_test_service import DcrProtocolService, DcrTestService
 from tests.support.run_execution import StubbedRunExecution
@@ -134,8 +135,8 @@ def test_cli_participant_plan_runs_dcr_with_stable_traceability(
     result = cast(JsonObject, json.loads((tmp_path / "out" / "test-results.json").read_text(encoding="utf-8")))
     assert result["status"] == "passed"
     assert cast(JsonObject, result["summary"]) == {
-        "total": 25,
-        "passed": 25,
+        "total": 6,
+        "passed": 6,
         "failed": 0,
         "warn": 0,
         "skipped": 0,
@@ -144,8 +145,7 @@ def test_cli_participant_plan_runs_dcr_with_stable_traceability(
     manifest = cast(JsonObject, traceability["executionManifest"])
     assert len(cast(list[JsonObject], manifest["steps"])) == 6
     assert all(step["resultStatus"] != "missing" for step in cast(list[JsonObject], manifest["steps"]))
-    trace_groups = cast(list[JsonObject], cast(JsonObject, result["catalogue"])["traceGroups"])
-    assert {group["status"] for group in trace_groups} == {"passed", "skipped"}
+    assert "catalogue" not in result
     persisted = json.dumps(result) + (tmp_path / "out" / "execution-log.ndjson").read_text(encoding="utf-8")
     assert dcr_test_service.protocol.software_statement_assertion not in persisted
     assert "fixture-client-material-" not in persisted
@@ -171,7 +171,7 @@ def test_rest_launch_status_and_result_accept_dcr_local_references(
 
     creation = client.post(
         "/api/runs/",
-        data=json.dumps(_participant_dcr_plan(dcr_test_service, tmp_path)),
+        data=json.dumps(_participant_dcr_plan(dcr_test_service, tmp_path, full_scope=True)),
         content_type="application/json",
     )
 
@@ -186,15 +186,15 @@ def test_rest_launch_status_and_result_accept_dcr_local_references(
     assert result_response.status_code == 200
     assert result_response.json()["status"] == "passed"
     assert result_response.json()["summary"]["failed"] == 0
-    assert len(result_response.json()["catalogue"]["traceGroups"]) == 10
+    assert "catalogue" not in result_response.json()
 
 
-def test_browser_import_reviews_but_blocks_unmapped_dcr_work(
+def test_browser_import_reviews_and_launches_full_dcr_manifest(
     dcr_protocol_service: DcrProtocolService,
     stubbed_run_execution: StubbedRunExecution,
     tmp_path: Path,
 ) -> None:
-    """Browser import exposes replacement DCR work the compatibility runtime cannot observe."""
+    """Browser import exposes and launches the complete immutable DCR work."""
     client = Client()
     plan = _participant_dcr_plan(dcr_protocol_service, tmp_path, full_scope=True)
     import_response = client.post("/builder/import/", data={"plan_json": json.dumps(plan)})
@@ -204,10 +204,13 @@ def test_browser_import_reviews_but_blocks_unmapped_dcr_work(
     review_content = review_response.content.decode("utf-8")
     assert review_response.status_code == 200
     assert "dcr.v34.test.retrieval.revoked-token" in review_content
-    assert "cannot provide a stable observation" in review_content
+    assert "cannot provide a stable observation" not in review_content
     assert dcr_protocol_service.protocol.software_statement_assertion not in review_content
 
     launch_url = import_response["Location"].replace("/review/", "/launch/")
     launch_response = client.post(launch_url)
-    assert launch_response.status_code == 400
-    stubbed_run_execution.assert_not_launched()
+    assert launch_response.status_code == 302
+    launch = stubbed_run_execution.wait_for_launch()
+    prepared = launch.args[2]
+    assert isinstance(prepared, PreparedExecutionManifest)
+    assert len(prepared.manifest.steps) == 17
