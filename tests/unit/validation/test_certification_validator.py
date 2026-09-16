@@ -1,499 +1,445 @@
+"""Independent certification-validator unit coverage."""
+
+from __future__ import annotations
+
 import json
+import shutil
+from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from conformance.certification_validator import (
-    APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-    ApprovedReleasePolicy,
     CertificationValidationError,
-    SubmittedReport,
-    parse_approved_release_policy,
+    CertificationValidationResult,
     parse_submitted_report,
     render_confluence_summary,
     validate_certification_report,
     validate_report,
 )
-from conformance.json_types import JsonObject, JsonValue
-from conformance.manifest import Manifest, parse_manifest
+from conformance.configuration_contracts.models import StableId
+from conformance.configuration_contracts.v2_loader import (
+    dump_execution_manifest,
+    dump_resolved_plan,
+)
+from conformance.configuration_contracts.v2_models import ExecutionManifest, ResolvedPlan
+from conformance.json_types import JsonObject
 from conformance.results import CheckStatus
+from tests.support.certification import (
+    RELEASE_PATH,
+    CertificationFixture,
+    build_certification_fixture,
+    report_with_statuses,
+)
 from tests.support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.unit
 
 
-def test_validate_report_accepts_pass_and_warn_mandatory_steps() -> None:
-    manifest = _manifest_with_steps(mandatory_step_ids=("discovery", "jwks"), optional_step_ids=("optional",))
-    report = _report(
-        tool_version="1.2.3",
-        steps=(
-            ("discovery", "passed"),
-            ("jwks", "warn"),
-            ("optional", "failed"),
-        ),
-    )
-    policy = ApprovedReleasePolicy(
-        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-        approved_tool_versions=("1.2.3",),
+@pytest.fixture
+def certification_fixture() -> CertificationFixture:
+    return build_certification_fixture()
+
+
+def test_complete_approved_run_reports_distinct_test_assessment_and_eligibility() -> None:
+    fixture = build_certification_fixture(
+        warning_step_id="dcr.v34.test.retrieval.positive.instance.request",
     )
 
-    result = validate_report(report=report, manifest=manifest, policy=policy)
+    result = _validate(fixture)
 
     assert result.valid is True
-    assert result.reasons == ()
-    assert result.tool_version_approved is True
+    assert result.complete is True
+    assert result.automated_assessment == "passed"
+    assert result.eligible is True
+    assert {item.status for item in result.test_outcomes} == {"passed", "warn"}
     rendered = result.to_json_object()
-    assert rendered["valid"] is True
-    mandatory = rendered["mandatory"]
-    assert isinstance(mandatory, dict)
-    assert mandatory["total"] == 2
-    assert mandatory["passed"] == 1
-    assert mandatory["warn"] == 1
+    assert rendered["schemaVersion"] == "2.0"
+    assert cast(JsonObject, rendered["automatedAssessment"]) == {
+        "status": "passed",
+        "complete": True,
+        "policyId": "obl.open-banking-mvp.execution-policy",
+        "resultClaim": "approved-executable-tests-only",
+    }
+    assert cast(JsonObject, rendered["certificationEligibility"])["eligible"] is True
     assert render_confluence_summary(result).startswith("Certification report validation: PASS")
 
 
-def test_validate_report_rejects_missing_failed_and_skipped_mandatory_steps() -> None:
-    manifest = _manifest_with_steps(mandatory_step_ids=("missing", "failed", "skipped", "passed"))
-    report = _report(
-        tool_version="1.2.3",
-        steps=(
-            ("failed", "failed"),
-            ("skipped", "skipped"),
-            ("passed", "passed"),
-        ),
-    )
-    policy = ApprovedReleasePolicy(
-        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-        approved_tool_versions=("1.2.3",),
-    )
+def test_rejects_tool_version_not_approved_by_suite_release(
+    certification_fixture: CertificationFixture,
+) -> None:
+    report = deepcopy(certification_fixture.report)
+    cast(JsonObject, report["tool"])["version"] = "99.0.0"
 
-    result = validate_report(report=report, manifest=manifest, policy=policy)
+    result = _validate(certification_fixture, report=report)
 
-    assert result.valid is False
-    assert result.reasons == (
-        "mandatory_step_missing",
-        "mandatory_step_failed",
-        "mandatory_step_skipped",
-    )
-    rendered = result.to_json_object()
-    mandatory = rendered["mandatory"]
-    assert isinstance(mandatory, dict)
-    assert mandatory["missing"] == 1
-    assert mandatory["failed"] == 1
-    assert mandatory["skipped"] == 1
-    summary = render_confluence_summary(result)
-    assert "Certification report validation: FAIL" in summary
-    assert "Mandatory step is missing from the submitted report: missing" in summary
-    assert "Mandatory step failed in the submitted report: failed" in summary
-    assert "Mandatory step was skipped in the submitted report: skipped" in summary
-
-
-def test_validate_report_rejects_unapproved_tool_version() -> None:
-    manifest = _manifest_with_steps(mandatory_step_ids=("discovery",))
-    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
-    policy = ApprovedReleasePolicy(
-        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-        approved_tool_versions=("2.0.0",),
-    )
-
-    result = validate_report(report=report, manifest=manifest, policy=policy)
-
-    assert result.valid is False
     assert result.tool_version_approved is False
-    assert result.reasons == ("tool_version_not_approved",)
-    assert "Tool version is not in the approved-release policy: 1.2.3" in render_confluence_summary(result)
+    assert result.eligible is False
+    assert "tool_version_not_approved" in result.reasons
 
 
-def test_validate_report_rejects_manifest_without_mandatory_steps() -> None:
-    manifest = _manifest_with_steps(mandatory_step_ids=(), optional_step_ids=("optional",))
-    report = _report(tool_version="1.2.3", steps=(("optional", "passed"),))
-    policy = ApprovedReleasePolicy(
-        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-        approved_tool_versions=("1.2.3",),
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        ("id", "unknown.suite.release"),
+        ("version", "wrong-release-version"),
+    ],
+)
+def test_rejects_unknown_or_wrong_suite_release_claim(
+    certification_fixture: CertificationFixture,
+    field: str,
+    replacement: str,
+) -> None:
+    report = deepcopy(certification_fixture.report)
+    release_claim = cast(JsonObject, cast(JsonObject, report["traceability"])["suiteRelease"])
+    release_claim[field] = replacement
+
+    result = _validate(certification_fixture, report=report)
+
+    assert result.eligible is False
+    assert "suite_release_mismatch" in result.reasons
+
+
+def test_rejects_stale_resolved_plan_identity(certification_fixture: CertificationFixture) -> None:
+    stale = replace(certification_fixture.resolved_plan, id=StableId("resolved-plan:" + ("0" * 64)))
+
+    result = _validate(certification_fixture, resolved_plan=stale)
+
+    assert "resolved_plan_identity_mismatch" in result.reasons
+    assert "resolved_plan_mismatch" in result.reasons
+
+
+def test_rejects_stale_execution_manifest_identity(certification_fixture: CertificationFixture) -> None:
+    stale = replace(certification_fixture.manifest, id=StableId("execution-manifest:" + ("0" * 64)))
+
+    result = _validate(certification_fixture, manifest=stale)
+
+    assert "execution_manifest_identity_mismatch" in result.reasons
+    assert "execution_manifest_mismatch" in result.reasons
+
+
+def test_rejects_contradictory_resolved_plan_provenance(
+    certification_fixture: CertificationFixture,
+) -> None:
+    contradictory = replace(
+        certification_fixture.resolved_plan,
+        provenance=replace(
+            certification_fixture.resolved_plan.provenance,
+            participant_plan_id=StableId("participant.substituted"),
+        ),
     )
 
-    with pytest.raises(CertificationValidationError, match="mandatory certification steps"):
-        validate_report(report=report, manifest=manifest, policy=policy)
+    result = _validate(certification_fixture, resolved_plan=contradictory)
+
+    assert "resolved_plan_mismatch" in result.reasons
 
 
-def test_parse_submitted_report_rejects_missing_metadata() -> None:
-    with pytest.raises(CertificationValidationError, match="report.metadata is required"):
-        parse_submitted_report({"tool": {"version": "1.2.3"}, "steps": []})
+def test_rejects_contradictory_manifest_provenance(
+    certification_fixture: CertificationFixture,
+) -> None:
+    contradictory = replace(
+        certification_fixture.manifest,
+        provenance=replace(
+            certification_fixture.manifest.provenance,
+            participant_plan_id=StableId("participant.substituted"),
+        ),
+    )
+
+    result = _validate(certification_fixture, manifest=contradictory)
+
+    assert "execution_manifest_mismatch" in result.reasons
 
 
-def test_parse_submitted_report_rejects_invalid_step_status() -> None:
-    raw_report: JsonObject = {
-        "metadata": {"reportVersion": "1.0"},
-        "tool": {"version": "1.2.3"},
-        "steps": [{"name": "discovery", "status": "unknown"}],
-    }
+def test_rejects_blocking_compiler_findings(certification_fixture: CertificationFixture) -> None:
+    report = deepcopy(certification_fixture.report)
+    snapshot = cast(JsonObject, cast(JsonObject, report["traceability"])["participantPlanSnapshot"])
+    snapshot["selectedCapabilityIds"] = ["dcr.v34.capability.unknown"]
 
-    with pytest.raises(CertificationValidationError, match=r"report.steps\[0\].status must be one of"):
-        parse_submitted_report(raw_report)
+    result = _validate(certification_fixture, report=report)
 
-
-def test_parse_submitted_report_remains_independent_of_result_traceability() -> None:
-    raw_report = _report_json(tool_version="1.2.3", steps=(("discovery", "passed"),))
-    raw_report["traceability"] = {
-        "suiteRelease": {"id": "suite.example", "version": "1.0"},
-        "executionManifest": {"id": "manifest.example"},
-    }
-
-    report = parse_submitted_report(raw_report)
-
-    assert report.report_version == "1.0"
-    assert report.tool_version == "1.2.3"
-    assert [(step.step_id, step.status) for step in report.steps] == [("discovery", "passed")]
+    assert result.eligible is False
+    assert "blocking_compiler_finding" in result.reasons
+    assert "selection_invalid" in result.reasons
+    assert result.test_outcomes == ()
+    assert result.automated_assessment == "incomplete"
+    assert result.complete is False
 
 
-def test_parse_approved_release_policy_rejects_wrong_schema_version() -> None:
-    with pytest.raises(CertificationValidationError, match="schemaVersion"):
-        parse_approved_release_policy({"schemaVersion": "v2", "approvedToolVersions": ["1.2.3"]})
+def test_rejects_missing_applicable_test_in_resolved_plan(
+    certification_fixture: CertificationFixture,
+) -> None:
+    incomplete = replace(
+        certification_fixture.resolved_plan,
+        test_instances=certification_fixture.resolved_plan.test_instances[:-1],
+    )
+
+    result = _validate(certification_fixture, resolved_plan=incomplete)
+
+    assert result.eligible is False
+    assert "resolved_plan_mismatch" in result.reasons
 
 
-def test_parse_approved_release_policy_accepts_schema_version_and_versions() -> None:
-    policy = parse_approved_release_policy(
+def test_rejects_unknown_test_definition_trace(certification_fixture: CertificationFixture) -> None:
+    report = deepcopy(certification_fixture.report)
+    traceability = cast(JsonObject, report["traceability"])
+    definitions = cast(list[JsonObject], traceability["testDefinitions"])
+    definitions.append({"id": "dcr.v34.test.unknown"})
+
+    result = _validate(certification_fixture, report=report)
+
+    assert "result_test_definitions_mismatch" in result.reasons
+
+
+def test_rejects_unknown_test_instance_trace(certification_fixture: CertificationFixture) -> None:
+    report = deepcopy(certification_fixture.report)
+    traceability = cast(JsonObject, report["traceability"])
+    instances = cast(list[JsonObject], traceability["compiledTestInstances"])
+    instances[0]["id"] = "dcr.v34.test.unknown.instance"
+
+    result = _validate(certification_fixture, report=report)
+
+    assert "result_test_instances_mismatch" in result.reasons
+
+
+def test_rejects_unknown_step_and_observation(certification_fixture: CertificationFixture) -> None:
+    report = deepcopy(certification_fixture.report)
+    steps = cast(list[JsonObject], report["steps"])
+    steps.append(
         {
-            "schemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-            "approvedToolVersions": [" 1.2.3 ", "2.0.0"],
+            "name": "dcr.v34.test.unknown.instance.request",
+            "status": "passed",
+            "message": "not executed",
+            "details": {"assertions": []},
+        }
+    )
+    traceability = cast(JsonObject, report["traceability"])
+    manifest_trace = cast(JsonObject, traceability["executionManifest"])
+    trace_steps = cast(list[JsonObject], manifest_trace["steps"])
+    trace_steps.append(
+        {
+            "id": "dcr.v34.test.unknown.instance.request",
+            "testInstanceId": "dcr.v34.test.unknown.instance",
+            "testDefinitionId": "dcr.v34.test.unknown",
+            "assertionIds": [],
+            "resultObservationId": "dcr.v34.test.unknown.instance.request",
+            "resultStatus": "passed",
         }
     )
 
-    assert policy.schema_version == APPROVED_RELEASE_POLICY_SCHEMA_VERSION
-    assert policy.approved_tool_versions == ("1.2.3", "2.0.0")
+    result = _validate(certification_fixture, report=report)
+
+    assert "unknown_observation:dcr.v34.test.unknown.instance.request" in result.reasons
+    assert "unknown_trace_step:dcr.v34.test.unknown.instance.request" in result.reasons
 
 
-def test_placeholder_approved_release_policy_shape_is_parseable() -> None:
-    policy = parse_approved_release_policy(
-        {
-            "schemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-            "approvedToolVersions": ["EXAMPLE-REPLACE-WITH-OBL-APPROVED-VERSION"],
-        }
-    )
+def test_rejects_unknown_assertion_observation(certification_fixture: CertificationFixture) -> None:
+    report = deepcopy(certification_fixture.report)
+    first_step = cast(list[JsonObject], report["steps"])[0]
+    assertions = cast(list[JsonObject], cast(JsonObject, first_step["details"])["assertions"])
+    assertions.append({"assertionId": "dcr.v34.assertion.unknown", "status": "passed"})
 
-    assert policy.schema_version == APPROVED_RELEASE_POLICY_SCHEMA_VERSION
-    assert policy.approved_tool_versions == ("EXAMPLE-REPLACE-WITH-OBL-APPROVED-VERSION",)
+    result = _validate(certification_fixture, report=report)
+
+    step_id = cast(str, first_step["name"])
+    assert f"unknown_assertion:{step_id}/dcr.v34.assertion.unknown" in result.reasons
 
 
-def test_validate_certification_report_loads_inputs_from_paths(tmp_path: Path) -> None:
-    report_path = tmp_path / "report.json"
-    manifest_path = tmp_path / "manifest.json"
-    policy_path = tmp_path / "policy.json"
-    _write_json(
-        report_path,
-        _report_json(tool_version="1.2.3", steps=(("discovery", "passed"),)),
-    )
-    _write_json(manifest_path, _manifest_json(mandatory_step_ids=("discovery",), optional_step_ids=()))
-    _write_json(
-        policy_path,
-        {"schemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION, "approvedToolVersions": ["1.2.3"]},
-    )
+def test_rejects_missing_observation_and_success_claim(certification_fixture: CertificationFixture) -> None:
+    report = deepcopy(certification_fixture.report)
+    removed = cast(list[JsonObject], report["steps"]).pop()
 
-    result = validate_certification_report(
-        report_path,
-        manifest_path=manifest_path,
-        approved_releases_path=policy_path,
-    )
+    result = _validate(certification_fixture, report=report)
+
+    assert f"missing_observation:{removed['name']}" in result.reasons
+    assert result.automated_assessment == "incomplete"
+    assert result.eligible is False
+    assert "approved_test_incomplete" in result.reasons
+    assert "runner_eligibility_contradiction" in result.reasons
+
+
+def test_rejects_missing_assertion_observation(certification_fixture: CertificationFixture) -> None:
+    report = deepcopy(certification_fixture.report)
+    first_step = cast(list[JsonObject], report["steps"])[0]
+    assertions = cast(list[JsonObject], cast(JsonObject, first_step["details"])["assertions"])
+    removed = assertions.pop()
+
+    result = _validate(certification_fixture, report=report)
+
+    assert f"missing_assertion_observation:{first_step['name']}/{removed['assertionId']}" in result.reasons
+    assert result.automated_assessment == "incomplete"
+
+
+def test_rejects_skipped_required_work(certification_fixture: CertificationFixture) -> None:
+    step_id = str(certification_fixture.manifest.steps[0].id)
+    report = report_with_statuses(certification_fixture, {step_id: "skipped"})
+
+    result = _validate(certification_fixture, report=report)
+
+    assert f"skipped_required_work:{step_id}" in result.reasons
+    assert result.automated_assessment == "incomplete"
+    assert result.eligible is False
+
+
+def test_rejects_observation_for_work_after_failed_prerequisite(
+    certification_fixture: CertificationFixture,
+) -> None:
+    dependant = next(step for step in certification_fixture.manifest.steps if step.dependency_ids)
+    prerequisite_id = str(dependant.dependency_ids[0])
+    report = report_with_statuses(certification_fixture, {prerequisite_id: "failed"})
+
+    result = _validate(certification_fixture, report=report)
+
+    assert f"observation_for_unexecuted_work:{dependant.id!s}" in result.reasons
+    assert result.eligible is False
+
+
+def test_failed_prerequisite_and_skipped_dependants_are_ineligible(
+    certification_fixture: CertificationFixture,
+) -> None:
+    prerequisite_id = str(certification_fixture.manifest.steps[0].id)
+    statuses: dict[str, CheckStatus] = {
+        str(step.id): ("failed" if str(step.id) == prerequisite_id else "skipped")
+        for step in certification_fixture.manifest.steps
+    }
+    report = report_with_statuses(certification_fixture, statuses)
+
+    result = _validate(certification_fixture, report=report)
+
+    assert result.automated_assessment == "incomplete"
+    assert result.eligible is False
+    assert "approved_test_incomplete" in result.reasons
+
+
+def test_rejects_contradictory_step_and_assertion_outcomes(
+    certification_fixture: CertificationFixture,
+) -> None:
+    report = deepcopy(certification_fixture.report)
+    first_step = cast(list[JsonObject], report["steps"])[0]
+    first_assertion = cast(list[JsonObject], cast(JsonObject, first_step["details"])["assertions"])[0]
+    first_assertion["status"] = "failed"
+
+    result = _validate(certification_fixture, report=report)
+
+    assert f"contradictory_outcome:{first_step['name']}" in result.reasons
+    assert result.automated_assessment == "failed"
+
+
+def test_rejects_runner_eligibility_claim_that_contradicts_evidence(
+    certification_fixture: CertificationFixture,
+) -> None:
+    step_id = str(certification_fixture.manifest.steps[0].id)
+    report = report_with_statuses(certification_fixture, {step_id: "failed"})
+    cast(JsonObject, report["certificationEligibility"])["eligible"] = True
+
+    result = _validate(certification_fixture, report=report)
+
+    assert "runner_eligibility_contradiction" in result.reasons
+    assert result.eligible is False
+
+
+def test_legacy_runner_ineligibility_claim_does_not_override_approved_v2_evidence(
+    certification_fixture: CertificationFixture,
+) -> None:
+    report = deepcopy(certification_fixture.report)
+    cast(JsonObject, report["certificationEligibility"])["eligible"] = False
+
+    result = _validate(certification_fixture, report=report)
 
     assert result.valid is True
-    assert result.report_version == "1.0"
-    assert result.tool_version == "1.2.3"
+    assert result.eligible is True
+    assert "runner_eligibility_contradiction" not in result.reasons
 
 
-def _manifest_with_steps(*, mandatory_step_ids: tuple[str, ...], optional_step_ids: tuple[str, ...] = ()) -> Manifest:
-    return parse_manifest(_manifest_json(mandatory_step_ids=mandatory_step_ids, optional_step_ids=optional_step_ids))
+def test_rejects_runner_summary_claim_that_contradicts_observations(
+    certification_fixture: CertificationFixture,
+) -> None:
+    report = deepcopy(certification_fixture.report)
+    cast(JsonObject, report["summary"])["passed"] = 0
+
+    result = _validate(certification_fixture, report=report)
+
+    assert "result_summary_contradiction" in result.reasons
+    assert result.eligible is False
 
 
-def _manifest_json(*, mandatory_step_ids: tuple[str, ...], optional_step_ids: tuple[str, ...]) -> JsonObject:
-    steps: list[JsonValue] = []
-    for step_id in mandatory_step_ids:
-        steps.append(_manifest_step(step_id=step_id, mandatory=True, optional=False))
-    for step_id in optional_step_ids:
-        steps.append(_manifest_step(step_id=step_id, mandatory=False, optional=True))
-    return {"schemaVersion": "v1", "name": "validator", "certificationCoverage": "complete", "steps": steps}
+def test_parse_report_requires_v2_traceability(certification_fixture: CertificationFixture) -> None:
+    report = deepcopy(certification_fixture.report)
+    del report["traceability"]
+
+    with pytest.raises(CertificationValidationError, match=r"report\.traceability is required"):
+        parse_submitted_report(report)
 
 
-def _manifest_step(*, step_id: str, mandatory: bool, optional: bool) -> JsonObject:
-    request: JsonObject = {"method": "GET", "url": f"https://example.com/{step_id}"}
-    assertions: list[JsonValue] = [{"type": "http_status", "expected": 200}]
-    step: JsonObject = {
-        "id": step_id,
-        "name": step_id,
-        "request": request,
-        "assertions": assertions,
-    }
-    if mandatory:
-        step["mandatory"] = True
-    if optional:
-        step["optional"] = True
-    return step
+def test_parse_report_rejects_non_v2_participant_snapshot(
+    certification_fixture: CertificationFixture,
+) -> None:
+    report = deepcopy(certification_fixture.report)
+    snapshot = cast(JsonObject, cast(JsonObject, report["traceability"])["participantPlanSnapshot"])
+    snapshot["schemaVersion"] = "1.0"
+
+    with pytest.raises(CertificationValidationError, match="schema-version 2.0 participant plan"):
+        parse_submitted_report(report)
 
 
-def _report(*, tool_version: str, steps: tuple[tuple[str, CheckStatus], ...]) -> SubmittedReport:
-    return parse_submitted_report(_report_json(tool_version=tool_version, steps=steps))
-
-
-def _report_json(*, tool_version: str, steps: tuple[tuple[str, CheckStatus], ...]) -> JsonObject:
-    rendered_steps: list[JsonValue] = []
-    for step_id, status in steps:
-        rendered_steps.append({"name": step_id, "status": status, "message": "ok"})
-    return {
-        "metadata": {"reportVersion": "1.0"},
-        "tool": {"version": tool_version},
-        "steps": rendered_steps,
-    }
-
-
-def _write_json(path: Path, value: object) -> None:
-    path.write_text(json.dumps(value), encoding="utf-8")
-
-
-# ─── Packet B: certification coverage gating ─────────────────────────────────
-
-
-def test_validate_report_rejects_partial_coverage_manifest() -> None:
-    """A partial-coverage manifest fails OBL validation even when all mandatory steps pass.
-
-    This is the OBL-side analogue of the participant-side eligibility check:
-    a manifest not explicitly marked ``certificationCoverage: complete``
-    cannot validate as certification-ready regardless of step outcomes or
-    approved-release policy.
-    """
-    raw_manifest: JsonObject = {
-        "schemaVersion": "v1",
-        "name": "partial",
-        "certificationCoverage": "partial",
-        "steps": [_manifest_step(step_id="discovery", mandatory=True, optional=False)],
-    }
-    manifest = parse_manifest(raw_manifest)
-    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
-    policy = ApprovedReleasePolicy(
-        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-        approved_tool_versions=("1.2.3",),
+@pytest.mark.parametrize("artifact_kind", ["test-definition-catalogue", "technical-source"])
+def test_path_validation_rejects_substituted_release_artifact(
+    certification_fixture: CertificationFixture,
+    artifact_kind: str,
+    tmp_path: Path,
+) -> None:
+    trusted_root = tmp_path / "trusted"
+    shutil.copytree(REPO_ROOT / "conformance", trusted_root / "conformance")
+    reference = next(
+        item
+        for item in certification_fixture.release.artifacts
+        if item.kind == artifact_kind
+        and (
+            item.id == certification_fixture.catalogue.id
+            or item.id in {source.id for source in certification_fixture.catalogue.technical_sources}
+        )
     )
+    substituted = trusted_root / reference.uri
+    substituted.write_bytes(substituted.read_bytes() + b"\n")
+    report_path, resolved_path, manifest_path = _write_submitted_files(certification_fixture, tmp_path)
+    release_path = trusted_root / RELEASE_PATH.relative_to(REPO_ROOT)
 
-    result = validate_report(report=report, manifest=manifest, policy=policy)
-
-    assert result.valid is False
-    assert "manifest_coverage_partial" in result.reasons
-    assert result.manifest_coverage == "partial"
-
-
-def test_validate_report_omitted_coverage_defaults_to_partial_and_fails() -> None:
-    """A v1 manifest with no ``certificationCoverage`` key defaults to partial and fails.
-
-    Omitting the field is treated identically to an explicit ``partial`` declaration
-    so that old or third-party manifests cannot inadvertently become certifiable.
-    """
-    raw_manifest: JsonObject = {
-        "schemaVersion": "v1",
-        "name": "no-coverage-key",
-        "steps": [_manifest_step(step_id="discovery", mandatory=True, optional=False)],
-    }
-    manifest = parse_manifest(raw_manifest)
-    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
-    policy = ApprovedReleasePolicy(
-        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-        approved_tool_versions=("1.2.3",),
-    )
-
-    result = validate_report(report=report, manifest=manifest, policy=policy)
-
-    assert result.valid is False
-    assert "manifest_coverage_partial" in result.reasons
-    assert result.manifest_coverage == "partial"
-
-
-def test_validate_report_complete_coverage_is_valid_when_steps_pass() -> None:
-    """A complete-coverage manifest with all mandatory steps passing validates successfully."""
-    manifest = _manifest_with_steps(mandatory_step_ids=("discovery",))
-    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
-    policy = ApprovedReleasePolicy(
-        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-        approved_tool_versions=("1.2.3",),
-    )
-
-    result = validate_report(report=report, manifest=manifest, policy=policy)
-
-    assert result.valid is True
-    assert "manifest_coverage_partial" not in result.reasons
-    assert result.manifest_coverage == "complete"
-
-
-def test_validate_report_partial_coverage_reason_in_confluence_summary() -> None:
-    """Partial coverage blocker is surfaced in the Confluence summary text."""
-    raw_manifest: JsonObject = {
-        "schemaVersion": "v1",
-        "name": "partial",
-        "certificationCoverage": "partial",
-        "steps": [_manifest_step(step_id="discovery", mandatory=True, optional=False)],
-    }
-    manifest = parse_manifest(raw_manifest)
-    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
-    policy = ApprovedReleasePolicy(
-        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-        approved_tool_versions=("1.2.3",),
-    )
-
-    result = validate_report(report=report, manifest=manifest, policy=policy)
-    summary = render_confluence_summary(result)
-
-    assert "Certification report validation: FAIL" in summary
-    assert "Certification coverage: partial" in summary
-    assert "Manifest is not marked as complete certification coverage" in summary
-
-
-def test_validate_report_confluence_summary_orders_partial_coverage_after_primary_blockers() -> None:
-    """Partial coverage is rendered after tool-version and mandatory-step blockers.
-
-    Verifies that _blocking_reason_lines follows the ordering established by
-    _validation_reasons so that more actionable blockers appear first in the
-    Confluence summary when multiple reasons are present.
-    """
-    raw_manifest: JsonObject = {
-        "schemaVersion": "v1",
-        "name": "partial",
-        "certificationCoverage": "partial",
-        "steps": [
-            _manifest_step(step_id="missing", mandatory=True, optional=False),
-            _manifest_step(step_id="failed", mandatory=True, optional=False),
-        ],
-    }
-    manifest = parse_manifest(raw_manifest)
-    report = _report(tool_version="1.2.3", steps=(("failed", "failed"),))
-    policy = ApprovedReleasePolicy(
-        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-        approved_tool_versions=("2.0.0",),
-    )
-
-    result = validate_report(report=report, manifest=manifest, policy=policy)
-    summary = render_confluence_summary(result)
-
-    assert result.reasons == (
-        "tool_version_not_approved",
-        "mandatory_step_missing",
-        "mandatory_step_failed",
-        "manifest_coverage_partial",
-    )
-    blocking_section = summary.split("Blocking reasons:\n", maxsplit=1)[1]
-    blocking_lines = blocking_section.splitlines()
-    assert blocking_lines == [
-        "- Tool version is not in the approved-release policy: 1.2.3",
-        "- Mandatory step is missing from the submitted report: missing",
-        "- Mandatory step failed in the submitted report: failed",
-        "- Manifest is not marked as complete certification coverage",
-    ]
-
-
-def test_validate_report_coverage_included_in_json_output() -> None:
-    """The ``certificationCoverage`` audit block is present in the JSON validation result."""
-    manifest = _manifest_with_steps(mandatory_step_ids=("discovery",))
-    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
-    policy = ApprovedReleasePolicy(
-        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-        approved_tool_versions=("1.2.3",),
-    )
-
-    result = validate_report(report=report, manifest=manifest, policy=policy)
-    rendered = result.to_json_object()
-
-    coverage_block = rendered["certificationCoverage"]
-    assert isinstance(coverage_block, dict)
-    assert coverage_block["value"] == "complete"
-
-
-def test_validate_report_bundled_v4_ais_slice_counts_protected_resource_skip() -> None:
-    """Inline manifest exposes protected resource skips in validator counts."""
-    manifest = _manifest_with_steps(
-        mandatory_step_ids=(
-            "openid-discovery",
-            "jwks-fetch",
-            "client-credentials-token",
-            "account-access-consent",
-            "psu-authorization",
-            "token-exchange",
-            "accounts-list",
-            "account-balances",
-            "account-transactions",
-        ),
-        optional_step_ids=(),
-    )
-    report = _report(
-        tool_version="1.2.3",
-        steps=(
-            ("openid-discovery", "passed"),
-            ("jwks-fetch", "passed"),
-            ("client-credentials-token", "passed"),
-            ("account-access-consent", "passed"),
-            ("psu-authorization", "passed"),
-            ("token-exchange", "passed"),
-            ("accounts-list", "passed"),
-            ("account-balances", "passed"),
-            ("account-transactions", "skipped"),
-        ),
-    )
-    policy = ApprovedReleasePolicy(
-        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-        approved_tool_versions=("1.2.3",),
-    )
-
-    result = validate_report(report=report, manifest=manifest, policy=policy)
-
-    assert result.valid is False
-    assert result.reasons == ("mandatory_step_skipped",)
-    rendered = result.to_json_object()
-    mandatory = rendered["mandatory"]
-    assert isinstance(mandatory, dict)
-    assert mandatory["total"] == 9
-    assert mandatory["passed"] == 8
-    assert mandatory["skipped"] == 1
-    steps = mandatory["steps"]
-    assert isinstance(steps, list)
-    assert steps[-1] == {
-        "stepId": "account-transactions",
-        "status": "skipped",
-        "valid": False,
-        "reason": "mandatory_step_skipped",
-    }
-
-
-def test_validate_report_smoke_suite_manifests_cannot_certify() -> None:
-    """Bundled discovery-JWKS smoke suite manifests cannot pass OBL certification validation.
-
-    Each bundled manifest must declare ``certificationCoverage: partial`` and the
-    validator must reject them even if every mandatory step passes.  This test
-    ensures the certification-safety correction introduced in Packet B is wired
-    end-to-end for the actual shipped manifest files.
-    """
-
-    from conformance.manifest import load_manifest
-
-    suites_dir = REPO_ROOT / "conformance" / "suites"
-    policy = ApprovedReleasePolicy(
-        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-        approved_tool_versions=("1.0.0",),
-    )
-
-    for manifest_file in sorted(suites_dir.glob("*.json")):
-        manifest = load_manifest(manifest_file)
-
-        assert manifest.certification_coverage == "partial", (
-            f"{manifest_file.name} must declare certificationCoverage: partial"
+    with pytest.raises(CertificationValidationError, match="digest does not match"):
+        validate_certification_report(
+            report_path,
+            suite_release_path=release_path,
+            resolved_plan_path=resolved_path,
+            manifest_path=manifest_path,
+            trusted_root=trusted_root,
         )
 
-        if not any(step.mandatory for step in manifest.steps):
-            # Manifests with no mandatory steps raise CertificationValidationError
-            # (the existing pre-coverage hard error) — skip OBL validation check.
-            continue
 
-        step_outcomes: tuple[tuple[str, CheckStatus], ...] = tuple(
-            (step.id, "passed") for step in manifest.steps if step.mandatory
-        )
-        report = _report(tool_version="1.0.0", steps=step_outcomes)
+def _validate(
+    fixture: CertificationFixture,
+    *,
+    report: JsonObject | None = None,
+    resolved_plan: ResolvedPlan | None = None,
+    manifest: ExecutionManifest | None = None,
+) -> CertificationValidationResult:
+    return validate_report(
+        report=parse_submitted_report(report or fixture.report),
+        suite_release=fixture.release,
+        catalogue=fixture.catalogue,
+        policy=fixture.policy,
+        resolved_plan=resolved_plan or fixture.resolved_plan,
+        manifest=manifest or fixture.manifest,
+    )
 
-        result = validate_report(report=report, manifest=manifest, policy=policy)
 
-        assert result.valid is False, (
-            f"Smoke suite manifest {manifest_file.name} must not validate as certification-ready"
-        )
-        assert "manifest_coverage_partial" in result.reasons
+def _write_submitted_files(
+    fixture: CertificationFixture,
+    root: Path,
+) -> tuple[Path, Path, Path]:
+    report_path = root / "report.json"
+    resolved_path = root / "resolved-plan.json"
+    manifest_path = root / "execution-manifest.json"
+    report_path.write_text(json.dumps(fixture.report), encoding="utf-8")
+    resolved_path.write_text(dump_resolved_plan(fixture.resolved_plan), encoding="utf-8")
+    manifest_path.write_text(dump_execution_manifest(fixture.manifest), encoding="utf-8")
+    return report_path, resolved_path, manifest_path

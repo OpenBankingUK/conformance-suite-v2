@@ -13,6 +13,7 @@ from conformance.certification_validator import (
     render_confluence_summary,
     validate_certification_report,
 )
+from conformance.configuration_contracts.suite_release_artifacts import TRUSTED_CONFIGURATION_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,10 @@ def run(argv: Sequence[str] | None = None) -> int:
     try:
         result = validate_certification_report(
             args.report,
+            suite_release_path=args.suite_release,
+            resolved_plan_path=args.resolved_plan,
             manifest_path=args.manifest,
-            approved_releases_path=args.approved_releases,
+            trusted_root=args.trusted_root,
         )
     except CertificationValidationError as error:
         logger.error("Certification validation input error: %s", error)
@@ -65,12 +68,29 @@ def _build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(description="Validate a submitted certification report")
     parser.add_argument("report", type=Path, help="Path to the submitted report JSON file")
-    parser.add_argument("--manifest", required=True, type=Path, help="Manifest JSON file used for the original run")
     parser.add_argument(
-        "--approved-releases",
+        "--suite-release",
         required=True,
         type=Path,
-        help="Approved-release policy JSON file supplied by OBL",
+        help="OBL-approved schema-version 2.0 suite release",
+    )
+    parser.add_argument(
+        "--resolved-plan",
+        required=True,
+        type=Path,
+        help="Resolved plan produced for the submitted run",
+    )
+    parser.add_argument(
+        "--manifest",
+        required=True,
+        type=Path,
+        help="Schema-version 2.0 execution manifest used for the submitted run",
+    )
+    parser.add_argument(
+        "--trusted-root",
+        type=Path,
+        default=TRUSTED_CONFIGURATION_ROOT,
+        help="Trusted root used to resolve suite-release artifact URIs (default: repository root)",
     )
     parser.add_argument(
         "--summary-output",

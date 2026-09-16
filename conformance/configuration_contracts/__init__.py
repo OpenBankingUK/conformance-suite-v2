@@ -157,6 +157,9 @@ from conformance.configuration_contracts.v2_loader import (
     dump_resolved_plan as dump_resolved_plan_v2,
 )
 from conformance.configuration_contracts.v2_loader import (
+    dump_suite_policy as dump_suite_policy_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
     dump_test_definition_catalogue as dump_test_definition_catalogue_v2,
 )
 from conformance.configuration_contracts.v2_loader import (
@@ -167,6 +170,9 @@ from conformance.configuration_contracts.v2_loader import (
 )
 from conformance.configuration_contracts.v2_loader import (
     load_resolved_plan as load_resolved_plan_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    load_suite_policy as load_suite_policy_v2,
 )
 from conformance.configuration_contracts.v2_loader import (
     load_suite_release as load_suite_release_v2,
@@ -184,14 +190,21 @@ from conformance.configuration_contracts.v2_loader import (
     parse_resolved_plan as parse_resolved_plan_v2,
 )
 from conformance.configuration_contracts.v2_loader import (
+    parse_suite_policy as parse_suite_policy_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
     parse_suite_release as parse_suite_release_v2,
 )
 from conformance.configuration_contracts.v2_loader import (
     parse_test_definition_catalogue as parse_test_definition_catalogue_v2,
 )
 from conformance.configuration_contracts.v2_loader import (
+    suite_policy_to_document as suite_policy_to_document_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
     validate_bundled_schemas as validate_bundled_schemas_v2,
 )
+from conformance.configuration_contracts.v2_models import SuitePolicy
 
 __all__ = [
     "ArtifactReference",
@@ -264,6 +277,7 @@ __all__ = [
     "StableId",
     "StandingOrderFrequency",
     "SuiteRelease",
+    "SuitePolicy",
     "SuiteReleaseArtifactError",
     "SuiteReleaseArtifactErrorCode",
     "SuiteReleaseArtifactResolver",
@@ -316,18 +330,22 @@ __all__ = [
     "dump_execution_manifest_v2",
     "dump_participant_plan_v2",
     "dump_resolved_plan_v2",
+    "dump_suite_policy_v2",
     "dump_test_definition_catalogue_v2",
     "generate_execution_manifest_v2",
     "load_execution_manifest_v2",
     "load_participant_plan_v2",
     "load_resolved_plan_v2",
     "load_suite_release_v2",
+    "load_suite_policy_v2",
     "load_test_definition_catalogue_v2",
     "parse_execution_manifest_v2",
     "parse_participant_plan_v2",
     "parse_resolved_plan_v2",
     "parse_suite_release_v2",
+    "parse_suite_policy_v2",
     "parse_test_definition_catalogue_v2",
     "resolve_participant_plan_v2",
+    "suite_policy_to_document_v2",
     "validate_bundled_schemas_v2",
 ]

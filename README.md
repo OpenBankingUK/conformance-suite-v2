@@ -208,34 +208,34 @@ masking in developer-visible logs and must never be enabled in release builds.
 ## Certification report validation
 
 The OBL-side certification validator remains an internal reviewer tool. It
-validates a submitted result report against the manifest representation used for
-the original run and an independently supplied approved-release policy:
+validates a submitted result report against an OBL-approved schema-version 2.0
+suite release, the resolved plan, and the immutable execution manifest:
 
 ```bash
 uv run python -m conformance.certification_cli out/test-results.json \
-  --manifest path/to/internal-manifest.json \
-  --approved-releases path/to/approved-releases.json
+  --suite-release conformance/configuration_contracts/bundles/open-banking-mvp/suite-release.json \
+  --resolved-plan path/to/resolved-plan.json \
+  --manifest path/to/execution-manifest.json \
+  --trusted-root .
 ```
 
-Approved-release policy files use this shape:
-
-```json
-{
-  "schemaVersion": "v1",
-  "approvedToolVersions": ["OBL-APPROVED-RELEASE-VERSION"]
-}
-```
-
-Generated reports include catalogue traceability, runtime input snapshots with
-sensitive values omitted, certification/non-certification reasons, and stable
-`metadata.reportVersion` plus `tool.version` fields consumed by the validator.
+The suite release is the trust anchor. The validator digest-checks every bound
+catalogue, contract schema, suite policy, and technical source under
+`--trusted-root`, then derives the applicable approved tests from the catalogue
+and the report's masked participant-plan snapshot. It verifies the complete
+suite release → test definition → compiled instance → manifest step/assertion →
+result observation chain. Runner-calculated eligibility, report summaries, and
+legacy manifest mandatory flags are checked only as claims and are never
+certification authority.
 
 ### Phase 1 assurance boundary
 
-A passing validator result means that the submitted report is consistent with
-the independently supplied mandatory-test criteria and approved-release policy.
-It is certification-ready evidence for OBL review, not proof that a locally
-produced report is authentic and not an automated certification decision.
+A passing validator result means that every applicable approved executable test
+is completely and consistently traced, its automated assessment passed, and the
+run is eligible under the released policy. Individual test outcomes, the overall
+automated assessment, and certification eligibility remain separate result
+decisions. The validator does not assess normative-requirement coverage or
+manual evidence.
 
 Participants control the Phase 1 container and filesystem, so deliberate report
 tampering cannot be excluded. This is an accepted Phase 1 risk. Tamper-resistant

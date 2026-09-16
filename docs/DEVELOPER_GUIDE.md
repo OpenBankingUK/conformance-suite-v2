@@ -278,32 +278,30 @@ and non-certifying reasons.
 ## Certification validation
 
 `conformance.certification_cli` is an internal reviewer tool. It validates a
-submitted result report against the manifest representation used for the
-original run and an independently supplied approved-release policy.
+submitted result report against an independently supplied, approved
+schema-version 2.0 suite release and the generated artefacts used for the run.
 
 ```bash
 uv run python -m conformance.certification_cli out/test-results.json \
-  --manifest path/to/internal-manifest.json \
-  --approved-releases path/to/approved-releases.json
-```
-
-The approved-release policy shape is:
-
-```json
-{
-  "schemaVersion": "v1",
-  "approvedToolVersions": ["OBL-APPROVED-RELEASE-VERSION"]
-}
+  --suite-release conformance/configuration_contracts/bundles/open-banking-mvp/suite-release.json \
+  --resolved-plan path/to/resolved-plan.json \
+  --manifest path/to/execution-manifest.json \
+  --trusted-root .
 ```
 
 Participant config may include `approvedReleasePolicyPath` for advisory
-self-assessment in generated reports. OBL-side validation remains authoritative
-and recomputes approved-release status from independently supplied inputs.
+self-assessment in generated reports, but that legacy claim is not validator
+authority. The validator resolves and digest-checks the release-bound executable
+catalogue, v2 schemas, technical sources, and suite policy. It reconstructs the
+participant's declared scope from the masked result snapshot, independently
+re-resolves applicable tests, regenerates the expected manifest, verifies every
+identity and provenance link, and compares manifest assertions with result
+observations.
 
-For Phase 1, validator authority is limited to consistency and
-certification-readiness. It must derive expected mandatory coverage and approved
-release status from OBL-controlled inputs and must not trust an eligibility
-assessment embedded in the submitted report. A passing validation does not
+The output reports separate individual approved-test outcomes, overall
+automated assessment, and certification eligibility. It does not load a
+requirements catalogue, calculate requirement-level coverage, or handle
+documented-only/manual-evidence obligations. A passing validation does not
 cryptographically authenticate a report produced in a participant-controlled
 container.
 

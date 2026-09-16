@@ -1,4 +1,4 @@
-"""OBL-side certification report validation domain logic."""
+"""Independent OBL-side validation of approved executable-test results."""
 
 from __future__ import annotations
 
@@ -6,167 +6,204 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType
 from typing import Literal, cast
 
-from conformance import approved_releases
-from conformance.approved_releases import ApprovedReleasePolicy as ApprovedReleasePolicy
-from conformance.approved_releases import ApprovedReleasePolicyError
-from conformance.json_types import JsonObject, JsonValue
-from conformance.manifest import CertificationCoverage, Manifest, ManifestError, load_manifest
+from jsonschema import Draft202012Validator, SchemaError  # type: ignore[import-untyped]  # library lacks stubs
+
+from conformance.configuration_contracts.diagnostics import ConfigurationContractError
+from conformance.configuration_contracts.models import (
+    ParticipantInput,
+    StableId,
+    StandingOrderFrequency,
+    SuiteRelease,
+)
+from conformance.configuration_contracts.suite_release_artifacts import (
+    TRUSTED_CONFIGURATION_ROOT,
+    SuiteReleaseArtifactError,
+    SuiteReleaseArtifactResolver,
+    preflight_suite_release_artifacts,
+)
+from conformance.configuration_contracts.v2_compiler import resolve_participant_plan
+from conformance.configuration_contracts.v2_execution_manifest import (
+    ExecutionManifestGenerationError,
+    generate_execution_manifest,
+)
+from conformance.configuration_contracts.v2_loader import (
+    execution_manifest_id,
+    execution_manifest_to_document,
+    load_execution_manifest,
+    load_resolved_plan,
+    load_suite_release,
+    parse_suite_policy,
+    parse_test_definition_catalogue,
+    resolved_plan_to_document,
+)
+from conformance.configuration_contracts.v2_models import (
+    ExecutionManifest,
+    ExecutionManifestStep,
+    ParticipantPlan,
+    ResolvedPlan,
+    Specification,
+    SuitePolicy,
+    TestDefinitionCatalogue,
+)
+from conformance.json_types import JsonObject
 from conformance.results import CheckStatus
 
-APPROVED_RELEASE_POLICY_SCHEMA_VERSION = approved_releases.APPROVED_RELEASE_POLICY_SCHEMA_VERSION
-"""Approved-release policy schema version accepted by the validator."""
-
 VALID_REPORT_STEP_STATUSES = frozenset({"passed", "failed", "warn", "skipped"})
-"""Report step status values accepted from submitted report JSON."""
+"""Result observation status values accepted from submitted report JSON."""
 
-type MandatoryValidationStatus = CheckStatus | Literal["missing"]
-"""Status values used when validating mandatory manifest coverage."""
-
-type CertificationValidationReason = Literal[
-    "tool_version_not_approved",
-    "mandatory_step_missing",
-    "mandatory_step_failed",
-    "mandatory_step_skipped",
-    "manifest_coverage_partial",
-]
-"""Machine-readable blocking reasons emitted by validation results."""
-
-_REASON_LABELS: Mapping[CertificationValidationReason, str] = MappingProxyType(
-    {
-        "tool_version_not_approved": "Tool version is not in the approved-release policy",
-        "mandatory_step_missing": "Mandatory step is missing from the submitted report",
-        "mandatory_step_failed": "Mandatory step failed in the submitted report",
-        "mandatory_step_skipped": "Mandatory step was skipped in the submitted report",
-        "manifest_coverage_partial": "Manifest is not marked as complete certification coverage",
-    }
-)
-"""Human-readable labels for machine-readable validation reasons."""
+type AssertionStatus = Literal["passed", "failed"]
+type TestOutcomeStatus = CheckStatus | Literal["missing", "incomplete"]
+type AutomatedAssessmentStatus = Literal["passed", "failed", "incomplete"]
+type CertificationValidationReason = str
 
 
 class CertificationValidationError(ValueError):
-    """Raised when certification validation inputs are malformed."""
+    """Raised when trusted or submitted certification inputs are malformed."""
 
 
-@dataclass(frozen=True)
-class ReportStep:
-    """Single step parsed from a submitted report.
+@dataclass(frozen=True, slots=True)
+class ReportAssertionObservation:
+    """Observed outcome for one manifest assertion."""
 
-    Attributes:
-        step_id: Stable step identifier emitted as ``name`` in the public
-            report JSON.
-        status: Submitted step outcome.
-    """
+    assertion_id: str
+    status: AssertionStatus
+
+
+@dataclass(frozen=True, slots=True)
+class ReportObservation:
+    """One result observation emitted for a manifest step."""
+
+    observation_id: str
+    status: CheckStatus
+    assertions: tuple[ReportAssertionObservation, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ParticipantScope:
+    """Secret-safe participant declaration embedded in result traceability."""
+
+    raw_snapshot: JsonObject
+    participant_plan_id: str
+    suite_release_id: str
+    scheme: str
+    specification_id: str
+    specification_version: str
+    test_scope: str
+    security_profile: str
+    selected_capability_ids: tuple[str, ...]
+    predefined_inputs: tuple[JsonObject, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TraceabilityManifestStep:
+    """Submitted result claim linking a manifest step to one observation."""
 
     step_id: str
-    status: CheckStatus
+    test_instance_id: str
+    test_definition_id: str
+    assertion_ids: tuple[str, ...]
+    result_observation_id: str
+    result_status: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
+class SubmittedTraceability:
+    """Submitted release-to-observation traceability claims."""
+
+    suite_release_id: str
+    suite_release_version: str
+    suite_published_at: str
+    participant_scope: ParticipantScope
+    test_definition_ids: tuple[str, ...]
+    compiled_test_instances: tuple[JsonObject, ...]
+    execution_manifest_id: str
+    execution_manifest_schema_version: str
+    resolved_plan_id: str
+    manifest_steps: tuple[TraceabilityManifestStep, ...]
+    compiler_findings: tuple[JsonObject, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class SubmittedReport:
-    """Submitted conformance report input used by the validator.
-
-    Attributes:
-        report_version: Report metadata version from ``metadata.reportVersion``.
-        tool_version: FCS tool version from ``tool.version``.
-        steps: Parsed step outcomes from the report's ``steps`` array.
-    """
+    """Parsed public result plus the claims needed for independent validation."""
 
     report_version: str
     tool_version: str
-    steps: tuple[ReportStep, ...]
+    status: CheckStatus
+    observations: tuple[ReportObservation, ...]
+    traceability: SubmittedTraceability
+    summary_claim: JsonObject | None
+    eligibility_claim: bool | None
 
 
-@dataclass(frozen=True)
-class MandatoryStepValidation:
-    """Validation outcome for one mandatory manifest step.
+@dataclass(frozen=True, slots=True)
+class ApprovedTestOutcome:
+    """Independently calculated outcome for one applicable approved test."""
 
-    Attributes:
-        step_id: Mandatory manifest step identifier.
-        status: Submitted report status for this step, or ``missing`` when
-            the report did not include the mandatory step.
-        reason: Machine-readable blocking reason for this step, or ``None``
-            when the mandatory step passed validation.
-    """
-
-    step_id: str
-    status: MandatoryValidationStatus
-    reason: CertificationValidationReason | None = None
-
-    @property
-    def valid(self) -> bool:
-        """Return whether this mandatory step is certification-valid.
-
-        Returns:
-            True when the mandatory step has a non-blocking status
-            (``passed`` or ``warn``); otherwise False.
-        """
-        return self.reason is None
+    test_definition_id: str
+    test_instance_id: str
+    manifest_step_ids: tuple[str, ...]
+    status: TestOutcomeStatus
 
     def to_json_object(self) -> JsonObject:
-        """Convert the mandatory step validation to JSON-compatible data.
-
-        Returns:
-            JSON object suitable for serialising in validation output.
-        """
-        body: JsonObject = {"stepId": self.step_id, "status": self.status, "valid": self.valid}
-        if self.reason is not None:
-            body["reason"] = self.reason
-        return body
+        """Render one approved-test outcome."""
+        return {
+            "testDefinitionId": self.test_definition_id,
+            "testInstanceId": self.test_instance_id,
+            "manifestStepIds": list(self.manifest_step_ids),
+            "status": self.status,
+        }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CertificationValidationResult:
-    """Structured result produced by OBL certification validation.
-
-    Attributes:
-        valid: Whether the report satisfies all validator criteria.
-        report_version: Submitted report metadata version.
-        tool_version: Submitted FCS tool version.
-        tool_version_approved: Whether the submitted tool version appears in
-            the approved-release policy.
-        policy_schema_version: Approved-release policy schema version used.
-        mandatory_steps: Per-step validation outcomes for every mandatory
-            manifest step.
-        reasons: Unique machine-readable blocking reasons for the result.
-        manifest_coverage: Manifest-level certification coverage declaration
-            sourced from the submitted manifest. A ``partial`` value produces
-            the ``manifest_coverage_partial`` blocking reason and is surfaced
-            in the JSON output for audit purposes.
-    """
+    """Independent assessment with test, automation, and eligibility layers."""
 
     valid: bool
     report_version: str
     tool_version: str
+    suite_release_id: str
+    suite_release_version: str
     tool_version_approved: bool
-    policy_schema_version: str
-    mandatory_steps: tuple[MandatoryStepValidation, ...]
+    policy_id: str
+    result_claim: str
+    test_outcomes: tuple[ApprovedTestOutcome, ...]
+    automated_assessment: AutomatedAssessmentStatus
+    complete: bool
+    eligible: bool
     reasons: tuple[CertificationValidationReason, ...]
-    manifest_coverage: CertificationCoverage = "partial"
 
     def to_json_object(self) -> JsonObject:
-        """Convert the validation result into JSON-compatible data.
-
-        Returns:
-            JSON object suitable for serialising in CLI or API output.
-        """
-        mandatory_summary = _mandatory_summary(self.mandatory_steps)
-        mandatory_step_objects: list[JsonValue] = []
-        for step in self.mandatory_steps:
-            mandatory_step_objects.append(step.to_json_object())
-        mandatory_summary["steps"] = mandatory_step_objects
-
+        """Convert the validation result into the versioned public shape."""
+        counts = _test_outcome_counts(self.test_outcomes)
         return {
+            "schemaVersion": "2.0",
             "valid": self.valid,
-            "report": {"reportVersion": self.report_version, "toolVersion": self.tool_version},
-            "certificationCoverage": {"value": self.manifest_coverage},
-            "approvedRelease": {
-                "approved": self.tool_version_approved,
-                "policySchemaVersion": self.policy_schema_version,
+            "report": {
+                "reportVersion": self.report_version,
+                "toolVersion": self.tool_version,
             },
-            "mandatory": mandatory_summary,
+            "approvedRelease": {
+                "id": self.suite_release_id,
+                "version": self.suite_release_version,
+                "toolVersionApproved": self.tool_version_approved,
+            },
+            "individualTests": {
+                **counts,
+                "tests": [outcome.to_json_object() for outcome in self.test_outcomes],
+            },
+            "automatedAssessment": {
+                "status": self.automated_assessment,
+                "complete": self.complete,
+                "policyId": self.policy_id,
+                "resultClaim": self.result_claim,
+            },
+            "certificationEligibility": {
+                "eligible": self.eligible,
+                "reasons": list(self.reasons),
+            },
             "reasons": list(self.reasons),
         }
 
@@ -174,450 +211,723 @@ class CertificationValidationResult:
 def validate_certification_report(
     report_path: Path,
     *,
+    suite_release_path: Path,
+    resolved_plan_path: Path,
     manifest_path: Path,
-    approved_releases_path: Path,
+    trusted_root: Path = TRUSTED_CONFIGURATION_ROOT,
 ) -> CertificationValidationResult:
-    """Load validator inputs from disk and validate a submitted report.
-
-    Args:
-        report_path: Path to the submitted report JSON file.
-        manifest_path: Path to the manifest JSON file used for the run.
-        approved_releases_path: Path to the approved-release policy JSON file.
-
-    Returns:
-        Structured certification validation result.
-
-    Raises:
-        CertificationValidationError: If the report, manifest, or policy file
-            cannot be loaded or does not have the required shape.
-    """
+    """Load and independently validate one submitted schema-version 2.0 run."""
     report = load_submitted_report(report_path)
     try:
-        manifest = load_manifest(manifest_path)
-    except ManifestError as error:
-        raise CertificationValidationError(f"Invalid manifest: {error}") from error
-    policy = load_approved_release_policy(approved_releases_path)
-    return validate_report(report=report, manifest=manifest, policy=policy)
-
-
-def load_submitted_report(report_path: Path) -> SubmittedReport:
-    """Load and parse a submitted report JSON file.
-
-    Args:
-        report_path: Path to the submitted report JSON file.
-
-    Returns:
-        Parsed submitted report.
-
-    Raises:
-        CertificationValidationError: If the file cannot be read, decoded, or
-            parsed as a certification report.
-    """
-    return parse_submitted_report(_load_json_file(report_path, label="report"))
-
-
-def load_approved_release_policy(policy_path: Path) -> ApprovedReleasePolicy:
-    """Load and parse an approved-release policy JSON file.
-
-    Args:
-        policy_path: Path to the approved-release policy JSON file.
-
-    Returns:
-        Parsed approved-release policy.
-
-    Raises:
-        CertificationValidationError: If the file cannot be read, decoded, or
-            parsed as an approved-release policy.
-    """
-    try:
-        return approved_releases.load_approved_release_policy(policy_path)
-    except ApprovedReleasePolicyError as error:
-        raise CertificationValidationError(str(error)) from error
-
-
-def parse_submitted_report(raw_report: object) -> SubmittedReport:
-    """Parse a decoded JSON value as a submitted certification report.
-
-    Args:
-        raw_report: Decoded JSON value expected to be the report root object.
-
-    Returns:
-        Parsed submitted report with metadata, tool version, and step statuses.
-
-    Raises:
-        CertificationValidationError: If the report root or required fields
-            are missing or malformed.
-    """
-    report = _as_object(raw_report, location="report")
-    metadata = _required_object(report, "metadata", location="report")
-    tool = _required_object(report, "tool", location="report")
-    raw_steps = _required_array(report, "steps", location="report")
-
-    return SubmittedReport(
-        report_version=_required_non_empty_string(metadata, "reportVersion", location="report.metadata"),
-        tool_version=_required_non_empty_string(tool, "version", location="report.tool"),
-        steps=_parse_report_steps(raw_steps),
+        suite_release = load_suite_release(suite_release_path)
+        resolved_plan = load_resolved_plan(resolved_plan_path)
+        manifest = load_execution_manifest(manifest_path)
+        resolver = preflight_suite_release_artifacts(manifest, suite_release, trusted_root=trusted_root)
+        catalogue, policy = _load_applicable_release_assets(
+            resolver,
+            participant_scope=report.traceability.participant_scope,
+        )
+    except (
+        ConfigurationContractError,
+        ExecutionManifestGenerationError,
+        OSError,
+        SuiteReleaseArtifactError,
+        ValueError,
+    ) as error:
+        raise CertificationValidationError(f"Invalid certification input: {error}") from error
+    return validate_report(
+        report=report,
+        suite_release=suite_release,
+        catalogue=catalogue,
+        policy=policy,
+        resolved_plan=resolved_plan,
+        manifest=manifest,
     )
 
 
-def parse_approved_release_policy(raw_policy: object) -> ApprovedReleasePolicy:
-    """Parse a decoded JSON value as an approved-release policy.
-
-    Args:
-        raw_policy: Decoded JSON value expected to be the policy root object.
-
-    Returns:
-        Parsed approved-release policy.
-
-    Raises:
-        CertificationValidationError: If the policy root or required fields
-            are missing or malformed.
-    """
-    try:
-        return approved_releases.parse_approved_release_policy(raw_policy)
-    except ApprovedReleasePolicyError as error:
-        raise CertificationValidationError(str(error)) from error
+def load_submitted_report(report_path: Path) -> SubmittedReport:
+    """Load a submitted result report from disk."""
+    return parse_submitted_report(_load_json_file(report_path, label="report"))
 
 
-def mandatory_step_ids_from_manifest(manifest: Manifest) -> tuple[str, ...]:
-    """Return mandatory step ids declared by a parsed manifest.
-
-    Args:
-        manifest: Parsed conformance manifest.
-
-    Returns:
-        Ordered mandatory step ids derived from v1 manifest configuration.
-        v0 manifests return an empty tuple because they do not declare
-        mandatory criteria.
-    """
-    if manifest.schema_version != "v1":
-        return ()
-    return tuple(step.id for step in manifest.steps if step.mandatory)
+def parse_submitted_report(raw_report: object) -> SubmittedReport:
+    """Parse the public result and its release-to-observation traceability."""
+    report = _as_object(raw_report, location="report")
+    metadata = _required_object(report, "metadata", location="report")
+    tool = _required_object(report, "tool", location="report")
+    observations = _parse_report_observations(_required_array(report, "steps", location="report"))
+    traceability = _parse_traceability(_required_object(report, "traceability", location="report"))
+    summary = _optional_object(report, "summary", location="report")
+    eligibility = _optional_object(report, "certificationEligibility", location="report")
+    eligibility_claim: bool | None = None
+    if eligibility is not None and "eligible" in eligibility:
+        eligibility_claim = _required_bool(eligibility, "eligible", location="report.certificationEligibility")
+    return SubmittedReport(
+        report_version=_required_non_empty_string(metadata, "reportVersion", location="report.metadata"),
+        tool_version=_required_non_empty_string(tool, "version", location="report.tool"),
+        status=_required_report_step_status(report, "status", location="report"),
+        observations=observations,
+        traceability=traceability,
+        summary_claim=cast(JsonObject | None, summary),
+        eligibility_claim=eligibility_claim,
+    )
 
 
 def validate_report(
     *,
     report: SubmittedReport,
-    manifest: Manifest,
-    policy: ApprovedReleasePolicy,
+    suite_release: SuiteRelease,
+    catalogue: TestDefinitionCatalogue,
+    policy: SuitePolicy,
+    resolved_plan: ResolvedPlan,
+    manifest: ExecutionManifest,
 ) -> CertificationValidationResult:
-    """Validate a parsed submitted report against manifest and release policy.
+    """Validate identities and independently assess approved executable tests."""
+    reasons: list[str] = []
+    traceability = report.traceability
+    scope = traceability.participant_scope
 
-    Args:
-        report: Parsed submitted report.
-        manifest: Parsed manifest used for the original run.
-        policy: Approved-release policy to check the submitted tool version.
+    if (
+        traceability.suite_release_id != suite_release.id
+        or traceability.suite_release_version != suite_release.release_version
+        or traceability.suite_published_at != suite_release.published_at
+        or scope.suite_release_id != suite_release.id
+    ):
+        _add_reason(reasons, "suite_release_mismatch")
 
-    Returns:
-        Structured validation result. The result is invalid when the manifest
-        has partial certification coverage, any mandatory step is missing,
-        failed or skipped, or the tool version is not approved.
+    tool_version_approved = any(item.version == report.tool_version for item in suite_release.tool_releases)
+    if not tool_version_approved:
+        _add_reason(reasons, "tool_version_not_approved")
 
-    Raises:
-        CertificationValidationError: If the manifest does not declare any
-            mandatory certification criteria.
-    """
-    mandatory_step_ids = mandatory_step_ids_from_manifest(manifest)
-    if not mandatory_step_ids:
-        raise CertificationValidationError("manifest does not declare any mandatory certification steps")
+    participant_plan = _participant_plan_from_scope(scope, catalogue)
+    try:
+        expected_plan = resolve_participant_plan(suite_release, catalogue, participant_plan)
+    except (ConfigurationContractError, ValueError) as error:
+        raise CertificationValidationError(f"Unable to resolve trusted participant scope: {error}") from error
 
-    manifest_coverage = manifest.certification_coverage
-    report_steps = _report_steps_by_id(report.steps)
-    mandatory_step_results = tuple(
-        _validate_mandatory_step(step_id=step_id, report_steps=report_steps) for step_id in mandatory_step_ids
-    )
-    tool_version_approved = policy.is_tool_version_approved(report.tool_version)
+    if resolved_plan.id != expected_plan.id:
+        _add_reason(reasons, "resolved_plan_identity_mismatch")
+    if resolved_plan_to_document(resolved_plan) != resolved_plan_to_document(expected_plan):
+        _add_reason(reasons, "resolved_plan_mismatch")
 
-    reasons = _validation_reasons(
-        mandatory_steps=mandatory_step_results,
-        tool_version_approved=tool_version_approved,
-        manifest_coverage_partial=(manifest_coverage != "complete"),
-    )
+    blocking_severities = set(policy.blocking_finding_severities)
+    if any(finding.severity.value in blocking_severities for finding in expected_plan.findings):
+        _add_reason(reasons, "blocking_compiler_finding")
+
+    observations = {item.observation_id: item for item in report.observations}
+    test_outcomes: tuple[ApprovedTestOutcome, ...] = ()
+    automated_assessment: AutomatedAssessmentStatus = "incomplete"
+    if expected_plan.selection_valid:
+        try:
+            expected_manifest = generate_execution_manifest(expected_plan, catalogue)
+        except ExecutionManifestGenerationError as error:
+            raise CertificationValidationError(f"Unable to regenerate expected execution manifest: {error}") from error
+        if manifest.id != execution_manifest_id(manifest):
+            _add_reason(reasons, "execution_manifest_identity_mismatch")
+        if execution_manifest_to_document(manifest) != execution_manifest_to_document(expected_manifest):
+            _add_reason(reasons, "execution_manifest_mismatch")
+        reasons.extend(_observation_reasons(expected_manifest, observations))
+        reasons.extend(
+            _traceability_reasons(
+                report,
+                expected_plan=expected_plan,
+                expected_manifest=expected_manifest,
+                observations=observations,
+            )
+        )
+        test_outcomes = _derive_test_outcomes(
+            expected_plan,
+            expected_manifest,
+            observations,
+        )
+        automated_assessment = _automated_assessment(test_outcomes)
+    else:
+        _add_reason(reasons, "selection_invalid")
+    reasons = list(dict.fromkeys(reasons))
+
+    complete = automated_assessment != "incomplete"
+    if automated_assessment == "failed":
+        _add_reason(reasons, "approved_test_failed")
+    elif automated_assessment == "incomplete":
+        _add_reason(reasons, "approved_test_incomplete")
+
+    independently_eligible = not reasons and automated_assessment == "passed" and tool_version_approved
+    reasons.extend(_runner_claim_reasons(report, independently_eligible=independently_eligible))
+    reasons = list(dict.fromkeys(reasons))
+    eligible = not reasons and automated_assessment == "passed" and tool_version_approved
+
     return CertificationValidationResult(
-        valid=not reasons,
+        valid=eligible,
         report_version=report.report_version,
         tool_version=report.tool_version,
+        suite_release_id=str(suite_release.id),
+        suite_release_version=suite_release.release_version,
         tool_version_approved=tool_version_approved,
-        policy_schema_version=policy.schema_version,
-        mandatory_steps=mandatory_step_results,
-        reasons=reasons,
-        manifest_coverage=manifest_coverage,
+        policy_id=str(policy.id),
+        result_claim=policy.result_claim,
+        test_outcomes=test_outcomes,
+        automated_assessment=automated_assessment,
+        complete=complete,
+        eligible=eligible,
+        reasons=tuple(reasons),
     )
 
 
 def render_confluence_summary(result: CertificationValidationResult) -> str:
-    """Render a concise Confluence-ready validation summary.
-
-    Args:
-        result: Structured certification validation result to summarise.
-
-    Returns:
-        Plain text summary suitable for pasting into Confluence.
-    """
+    """Render a concise reviewer summary without broadening the policy claim."""
     status = "PASS" if result.valid else "FAIL"
-    approval = "approved" if result.tool_version_approved else "not approved"
-    counts = _count_mandatory_steps(result.mandatory_steps)
+    counts = _test_outcome_counts(result.test_outcomes)
     lines = [
         f"Certification report validation: {status}",
         "",
-        f"Tool version: {result.tool_version} ({approval})",
+        f"Suite release: {result.suite_release_id} ({result.suite_release_version})",
+        (f"Tool version: {result.tool_version} ({'approved' if result.tool_version_approved else 'not approved'})"),
         f"Report metadata version: {result.report_version}",
-        f"Approved-release policy: {result.policy_schema_version}",
-        f"Certification coverage: {result.manifest_coverage}",
+        f"Automated assessment: {result.automated_assessment}",
+        f"Approved-test completeness: {'complete' if result.complete else 'incomplete'}",
+        f"Certification eligibility: {'eligible' if result.eligible else 'not eligible'}",
         (
-            "Mandatory steps: "
+            "Approved tests: "
             f"{counts['total']} total, {counts['passed']} passed, {counts['warn']} warn, "
-            f"{counts['failed']} failed, {counts['skipped']} skipped, {counts['missing']} missing"
+            f"{counts['failed']} failed, {counts['skipped']} skipped, "
+            f"{counts['missing']} missing, {counts['incomplete']} incomplete"
         ),
+        f"Assessment claim: {result.result_claim}",
     ]
     if result.reasons:
         lines.extend(["", "Blocking reasons:"])
-        lines.extend(_blocking_reason_lines(result))
+        lines.extend(f"- {reason}" for reason in result.reasons)
     return "\n".join(lines)
 
 
+def _load_applicable_release_assets(
+    resolver: SuiteReleaseArtifactResolver,
+    *,
+    participant_scope: ParticipantScope,
+) -> tuple[TestDefinitionCatalogue, SuitePolicy]:
+    """Load verified release assets and select the catalogue for declared scope."""
+    catalogues: list[TestDefinitionCatalogue] = []
+    policies: list[SuitePolicy] = []
+    for reference in resolver.suite_release.artifacts:
+        artifact = resolver.resolved_artifacts[reference.id]
+        if reference.kind == "json-schema":
+            document = json.loads(artifact.content)
+            try:
+                Draft202012Validator.check_schema(document)
+            except SchemaError as error:
+                raise CertificationValidationError(
+                    f"Released schema {reference.id!s} is invalid: {error.message}"
+                ) from error
+        elif reference.kind == "test-definition-catalogue":
+            document = json.loads(artifact.content)
+            catalogue = parse_test_definition_catalogue(document)
+            if catalogue.id != reference.id or catalogue.schema_version != reference.schema_version:
+                raise CertificationValidationError(
+                    f"Released catalogue {reference.id!s} identity does not match its artifact binding"
+                )
+            catalogues.append(catalogue)
+        elif reference.kind == "suite-policy":
+            document = json.loads(artifact.content)
+            policy = parse_suite_policy(document)
+            if policy.id != reference.id or policy.schema_version != reference.schema_version:
+                raise CertificationValidationError(
+                    f"Released policy {reference.id!s} identity does not match its artifact binding"
+                )
+            policies.append(policy)
+
+    matching_catalogues = tuple(
+        item
+        for item in catalogues
+        if str(item.scheme) == participant_scope.scheme
+        and str(item.specification.id) == participant_scope.specification_id
+        and item.specification.version == participant_scope.specification_version
+        and str(item.specification.test_scope) == participant_scope.test_scope
+    )
+    if len(matching_catalogues) != 1:
+        raise CertificationValidationError(
+            "Approved suite release must bind exactly one test catalogue for the participant scope"
+        )
+    if len(policies) != 1:
+        raise CertificationValidationError("Approved suite release must bind exactly one suite policy")
+    catalogue = matching_catalogues[0]
+    released_sources = {item.id: item for item in resolver.suite_release.artifacts if item.kind == "technical-source"}
+    for source in catalogue.technical_sources:
+        released = released_sources.get(source.id)
+        if released is None or released.digest != source.digest:
+            raise CertificationValidationError(
+                f"Catalogue technical source {source.id!s} does not match the approved suite release"
+            )
+    return catalogue, policies[0]
+
+
+def _participant_plan_from_scope(
+    scope: ParticipantScope,
+    catalogue: TestDefinitionCatalogue,
+) -> ParticipantPlan:
+    """Recreate non-secret participant intent for deterministic re-resolution."""
+    definitions = {str(item.id): item for item in catalogue.predefined_inputs}
+    inputs: list[ParticipantInput] = []
+    for index, item in enumerate(scope.predefined_inputs):
+        location = f"report.traceability.participantPlanSnapshot.predefinedInputs[{index}]"
+        input_id = _required_non_empty_string(item, "inputId", location=location)
+        definition = definitions.get(input_id)
+        if definition is None:
+            raise CertificationValidationError(f"{location}.inputId {input_id!r} is not in the approved catalogue")
+        redacted = _required_bool(item, "redacted", location=location)
+        catalogue_sensitive = definition.sensitivity != "non-sensitive"
+        if redacted != catalogue_sensitive:
+            raise CertificationValidationError(f"{location}.redacted contradicts the approved catalogue sensitivity")
+        if redacted:
+            value = definition.example_value
+        else:
+            if "value" not in item:
+                raise CertificationValidationError(f"{location}.value is required for a non-sensitive input")
+            value = _participant_input_value(item["value"], location=f"{location}.value")
+        inputs.append(ParticipantInput(input_id=StableId(input_id), value=value))
+    return ParticipantPlan(
+        schema_version="2.0",
+        document_type="participant-plan",
+        id=StableId(scope.participant_plan_id),
+        suite_release_id=StableId(scope.suite_release_id),
+        scheme=StableId(scope.scheme),
+        specification=Specification(
+            id=StableId(scope.specification_id),
+            version=scope.specification_version,
+            test_scope=StableId(scope.test_scope),
+        ),
+        security_profile=scope.security_profile,
+        selected_capability_ids=tuple(StableId(value) for value in scope.selected_capability_ids),
+        predefined_inputs=tuple(inputs),
+    )
+
+
+def _participant_input_value(value: object, *, location: str) -> str | StandingOrderFrequency:
+    if isinstance(value, str):
+        return value
+    document = _as_object(value, location=location)
+    frequency_type = _required_non_empty_string(document, "frequencyType", location=location)
+    count = document.get("countPerPeriod")
+    point = document.get("pointInTime")
+    if count is not None and (not isinstance(count, int) or isinstance(count, bool)):
+        raise CertificationValidationError(f"{location}.countPerPeriod must be an integer")
+    if point is not None and not isinstance(point, str):
+        raise CertificationValidationError(f"{location}.pointInTime must be a string")
+    return StandingOrderFrequency(
+        frequency_type=frequency_type,
+        count_per_period=count,
+        point_in_time=point,
+    )
+
+
+def _observation_reasons(
+    manifest: ExecutionManifest,
+    observations: Mapping[str, ReportObservation],
+) -> list[str]:
+    reasons: list[str] = []
+    steps_by_id = {str(step.id): step for step in manifest.steps}
+    for observation_id in observations.keys() - steps_by_id.keys():
+        _add_reason(reasons, f"unknown_observation:{observation_id}")
+    for step in manifest.steps:
+        step_id = str(step.id)
+        observation = observations.get(step_id)
+        if observation is None:
+            _add_reason(reasons, f"missing_observation:{step_id}")
+            continue
+        expected_assertion_ids = {str(item.id) for item in step.assertions}
+        observed_assertions = {item.assertion_id: item for item in observation.assertions}
+        for assertion_id in observed_assertions.keys() - expected_assertion_ids:
+            _add_reason(reasons, f"unknown_assertion:{step_id}/{assertion_id}")
+        for assertion_id in expected_assertion_ids - observed_assertions.keys():
+            _add_reason(reasons, f"missing_assertion_observation:{step_id}/{assertion_id}")
+        if observation.status in {"passed", "warn"} and any(item.status == "failed" for item in observation.assertions):
+            _add_reason(reasons, f"contradictory_outcome:{step_id}")
+
+        failed_dependency = any(
+            observations.get(str(dependency_id)) is None
+            or observations[str(dependency_id)].status in {"failed", "skipped"}
+            for dependency_id in step.dependency_ids
+        )
+        if failed_dependency and observation.status != "skipped":
+            _add_reason(reasons, f"observation_for_unexecuted_work:{step_id}")
+        if not failed_dependency and observation.status == "skipped":
+            _add_reason(reasons, f"skipped_required_work:{step_id}")
+    return reasons
+
+
+def _traceability_reasons(
+    report: SubmittedReport,
+    *,
+    expected_plan: ResolvedPlan,
+    expected_manifest: ExecutionManifest,
+    observations: Mapping[str, ReportObservation],
+) -> list[str]:
+    reasons: list[str] = []
+    traceability = report.traceability
+    if traceability.execution_manifest_id != expected_manifest.id:
+        _add_reason(reasons, "result_manifest_identity_mismatch")
+    if traceability.execution_manifest_schema_version != expected_manifest.schema_version:
+        _add_reason(reasons, "result_manifest_schema_mismatch")
+    if traceability.resolved_plan_id != expected_plan.id:
+        _add_reason(reasons, "result_resolved_plan_identity_mismatch")
+
+    expected_definitions = tuple(dict.fromkeys(str(item.test_definition_id) for item in expected_manifest.steps))
+    if traceability.test_definition_ids != expected_definitions:
+        _add_reason(reasons, "result_test_definitions_mismatch")
+
+    expected_instances = tuple(
+        {
+            "id": str(item.id),
+            "testDefinitionId": str(item.test_definition_id),
+            "dependencyIds": [str(value) for value in item.dependency_ids],
+        }
+        for item in expected_plan.test_instances
+    )
+    if traceability.compiled_test_instances != expected_instances:
+        _add_reason(reasons, "result_test_instances_mismatch")
+
+    expected_findings = cast(
+        list[JsonObject],
+        resolved_plan_to_document(expected_plan)["findings"],
+    )
+    if traceability.compiler_findings != tuple(expected_findings):
+        _add_reason(reasons, "result_compiler_findings_mismatch")
+
+    trace_steps = {item.step_id: item for item in traceability.manifest_steps}
+    expected_step_ids = {str(item.id) for item in expected_manifest.steps}
+    for step_id in trace_steps.keys() - expected_step_ids:
+        _add_reason(reasons, f"unknown_trace_step:{step_id}")
+    for step in expected_manifest.steps:
+        step_id = str(step.id)
+        traced = trace_steps.get(step_id)
+        if traced is None:
+            _add_reason(reasons, f"missing_trace_step:{step_id}")
+            continue
+        observation = observations.get(step_id)
+        if (
+            traced.test_instance_id != step.test_instance_id
+            or traced.test_definition_id != step.test_definition_id
+            or traced.assertion_ids != tuple(str(item.id) for item in step.assertions)
+            or traced.result_observation_id != step_id
+            or traced.result_status != (observation.status if observation is not None else "missing")
+        ):
+            _add_reason(reasons, f"traceability_mismatch:{step_id}")
+    return reasons
+
+
+def _derive_test_outcomes(
+    plan: ResolvedPlan,
+    manifest: ExecutionManifest,
+    observations: Mapping[str, ReportObservation],
+) -> tuple[ApprovedTestOutcome, ...]:
+    steps_by_instance: dict[str, list[ExecutionManifestStep]] = {}
+    for step in manifest.steps:
+        steps_by_instance.setdefault(str(step.test_instance_id), []).append(step)
+    outcomes: list[ApprovedTestOutcome] = []
+    for instance in plan.test_instances:
+        instance_id = str(instance.id)
+        manifest_steps = steps_by_instance.get(instance_id, [])
+        step_ids = tuple(str(step.id) for step in manifest_steps)
+        statuses: list[TestOutcomeStatus] = []
+        for step in manifest_steps:
+            observation = observations.get(str(step.id))
+            if observation is None:
+                statuses.append("missing")
+                continue
+            expected_assertions = {str(item.id) for item in step.assertions}
+            observed_assertions = {item.assertion_id for item in observation.assertions}
+            if expected_assertions != observed_assertions:
+                statuses.append("incomplete")
+            elif any(item.status == "failed" for item in observation.assertions):
+                statuses.append("failed")
+            else:
+                statuses.append(observation.status)
+        status = _aggregate_test_status(statuses)
+        outcomes.append(
+            ApprovedTestOutcome(
+                test_definition_id=str(instance.test_definition_id),
+                test_instance_id=instance_id,
+                manifest_step_ids=step_ids,
+                status=status,
+            )
+        )
+    return tuple(outcomes)
+
+
+def _aggregate_test_status(statuses: list[TestOutcomeStatus]) -> TestOutcomeStatus:
+    if not statuses or "missing" in statuses:
+        return "missing"
+    if "incomplete" in statuses:
+        return "incomplete"
+    if "skipped" in statuses:
+        return "skipped"
+    if "failed" in statuses:
+        return "failed"
+    if "warn" in statuses:
+        return "warn"
+    return "passed"
+
+
+def _automated_assessment(outcomes: tuple[ApprovedTestOutcome, ...]) -> AutomatedAssessmentStatus:
+    if not outcomes or any(item.status in {"missing", "incomplete", "skipped"} for item in outcomes):
+        return "incomplete"
+    if any(item.status == "failed" for item in outcomes):
+        return "failed"
+    return "passed"
+
+
+def _runner_claim_reasons(
+    report: SubmittedReport,
+    *,
+    independently_eligible: bool,
+) -> list[str]:
+    reasons: list[str] = []
+    aggregate_status: CheckStatus = (
+        "passed" if all(item.status in {"passed", "warn"} for item in report.observations) else "failed"
+    )
+    if report.status != aggregate_status:
+        _add_reason(reasons, "result_status_contradiction")
+    if report.summary_claim is not None:
+        expected_summary: JsonObject = {
+            "total": len(report.observations),
+            "passed": sum(item.status == "passed" for item in report.observations),
+            "failed": sum(item.status == "failed" for item in report.observations),
+            "warn": sum(item.status == "warn" for item in report.observations),
+            "skipped": sum(item.status == "skipped" for item in report.observations),
+        }
+        if report.summary_claim != expected_summary:
+            _add_reason(reasons, "result_summary_contradiction")
+    if report.eligibility_claim is True and not independently_eligible:
+        _add_reason(reasons, "runner_eligibility_contradiction")
+    return reasons
+
+
+def _test_outcome_counts(outcomes: tuple[ApprovedTestOutcome, ...]) -> JsonObject:
+    statuses: tuple[TestOutcomeStatus, ...] = (
+        "passed",
+        "failed",
+        "warn",
+        "skipped",
+        "missing",
+        "incomplete",
+    )
+    counts: JsonObject = {"total": len(outcomes)}
+    for status in statuses:
+        counts[status] = sum(item.status == status for item in outcomes)
+    return counts
+
+
+def _parse_report_observations(raw_steps: list[object]) -> tuple[ReportObservation, ...]:
+    observations: list[ReportObservation] = []
+    seen: set[str] = set()
+    for index, raw_step in enumerate(raw_steps):
+        location = f"report.steps[{index}]"
+        step = _as_object(raw_step, location=location)
+        observation_id = _required_non_empty_string(step, "name", location=location)
+        if observation_id in seen:
+            raise CertificationValidationError(f"{location}.name {observation_id!r} is duplicated")
+        seen.add(observation_id)
+        details = _optional_object(step, "details", location=location)
+        raw_assertions = (
+            [] if details is None else _optional_array(details, "assertions", location=f"{location}.details")
+        )
+        assertions: list[ReportAssertionObservation] = []
+        assertion_ids: set[str] = set()
+        for assertion_index, raw_assertion in enumerate(raw_assertions or []):
+            assertion_location = f"{location}.details.assertions[{assertion_index}]"
+            assertion = _as_object(raw_assertion, location=assertion_location)
+            assertion_id = _required_non_empty_string(assertion, "assertionId", location=assertion_location)
+            if assertion_id in assertion_ids:
+                raise CertificationValidationError(f"{assertion_location}.assertionId {assertion_id!r} is duplicated")
+            assertion_ids.add(assertion_id)
+            status = _required_non_empty_string(assertion, "status", location=assertion_location)
+            if status not in {"passed", "failed"}:
+                raise CertificationValidationError(f"{assertion_location}.status must be one of: failed, passed")
+            assertions.append(
+                ReportAssertionObservation(
+                    assertion_id=assertion_id,
+                    status=cast(AssertionStatus, status),
+                )
+            )
+        observations.append(
+            ReportObservation(
+                observation_id=observation_id,
+                status=_required_report_step_status(step, "status", location=location),
+                assertions=tuple(assertions),
+            )
+        )
+    return tuple(observations)
+
+
+def _parse_traceability(traceability: dict[str, object]) -> SubmittedTraceability:
+    location = "report.traceability"
+    release = _required_object(traceability, "suiteRelease", location=location)
+    snapshot = _required_object(traceability, "participantPlanSnapshot", location=location)
+    scope = _parse_participant_scope(snapshot)
+    definitions = _required_array(traceability, "testDefinitions", location=location)
+    definition_ids = tuple(
+        _required_non_empty_string(
+            _as_object(item, location=f"{location}.testDefinitions[{index}]"),
+            "id",
+            location=f"{location}.testDefinitions[{index}]",
+        )
+        for index, item in enumerate(definitions)
+    )
+    if len(set(definition_ids)) != len(definition_ids):
+        raise CertificationValidationError(f"{location}.testDefinitions contains duplicate ids")
+
+    instances = tuple(
+        cast(
+            JsonObject,
+            _as_object(item, location=f"{location}.compiledTestInstances[{index}]"),
+        )
+        for index, item in enumerate(_required_array(traceability, "compiledTestInstances", location=location))
+    )
+    manifest = _required_object(traceability, "executionManifest", location=location)
+    raw_manifest_steps = _required_array(manifest, "steps", location=f"{location}.executionManifest")
+    manifest_steps: list[TraceabilityManifestStep] = []
+    seen_step_ids: set[str] = set()
+    for index, raw_step in enumerate(raw_manifest_steps):
+        step_location = f"{location}.executionManifest.steps[{index}]"
+        step = _as_object(raw_step, location=step_location)
+        step_id = _required_non_empty_string(step, "id", location=step_location)
+        if step_id in seen_step_ids:
+            raise CertificationValidationError(f"{step_location}.id {step_id!r} is duplicated")
+        seen_step_ids.add(step_id)
+        manifest_steps.append(
+            TraceabilityManifestStep(
+                step_id=step_id,
+                test_instance_id=_required_non_empty_string(step, "testInstanceId", location=step_location),
+                test_definition_id=_required_non_empty_string(step, "testDefinitionId", location=step_location),
+                assertion_ids=tuple(
+                    _non_empty_string(item, location=f"{step_location}.assertionIds[{assertion_index}]")
+                    for assertion_index, item in enumerate(
+                        _required_array(step, "assertionIds", location=step_location)
+                    )
+                ),
+                result_observation_id=_required_non_empty_string(
+                    step,
+                    "resultObservationId",
+                    location=step_location,
+                ),
+                result_status=_required_non_empty_string(step, "resultStatus", location=step_location),
+            )
+        )
+    findings = tuple(
+        cast(JsonObject, _as_object(item, location=f"{location}.compilerFindings[{index}]"))
+        for index, item in enumerate(_required_array(traceability, "compilerFindings", location=location))
+    )
+    return SubmittedTraceability(
+        suite_release_id=_required_non_empty_string(release, "id", location=f"{location}.suiteRelease"),
+        suite_release_version=_required_non_empty_string(
+            release,
+            "version",
+            location=f"{location}.suiteRelease",
+        ),
+        suite_published_at=_required_non_empty_string(
+            release,
+            "publishedAt",
+            location=f"{location}.suiteRelease",
+        ),
+        participant_scope=scope,
+        test_definition_ids=definition_ids,
+        compiled_test_instances=instances,
+        execution_manifest_id=_required_non_empty_string(
+            manifest,
+            "id",
+            location=f"{location}.executionManifest",
+        ),
+        execution_manifest_schema_version=_required_non_empty_string(
+            manifest,
+            "schemaVersion",
+            location=f"{location}.executionManifest",
+        ),
+        resolved_plan_id=_required_non_empty_string(
+            manifest,
+            "resolvedPlanId",
+            location=f"{location}.executionManifest",
+        ),
+        manifest_steps=tuple(manifest_steps),
+        compiler_findings=findings,
+    )
+
+
+def _parse_participant_scope(snapshot: dict[str, object]) -> ParticipantScope:
+    location = "report.traceability.participantPlanSnapshot"
+    schema_version = _required_non_empty_string(snapshot, "schemaVersion", location=location)
+    document_type = _required_non_empty_string(snapshot, "documentType", location=location)
+    if schema_version != "2.0" or document_type != "participant-plan":
+        raise CertificationValidationError(f"{location} must identify a schema-version 2.0 participant plan")
+    specification = _required_object(snapshot, "specification", location=location)
+    selected_capabilities = tuple(
+        _non_empty_string(item, location=f"{location}.selectedCapabilityIds[{index}]")
+        for index, item in enumerate(_required_array(snapshot, "selectedCapabilityIds", location=location))
+    )
+    if len(set(selected_capabilities)) != len(selected_capabilities):
+        raise CertificationValidationError(f"{location}.selectedCapabilityIds contains duplicates")
+    predefined_inputs = tuple(
+        cast(JsonObject, _as_object(item, location=f"{location}.predefinedInputs[{index}]"))
+        for index, item in enumerate(_required_array(snapshot, "predefinedInputs", location=location))
+    )
+    return ParticipantScope(
+        raw_snapshot=cast(JsonObject, snapshot),
+        participant_plan_id=_required_non_empty_string(snapshot, "id", location=location),
+        suite_release_id=_required_non_empty_string(snapshot, "suiteReleaseId", location=location),
+        scheme=_required_non_empty_string(snapshot, "scheme", location=location),
+        specification_id=_required_non_empty_string(specification, "id", location=f"{location}.specification"),
+        specification_version=_required_non_empty_string(
+            specification,
+            "version",
+            location=f"{location}.specification",
+        ),
+        test_scope=_required_non_empty_string(
+            specification,
+            "testScope",
+            location=f"{location}.specification",
+        ),
+        security_profile=_required_non_empty_string(snapshot, "securityProfile", location=location),
+        selected_capability_ids=selected_capabilities,
+        predefined_inputs=predefined_inputs,
+    )
+
+
 def _load_json_file(path: Path, *, label: str) -> object:
-    """Load a JSON file from disk.
-
-    Args:
-        path: Path to the JSON file.
-        label: Human-readable input label for error messages.
-
-    Returns:
-        Decoded JSON value.
-
-    Raises:
-        CertificationValidationError: If the file cannot be read or decoded.
-    """
-    resolved_path = path.resolve()
     try:
-        return json.loads(resolved_path.read_text(encoding="utf-8"))
+        return json.loads(path.resolve().read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
         raise CertificationValidationError(f"Invalid JSON {label}: {error.msg}") from error
     except OSError as error:
         raise CertificationValidationError(f"Unable to read {label} file: {error}") from error
 
 
-def _parse_report_steps(raw_steps: list[object]) -> tuple[ReportStep, ...]:
-    """Parse submitted report step entries.
-
-    Args:
-        raw_steps: Raw decoded ``report.steps`` array.
-
-    Returns:
-        Parsed step entries in report order.
-
-    Raises:
-        CertificationValidationError: If any step entry is malformed or if
-            duplicate step identifiers are present.
-    """
-    steps: list[ReportStep] = []
-    seen_step_ids: set[str] = set()
-    for index, raw_step in enumerate(raw_steps):
-        location = f"report.steps[{index}]"
-        step = _as_object(raw_step, location=location)
-        step_id = _required_non_empty_string(step, "name", location=location)
-        if step_id in seen_step_ids:
-            raise CertificationValidationError(f"{location}.name {step_id!r} is duplicated")
-        seen_step_ids.add(step_id)
-        steps.append(
-            ReportStep(
-                step_id=step_id,
-                status=_required_report_step_status(step, "status", location=location),
-            )
-        )
-    return tuple(steps)
-
-
-def _validate_mandatory_step(
-    *,
-    step_id: str,
-    report_steps: Mapping[str, CheckStatus],
-) -> MandatoryStepValidation:
-    """Validate one mandatory manifest step against submitted report steps.
-
-    Args:
-        step_id: Mandatory manifest step identifier.
-        report_steps: Mapping from submitted report step id to status.
-
-    Returns:
-        Per-step mandatory validation outcome.
-    """
-    status = report_steps.get(step_id)
-    if status is None:
-        return MandatoryStepValidation(step_id=step_id, status="missing", reason="mandatory_step_missing")
-    if status == "failed":
-        return MandatoryStepValidation(step_id=step_id, status=status, reason="mandatory_step_failed")
-    if status == "skipped":
-        return MandatoryStepValidation(step_id=step_id, status=status, reason="mandatory_step_skipped")
-    return MandatoryStepValidation(step_id=step_id, status=status)
-
-
-def _validation_reasons(
-    *,
-    mandatory_steps: tuple[MandatoryStepValidation, ...],
-    tool_version_approved: bool,
-    manifest_coverage_partial: bool,
-) -> tuple[CertificationValidationReason, ...]:
-    """Build unique machine-readable reasons for a validation result.
-
-    Args:
-        mandatory_steps: Per-step mandatory validation outcomes.
-        tool_version_approved: Whether the submitted tool version is approved.
-        manifest_coverage_partial: Whether the manifest declares partial
-            (non-complete) certification coverage. When ``True``, the
-            ``manifest_coverage_partial`` reason is appended after step-level
-            blockers so that more actionable reasons occupy the primary slot
-            when multiple blockers are present.
-
-    Returns:
-        Ordered unique blocking reasons.
-    """
-    reasons: list[CertificationValidationReason] = []
-    # Coverage is appended last so that more actionable step-level reasons
-    # (tool version, missing/failed/skipped mandatory steps) take the primary
-    # slot in the tuple when multiple blockers are present. When all step-level
-    # checks pass but coverage is partial, this will be the sole and therefore
-    # primary reason.
-    if not tool_version_approved:
-        reasons.append("tool_version_not_approved")
-    for step in mandatory_steps:
-        if step.reason is not None and step.reason not in reasons:
-            reasons.append(step.reason)
-    if manifest_coverage_partial:
-        reasons.append("manifest_coverage_partial")
-    return tuple(reasons)
-
-
-def _report_steps_by_id(steps: tuple[ReportStep, ...]) -> dict[str, CheckStatus]:
-    """Index submitted report steps by step id.
-
-    Args:
-        steps: Parsed submitted report steps.
-
-    Returns:
-        Mapping from step id to submitted status.
-    """
-    return {step.step_id: step.status for step in steps}
-
-
-def _mandatory_summary(mandatory_steps: tuple[MandatoryStepValidation, ...]) -> JsonObject:
-    """Build the JSON-compatible mandatory validation summary.
-
-    Args:
-        mandatory_steps: Per-step mandatory validation outcomes.
-
-    Returns:
-        JSON object containing mandatory status counts.
-    """
-    counts = _count_mandatory_steps(mandatory_steps)
-    return {
-        "total": counts["total"],
-        "passed": counts["passed"],
-        "warn": counts["warn"],
-        "failed": counts["failed"],
-        "skipped": counts["skipped"],
-        "missing": counts["missing"],
-    }
-
-
-def _count_mandatory_steps(mandatory_steps: tuple[MandatoryStepValidation, ...]) -> dict[str, int]:
-    """Count mandatory validation outcomes by status.
-
-    Args:
-        mandatory_steps: Per-step mandatory validation outcomes.
-
-    Returns:
-        Dict with total, passed, warn, failed, skipped, and missing counts.
-    """
-    return {
-        "total": len(mandatory_steps),
-        "passed": sum(1 for step in mandatory_steps if step.status == "passed"),
-        "warn": sum(1 for step in mandatory_steps if step.status == "warn"),
-        "failed": sum(1 for step in mandatory_steps if step.status == "failed"),
-        "skipped": sum(1 for step in mandatory_steps if step.status == "skipped"),
-        "missing": sum(1 for step in mandatory_steps if step.status == "missing"),
-    }
-
-
-def _blocking_reason_lines(result: CertificationValidationResult) -> list[str]:
-    """Render blocking reasons for the Confluence summary.
-
-    Args:
-        result: Structured certification validation result.
-
-    Returns:
-        Human-readable bullet lines for every blocking reason.
-    """
-    lines: list[str] = []
-    for reason in result.reasons:
-        if reason == "tool_version_not_approved":
-            lines.append(f"- {_REASON_LABELS[reason]}: {result.tool_version}")
-        elif reason == "manifest_coverage_partial":
-            lines.append(f"- {_REASON_LABELS[reason]}")
-        else:
-            for step in result.mandatory_steps:
-                if step.reason == reason:
-                    lines.append(f"- {_REASON_LABELS[reason]}: {step.step_id}")
-    return lines
+def _add_reason(reasons: list[str], reason: str) -> None:
+    if reason not in reasons:
+        reasons.append(reason)
 
 
 def _as_object(value: object, *, location: str) -> dict[str, object]:
-    """Return ``value`` as a JSON object.
-
-    Args:
-        value: Decoded JSON value to validate.
-        location: Dot-path location string used in error messages.
-
-    Returns:
-        JSON object with string keys.
-
-    Raises:
-        CertificationValidationError: If the value is not a JSON object or
-            any key is not a string.
-    """
-    if not isinstance(value, dict):
+    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
         raise CertificationValidationError(f"{location} must be a JSON object")
-    if any(not isinstance(key, str) for key in value):
-        raise CertificationValidationError(f"{location} keys must be strings")
     return cast(dict[str, object], value)
 
 
 def _required_object(parent: Mapping[str, object], key: str, *, location: str) -> dict[str, object]:
-    """Extract a required JSON object field.
-
-    Args:
-        parent: Parent JSON object.
-        key: Field name to extract.
-        location: Dot-path location string used in error messages.
-
-    Returns:
-        Required child JSON object.
-
-    Raises:
-        CertificationValidationError: If the field is missing or not a JSON
-            object.
-    """
     if key not in parent:
         raise CertificationValidationError(f"{location}.{key} is required")
     return _as_object(parent[key], location=f"{location}.{key}")
 
 
+def _optional_object(
+    parent: Mapping[str, object],
+    key: str,
+    *,
+    location: str,
+) -> dict[str, object] | None:
+    if key not in parent:
+        return None
+    return _as_object(parent[key], location=f"{location}.{key}")
+
+
 def _required_array(parent: Mapping[str, object], key: str, *, location: str) -> list[object]:
-    """Extract a required JSON array field.
-
-    Args:
-        parent: Parent JSON object.
-        key: Field name to extract.
-        location: Dot-path location string used in error messages.
-
-    Returns:
-        Required child JSON array.
-
-    Raises:
-        CertificationValidationError: If the field is missing or not a JSON
-            array.
-    """
     if key not in parent:
         raise CertificationValidationError(f"{location}.{key} is required")
     value = parent[key]
@@ -626,47 +936,42 @@ def _required_array(parent: Mapping[str, object], key: str, *, location: str) ->
     return cast(list[object], value)
 
 
+def _optional_array(
+    parent: Mapping[str, object],
+    key: str,
+    *,
+    location: str,
+) -> list[object] | None:
+    if key not in parent:
+        return None
+    value = parent[key]
+    if not isinstance(value, list):
+        raise CertificationValidationError(f"{location}.{key} must be a JSON array")
+    return cast(list[object], value)
+
+
+def _non_empty_string(value: object, *, location: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise CertificationValidationError(f"{location} must be a non-empty string")
+    return value.strip()
+
+
 def _required_non_empty_string(parent: Mapping[str, object], key: str, *, location: str) -> str:
-    """Extract a required non-empty string field.
+    if key not in parent:
+        raise CertificationValidationError(f"{location}.{key} is required")
+    return _non_empty_string(parent[key], location=f"{location}.{key}")
 
-    Args:
-        parent: Parent JSON object.
-        key: Field name to extract.
-        location: Dot-path location string used in error messages.
 
-    Returns:
-        Stripped non-empty string value.
-
-    Raises:
-        CertificationValidationError: If the field is missing, not a string,
-            or empty after stripping.
-    """
+def _required_bool(parent: Mapping[str, object], key: str, *, location: str) -> bool:
     if key not in parent:
         raise CertificationValidationError(f"{location}.{key} is required")
     value = parent[key]
-    if not isinstance(value, str):
-        raise CertificationValidationError(f"{location}.{key} must be a string")
-    stripped = value.strip()
-    if not stripped:
-        raise CertificationValidationError(f"{location}.{key} must not be empty")
-    return stripped
+    if not isinstance(value, bool):
+        raise CertificationValidationError(f"{location}.{key} must be a boolean")
+    return value
 
 
 def _required_report_step_status(parent: Mapping[str, object], key: str, *, location: str) -> CheckStatus:
-    """Extract a required report step status field.
-
-    Args:
-        parent: Parent JSON object.
-        key: Field name to extract.
-        location: Dot-path location string used in error messages.
-
-    Returns:
-        Parsed check status.
-
-    Raises:
-        CertificationValidationError: If the field is missing or is not one
-            of the public report step status values.
-    """
     value = _required_non_empty_string(parent, key, location=location)
     if value not in VALID_REPORT_STEP_STATUSES:
         allowed_values = ", ".join(sorted(VALID_REPORT_STEP_STATUSES))
