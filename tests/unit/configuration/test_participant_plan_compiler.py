@@ -8,7 +8,6 @@ from dataclasses import replace
 
 import pytest
 
-from conformance.catalogues import PIS_PAYMENT_CATALOGUE
 from conformance.configuration_contracts import (
     CompilationFindingCode,
     ConfigurationContractError,
@@ -17,13 +16,11 @@ from conformance.configuration_contracts import (
     InputResolutionSource,
     ParticipantPlan,
     ParticipantPlanCompilationError,
-    ResolvedPlanAdapterError,
     SelectionOrigin,
     Sha256Digest,
     StableId,
     StandingOrderFrequency,
     SuiteRelease,
-    adapt_resolved_plan_to_compiled_execution,
     compile_participant_plan,
     dump_participant_plan,
     dump_requirements_catalogue,
@@ -42,7 +39,6 @@ from conformance.configuration_contracts.models import (
 from conformance.configuration_contracts.models import (
     TestDefinitionCatalogue as ConfigurationTestDefinitionCatalogue,
 )
-from conformance.json_types import JsonValue
 from tests.support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.unit
@@ -242,70 +238,6 @@ def test_catalogue_default_is_recorded_separately_from_participant_values() -> N
     assert resolved.predefined_inputs[0].reasons[0].code == "requirements.input.defaulted"
 
 
-def test_resolved_plan_adapts_to_existing_compiled_execution_contract() -> None:
-    suite_release, requirements, test_definitions, participant_plan = _compiler_inputs()
-    resolved = compile_participant_plan(suite_release, requirements, test_definitions, participant_plan)
-
-    adapted = adapt_resolved_plan_to_compiled_execution(
-        resolved,
-        PIS_PAYMENT_CATALOGUE,
-        runtime_inputs=_legacy_runtime_inputs(),
-    )
-    compiled = adapted.compiled_plan
-
-    assert compiled.traceability.generated_test_case_ids == (
-        "pis-v4-domestic-standing-order-consent-create",
-        "pis-v4-domestic-standing-order-consent-read",
-        "pis-v4-domestic-standing-order-create",
-        "pis-v4-domestic-standing-order-read",
-    )
-    runtime_values = {
-        trace.input_id: trace.value for trace in compiled.traceability.runtime_input_snapshot if trace.provided
-    }
-    assert runtime_values["pisStandingOrderFrequencyType"] == "WEEK"
-    assert runtime_values["pisStandingOrderFrequencyPointInTime"] == "03"
-    assert adapted.runtime_inputs["pisStandingOrderFrequencyType"] == "WEEK"
-    assert adapted.runtime_inputs["pisStandingOrderFrequencyPointInTime"] == "03"
-    decisions = {decision.test_case_id: decision for decision in compiled.traceability.applicability_decisions}
-    assert decisions["pis-v4-domestic-standing-order-consent-reject-invalid-frequency"].reason == (
-        "deselected by participant"
-    )
-
-
-def test_adapter_rejects_frequency_shape_not_supported_by_current_runtime() -> None:
-    suite_release, requirements, test_definitions, participant_plan = _compiler_inputs()
-    participant_input = participant_plan.predefined_inputs[0]
-    count_frequency_plan = replace(
-        participant_plan,
-        predefined_inputs=(
-            replace(
-                participant_input,
-                value=StandingOrderFrequency(
-                    frequency_type="WODL",
-                    count_per_period=2,
-                    point_in_time=None,
-                ),
-            ),
-        ),
-    )
-    resolved = compile_participant_plan(
-        suite_release,
-        requirements,
-        test_definitions,
-        count_frequency_plan,
-    )
-
-    with pytest.raises(
-        ResolvedPlanAdapterError,
-        match="supports pointInTime standing-order frequencies only",
-    ):
-        adapt_resolved_plan_to_compiled_execution(
-            resolved,
-            PIS_PAYMENT_CATALOGUE,
-            runtime_inputs=_legacy_runtime_inputs(),
-        )
-
-
 def test_compiler_rejects_catalogue_bytes_not_bound_by_suite_release() -> None:
     suite_release, requirements, test_definitions, participant_plan = _compiler_inputs()
     changed_input = replace(
@@ -399,15 +331,3 @@ def _with_test_definition_digest(
             for artifact in suite_release.artifacts
         ),
     )
-
-
-def _legacy_runtime_inputs() -> dict[str, JsonValue]:
-    return {
-        "pisCreditorAccountIdentification": "08080021325698",
-        "pisCreditorAccountName": "Merchant",
-        "pisCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
-        "pisFirstPaymentDateTime": "2026-10-01T00:00:00Z",
-        "pisInstructedAmountAmount": "10.00",
-        "pisInstructedAmountCurrency": "GBP",
-        "resourceBaseUrl": "https://rs.example.com",
-    }

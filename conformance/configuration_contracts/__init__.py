@@ -1,13 +1,10 @@
 """Versioned configuration contracts for the replacement plan architecture."""
 
 from conformance.configuration_contracts.compiled_plan_adapter import (
-    AdaptedCompiledExecution,
     LegacyExecutionEngine,
     PreparedExecutionManifest,
     ResolvedPlanAdapterError,
     adapt_compiled_plan_to_execution_manifest,
-    adapt_resolved_plan_to_compiled_execution,
-    prepare_resolved_execution_manifest,
     validate_execution_manifest_compatibility,
 )
 from conformance.configuration_contracts.compiler import (
@@ -114,7 +111,6 @@ from conformance.configuration_contracts.models import (
 
 __all__ = [
     "ArtifactReference",
-    "AdaptedCompiledExecution",
     "CATALOGUE_SCHEMA_VERSION",
     "Capability",
     "CompilationFinding",
@@ -178,7 +174,6 @@ __all__ = [
     "TestOutput",
     "TestRequest",
     "ToolRelease",
-    "adapt_resolved_plan_to_compiled_execution",
     "adapt_compiled_plan_to_execution_manifest",
     "compile_participant_plan",
     "dump_execution_manifest",
@@ -203,7 +198,6 @@ __all__ = [
     "parse_test_definition_catalogue",
     "requirements_catalogue_to_document",
     "participant_plan_to_document",
-    "prepare_resolved_execution_manifest",
     "resolved_plan_to_document",
     "resolve_participant_plan",
     "suite_release_to_document",

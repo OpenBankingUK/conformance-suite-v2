@@ -13,7 +13,6 @@ import json
 import logging
 import threading
 from collections.abc import Mapping
-from pathlib import Path
 
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import RunPlanStep, RunRecord, RunStore, run_store
@@ -30,17 +29,13 @@ from conformance.execution_log import (
 from conformance.executor import (
     compiled_plan_synthetic_inline_steps,
     compiled_plan_synthetic_setup_steps,
-    run_compiled_test_plan,
     run_execution_manifest,
-    run_manifest,
 )
 from conformance.http import build_json_http_client
 from conformance.json_types import JsonObject, JsonValue
-from conformance.manifest import Manifest, PsuAuthorizationStep, V1Step
+from conformance.manifest import PsuAuthorizationStep, V1Step
 from conformance.model_bank_config import ModelBankConfig
 from conformance.results import mark_development_result_evidence
-from conformance.runner import run_model_bank_smoke_check
-from conformance.test_plan import TestPlan
 
 logger = logging.getLogger(__name__)
 
@@ -131,31 +126,17 @@ class BrowserParticipantActionLogger(ExecutionLogger):
 def start_run(
     *,
     config: ModelBankConfig,
-    compiled_plan: CompiledTestPlan | None = None,
-    runtime_inputs: Mapping[str, JsonValue] | None = None,
-    runtime_input_base_dir: Path | None = None,
-    manifest: Manifest | None = None,
-    plan: TestPlan | None = None,
+    prepared_execution_manifest: PreparedExecutionManifest,
     browser_psu_prompts: bool = False,
     plan_snapshot: JsonObject | None = None,
     validation_result: JsonObject | None = None,
-    prepared_execution_manifest: PreparedExecutionManifest | None = None,
 ) -> JsonObject:
     """Reserve a run slot and start asynchronous conformance execution.
 
     Args:
         config: Validated model-bank configuration.
-        compiled_plan: Optional compiled catalogue plan for the new execution
-            contract.
-        runtime_inputs: Original runtime input mapping for ``compiled_plan``.
-            Required when ``compiled_plan`` is supplied.
-        runtime_input_base_dir: Directory used to resolve catalogue
-            ``file_reference`` runtime inputs. Required when ``compiled_plan``
-            is supplied.
-        manifest: Parsed manifest object for legacy browser-preview internals,
-            or ``None`` for compiled-plan/API/CLI and smoke-check runs.
-        plan: Optional :class:`TestPlan` derived from ``manifest`` with any
-            caller-supplied deselections already applied.
+        prepared_execution_manifest: Generated execution manifest and its
+            compatibility-runtime binding.
         browser_psu_prompts: Whether to mirror raw manual PSU authorisation
             URLs into transient in-memory run state for browser-launched runs.
         plan_snapshot: Optional secret-safe JSON-first test-plan snapshot to
@@ -170,112 +151,22 @@ def start_run(
     Raises:
         RunConflictError: If another run is already pending or running.
     """
-    if prepared_execution_manifest is not None:
-        if compiled_plan is not None:
-            raise ValueError("Supply either compiled_plan or prepared_execution_manifest, not both")
-        compiled_plan = prepared_execution_manifest.compiled_plan
-        runtime_inputs = prepared_execution_manifest.runtime_inputs
-        runtime_input_base_dir = prepared_execution_manifest.runtime_input_base_dir
-    if compiled_plan is not None and (runtime_inputs is None or runtime_input_base_dir is None):
-        raise ValueError("compiled_plan launches require runtime_inputs and runtime_input_base_dir")
-    effective_plan = _effective_plan_for_launch(manifest=manifest, plan=plan)
-    planned_steps = _selected_planned_steps_snapshot(
-        compiled_plan=compiled_plan,
-        manifest=manifest,
-        plan=effective_plan,
-    )
+    planned_steps = _compiled_plan_steps_snapshot(prepared_execution_manifest.compiled_plan)
     record = run_store.create_run(
         planned_steps=planned_steps,
         plan_snapshot=plan_snapshot,
         validation_result=validation_result,
     )
     warn_if_developer_mode()
-    thread_kwargs: dict[str, object] = {"browser_psu_prompts": browser_psu_prompts}
-    if prepared_execution_manifest is not None:
-        thread_kwargs["prepared_execution_manifest"] = prepared_execution_manifest
     thread = threading.Thread(
         target=_execute_run,
-        args=(
-            record.run_id,
-            config,
-            compiled_plan,
-            runtime_inputs,
-            runtime_input_base_dir,
-            manifest,
-            effective_plan,
-        ),
-        kwargs=thread_kwargs,
+        args=(record.run_id, config, prepared_execution_manifest),
+        kwargs={"browser_psu_prompts": browser_psu_prompts},
         daemon=True,
     )
     initial_status = record.to_status_json()
     thread.start()
     return initial_status
-
-
-def _effective_plan_for_launch(*, manifest: Manifest | None, plan: TestPlan | None) -> TestPlan | None:
-    """Return the launch-time execution plan for a run.
-
-    Args:
-        manifest: Parsed manifest selected for the run, if any.
-        plan: Caller-supplied plan, or ``None`` when the lifecycle should
-            derive the default manifest plan.
-
-    Returns:
-        The supplied plan when present, the manifest default plan when
-        ``manifest`` is present and ``plan`` is ``None``, otherwise ``None``
-        for smoke-check runs.
-    """
-    if manifest is None:
-        return None
-    if plan is not None:
-        return plan
-    return TestPlan.default_plan_from_manifest(manifest)
-
-
-def _selected_planned_steps_snapshot(
-    *,
-    compiled_plan: CompiledTestPlan | None = None,
-    manifest: Manifest | None,
-    plan: TestPlan | None,
-) -> tuple[RunPlanStep, ...]:
-    """Build an immutable selected-step snapshot for launch-time run records.
-
-    Args:
-        compiled_plan: Compiled catalogue plan selected for the run, if any.
-        manifest: Parsed manifest selected for the run, if any.
-        plan: Effective plan used for execution; selected entries are copied
-            into the run snapshot.
-
-    Returns:
-        Tuple of selected plan-step snapshots in manifest order, or an empty
-        tuple for non-manifest runs.
-    """
-    if compiled_plan is not None:
-        return _compiled_plan_steps_snapshot(compiled_plan)
-    if manifest is None or plan is None:
-        return ()
-
-    selected_step_ids = set(plan.selected_step_ids())
-    if not selected_step_ids:
-        return ()
-
-    planned_steps: list[RunPlanStep] = []
-    for step in manifest.steps:
-        if step.id not in selected_step_ids:
-            continue
-        planned_steps.append(
-            RunPlanStep(
-                step_id=step.id,
-                name=step.name,
-                kind=_manifest_step_kind(step),
-                group=step.group,
-                phase=step.phase,
-                mandatory=step.mandatory,
-                optional=step.optional,
-                order=len(planned_steps),
-            )
-        )
-    return tuple(planned_steps)
 
 
 def _compiled_plan_steps_snapshot(compiled_plan: CompiledTestPlan) -> tuple[RunPlanStep, ...]:
@@ -483,14 +374,9 @@ def _manifest_step_kind(step: V1Step) -> str:
 def _execute_run(
     run_id: str,
     config: ModelBankConfig,
-    compiled_plan: CompiledTestPlan | None = None,
-    runtime_inputs: Mapping[str, JsonValue] | None = None,
-    runtime_input_base_dir: Path | None = None,
-    manifest: Manifest | None = None,
-    plan: TestPlan | None = None,
+    prepared_execution_manifest: PreparedExecutionManifest,
     *,
     browser_psu_prompts: bool = False,
-    prepared_execution_manifest: PreparedExecutionManifest | None = None,
 ) -> None:
     """Execute a conformance run in a background thread.
 
@@ -499,13 +385,8 @@ def _execute_run(
     Args:
         run_id: The run identifier to update in the store.
         config: Validated model-bank configuration.
-        compiled_plan: Optional compiled catalogue plan to execute.
-        runtime_inputs: Runtime input mapping for ``compiled_plan``.
-        runtime_input_base_dir: Directory for catalogue file references.
-        manifest: Parsed manifest object, or ``None`` to run a compiled plan
-            or legacy smoke check.
-        plan: Optional :class:`TestPlan` derived from ``manifest`` with any
-            caller-supplied deselections already applied.
+        prepared_execution_manifest: Generated execution manifest and its
+            compatibility-runtime binding.
         browser_psu_prompts: Whether to wrap the execution logger so raw manual
             PSU authorisation URLs are exposed only as transient browser
             participant actions.
@@ -526,87 +407,48 @@ def _execute_run(
         logger_sink: ExecutionLogger = run_logger or NullExecutionLogger()
         if browser_psu_prompts:
             logger_sink = BrowserParticipantActionLogger(logger_sink, run_id=run_id, store=run_store)
-        if compiled_plan is None and manifest is None:
-            result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
-        else:
-            try:
-                http_client = build_json_http_client(
-                    ca_bundle_path=config.tls.ca_bundle_path,
-                    client_certificate_path=config.tls.client_certificate_path,
-                    client_private_key_path=config.tls.client_private_key_path,
-                )
-            except ValueError as error:
-                logger.error("HTTP client setup failed for run %s: %s", run_id, error)
-                run_store.mark_failed(run_id, error=f"HTTP client setup failed: {error}")
-                return
-            try:
-                runtime_config = RuntimeConfig(
-                    discovery_url=config.discovery_url,
-                    oauth_resource_base_url=config.oauth.resource_base_url if config.oauth is not None else None,
-                    oauth_client_id=config.oauth.client_id if config.oauth is not None else None,
-                    oauth_redirect_uri=config.oauth.redirect_uri if config.oauth is not None else None,
-                    oauth_authorization_endpoint=(
-                        config.oauth.authorization_endpoint if config.oauth is not None else None
-                    ),
-                    oauth_issuer=config.oauth.issuer if config.oauth is not None else None,
-                    oauth_token_endpoint=config.oauth.token_endpoint if config.oauth is not None else None,
-                    oauth_response_type=config.oauth.response_type if config.oauth is not None else None,
-                    oauth_request_object_signing_alg=(
-                        config.oauth.request_object_signing_alg if config.oauth is not None else None
-                    ),
-                )
-                mtls_configured = (
-                    config.tls.client_certificate_path is not None and config.tls.client_private_key_path is not None
-                )
-                if prepared_execution_manifest is not None:
-                    result = run_execution_manifest(
-                        prepared_execution_manifest,
-                        client=http_client,
-                        execution_logger=logger_sink,
-                        run_id=run_id,
-                        auth_session_store=auth_session_store,
-                        runtime_config=runtime_config,
-                        fapi_signing_config=config.fapi_signing,
-                        mtls_client_configured=mtls_configured,
-                        approved_release_policy=config.approved_release_policy,
-                    )
-                elif compiled_plan is not None:
-                    if runtime_inputs is None or runtime_input_base_dir is None:
-                        raise ValueError("compiled plan execution requires runtime inputs")
-                    result = run_compiled_test_plan(
-                        compiled_plan,
-                        runtime_inputs=runtime_inputs,
-                        runtime_input_base_dir=runtime_input_base_dir,
-                        client=http_client,
-                        execution_logger=logger_sink,
-                        run_id=run_id,
-                        auth_session_store=auth_session_store,
-                        runtime_config=runtime_config,
-                        fapi_signing_config=config.fapi_signing,
-                        mtls_client_configured=mtls_configured,
-                        approved_release_policy=config.approved_release_policy,
-                    )
-                else:
-                    effective_manifest = manifest
-                    if effective_manifest is None:
-                        raise ValueError("manifest execution requires a manifest")
-                    effective_plan = (
-                        plan if plan is not None else TestPlan.default_plan_from_manifest(effective_manifest)
-                    )
-                    result = run_manifest(
-                        effective_manifest,
-                        client=http_client,
-                        execution_logger=logger_sink,
-                        plan=effective_plan,
-                        run_id=run_id,
-                        auth_session_store=auth_session_store,
-                        runtime_config=runtime_config,
-                        fapi_signing_config=config.fapi_signing,
-                        mtls_client_configured=mtls_configured,
-                        approved_release_policy=config.approved_release_policy,
-                    )
-            finally:
-                http_client.close()
+        try:
+            http_client = build_json_http_client(
+                ca_bundle_path=config.tls.ca_bundle_path,
+                client_certificate_path=config.tls.client_certificate_path,
+                client_private_key_path=config.tls.client_private_key_path,
+            )
+        except ValueError as error:
+            logger.error("HTTP client setup failed for run %s: %s", run_id, error)
+            run_store.mark_failed(run_id, error=f"HTTP client setup failed: {error}")
+            return
+        try:
+            runtime_config = RuntimeConfig(
+                discovery_url=config.discovery_url,
+                oauth_resource_base_url=config.oauth.resource_base_url if config.oauth is not None else None,
+                oauth_client_id=config.oauth.client_id if config.oauth is not None else None,
+                oauth_redirect_uri=config.oauth.redirect_uri if config.oauth is not None else None,
+                oauth_authorization_endpoint=(
+                    config.oauth.authorization_endpoint if config.oauth is not None else None
+                ),
+                oauth_issuer=config.oauth.issuer if config.oauth is not None else None,
+                oauth_token_endpoint=config.oauth.token_endpoint if config.oauth is not None else None,
+                oauth_response_type=config.oauth.response_type if config.oauth is not None else None,
+                oauth_request_object_signing_alg=(
+                    config.oauth.request_object_signing_alg if config.oauth is not None else None
+                ),
+            )
+            mtls_configured = (
+                config.tls.client_certificate_path is not None and config.tls.client_private_key_path is not None
+            )
+            result = run_execution_manifest(
+                prepared_execution_manifest,
+                client=http_client,
+                execution_logger=logger_sink,
+                run_id=run_id,
+                auth_session_store=auth_session_store,
+                runtime_config=runtime_config,
+                fapi_signing_config=config.fapi_signing,
+                mtls_client_configured=mtls_configured,
+                approved_release_policy=config.approved_release_policy,
+            )
+        finally:
+            http_client.close()
 
         result_object = result.to_json_object()
         _attach_plan_evidence(result_object, run_record)

@@ -110,7 +110,7 @@ def test_browser_builds_reviews_exports_and_launches_participant_plan(
     launch_response = client.post(reverse("builder-launch", kwargs={"draft_id": draft_id}))
     assert launch_response.status_code == 302
     launch = stubbed_run_execution.wait_for_launch()
-    prepared_manifest = launch.kwargs["prepared_execution_manifest"]
+    prepared_manifest = launch.args[2]
     assert isinstance(prepared_manifest, PreparedExecutionManifest)
     assert prepared_manifest.manifest is not None
 
@@ -129,7 +129,31 @@ def test_rest_accepts_the_same_participant_plan(
     assert record.plan_snapshot is not None
     assert record.plan_snapshot["documentType"] == "participant-plan"
     launch = stubbed_run_execution.wait_for_launch()
-    assert isinstance(launch.kwargs["prepared_execution_manifest"], PreparedExecutionManifest)
+    assert isinstance(launch.args[2], PreparedExecutionManifest)
+
+
+def test_browser_import_rejects_legacy_canonical_plan() -> None:
+    legacy_plan = {
+        "schemaVersion": "1.0",
+        "specification": {
+            "family": "OBL_DCR",
+            "scheme": "open-banking-uk",
+            "name": "dynamic-client-registration",
+            "version": "3.4",
+        },
+        "securityEnvironment": {},
+        "endpoints": [{"method": "POST", "path": "/register", "required": True, "locked": True}],
+        "dynamicClientRegistration": {},
+        "metadata": {},
+    }
+
+    response = Client().post(
+        reverse("builder-import"),
+        data={"plan_json": json.dumps(legacy_plan)},
+    )
+
+    assert response.status_code == 400
+    assert "participant-plan" in response.content.decode()
 
 
 def test_rest_accepts_dcr_registration_with_explicit_observation_mapping(
@@ -169,7 +193,7 @@ def test_rest_accepts_dcr_registration_with_explicit_observation_mapping(
 
     assert response.status_code == 201
     launch = stubbed_run_execution.wait_for_launch()
-    prepared = launch.kwargs["prepared_execution_manifest"]
+    prepared = launch.args[2]
     assert isinstance(prepared, PreparedExecutionManifest)
     assert prepared.result_traceability is not None
     assert prepared.result_traceability.result_observation_id_by_manifest_step_id == {

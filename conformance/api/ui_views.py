@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -49,13 +48,10 @@ from conformance.catalogue import (
     CatalogueError,
     CompiledTestPlan,
     PlanDocumentBoundary,
-    PlanDocumentV2,
-    parse_test_plan_document,
 )
 from conformance.configuration_contracts import (
     ParticipantPlan,
     ResolvedPlan,
-    parse_participant_plan,
     participant_plan_to_document,
 )
 from conformance.execution_log import ExecutionEvent
@@ -67,12 +63,9 @@ from conformance.participant_surface import (
     ParticipantCatalogue,
     ParticipantSurfaceError,
     participant_plan_export_document,
-    participant_suite_release,
     prepare_participant_plan_for_run,
     resolve_participant_document,
 )
-from conformance.plan_configuration import parse_dcr_plan_configuration, validate_dcr_file_references
-from conformance.test_plan_validation import TestPlanValidationError, prepare_test_plan_for_run
 
 _UI_DISPLAY_TIME_ZONE = ZoneInfo("Europe/London")
 """Open Banking UK browser fallback timezone for server-rendered timestamps."""
@@ -578,28 +571,20 @@ def builder_import(request: HttpRequest) -> HttpResponse:
             {"plan_json": raw_plan_json, "import_error": f"Plan JSON must be valid JSON: {error.msg}"},
             status=400,
         )
-    legacy_import_document: JsonObject | None = None
     try:
         parsed_document, _catalogue, _resolved_plan = resolve_participant_document(raw_document)
     except ParticipantSurfaceError as error:
-        try:
-            parsed_document = _migrated_legacy_dcr_plan(raw_document)
-            if isinstance(raw_document, dict):
-                legacy_import_document = deepcopy(cast(JsonObject, raw_document))
-        except CatalogueError, ParticipantSurfaceError:
-            return render(
-                request,
-                "conformance/builder_import.html",
-                {"plan_json": raw_plan_json, "import_error": f"Plan validation failed: {error}"},
-                status=400,
-            )
+        return render(
+            request,
+            "conformance/builder_import.html",
+            {"plan_json": raw_plan_json, "import_error": f"Plan validation failed: {error}"},
+            status=400,
+        )
 
     draft_store = SessionBuilderDraftStore(request.session)
     draft = draft_store.create()
     configuration = parsed_document.execution_configuration
     config: JsonObject = {"inputs": {}}
-    if legacy_import_document is not None:
-        config["_legacyCanonicalPlan"] = legacy_import_document
     raw_inputs = cast(JsonObject, config["inputs"])
     for participant_input in parsed_document.predefined_inputs:
         value = participant_input.value
@@ -647,47 +632,6 @@ def builder_import(request: HttpRequest) -> HttpResponse:
     )
     draft_store.save(imported_draft)
     return redirect("builder-review", draft_id=draft.draft_id)
-
-
-def _migrated_legacy_dcr_plan(raw_document: object) -> ParticipantPlan:
-    """Translate the supported legacy DCR import shape into participant intent."""
-    legacy = parse_test_plan_document(raw_document)
-    if not isinstance(legacy, PlanDocumentV2) or legacy.specification != "dynamic-client-registration":
-        raise CatalogueError("Browser import accepts participant-plan 1.0 documents")
-    capability_by_method = {
-        "POST": "dcr.v34.capability.registration",
-        "GET": "dcr.v34.capability.retrieval",
-        "PUT": "dcr.v34.capability.update",
-        "DELETE": "dcr.v34.capability.deletion",
-    }
-    selected_capabilities = [
-        capability_by_method[endpoint.method]
-        for endpoint in legacy.endpoints
-        if endpoint.method in capability_by_method
-    ]
-    return parse_participant_plan(
-        {
-            "documentType": "participant-plan",
-            "executionConfiguration": {
-                "compatibilityRuntimeInputs": {},
-                "dynamicClientRegistration": deepcopy(dict(legacy.dynamic_client_registration)),
-                "metadata": deepcopy(dict(legacy.metadata)),
-                "securityEnvironment": deepcopy(dict(legacy.security_environment)),
-            },
-            "id": "participant.imported-dcr",
-            "predefinedInputs": [],
-            "schemaVersion": "1.0",
-            "scheme": legacy.scheme,
-            "securityProfile": legacy.security_profile,
-            "selectedCapabilityIds": selected_capabilities,
-            "specification": {
-                "id": "dynamic-client-registration",
-                "requirementsScope": "dcr",
-                "version": legacy.version,
-            },
-            "suiteReleaseId": str(participant_suite_release().id),
-        }
-    )
 
 
 @require_GET
@@ -770,31 +714,18 @@ def builder_launch(request: HttpRequest, draft_id: str) -> HttpResponse:
         )
 
     try:
-        legacy_import_document = draft.config.get("_legacyCanonicalPlan")
-        if isinstance(legacy_import_document, dict):
-            legacy_prepared = prepare_test_plan_for_run(legacy_import_document, base_dir=Path.cwd())
-            status_body = start_run(
-                config=legacy_prepared.config,
-                compiled_plan=legacy_prepared.compiled_plan,
-                runtime_inputs=legacy_prepared.runtime_inputs,
-                runtime_input_base_dir=Path.cwd(),
-                browser_psu_prompts=True,
-                plan_snapshot=legacy_prepared.snapshot,
-                validation_result=legacy_prepared.validation.to_json_object(),
-            )
-        else:
-            prepared = prepare_participant_plan_for_run(
-                participant_plan_to_document(state.document),
-                base_dir=Path.cwd(),
-            )
-            status_body = start_run(
-                config=prepared.config,
-                prepared_execution_manifest=prepared.prepared_execution,
-                browser_psu_prompts=True,
-                plan_snapshot=prepared.safe_snapshot,
-                validation_result=prepared.validation.to_json_object(),
-            )
-    except (CatalogueError, ConfigError, ParticipantSurfaceError, TestPlanValidationError) as error:
+        prepared = prepare_participant_plan_for_run(
+            participant_plan_to_document(state.document),
+            base_dir=Path.cwd(),
+        )
+        status_body = start_run(
+            config=prepared.config,
+            prepared_execution_manifest=prepared.prepared_execution,
+            browser_psu_prompts=True,
+            plan_snapshot=prepared.safe_snapshot,
+            validation_result=prepared.validation.to_json_object(),
+        )
+    except (CatalogueError, ConfigError, ParticipantSurfaceError) as error:
         return render(
             request,
             "conformance/builder_review.html",
@@ -1397,16 +1328,7 @@ def _builder_review_state(draft: BuilderDraft) -> _BuilderReviewState:
             if finding.severity.value == "error"
         ]
         compiled_plan = None
-        legacy_import_document = draft.config.get("_legacyCanonicalPlan")
-        if isinstance(legacy_import_document, dict):
-            try:
-                compiled_plan = prepare_test_plan_for_run(
-                    legacy_import_document,
-                    base_dir=Path.cwd(),
-                ).compiled_plan
-            except TestPlanValidationError as error:
-                blockers.append(str(error))
-        elif not blockers:
+        if not blockers:
             try:
                 prepared = prepare_participant_plan_for_run(document_json, base_dir=Path.cwd())
                 compiled_plan = prepared.compiled_plan
@@ -1450,48 +1372,6 @@ def _builder_review_state(draft: BuilderDraft) -> _BuilderReviewState:
             safe_export_json="",
             sensitive_export_warning=sensitive_export_warning,
         )
-
-
-def _model_config_blockers(document: PlanDocumentV2) -> tuple[str, ...]:
-    """Return launch blockers from executable model-bank config validation.
-
-    Args:
-        document: Parsed canonical test-plan document.
-
-    Returns:
-        Empty tuple when the model-bank config is valid, otherwise one blocker.
-    """
-    try:
-        if document.specification == "dynamic-client-registration":
-            validate_dcr_file_references(
-                parse_dcr_plan_configuration(
-                    document.security_environment,
-                    document.dynamic_client_registration,
-                    document.metadata,
-                )
-            )
-        parse_model_bank_config(model_bank_config_from_plan_config(document.config), base_dir=Path.cwd())
-    except ConfigError as error:
-        return (f"Config validation failed: {error}",)
-    return ()
-
-
-def _selected_security_blockers(document: PlanDocumentV2, compiled_plan: CompiledTestPlan) -> tuple[str, ...]:
-    """Return blockers for security fields required by selected test cases.
-
-    Args:
-        document: Parsed canonical test-plan document.
-        compiled_plan: Compiled selected-run preview.
-
-    Returns:
-        Blocking messages for missing security config needed by selected cases.
-    """
-    if not any(test_case.response_signature_required for test_case in compiled_plan.test_cases):
-        return ()
-    discovery_url = document.security_environment.get("discoveryUrl") or document.config.get("discoveryUrl")
-    if isinstance(discovery_url, str) and discovery_url.strip():
-        return ()
-    return ("Discovery URL is required because the selected run validates response signatures.",)
 
 
 def _builder_review_counts(state: _BuilderReviewState) -> dict[str, int]:
@@ -1594,18 +1474,6 @@ def _review_key_looks_sensitive(key: str) -> bool:
     return (
         normalized.endswith("token") or "secret" in normalized or "password" in normalized or "privatekey" in normalized
     )
-
-
-def _sensitive_runtime_input_ids(compiled_plan: CompiledTestPlan) -> tuple[str, ...]:
-    """Return sensitive runtime input ids from compiler traceability.
-
-    Args:
-        compiled_plan: Compiled plan whose trace should be inspected.
-
-    Returns:
-        Runtime input ids marked sensitive by catalogue metadata.
-    """
-    return tuple(trace.input_id for trace in compiled_plan.traceability.runtime_input_snapshot if trace.sensitive)
 
 
 def _run_context(record: RunRecord) -> dict[str, object]:
@@ -2037,82 +1905,6 @@ def _step_progress_counts(step_progress: list[dict[str, object]]) -> dict[str, i
             counts["completed"] += 1
 
     return counts
-
-
-def _result_steps(result: JsonObject | None) -> list[dict[str, object]]:
-    """Build template-friendly display rows for per-step result details.
-
-    Args:
-        result: Structured run result JSON, or ``None`` before completion.
-
-    Returns:
-        Ordered list of step display dictionaries with summary fields,
-        assertion summaries, failed/warn issues, and pretty JSON blocks for
-        request/response/remaining details.
-    """
-    if result is None:
-        return []
-    raw_steps = result.get("steps")
-    if not isinstance(raw_steps, list):
-        return []
-
-    rendered_steps: list[dict[str, object]] = []
-    for raw_step in raw_steps:
-        if not isinstance(raw_step, dict):
-            continue
-        details = raw_step.get("details")
-        step_details = details if isinstance(details, dict) else {}
-
-        assertions_raw = step_details.get("assertions")
-        assertion_summaries: list[dict[str, str]] = []
-        if isinstance(assertions_raw, list):
-            for assertion in assertions_raw:
-                if not isinstance(assertion, dict):
-                    continue
-                status = assertion.get("status")
-                message = assertion.get("message")
-                if isinstance(status, str) and isinstance(message, str):
-                    assertion_summaries.append({"status": status, "message": message})
-
-        request_evidence = step_details.get("request")
-        response_evidence = step_details.get("response")
-        request_dict = request_evidence if isinstance(request_evidence, dict) else None
-        response_dict = response_evidence if isinstance(response_evidence, dict) else None
-
-        request_method = request_dict.get("method") if request_dict is not None else None
-        request_url = request_dict.get("url") if request_dict is not None else None
-        response_status_code = response_dict.get("statusCode") if response_dict is not None else None
-        if not isinstance(request_method, str):
-            request_method = None
-        if not isinstance(request_url, str):
-            request_url = None
-        if not isinstance(response_status_code, int):
-            response_status_code = None
-
-        request_json = _pretty_json(request_dict)
-        response_json = _pretty_json(response_dict)
-        remaining_details_json = _pretty_json(_remaining_step_details(step_details))
-
-        rendered_steps.append(
-            {
-                "name": raw_step.get("name") if isinstance(raw_step.get("name"), str) else "-",
-                "status": raw_step.get("status") if isinstance(raw_step.get("status"), str) else "-",
-                "message": raw_step.get("message") if isinstance(raw_step.get("message"), str) else "",
-                "url": raw_step.get("url") if isinstance(raw_step.get("url"), str) else None,
-                "request_method": request_method,
-                "request_url": request_url,
-                "response_status_code": response_status_code,
-                "assertion_summaries": assertion_summaries,
-                "issues": _step_issues(step_details),
-                "request_json": request_json,
-                "request_json_preview": _json_preview(request_json),
-                "response_json": response_json,
-                "response_json_preview": _json_preview(response_json),
-                "remaining_details_json": remaining_details_json,
-                "remaining_details_json_preview": _json_preview(remaining_details_json),
-            }
-        )
-    return rendered_steps
 
 
 def _step_issues(step_details: JsonObject) -> list[dict[str, str]]:

@@ -466,6 +466,15 @@ Remove only structures with no remaining consumers. The change should be
 primarily deletion. Remaining compatibility code must identify its consumer and
 retention reason.
 
+The legacy-removal layer accepts these additional decisions:
+
+| ID | Decision | Rationale |
+| --- | --- | --- |
+| `TPA-072` | Browser import, CLI `--test-plan`, and REST run creation accept only `participant-plan` `1.0`. The temporary canonical `schemaVersion: "1.0"` fallback and legacy DCR import translation are removed. | All participant surfaces now share the schema-owned plan boundary, so retaining a second public grammar would preserve duplicate scope and configuration authority after its PR 9 expiry. |
+| `TPA-073` | The original PIS walking-skeleton adapter is removed. The generic participant-surface bridge remains the only production binding from resolved plans and execution manifests to the compatibility runtime. | All registered catalogue families use the shared bridge; the PIS-only adapter had no production call site and duplicated selection, dependency, frequency, and observation mapping. |
+| `TPA-074` | `conformance.catalogue`, `conformance.catalogue_registry`, `conformance.catalogues.*`, `conformance.test_plan_validation`, `conformance.manifest`, `conformance.test_plan`, `conformance.execution_schedule`, and synthetic lowering remain compatibility runtime implementation. Pinned current-pipeline fixtures remain golden evidence. | `conformance.participant_surface` still produces a `CompiledTestPlan`, and the hardened Read/Write/DCR executors still consume catalogue and manifest primitives for HTTP, OAuth, PSU, assertions, scheduling, masking, evidence, and result compatibility. Deleting them would remove executable behaviour rather than obsolete architecture. |
+| `TPA-075` | The asynchronous run lifecycle accepts only `PreparedExecutionManifest`; its raw `Manifest`/`TestPlan`, bare `CompiledTestPlan`, and smoke-check dispatch branches are removed. | Browser and REST have no remaining call sites for those launch forms. Keeping them would preserve parallel execution entry points after both public surfaces moved to generated manifests. |
+
 ## Rules for every implementation layer
 
 - Preserve a working system throughout the migration.

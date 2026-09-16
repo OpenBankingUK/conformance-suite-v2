@@ -5,19 +5,15 @@ from __future__ import annotations
 import json
 from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, datetime
-from pathlib import Path
+from types import MappingProxyType
 from typing import cast
 
-import httpx
 import pytest
 
-from conformance.catalogues import PIS_PAYMENT_CATALOGUE
 from conformance.configuration_contracts import (
     ConfigurationContractError,
     DiagnosticCode,
     ExecutionManifestGenerationError,
-    LegacyExecutionEngine,
-    ResolvedPlanAdapterError,
     compile_participant_plan,
     dump_execution_manifest,
     execution_manifest_to_document,
@@ -28,7 +24,6 @@ from conformance.configuration_contracts import (
     load_suite_release,
     load_test_definition_catalogue,
     parse_execution_manifest,
-    prepare_resolved_execution_manifest,
 )
 from conformance.configuration_contracts.models import (
     CompilationFinding,
@@ -43,9 +38,13 @@ from conformance.configuration_contracts.models import (
 from conformance.configuration_contracts.models import (
     TestDefinitionCatalogue as ConfigurationTestDefinitionCatalogue,
 )
-from conformance.executor import run_execution_manifest
-from conformance.json_types import JsonObject, JsonValue
-from conformance.results import StepResult, build_safe_participant_plan_snapshot, build_smoke_check_result
+from conformance.json_types import JsonObject
+from conformance.results import (
+    ResultTraceabilitySource,
+    StepResult,
+    build_safe_participant_plan_snapshot,
+    build_smoke_check_result,
+)
 from tests.support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.unit
@@ -169,118 +168,27 @@ def test_generation_rejects_non_topological_resolved_work() -> None:
         )
 
 
-def test_resolved_execution_preparation_binds_manifest_to_legacy_read_write(
-    tmp_path: Path,
-) -> None:
-    _suite, requirements, test_definitions, participant_plan, resolved = _resolved_inputs()
-
-    prepared = prepare_resolved_execution_manifest(
-        resolved,
-        requirements,
-        test_definitions,
-        PIS_PAYMENT_CATALOGUE,
-        participant_plan=participant_plan,
-        runtime_inputs=_legacy_runtime_inputs(),
-        runtime_input_base_dir=tmp_path,
-    )
-
-    assert prepared.manifest == generate_execution_manifest(resolved, requirements, test_definitions)
-    assert prepared.engine is LegacyExecutionEngine.READ_WRITE
-    assert prepared.compiled_plan.traceability.generated_test_case_ids == (
-        "pis-v4-domestic-standing-order-consent-create",
-        "pis-v4-domestic-standing-order-consent-read",
-        "pis-v4-domestic-standing-order-create",
-        "pis-v4-domestic-standing-order-read",
-    )
-    assert prepared.runtime_inputs["pisStandingOrderFrequencyType"] == "WEEK"
-    assert prepared.result_traceability is not None
-    assert prepared.result_traceability.participant_plan_snapshot["id"] == "participant.pis-dso.example"
-
-    with pytest.raises(ExecutionManifestGenerationError):
-        generate_execution_manifest(
-            replace(resolved, selection_valid=False),
-            requirements,
-            test_definitions,
-        )
-
-
-def test_compatibility_binding_rejects_compiled_execution_drift(tmp_path: Path) -> None:
-    _suite, requirements, test_definitions, participant_plan, resolved = _resolved_inputs()
-    prepared = prepare_resolved_execution_manifest(
-        resolved,
-        requirements,
-        test_definitions,
-        PIS_PAYMENT_CATALOGUE,
-        participant_plan=participant_plan,
-        runtime_inputs=_legacy_runtime_inputs(),
-        runtime_input_base_dir=tmp_path,
-    )
-    drifted = replace(
-        prepared,
-        compiled_plan=replace(
-            prepared.compiled_plan,
-            test_cases=tuple(reversed(prepared.compiled_plan.test_cases)),
-        ),
-    )
-
-    with (
-        httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))) as client,
-        pytest.raises(ResolvedPlanAdapterError, match="selection differs"),
-    ):
-        run_execution_manifest(drifted, client=client)
-
-
-def test_preparation_rejects_mismatched_participant_snapshot(tmp_path: Path) -> None:
-    _suite, requirements, test_definitions, participant_plan, resolved = _resolved_inputs()
-    participant_input = participant_plan.predefined_inputs[0]
-    assert not isinstance(participant_input.value, str)
-    changed_plan = replace(
-        participant_plan,
-        predefined_inputs=(
-            replace(
-                participant_input,
-                value=replace(participant_input.value, point_in_time="04"),
-            ),
-        ),
-    )
-
-    with pytest.raises(ResolvedPlanAdapterError, match="differs from the resolved plan"):
-        prepare_resolved_execution_manifest(
-            resolved,
-            requirements,
-            test_definitions,
-            PIS_PAYMENT_CATALOGUE,
-            participant_plan=changed_plan,
-            runtime_inputs=_legacy_runtime_inputs(),
-            runtime_input_base_dir=tmp_path,
-        )
-
-
 @pytest.mark.parametrize(
     ("failed_observation_id", "expected_status"),
     [
         (None, "passed"),
-        ("pis-v4-domestic-standing-order-create-request", "failed"),
+        ("observation-2", "failed"),
     ],
 )
 def test_result_traceability_connects_stable_ids_for_passed_and_failed_runs(
-    tmp_path: Path,
     failed_observation_id: str | None,
     expected_status: str,
 ) -> None:
     _suite, requirements, test_definitions, participant_plan, resolved = _resolved_inputs()
-    prepared = prepare_resolved_execution_manifest(
-        resolved,
-        requirements,
-        test_definitions,
-        PIS_PAYMENT_CATALOGUE,
-        participant_plan=participant_plan,
-        runtime_inputs=_legacy_runtime_inputs(),
-        runtime_input_base_dir=tmp_path,
+    manifest = generate_execution_manifest(resolved, requirements, test_definitions)
+    source = ResultTraceabilitySource(
+        execution_manifest=manifest,
+        resolved_plan=resolved,
+        participant_plan_snapshot=build_safe_participant_plan_snapshot(participant_plan, requirements),
+        result_observation_id_by_manifest_step_id=MappingProxyType(
+            {str(step.id): f"observation-{index}" for index, step in enumerate(manifest.steps)}
+        ),
     )
-    source = prepared.result_traceability
-    assert source is not None
-    assert prepared.manifest is not None
     observations = [
         StepResult(name="setup-token-pis-payment-access", status="passed", message="setup passed"),
         *[
@@ -297,13 +205,11 @@ def test_result_traceability_connects_stable_ids_for_passed_and_failed_runs(
     first = build_smoke_check_result(
         observations,
         started_at=datetime.now(UTC),
-        compiled_plan=prepared.compiled_plan,
         result_traceability=source,
     ).to_json_object()
     second_traceability = build_smoke_check_result(
         observations,
         started_at=datetime.now(UTC),
-        compiled_plan=prepared.compiled_plan,
         result_traceability=source,
     ).to_json_object()["traceability"]
 
@@ -335,7 +241,7 @@ def test_result_traceability_connects_stable_ids_for_passed_and_failed_runs(
     ]
     execution_manifest = cast(JsonObject, traceability["executionManifest"])
     manifest_steps = cast("list[JsonObject]", execution_manifest["steps"])
-    assert [step["id"] for step in manifest_steps] == [step.id for step in prepared.manifest.steps]
+    assert [step["id"] for step in manifest_steps] == [step.id for step in manifest.steps]
     assert [step["resultObservationId"] for step in manifest_steps] == list(
         source.result_observation_id_by_manifest_step_id.values()
     )
@@ -348,19 +254,17 @@ def test_result_traceability_connects_stable_ids_for_passed_and_failed_runs(
     assert traceability["compilerFindings"] == []
 
 
-def test_result_traceability_preserves_compiler_findings(tmp_path: Path) -> None:
+def test_result_traceability_preserves_compiler_findings() -> None:
     _suite, requirements, test_definitions, participant_plan, resolved = _resolved_inputs()
-    prepared = prepare_resolved_execution_manifest(
-        resolved,
-        requirements,
-        test_definitions,
-        PIS_PAYMENT_CATALOGUE,
-        participant_plan=participant_plan,
-        runtime_inputs=_legacy_runtime_inputs(),
-        runtime_input_base_dir=tmp_path,
+    manifest = generate_execution_manifest(resolved, requirements, test_definitions)
+    source = ResultTraceabilitySource(
+        execution_manifest=manifest,
+        resolved_plan=resolved,
+        participant_plan_snapshot=build_safe_participant_plan_snapshot(participant_plan, requirements),
+        result_observation_id_by_manifest_step_id=MappingProxyType(
+            {str(step.id): f"observation-{index}" for index, step in enumerate(manifest.steps)}
+        ),
     )
-    source = prepared.result_traceability
-    assert source is not None
     warning = CompilationFinding(
         code=StableId("compiler.policy.warning"),
         severity=FindingSeverity.WARNING,
@@ -421,18 +325,6 @@ def _resolved_inputs() -> tuple[
         participant_plan,
         compile_participant_plan(suite, requirements, test_definitions, participant_plan),
     )
-
-
-def _legacy_runtime_inputs() -> dict[str, JsonValue]:
-    return {
-        "pisCreditorAccountIdentification": "08080021325698",
-        "pisCreditorAccountName": "Merchant",
-        "pisCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
-        "pisFirstPaymentDateTime": "2026-10-01T00:00:00Z",
-        "pisInstructedAmountAmount": "10.00",
-        "pisInstructedAmountCurrency": "GBP",
-        "resourceBaseUrl": "https://rs.example.com",
-    }
 
 
 def _set_attribute(instance: object, name: str, value: object) -> None:

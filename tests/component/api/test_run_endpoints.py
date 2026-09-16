@@ -1,30 +1,15 @@
 """Component tests for the loopback REST run lifecycle endpoints."""
 
 import json
-from collections.abc import Mapping
 from datetime import UTC, datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
 from django.test import Client
 
 from conformance.api.run_store import run_store
-from conformance.catalogue import (
-    CatalogueAssertion,
-    CatalogueKey,
-    CatalogueRequestStep,
-    CatalogueTestCase,
-    CompiledTestPlan,
-    ImplementedEndpoint,
-    SecurityProfileApplicability,
-    TestCaseApplicability,
-    TestCatalogue,
-    TestPlanSpec,
-    compile_test_plan,
-)
-from conformance.catalogues.ais import AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE, AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY
-from conformance.test_plan import TestPlan
+from conformance.configuration_contracts import PreparedExecutionManifest
+from tests.support.paths import REPO_ROOT
 from tests.support.run_execution import StubbedRunExecution
 
 pytestmark = pytest.mark.component
@@ -35,22 +20,17 @@ VALID_CONFIG = {
     "discoveryUrl": "https://example.com/.well-known/openid-configuration",
 }
 
-VALID_TEST_PLAN = {
-    "schemaVersion": "1.0",
-    "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI1_ADVANCED"},
-    "securityEnvironment": {
-        "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-        "resourceBaseUrl": "https://resource.example.com",
-    },
-    "resourceGroups": [
-        {
-            "id": "AIS",
-            "endpoints": [{"method": "GET", "path": "/open-banking/v4.0/aisp/accounts"}],
-        }
-    ],
-    "businessTestData": {},
-    "metadata": {},
-}
+VALID_TEST_PLAN = json.loads(
+    (
+        REPO_ROOT
+        / "tests"
+        / "fixtures"
+        / "configuration_contracts"
+        / "pis"
+        / "v4_0_1"
+        / "participant-plan.surface.json"
+    ).read_text(encoding="utf-8")
+)
 
 
 @pytest.mark.usefixtures("api_singleton_stores")
@@ -78,7 +58,7 @@ class TestCreateRunEndpoint:
         client = Client()
         response = client.post("/api/runs/", data=json.dumps({}), content_type="application/json")
         assert response.status_code == 400
-        assert "schemaVersion 1.0 test plan" in response.json()["error"]
+        assert "participant-plan 1.0" in response.json()["error"]
 
     def test_rejects_legacy_config_plan_spec_shape(self) -> None:
         client = Client()
@@ -94,275 +74,6 @@ class TestCreateRunEndpoint:
         assert response.status_code == 400
         assert "Legacy run request field(s) are no longer supported" in response.json()["error"]
 
-    def test_start_run_derives_default_plan_and_persists_selected_steps(
-        self, stubbed_run_execution: StubbedRunExecution
-    ) -> None:
-        """Lifecycle start derives default plans and snapshots selected steps."""
-        from conformance.api.run_lifecycle import start_run
-        from conformance.manifest import parse_manifest
-        from conformance.model_bank_config import ModelBankConfig
-
-        config = ModelBankConfig(
-            discovery_url="https://example.com/.well-known/openid-configuration",
-            result_output_path=Path("results.json"),
-        )
-        manifest = parse_manifest(
-            {
-                "schemaVersion": "v1",
-                "name": "plan snapshot",
-                "steps": [
-                    {
-                        "id": "mandatory-http",
-                        "name": "Mandatory HTTP",
-                        "mandatory": True,
-                        "request": {"method": "GET", "url": "https://example.com/mandatory"},
-                        "assertions": [{"type": "http_status", "expected": 200}],
-                    },
-                    {
-                        "id": "optional-http",
-                        "name": "Optional HTTP",
-                        "optional": True,
-                        "request": {"method": "GET", "url": "https://example.com/optional"},
-                        "assertions": [{"type": "http_status", "expected": 200}],
-                    },
-                    {
-                        "kind": "psu-authorization",
-                        "id": "psu-step",
-                        "name": "PSU authorization",
-                        "mode": "manual",
-                        "authorizationEndpoint": "https://auth.example.com/authorize",
-                        "clientId": "client-123",
-                        "redirectUri": "https://conformance.example.com/callback",
-                    },
-                ],
-            }
-        )
-
-        response = start_run(config=config, manifest=manifest, plan=None)
-        run_id = response["id"]
-        assert isinstance(run_id, str)
-        record = run_store.get_run(run_id)
-
-        assert record is not None
-        assert [step.step_id for step in record.planned_steps] == ["mandatory-http", "psu-step"]
-        assert [step.order for step in record.planned_steps] == [0, 1]
-        assert [step.kind for step in record.planned_steps] == ["http", "psu-authorization"]
-
-        launch = stubbed_run_execution.wait_for_launch()
-        threaded_plan = launch.args[6]
-        assert isinstance(threaded_plan, TestPlan)
-        assert threaded_plan.selected_step_ids() == ["mandatory-http", "psu-step"]
-
-    def test_start_run_persists_selected_only_when_plan_deselects_steps(
-        self, stubbed_run_execution: StubbedRunExecution
-    ) -> None:
-        """Run snapshots include selected steps only, excluding deselections."""
-        from conformance.api.run_lifecycle import start_run
-        from conformance.manifest import parse_manifest
-        from conformance.model_bank_config import ModelBankConfig
-        from conformance.test_plan import TestPlan
-
-        config = ModelBankConfig(
-            discovery_url="https://example.com/.well-known/openid-configuration",
-            result_output_path=Path("results.json"),
-        )
-        manifest = parse_manifest(
-            {
-                "schemaVersion": "v1",
-                "name": "selected only",
-                "steps": [
-                    {
-                        "id": "keep-me",
-                        "name": "Keep me",
-                        "request": {"method": "GET", "url": "https://example.com/keep"},
-                        "assertions": [{"type": "http_status", "expected": 200}],
-                    },
-                    {
-                        "id": "drop-me",
-                        "name": "Drop me",
-                        "request": {"method": "GET", "url": "https://example.com/drop"},
-                        "assertions": [{"type": "http_status", "expected": 200}],
-                    },
-                ],
-            }
-        )
-        plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["drop-me"])
-
-        response = start_run(config=config, manifest=manifest, plan=plan)
-        run_id = response["id"]
-        assert isinstance(run_id, str)
-        record = run_store.get_run(run_id)
-
-        assert record is not None
-        assert [step.step_id for step in record.planned_steps] == ["keep-me"]
-
-        launch = stubbed_run_execution.wait_for_launch()
-        threaded_plan = launch.args[6]
-        assert isinstance(threaded_plan, TestPlan)
-        assert threaded_plan.selected_step_ids() == ["keep-me"]
-
-    def test_start_run_marks_non_mandatory_compiled_steps_optional(
-        self,
-        stubbed_run_execution: StubbedRunExecution,
-        tmp_path: Path,
-    ) -> None:
-        """Compiled-plan snapshots mark non-mandatory catalogue cases as optional."""
-        from conformance.api.run_lifecycle import start_run
-        from conformance.model_bank_config import ModelBankConfig
-
-        catalogue = TestCatalogue(
-            key=CatalogueKey(standard="open-banking", version="v4.0", api="ais"),
-            catalogue_version="test.1",
-            test_cases=(
-                CatalogueTestCase(
-                    test_case_id="mandatory-case",
-                    name="Mandatory case",
-                    role="resource",
-                    compliance_scope=("legacy-fcs-script:test#mandatory",),
-                    applicability=TestCaseApplicability(
-                        security_profiles=SecurityProfileApplicability(profiles=("all",)),
-                    ),
-                    mandatory=True,
-                    request_steps=(
-                        CatalogueRequestStep(
-                            step_id="mandatory-step",
-                            name="Mandatory step",
-                            method="GET",
-                            path="/open-banking/v4.0/aisp/accounts",
-                        ),
-                    ),
-                    assertions=(CatalogueAssertion("status-200", "http_status", "HTTP 200", {"expected": 200}),),
-                ),
-                CatalogueTestCase(
-                    test_case_id="optional-case",
-                    name="Optional case",
-                    role="resource",
-                    compliance_scope=("legacy-fcs-script:test#optional",),
-                    applicability=TestCaseApplicability(
-                        security_profiles=SecurityProfileApplicability(profiles=("all",)),
-                    ),
-                    mandatory=False,
-                    request_steps=(
-                        CatalogueRequestStep(
-                            step_id="optional-step",
-                            name="Optional step",
-                            method="GET",
-                            path="/open-banking/v4.0/aisp/accounts",
-                        ),
-                    ),
-                    assertions=(CatalogueAssertion("status-200", "http_status", "HTTP 200", {"expected": 200}),),
-                ),
-            ),
-        )
-        compiled_plan = compile_test_plan(
-            catalogue,
-            TestPlanSpec(
-                schema_version="v1",
-                catalogue_key=catalogue.key,
-                security_profile="fapi1-advanced",
-                implemented_endpoints=(),
-                runtime_inputs={},
-            ),
-        )
-        config = ModelBankConfig(
-            discovery_url="https://example.com/.well-known/openid-configuration",
-            result_output_path=tmp_path / "results.json",
-        )
-
-        response = start_run(
-            config=config,
-            compiled_plan=compiled_plan,
-            runtime_inputs={},
-            runtime_input_base_dir=tmp_path,
-        )
-        run_id = response["id"]
-        assert isinstance(run_id, str)
-        record = run_store.get_run(run_id)
-
-        assert record is not None
-        assert [(step.step_id, step.mandatory, step.optional) for step in record.planned_steps] == [
-            ("mandatory-step", True, False),
-            ("optional-step", False, True),
-        ]
-        stubbed_run_execution.wait_for_launch()
-
-    def test_start_run_snapshots_expanded_ais_permission_setup_steps(
-        self,
-        stubbed_run_execution: StubbedRunExecution,
-        tmp_path: Path,
-    ) -> None:
-        """AIS run snapshots use executable basic/detail setup steps."""
-        from conformance.api.run_lifecycle import start_run
-        from conformance.model_bank_config import ModelBankConfig
-
-        compiled_plan = compile_test_plan(
-            AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE,
-            TestPlanSpec(
-                schema_version="v1",
-                catalogue_key=AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY,
-                security_profile="fapi1-advanced",
-                implemented_endpoints=(
-                    ImplementedEndpoint(
-                        method="GET",
-                        path="/open-banking/v4.0/aisp/accounts/{AccountId}",
-                        resource_group="Accounts",
-                    ),
-                    ImplementedEndpoint(
-                        method="GET",
-                        path="/open-banking/v4.0/aisp/accounts/{AccountId}/balances",
-                        resource_group="Balances",
-                    ),
-                ),
-                runtime_inputs={
-                    "resourceBaseUrl": "https://resource.example.com",
-                    "consentedAccountId": "account-123",
-                },
-            ),
-        )
-        config = ModelBankConfig(
-            discovery_url="https://example.com/.well-known/openid-configuration",
-            result_output_path=tmp_path / "results.json",
-        )
-
-        response = start_run(
-            config=config,
-            compiled_plan=compiled_plan,
-            runtime_inputs={},
-            runtime_input_base_dir=tmp_path,
-        )
-        run_id = response["id"]
-        assert isinstance(run_id, str)
-        record = run_store.get_run(run_id)
-
-        assert record is not None
-        planned_step_ids = [step.step_id for step in record.planned_steps]
-        assert "ais-at-setup-consent-request" not in planned_step_ids
-        assert "ais-at-setup-token-request" not in planned_step_ids
-        assert planned_step_ids[:8] == [
-            "setup-token-ais-client-credentials",
-            "ais-at-setup-discovery-request",
-            "ais-at-setup-basic-consent-request",
-            "setup-ais-basic-consent-authorisation",
-            "ais-at-setup-detail-consent-request",
-            "setup-ais-detail-consent-authorisation",
-            "ais-at-setup-basic-token-request",
-            "ais-at-setup-detail-token-request",
-        ]
-        assert [
-            step.kind
-            for step in record.planned_steps
-            if step.step_id
-            in {
-                "ais-at-setup-basic-consent-request",
-                "setup-ais-basic-consent-authorisation",
-                "ais-at-setup-detail-consent-request",
-                "setup-ais-detail-consent-authorisation",
-                "ais-at-setup-basic-token-request",
-                "ais-at-setup-detail-token-request",
-            }
-        ] == ["http", "psu-authorization", "http", "psu-authorization", "http", "http"]
-        stubbed_run_execution.wait_for_launch()
-
     def test_creates_run_and_returns_201(self, stubbed_run_execution: StubbedRunExecution) -> None:
         client = Client()
         body = VALID_TEST_PLAN
@@ -375,42 +86,15 @@ class TestCreateRunEndpoint:
         record = run_store.get_run(data["id"])
         assert record is not None
         assert record.status == "pending"
+        assert record.planned_steps
         launch = stubbed_run_execution.wait_for_launch()
-        runtime_inputs = launch.args[3]
         assert launch.args[0] == data["id"]
-        assert isinstance(launch.args[2], CompiledTestPlan)
-        assert isinstance(runtime_inputs, Mapping)
-        assert "accessToken" not in runtime_inputs
-        assert launch.args[5:] == (None, None)
+        prepared = launch.args[2]
+        assert isinstance(prepared, PreparedExecutionManifest)
+        assert prepared.manifest is not None
         assert launch.kwargs == {"browser_psu_prompts": False}
 
-    def test_creates_v311_run_from_canonical_plan(self, stubbed_run_execution: StubbedRunExecution) -> None:
-        """REST creation compiles the exact v3.1.11 Read/Write boundary."""
-        client = Client()
-        body = json.loads(json.dumps(VALID_TEST_PLAN))
-        body["specification"]["version"] = "3.1.11"
-        body["resourceGroups"][0]["endpoints"][0]["path"] = "/open-banking/v3.1/aisp/accounts"
-
-        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
-
-        assert response.status_code == 201
-        record = run_store.get_run(response.json()["id"])
-        assert record is not None
-        assert record.plan_snapshot is not None
-        specification = record.plan_snapshot["specification"]
-        assert isinstance(specification, dict)
-        assert specification["version"] == "3.1.11"
-        launch = stubbed_run_execution.wait_for_launch()
-        compiled_plan = launch.args[2]
-        assert isinstance(compiled_plan, CompiledTestPlan)
-        assert all(
-            "/v4.0/" not in request.path
-            for test_case in compiled_plan.test_cases
-            for request in test_case.request_steps
-        )
-
-    def test_creates_run_from_canonical_json_test_plan(self, stubbed_run_execution: StubbedRunExecution) -> None:
-        """REST API accepts the PRD schemaVersion 1.0 test-plan body directly."""
+    def test_rejects_legacy_canonical_test_plan(self, stubbed_run_execution: StubbedRunExecution) -> None:
         client = Client()
         body = {
             "schemaVersion": "1.0",
@@ -435,20 +119,9 @@ class TestCreateRunEndpoint:
 
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
 
-        assert response.status_code == 201
-        data = response.json()
-        assert data["status"] == "pending"
-        record = run_store.get_run(data["id"])
-        assert record is not None
-        assert record.plan_snapshot is not None
-        assert record.plan_snapshot["schemaVersion"] == "1.0"
-        business_data = record.plan_snapshot["businessTestData"]
-        assert isinstance(business_data, dict)
-        assert "inputs" not in business_data
-        assert "secret-access-token" not in json.dumps(record.plan_snapshot)
-        assert record.validation_result is not None
-        assert record.validation_result["valid"] is True
-        stubbed_run_execution.wait_for_launch()
+        assert response.status_code == 400
+        assert "participant-plan 1.0" in response.json()["error"]
+        stubbed_run_execution.assert_not_launched()
 
     def test_rejects_canonical_plan_spec_with_separate_config(self, stubbed_run_execution: StubbedRunExecution) -> None:
         """Legacy config/planSpec requests are no longer accepted."""
@@ -473,8 +146,8 @@ class TestCreateRunEndpoint:
         assert "Legacy run request field(s) are no longer supported" in response.json()["error"]
         stubbed_run_execution.assert_not_launched()
 
-    def test_creates_run_from_nested_canonical_test_plan(self, stubbed_run_execution: StubbedRunExecution) -> None:
-        """REST API accepts canonical test plans under the testPlan key."""
+    def test_creates_run_from_nested_participant_plan(self, stubbed_run_execution: StubbedRunExecution) -> None:
+        """REST API accepts participant plans under the testPlan key."""
         client = Client()
         body = {"testPlan": VALID_TEST_PLAN}
 
