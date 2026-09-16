@@ -75,7 +75,11 @@ acts as a tenant identifier that should not appear in shared reports.
 """
 
 
-def mask_json_value(value: JsonValue) -> JsonValue:
+def mask_json_value(
+    value: JsonValue,
+    *,
+    sensitive_pointers: Collection[str] = (),
+) -> JsonValue:
     """Return a deep-copied JSON value with sensitive keys masked.
 
     Recursively walks objects and arrays. Any object key matching
@@ -89,10 +93,53 @@ def mask_json_value(value: JsonValue) -> JsonValue:
     Returns:
         A new JSON value safe to embed in shared result files.
     """
+    masked: JsonValue
     if isinstance(value, dict):
-        return _mask_object(value)
-    if isinstance(value, list):
-        return [mask_json_value(item) for item in value]
+        masked = _mask_object(value)
+    elif isinstance(value, list):
+        masked = [mask_json_value(item) for item in value]
+    else:
+        masked = value
+    return _mask_json_pointers_in_place(masked, sensitive_pointers)
+
+
+def mask_json_pointers(value: JsonValue, sensitive_pointers: Collection[str]) -> JsonValue:
+    """Deep-copy a JSON value and mask only the supplied RFC 6901 locations."""
+    if isinstance(value, dict):
+        copied: JsonValue = {key: mask_json_pointers(item, ()) for key, item in value.items()}
+    elif isinstance(value, list):
+        copied = [mask_json_pointers(item, ()) for item in value]
+    else:
+        copied = value
+    return _mask_json_pointers_in_place(copied, sensitive_pointers)
+
+
+def _mask_json_pointers_in_place(value: JsonValue, sensitive_pointers: Collection[str]) -> JsonValue:
+    """Mask trusted pointer targets in an already detached JSON value."""
+    for pointer in sensitive_pointers:
+        if pointer == "":
+            value = MASKED_VALUE
+            continue
+        if not pointer.startswith("/"):
+            continue
+        parts = [part.replace("~1", "/").replace("~0", "~") for part in pointer[1:].split("/")]
+        current: JsonValue = value
+        for part in parts[:-1]:
+            if isinstance(current, dict):
+                candidate = current.get(part)
+            elif isinstance(current, list) and part.isdigit() and int(part) < len(current):
+                candidate = current[int(part)]
+            else:
+                candidate = None
+            if candidate is None:
+                break
+            current = candidate
+        else:
+            leaf = parts[-1]
+            if isinstance(current, dict) and leaf in current:
+                current[leaf] = MASKED_VALUE
+            elif isinstance(current, list) and leaf.isdigit() and int(leaf) < len(current):
+                current[int(leaf)] = MASKED_VALUE
     return value
 
 

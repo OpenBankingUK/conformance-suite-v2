@@ -1,7 +1,7 @@
 {
   "artifacts": [
     {
-      "digest": "sha256:c7a3ca168e5dbc6520d789d9daa4def2d1670101f7a836faad17d34696052cb0",
+      "digest": "sha256:cbd0eeec56a7f5c702ac9ecee1cc1cc3bee6646a29fd0f95ac25dc350aaff979",
       "id": "obl.pis-v401.requirements",
       "kind": "requirements-catalogue",
       "mediaType": "application/json",
@@ -9,7 +9,7 @@
       "uri": "conformance/configuration_contracts/catalogues/pis/v4_0_1/requirements.json"
     },
     {
-      "digest": "sha256:882b19c85ce05cb415049159afec14501dd3288eb08b2a64a4d0b24f44519daa",
+      "digest": "sha256:685af885f0ea85a20171d015974fa440f4d60585ea9bcfce5bc62dacb556a7af",
       "id": "obl.pis-v401.tests",
       "kind": "test-definition-catalogue",
       "mediaType": "application/json",

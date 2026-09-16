@@ -861,6 +861,16 @@ def _resolved_plan_id(
     predefined_inputs = participant_document["predefinedInputs"]
     if not isinstance(predefined_inputs, list):
         raise TypeError("Participant-plan serialization produced invalid predefinedInputs")
+    sensitivity_by_input_id = {
+        str(predefined_input.id): predefined_input.sensitivity
+        for predefined_input in requirements_catalogue.predefined_inputs
+    }
+    for predefined_input in predefined_inputs:
+        if not isinstance(predefined_input, dict):
+            continue
+        input_id = predefined_input.get("inputId")
+        if isinstance(input_id, str) and sensitivity_by_input_id.get(input_id) != "non-sensitive":
+            predefined_input["value"] = "<redacted>"
     participant_document["selectedCapabilityIds"] = selected_capability_ids
     participant_document["predefinedInputs"] = sorted(predefined_inputs, key=_participant_input_sort_key)
     compiler_input = {

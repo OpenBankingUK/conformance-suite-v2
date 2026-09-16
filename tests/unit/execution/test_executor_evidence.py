@@ -11,11 +11,78 @@ from conformance.execution_log import BufferedExecutionLogger
 from conformance.executor import run_manifest
 from conformance.json_types import JsonValue
 from conformance.manifest import (
+    HttpStatusAssertion,
+    JsonBody,
+    Manifest,
+    ManifestRequest,
+    ManifestStep,
     parse_manifest,
 )
 from conformance.masking import MASKED_VALUE
 
 pytestmark = pytest.mark.unit
+
+
+def test_catalogue_sensitive_paths_mask_evidence_but_not_outbound_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Domain-sensitive bindings remain masked even in developer-mode logs."""
+    monkeypatch.setenv("CONFORMANCE_DEVELOPER_MODE", "true")
+    observed_body: dict[str, Any] = {}
+    manifest = Manifest(
+        schema_version="v1",
+        name="PIS sensitive evidence",
+        steps=(
+            ManifestStep(
+                id="create-consent",
+                name="Create consent",
+                request=ManifestRequest(
+                    method="POST",
+                    url="https://rs.example.com/domestic-payment-consents",
+                    body=JsonBody(
+                        value={
+                            "Data": {
+                                "Initiation": {
+                                    "CreditorAccount": {
+                                        "Identification": "70000170000002",
+                                        "Name": "Merchant",
+                                    }
+                                }
+                            }
+                        },
+                        sensitive_json_pointers=(
+                            "/Data/Initiation/CreditorAccount/Identification",
+                            "/Data/Initiation/CreditorAccount/Name",
+                        ),
+                    ),
+                ),
+                assertions=(HttpStatusAssertion(type="http_status", expected=201),),
+            ),
+        ),
+    )
+    execution_logger = BufferedExecutionLogger(run_id="pis-sensitive", developer_mode=True)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed_body.update(cast(dict[str, Any], json.loads(request.content)))
+        return httpx.Response(400, json={"error": "rejected"})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, client=client, execution_logger=execution_logger)
+
+    assert observed_body["Data"]["Initiation"]["CreditorAccount"] == {
+        "Identification": "70000170000002",
+        "Name": "Merchant",
+    }
+    request_evidence = cast(dict[str, Any], result.steps[0].details["request"])
+    assert request_evidence["body"]["Data"]["Initiation"]["CreditorAccount"] == {
+        "Identification": MASKED_VALUE,
+        "Name": MASKED_VALUE,
+    }
+    request_event = next(event for event in execution_logger.events() if event.type == "request-sent")
+    assert cast(dict[str, Any], request_event.payload)["body"]["Data"]["Initiation"]["CreditorAccount"] == {
+        "Identification": MASKED_VALUE,
+        "Name": MASKED_VALUE,
+    }
 
 
 def test_run_manifest_v1_step_with_warning_emits_warn_when_assertions_pass() -> None:

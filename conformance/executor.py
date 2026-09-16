@@ -13,6 +13,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import MappingProxyType
 from typing import cast
 from urllib.parse import urlencode, urlsplit
 
@@ -84,7 +85,14 @@ from conformance.manifest import (
     V1Step,
     validate_header_value,
 )
-from conformance.masking import SENSITIVE_JSON_KEYS, mask_form_fields, mask_headers, mask_json_value, mask_url_query
+from conformance.masking import (
+    SENSITIVE_JSON_KEYS,
+    mask_form_fields,
+    mask_headers,
+    mask_json_pointers,
+    mask_json_value,
+    mask_url_query,
+)
 from conformance.model_bank_config import FapiSigningConfig
 from conformance.plan_configuration import parse_dcr_execution_runtime_inputs
 from conformance.psu_authorization import (
@@ -345,7 +353,11 @@ def _mask_result_headers(headers: Mapping[str, str]) -> JsonObject:
     return cast("JsonObject", mask_headers(headers))
 
 
-def _mask_result_json_value(value: JsonValue) -> JsonValue:
+def _mask_result_json_value(
+    value: JsonValue,
+    *,
+    sensitive_json_pointers: tuple[str, ...] = (),
+) -> JsonValue:
     """Return result-evidence JSON masked unless developer mode is enabled.
 
     Args:
@@ -356,8 +368,8 @@ def _mask_result_json_value(value: JsonValue) -> JsonValue:
         developer mode.
     """
     if is_developer_mode_enabled():
-        return cast("JsonValue", json.loads(json.dumps(value)))
-    return mask_json_value(value)
+        return mask_json_pointers(value, sensitive_json_pointers)
+    return mask_json_value(value, sensitive_pointers=sensitive_json_pointers)
 
 
 def _mask_result_form_fields(fields: Mapping[str, str]) -> JsonObject:
@@ -622,6 +634,7 @@ def run_execution_manifest(
                 runtime_inputs=runtime_inputs,
                 runtime_input_base_dir=runtime_input_base_dir,
                 runtime_config=runtime_config,
+                sensitive_json_pointers_by_observation_id=(prepared_manifest.sensitive_json_pointers_by_observation_id),
             )
             result = _run_manifest_v1(
                 synthetic_manifest,
@@ -662,6 +675,7 @@ def _compiled_plan_to_manifest(
     runtime_inputs: Mapping[str, JsonValue],
     runtime_input_base_dir: Path,
     runtime_config: RuntimeConfig | None,
+    sensitive_json_pointers_by_observation_id: Mapping[str, tuple[str, ...]] = MappingProxyType({}),
 ) -> Manifest:
     """Build an internal manifest facade for existing HTTP execution plumbing.
 
@@ -706,6 +720,10 @@ def _compiled_plan_to_manifest(
                 runtime_input_base_dir=runtime_input_base_dir,
                 runtime_config=runtime_config,
                 requirements=requirements,
+                sensitive_json_pointers=sensitive_json_pointers_by_observation_id.get(
+                    request_step.step_id,
+                    (),
+                ),
             )
             steps.append(manifest_step)
             steps.extend(compiled_plan_synthetic_inline_steps(compiled_plan, request_step))
@@ -1398,6 +1416,7 @@ def _catalogue_request_step_to_manifest_step(
     runtime_input_base_dir: Path,
     runtime_config: RuntimeConfig | None,
     requirements: Mapping[str, RuntimeInputRequirement],
+    sensitive_json_pointers: tuple[str, ...] = (),
 ) -> ManifestStep:
     """Convert one catalogue request skeleton into an executable HTTP step.
 
@@ -1435,6 +1454,11 @@ def _catalogue_request_step_to_manifest_step(
         requirements=requirements,
         generated_runtime_values=generated_runtime_values,
     )
+    if isinstance(body, JsonBody) and sensitive_json_pointers:
+        body = JsonBody(
+            value=body.value,
+            sensitive_json_pointers=sensitive_json_pointers,
+        )
     return ManifestStep(
         id=request_step.step_id,
         name=request_step.name,
@@ -4107,8 +4131,14 @@ def _execute_v1_step_inner(
                 new_context,
             )
 
+    sensitive_json_pointers = (
+        manifest_step.request.body.sensitive_json_pointers if isinstance(manifest_step.request.body, JsonBody) else ()
+    )
     if resolved_json_body is not None:
-        request_evidence["body"] = _mask_result_json_value(resolved_json_body)
+        request_evidence["body"] = _mask_result_json_value(
+            resolved_json_body,
+            sensitive_json_pointers=sensitive_json_pointers,
+        )
     elif resolved_form_body is not None:
         request_evidence["form"] = _mask_result_form_fields(resolved_form_body)
 
@@ -4189,7 +4219,10 @@ def _execute_v1_step_inner(
         )
 
     if resolved_json_body is not None:
-        request_evidence["body"] = _mask_result_json_value(resolved_json_body)
+        request_evidence["body"] = _mask_result_json_value(
+            resolved_json_body,
+            sensitive_json_pointers=sensitive_json_pointers,
+        )
     elif resolved_form_body is not None:
         request_evidence["form"] = _mask_result_form_fields(resolved_form_body)
 

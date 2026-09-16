@@ -3,6 +3,50 @@
   "id": "pis-v401-golden-plan",
   "predefinedInputs": [
     {
+      "inputId": "pis.v401.input.creditor-account-scheme-name",
+      "value": "UK.OBIE.SortCodeAccountNumber"
+    },
+    {
+      "inputId": "pis.v401.input.creditor-account-identification",
+      "value": "70000170000002"
+    },
+    {
+      "inputId": "pis.v401.input.creditor-account-name",
+      "value": "Test creditor"
+    },
+    {
+      "inputId": "pis.v401.input.international-creditor-account-scheme-name",
+      "value": "UK.OBIE.SortCodeAccountNumber"
+    },
+    {
+      "inputId": "pis.v401.input.international-creditor-account-identification",
+      "value": "70000170000003"
+    },
+    {
+      "inputId": "pis.v401.input.international-creditor-account-name",
+      "value": "International test creditor"
+    },
+    {
+      "inputId": "pis.v401.input.instructed-amount",
+      "value": "1.00"
+    },
+    {
+      "inputId": "pis.v401.input.instructed-currency",
+      "value": "GBP"
+    },
+    {
+      "inputId": "pis.v401.input.currency-of-transfer",
+      "value": "USD"
+    },
+    {
+      "inputId": "pis.v401.input.requested-execution-date-time",
+      "value": "2026-12-01T00:00:00Z"
+    },
+    {
+      "inputId": "pis.v401.input.first-payment-date-time",
+      "value": "2026-12-01T00:00:00Z"
+    },
+    {
       "inputId": "pis.v401.input.standing-order-frequency",
       "value": {
         "frequencyType": "WEEK",

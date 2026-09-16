@@ -46,14 +46,7 @@ uv run python main.py --test-plan path/to/test-plan.json
 {
   "documentType": "participant-plan",
   "executionConfiguration": {
-    "compatibilityRuntimeInputs": {
-      "pisCreditorAccountIdentification": "08080021325698",
-      "pisCreditorAccountName": "Merchant",
-      "pisCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
-      "pisFirstPaymentDateTime": "2026-10-01T00:00:00Z",
-      "pisInstructedAmountAmount": "10.00",
-      "pisInstructedAmountCurrency": "GBP"
-    },
+    "compatibilityRuntimeInputs": {},
     "dynamicClientRegistration": {},
     "metadata": {"aspspName": "Example Bank"},
     "securityEnvironment": {
@@ -65,6 +58,30 @@ uv run python main.py --test-plan path/to/test-plan.json
   },
   "id": "participant.pis-v401.example",
   "predefinedInputs": [
+    {
+      "inputId": "pis.v401.input.creditor-account-scheme-name",
+      "value": "UK.OBIE.SortCodeAccountNumber"
+    },
+    {
+      "inputId": "pis.v401.input.creditor-account-identification",
+      "value": "08080021325698"
+    },
+    {
+      "inputId": "pis.v401.input.creditor-account-name",
+      "value": "Merchant"
+    },
+    {
+      "inputId": "pis.v401.input.instructed-amount",
+      "value": "10.00"
+    },
+    {
+      "inputId": "pis.v401.input.instructed-currency",
+      "value": "GBP"
+    },
+    {
+      "inputId": "pis.v401.input.first-payment-date-time",
+      "value": "2026-10-01T00:00:00Z"
+    },
     {
       "inputId": "pis.v401.input.standing-order-frequency",
       "value": {"frequencyType": "WEEK", "pointInTime": "03"}
@@ -88,8 +105,12 @@ uv run python main.py --test-plan path/to/test-plan.json
 Each plan selects one requirements scope and its participant-facing
 capabilities. Trusted release catalogues infer required capabilities, endpoints,
 tests, and dependencies. `compatibilityRuntimeInputs` is restricted execution
-configuration for values still consumed by the current hardened runtime; it
-does not affect deterministic plan resolution.
+configuration for environment, credential references, captured protocol-session
+state, and runtime-generated values still consumed by the current hardened
+runtime. Participant-controlled PIS account, amount, currency, date, and
+frequency values must use catalogue-defined `predefinedInputs`; known legacy
+PIS aliases are rejected. Compatibility configuration does not affect
+deterministic plan resolution.
 
 DCR plans select specification `dynamic-client-registration`, requirements
 scope `dcr`, and DCR capabilities. See

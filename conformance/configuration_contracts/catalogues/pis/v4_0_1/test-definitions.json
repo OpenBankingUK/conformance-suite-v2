@@ -30,7 +30,12 @@
       ],
       "capabilityId": "pis.v401.capability.domestic-payment",
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_payment_consents"
+        "pis.v401.requirement.domestic_payment_consents",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-payment"
       ],
       "dependencies": [],
       "description": "Enables a PISP to register an intent to initiate a Domestic Payment.",
@@ -39,7 +44,38 @@
       "purpose": "positive",
       "request": {
         "endpointId": "pis.v401.endpoint.domestic_payment_consents",
-        "inputBindings": [],
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
         "modifications": []
       }
     },
@@ -139,7 +175,12 @@
       ],
       "capabilityId": "pis.v401.capability.domestic-payment",
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_payments"
+        "pis.v401.requirement.domestic_payments",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-payment"
       ],
       "dependencies": [
         "pis.v401.test.domestic_payment_consents.consentid.positive"
@@ -150,7 +191,38 @@
       "purpose": "positive",
       "request": {
         "endpointId": "pis.v401.endpoint.domestic_payments",
-        "inputBindings": [],
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
         "modifications": []
       }
     },
@@ -215,7 +287,13 @@
       ],
       "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_scheduled_payment_consents"
+        "pis.v401.requirement.domestic_scheduled_payment_consents",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-scheduled-payment",
+        "pis.v401.requirement.input.requested-execution-date-time.domestic-scheduled-payment"
       ],
       "dependencies": [],
       "description": "Enables a PISP to register an intent to initiate a Domestic Scheduled Payment.",
@@ -224,7 +302,44 @@
       "purpose": "positive",
       "request": {
         "endpointId": "pis.v401.endpoint.domestic_scheduled_payment_consents",
-        "inputBindings": [],
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.requested-execution-date-time",
+            "target": "/Data/Initiation/RequestedExecutionDateTime",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
         "modifications": []
       }
     },
@@ -289,7 +404,13 @@
       ],
       "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_scheduled_payments"
+        "pis.v401.requirement.domestic_scheduled_payments",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-scheduled-payment",
+        "pis.v401.requirement.input.requested-execution-date-time.domestic-scheduled-payment"
       ],
       "dependencies": [
         "pis.v401.test.domestic_scheduled_payment_consents.consentid.positive"
@@ -300,7 +421,44 @@
       "purpose": "positive",
       "request": {
         "endpointId": "pis.v401.endpoint.domestic_scheduled_payments",
-        "inputBindings": [],
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.requested-execution-date-time",
+            "target": "/Data/Initiation/RequestedExecutionDateTime",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
         "modifications": []
       }
     },
@@ -366,7 +524,13 @@
       "capabilityId": "pis.v401.capability.domestic-standing-order",
       "coveredRequirementIds": [
         "pis.v401.requirement.domestic_standing_order_consents",
-        "pis.v401.requirement.domestic-standing-order-frequency"
+        "pis.v401.requirement.domestic-standing-order-frequency",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-standing-order",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-standing-order",
+        "pis.v401.requirement.input.creditor-account-name.domestic-standing-order",
+        "pis.v401.requirement.input.instructed-amount.domestic-standing-order",
+        "pis.v401.requirement.input.instructed-currency.domestic-standing-order",
+        "pis.v401.requirement.input.first-payment-date-time.domestic-standing-order"
       ],
       "dependencies": [],
       "description": "Enables a PISP to register an intent to initiate a Domestic Standing Order arrangement.",
@@ -376,6 +540,42 @@
       "request": {
         "endpointId": "pis.v401.endpoint.domestic_standing_order_consents",
         "inputBindings": [
+          {
+            "inputId": "pis.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/FirstPaymentAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/FirstPaymentAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.first-payment-date-time",
+            "target": "/Data/Initiation/MandateRelatedInformation/FirstPaymentDateTime",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
           {
             "inputId": "pis.v401.input.standing-order-frequency",
             "target": "/Data/Initiation/MandateRelatedInformation/Frequency",
@@ -448,7 +648,13 @@
       "capabilityId": "pis.v401.capability.domestic-standing-order",
       "coveredRequirementIds": [
         "pis.v401.requirement.domestic_standing_orders",
-        "pis.v401.requirement.domestic-standing-order-frequency"
+        "pis.v401.requirement.domestic-standing-order-frequency",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-standing-order",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-standing-order",
+        "pis.v401.requirement.input.creditor-account-name.domestic-standing-order",
+        "pis.v401.requirement.input.instructed-amount.domestic-standing-order",
+        "pis.v401.requirement.input.instructed-currency.domestic-standing-order",
+        "pis.v401.requirement.input.first-payment-date-time.domestic-standing-order"
       ],
       "dependencies": [
         "pis.v401.test.domestic_standing_order_consents.consentid.positive"
@@ -460,6 +666,42 @@
       "request": {
         "endpointId": "pis.v401.endpoint.domestic_standing_orders",
         "inputBindings": [
+          {
+            "inputId": "pis.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/FirstPaymentAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/FirstPaymentAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.first-payment-date-time",
+            "target": "/Data/Initiation/MandateRelatedInformation/FirstPaymentDateTime",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
           {
             "inputId": "pis.v401.input.standing-order-frequency",
             "target": "/Data/Initiation/MandateRelatedInformation/Frequency",
@@ -531,7 +773,13 @@
       ],
       "capabilityId": "pis.v401.capability.international-payment",
       "coveredRequirementIds": [
-        "pis.v401.requirement.international_payment_consents"
+        "pis.v401.requirement.international_payment_consents",
+        "pis.v401.requirement.input.international-creditor-account-scheme-name.international-payment",
+        "pis.v401.requirement.input.international-creditor-account-identification.international-payment",
+        "pis.v401.requirement.input.international-creditor-account-name.international-payment",
+        "pis.v401.requirement.input.instructed-amount.international-payment",
+        "pis.v401.requirement.input.instructed-currency.international-payment",
+        "pis.v401.requirement.input.currency-of-transfer.international-payment"
       ],
       "dependencies": [],
       "description": "Enables a PISP to register an intent to initiate an International Payment.",
@@ -540,7 +788,44 @@
       "purpose": "positive",
       "request": {
         "endpointId": "pis.v401.endpoint.international_payment_consents",
-        "inputBindings": [],
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.international-creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.international-creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.international-creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.currency-of-transfer",
+            "target": "/Data/Initiation/CurrencyOfTransfer",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
         "modifications": []
       }
     },
@@ -605,7 +890,13 @@
       ],
       "capabilityId": "pis.v401.capability.international-payment",
       "coveredRequirementIds": [
-        "pis.v401.requirement.international_payments"
+        "pis.v401.requirement.international_payments",
+        "pis.v401.requirement.input.international-creditor-account-scheme-name.international-payment",
+        "pis.v401.requirement.input.international-creditor-account-identification.international-payment",
+        "pis.v401.requirement.input.international-creditor-account-name.international-payment",
+        "pis.v401.requirement.input.instructed-amount.international-payment",
+        "pis.v401.requirement.input.instructed-currency.international-payment",
+        "pis.v401.requirement.input.currency-of-transfer.international-payment"
       ],
       "dependencies": [
         "pis.v401.test.international_payment_consents.consentid.positive"
@@ -616,7 +907,44 @@
       "purpose": "positive",
       "request": {
         "endpointId": "pis.v401.endpoint.international_payments",
-        "inputBindings": [],
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.international-creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.international-creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.international-creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.currency-of-transfer",
+            "target": "/Data/Initiation/CurrencyOfTransfer",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
         "modifications": []
       }
     },
@@ -681,7 +1009,14 @@
       ],
       "capabilityId": "pis.v401.capability.international-scheduled-payment",
       "coveredRequirementIds": [
-        "pis.v401.requirement.international_scheduled_payment_consents"
+        "pis.v401.requirement.international_scheduled_payment_consents",
+        "pis.v401.requirement.input.international-creditor-account-scheme-name.international-scheduled-payment",
+        "pis.v401.requirement.input.international-creditor-account-identification.international-scheduled-payment",
+        "pis.v401.requirement.input.international-creditor-account-name.international-scheduled-payment",
+        "pis.v401.requirement.input.instructed-amount.international-scheduled-payment",
+        "pis.v401.requirement.input.instructed-currency.international-scheduled-payment",
+        "pis.v401.requirement.input.currency-of-transfer.international-scheduled-payment",
+        "pis.v401.requirement.input.requested-execution-date-time.international-scheduled-payment"
       ],
       "dependencies": [],
       "description": "Enables a PISP to register an intent to initiate an International Scheduled Payment.",
@@ -690,7 +1025,50 @@
       "purpose": "positive",
       "request": {
         "endpointId": "pis.v401.endpoint.international_scheduled_payment_consents",
-        "inputBindings": [],
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.international-creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.international-creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.international-creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.currency-of-transfer",
+            "target": "/Data/Initiation/CurrencyOfTransfer",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.requested-execution-date-time",
+            "target": "/Data/Initiation/RequestedExecutionDateTime",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
         "modifications": []
       }
     },
@@ -755,7 +1133,14 @@
       ],
       "capabilityId": "pis.v401.capability.international-scheduled-payment",
       "coveredRequirementIds": [
-        "pis.v401.requirement.international_scheduled_payments"
+        "pis.v401.requirement.international_scheduled_payments",
+        "pis.v401.requirement.input.international-creditor-account-scheme-name.international-scheduled-payment",
+        "pis.v401.requirement.input.international-creditor-account-identification.international-scheduled-payment",
+        "pis.v401.requirement.input.international-creditor-account-name.international-scheduled-payment",
+        "pis.v401.requirement.input.instructed-amount.international-scheduled-payment",
+        "pis.v401.requirement.input.instructed-currency.international-scheduled-payment",
+        "pis.v401.requirement.input.currency-of-transfer.international-scheduled-payment",
+        "pis.v401.requirement.input.requested-execution-date-time.international-scheduled-payment"
       ],
       "dependencies": [
         "pis.v401.test.international_scheduled_payment_consents.consentid.positive"
@@ -766,7 +1151,50 @@
       "purpose": "positive",
       "request": {
         "endpointId": "pis.v401.endpoint.international_scheduled_payments",
-        "inputBindings": [],
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.international-creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.international-creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.international-creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.currency-of-transfer",
+            "target": "/Data/Initiation/CurrencyOfTransfer",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.requested-execution-date-time",
+            "target": "/Data/Initiation/RequestedExecutionDateTime",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
         "modifications": []
       }
     },
@@ -820,7 +1248,12 @@
       ],
       "capabilityId": "pis.v401.capability.domestic-payment",
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_payment_consents"
+        "pis.v401.requirement.domestic_payment_consents",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-payment"
       ],
       "dependencies": [],
       "description": "Verify the consent endpoint rejects a request that violates its authentication or detached-JWS contract.",
@@ -829,7 +1262,38 @@
       "purpose": "security",
       "request": {
         "endpointId": "pis.v401.endpoint.domestic_payment_consents",
-        "inputBindings": [],
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
         "modifications": [
           {
             "id": "pis.v401.modification.domestic-payment-consent.missing-authorisation",
@@ -855,7 +1319,12 @@
       ],
       "capabilityId": "pis.v401.capability.domestic-payment",
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_payment_consents"
+        "pis.v401.requirement.domestic_payment_consents",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-payment"
       ],
       "dependencies": [],
       "description": "Verify the consent endpoint rejects a request that violates its authentication or detached-JWS contract.",
@@ -864,7 +1333,38 @@
       "purpose": "security",
       "request": {
         "endpointId": "pis.v401.endpoint.domestic_payment_consents",
-        "inputBindings": [],
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
         "modifications": [
           {
             "id": "pis.v401.modification.domestic-payment-consent.missing-jws-issuer",
@@ -890,7 +1390,12 @@
       ],
       "capabilityId": "pis.v401.capability.domestic-payment",
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_payment_consents"
+        "pis.v401.requirement.domestic_payment_consents",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-payment"
       ],
       "dependencies": [],
       "description": "Verify the consent endpoint rejects a request that violates its authentication or detached-JWS contract.",
@@ -899,7 +1404,38 @@
       "purpose": "security",
       "request": {
         "endpointId": "pis.v401.endpoint.domestic_payment_consents",
-        "inputBindings": [],
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
         "modifications": [
           {
             "id": "pis.v401.modification.domestic-payment-consent.invalid-jws-signature",
@@ -924,7 +1460,13 @@
       ],
       "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_scheduled_payment_consents"
+        "pis.v401.requirement.domestic_scheduled_payment_consents",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-scheduled-payment",
+        "pis.v401.requirement.input.requested-execution-date-time.domestic-scheduled-payment"
       ],
       "dependencies": [],
       "description": "Verify the OpenAPI date-time format accepts a generated OFFSET representation.",
@@ -933,7 +1475,44 @@
       "purpose": "positive",
       "request": {
         "endpointId": "pis.v401.endpoint.domestic_scheduled_payment_consents",
-        "inputBindings": [],
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.requested-execution-date-time",
+            "target": "/Data/Initiation/RequestedExecutionDateTime",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
         "modifications": [
           {
             "generator": "rfc3339-date-time-offset",
@@ -960,7 +1539,13 @@
       ],
       "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_scheduled_payment_consents"
+        "pis.v401.requirement.domestic_scheduled_payment_consents",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-scheduled-payment",
+        "pis.v401.requirement.input.requested-execution-date-time.domestic-scheduled-payment"
       ],
       "dependencies": [],
       "description": "Verify the OpenAPI date-time format accepts a generated UTC representation.",
@@ -969,7 +1554,44 @@
       "purpose": "positive",
       "request": {
         "endpointId": "pis.v401.endpoint.domestic_scheduled_payment_consents",
-        "inputBindings": [],
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.requested-execution-date-time",
+            "target": "/Data/Initiation/RequestedExecutionDateTime",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
         "modifications": [
           {
             "generator": "rfc3339-date-time-utc",
@@ -997,7 +1619,13 @@
       "capabilityId": "pis.v401.capability.domestic-standing-order",
       "coveredRequirementIds": [
         "pis.v401.requirement.domestic_standing_order_consents",
-        "pis.v401.requirement.domestic-standing-order-frequency"
+        "pis.v401.requirement.domestic-standing-order-frequency",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-standing-order",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-standing-order",
+        "pis.v401.requirement.input.creditor-account-name.domestic-standing-order",
+        "pis.v401.requirement.input.instructed-amount.domestic-standing-order",
+        "pis.v401.requirement.input.instructed-currency.domestic-standing-order",
+        "pis.v401.requirement.input.first-payment-date-time.domestic-standing-order"
       ],
       "dependencies": [],
       "description": "Verify malformed or internally conflicting standing-order frequency data is rejected at consent staging.",
@@ -1006,7 +1634,50 @@
       "purpose": "negative",
       "request": {
         "endpointId": "pis.v401.endpoint.domestic_standing_order_consents",
-        "inputBindings": [],
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-amount",
+            "target": "/Data/Initiation/FirstPaymentAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.instructed-currency",
+            "target": "/Data/Initiation/FirstPaymentAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.first-payment-date-time",
+            "target": "/Data/Initiation/MandateRelatedInformation/FirstPaymentDateTime",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "pis.v401.input.standing-order-frequency",
+            "target": "/Data/Initiation/MandateRelatedInformation/Frequency",
+            "transform": "standing-order-frequency-object",
+            "type": "json-body"
+          }
+        ],
         "modifications": [
           {
             "generator": "standing-order-frequency-count-and-point",

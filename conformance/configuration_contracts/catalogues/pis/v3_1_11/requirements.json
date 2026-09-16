@@ -268,6 +268,146 @@
   ],
   "predefinedInputs": [
     {
+      "description": "Account scheme used for the domestic creditor account.",
+      "exampleValue": "UK.OBIE.SortCodeAccountNumber",
+      "id": "pis.v311.input.creditor-account-scheme-name",
+      "label": "Domestic creditor account scheme name",
+      "requiredForCapabilityIds": [
+        "pis.v311.capability.domestic-payment",
+        "pis.v311.capability.domestic-scheduled-payment",
+        "pis.v311.capability.domestic-standing-order"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Participant-supplied domestic creditor account identifier.",
+      "exampleValue": "70000170000002",
+      "id": "pis.v311.input.creditor-account-identification",
+      "label": "Domestic creditor account identification",
+      "requiredForCapabilityIds": [
+        "pis.v311.capability.domestic-payment",
+        "pis.v311.capability.domestic-scheduled-payment",
+        "pis.v311.capability.domestic-standing-order"
+      ],
+      "sensitivity": "sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Participant-supplied domestic creditor account display name.",
+      "exampleValue": "Test creditor",
+      "id": "pis.v311.input.creditor-account-name",
+      "label": "Domestic creditor account name",
+      "requiredForCapabilityIds": [
+        "pis.v311.capability.domestic-payment",
+        "pis.v311.capability.domestic-scheduled-payment",
+        "pis.v311.capability.domestic-standing-order"
+      ],
+      "sensitivity": "sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Account scheme used for the international creditor account.",
+      "exampleValue": "UK.OBIE.SortCodeAccountNumber",
+      "id": "pis.v311.input.international-creditor-account-scheme-name",
+      "label": "International creditor account scheme name",
+      "requiredForCapabilityIds": [
+        "pis.v311.capability.international-payment",
+        "pis.v311.capability.international-scheduled-payment"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Participant-supplied international creditor account identifier.",
+      "exampleValue": "70000170000003",
+      "id": "pis.v311.input.international-creditor-account-identification",
+      "label": "International creditor account identification",
+      "requiredForCapabilityIds": [
+        "pis.v311.capability.international-payment",
+        "pis.v311.capability.international-scheduled-payment"
+      ],
+      "sensitivity": "sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Participant-supplied international creditor account display name.",
+      "exampleValue": "International test creditor",
+      "id": "pis.v311.input.international-creditor-account-name",
+      "label": "International creditor account name",
+      "requiredForCapabilityIds": [
+        "pis.v311.capability.international-payment",
+        "pis.v311.capability.international-scheduled-payment"
+      ],
+      "sensitivity": "sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Decimal amount used for the instructed or first payment amount.",
+      "exampleValue": "1.00",
+      "id": "pis.v311.input.instructed-amount",
+      "label": "Instructed amount",
+      "requiredForCapabilityIds": [
+        "pis.v311.capability.domestic-payment",
+        "pis.v311.capability.domestic-scheduled-payment",
+        "pis.v311.capability.domestic-standing-order",
+        "pis.v311.capability.international-payment",
+        "pis.v311.capability.international-scheduled-payment"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "ISO 4217 currency used for the instructed or first payment amount.",
+      "exampleValue": "GBP",
+      "id": "pis.v311.input.instructed-currency",
+      "label": "Instructed amount currency",
+      "requiredForCapabilityIds": [
+        "pis.v311.capability.domestic-payment",
+        "pis.v311.capability.domestic-scheduled-payment",
+        "pis.v311.capability.domestic-standing-order",
+        "pis.v311.capability.international-payment",
+        "pis.v311.capability.international-scheduled-payment"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "ISO 4217 transfer currency used for international payments.",
+      "exampleValue": "USD",
+      "id": "pis.v311.input.currency-of-transfer",
+      "label": "Currency of transfer",
+      "requiredForCapabilityIds": [
+        "pis.v311.capability.international-payment",
+        "pis.v311.capability.international-scheduled-payment"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "RFC 3339 date-time requested for scheduled payment execution.",
+      "exampleValue": "2026-12-01T00:00:00Z",
+      "id": "pis.v311.input.requested-execution-date-time",
+      "label": "Requested execution date time",
+      "requiredForCapabilityIds": [
+        "pis.v311.capability.domestic-scheduled-payment",
+        "pis.v311.capability.international-scheduled-payment"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "date-time"
+    },
+    {
+      "description": "RFC 3339 date-time requested for the first standing-order payment.",
+      "exampleValue": "2026-12-01T00:00:00Z",
+      "id": "pis.v311.input.first-payment-date-time",
+      "label": "First payment date time",
+      "requiredForCapabilityIds": [
+        "pis.v311.capability.domestic-standing-order"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "date-time"
+    },
+    {
       "description": "Logical frequency represented according to the Read/Write 3.1.11 payment schema.",
       "exampleValue": "EvryDay",
       "id": "pis.v311.input.standing-order-frequency",
@@ -587,6 +727,426 @@
         "type": "required-when-capability-selected"
       },
       "statement": "A domestic standing-order initiation must use a frequency value allowed by the selected specification version."
+    },
+    {
+      "id": "pis.v311.requirement.input.creditor-account-scheme-name.domestic-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-payment",
+        "targetId": "pis.v311.input.creditor-account-scheme-name",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies domestic creditor account scheme name for domestic payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.creditor-account-identification.domestic-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-payment",
+        "targetId": "pis.v311.input.creditor-account-identification",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies domestic creditor account identification for domestic payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.creditor-account-name.domestic-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-payment",
+        "targetId": "pis.v311.input.creditor-account-name",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies domestic creditor account name for domestic payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.instructed-amount.domestic-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-payment",
+        "targetId": "pis.v311.input.instructed-amount",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies instructed amount for domestic payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.instructed-currency.domestic-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-payment",
+        "targetId": "pis.v311.input.instructed-currency",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies instructed amount currency for domestic payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.creditor-account-scheme-name.domestic-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-scheduled-payment",
+        "targetId": "pis.v311.input.creditor-account-scheme-name",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies domestic creditor account scheme name for domestic scheduled payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.creditor-account-identification.domestic-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-scheduled-payment",
+        "targetId": "pis.v311.input.creditor-account-identification",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies domestic creditor account identification for domestic scheduled payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.creditor-account-name.domestic-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-scheduled-payment",
+        "targetId": "pis.v311.input.creditor-account-name",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies domestic creditor account name for domestic scheduled payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.instructed-amount.domestic-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-scheduled-payment",
+        "targetId": "pis.v311.input.instructed-amount",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies instructed amount for domestic scheduled payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.instructed-currency.domestic-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-scheduled-payment",
+        "targetId": "pis.v311.input.instructed-currency",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies instructed amount currency for domestic scheduled payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.requested-execution-date-time.domestic-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-scheduled-payment",
+        "targetId": "pis.v311.input.requested-execution-date-time",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies requested execution date time for domestic scheduled payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.creditor-account-scheme-name.domestic-standing-order",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-standing-order",
+        "targetId": "pis.v311.input.creditor-account-scheme-name",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies domestic creditor account scheme name for domestic standing order request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.creditor-account-identification.domestic-standing-order",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-standing-order",
+        "targetId": "pis.v311.input.creditor-account-identification",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies domestic creditor account identification for domestic standing order request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.creditor-account-name.domestic-standing-order",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-standing-order",
+        "targetId": "pis.v311.input.creditor-account-name",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies domestic creditor account name for domestic standing order request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.instructed-amount.domestic-standing-order",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-standing-order",
+        "targetId": "pis.v311.input.instructed-amount",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies instructed amount for domestic standing order request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.instructed-currency.domestic-standing-order",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-standing-order",
+        "targetId": "pis.v311.input.instructed-currency",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies instructed amount currency for domestic standing order request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.first-payment-date-time.domestic-standing-order",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.domestic-standing-order",
+        "targetId": "pis.v311.input.first-payment-date-time",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies first payment date time for domestic standing order request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.international-creditor-account-scheme-name.international-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.international-payment",
+        "targetId": "pis.v311.input.international-creditor-account-scheme-name",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies international creditor account scheme name for international payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.international-creditor-account-identification.international-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.international-payment",
+        "targetId": "pis.v311.input.international-creditor-account-identification",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies international creditor account identification for international payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.international-creditor-account-name.international-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.international-payment",
+        "targetId": "pis.v311.input.international-creditor-account-name",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies international creditor account name for international payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.instructed-amount.international-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.international-payment",
+        "targetId": "pis.v311.input.instructed-amount",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies instructed amount for international payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.instructed-currency.international-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.international-payment",
+        "targetId": "pis.v311.input.instructed-currency",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies instructed amount currency for international payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.currency-of-transfer.international-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.international-payment",
+        "targetId": "pis.v311.input.currency-of-transfer",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies currency of transfer for international payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.international-creditor-account-scheme-name.international-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.international-scheduled-payment",
+        "targetId": "pis.v311.input.international-creditor-account-scheme-name",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies international creditor account scheme name for international scheduled payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.international-creditor-account-identification.international-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.international-scheduled-payment",
+        "targetId": "pis.v311.input.international-creditor-account-identification",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies international creditor account identification for international scheduled payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.international-creditor-account-name.international-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.international-scheduled-payment",
+        "targetId": "pis.v311.input.international-creditor-account-name",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies international creditor account name for international scheduled payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.instructed-amount.international-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.international-scheduled-payment",
+        "targetId": "pis.v311.input.instructed-amount",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies instructed amount for international scheduled payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.instructed-currency.international-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.international-scheduled-payment",
+        "targetId": "pis.v311.input.instructed-currency",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies instructed amount currency for international scheduled payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.currency-of-transfer.international-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.international-scheduled-payment",
+        "targetId": "pis.v311.input.currency-of-transfer",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies currency of transfer for international scheduled payment request construction."
+    },
+    {
+      "id": "pis.v311.requirement.input.requested-execution-date-time.international-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v311.pis-profile.payment-restrictions",
+        "ob-rw-v311.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v311.capability.international-scheduled-payment",
+        "targetId": "pis.v311.input.requested-execution-date-time",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies requested execution date time for international scheduled payment request construction."
     }
   ],
   "schemaVersion": "1.0",
