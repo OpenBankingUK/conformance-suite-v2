@@ -19,7 +19,7 @@
       "value": "GBP"
     }
   ],
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "scheme": "open-banking-uk",
   "securityProfile": "fapi1-advanced",
   "selectedCapabilityIds": [
@@ -27,8 +27,8 @@
   ],
   "specification": {
     "id": "read-write-api",
-    "requirementsScope": "cbpii",
+    "testScope": "cbpii",
     "version": "4.0.1"
   },
-  "suiteReleaseId": "obl.cbpii-v401.catalogue-fixture"
+  "suiteReleaseId": "obl.open-banking-mvp.test-catalogue-release"
 }

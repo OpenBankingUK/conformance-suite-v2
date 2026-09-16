@@ -556,15 +556,13 @@ The completed cutover:
 - isolates the superseded requirement artefacts and fields after all production
   consumers have migrated.
 
-The v1 requirements schema, JSON artefacts, models, loaders, compiler, and
-focused migration fixtures remain **Compatibility/deletion only** for PR2.
-They have no active suite-release binding or production caller and must not gain
-new consumers.
+The follow-up compatibility cleanup removed the v1 requirements schema, JSON
+artefacts, models, loaders, compiler, and focused migration fixtures. The only
+configuration-contract wire architecture is now schema version `2.0`.
 
 Certification-validator implementation must wait for that consolidated
-catalogue contract. It must not treat the current requirements catalogue,
-runner-calculated eligibility, `documented-only` findings, or requirement-level
-coverage links as certification authority.
+catalogue contract. It must not treat runner-calculated eligibility as
+independent certification authority.
 
 ## Rules for every implementation layer
 

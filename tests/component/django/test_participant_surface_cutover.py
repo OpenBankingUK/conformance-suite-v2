@@ -11,7 +11,6 @@ from django.test import Client
 from django.urls import reverse
 
 import conformance.api.builder_wizard
-import conformance.configuration_contracts.compiled_plan_adapter
 import conformance.test_plan_validation
 from conformance.api.builder_draft_store import BuilderDraft
 from conformance.api.builder_wizard import participant_plan_from_draft
@@ -53,11 +52,6 @@ def test_browser_builds_reviews_exports_and_launches_participant_plan(
     monkeypatch.setattr(conformance.api.builder_wizard, "supported_catalogues", fail)
     monkeypatch.setattr(conformance.api.builder_wizard, "compile_test_plan_document", fail)
     monkeypatch.setattr(conformance.test_plan_validation, "prepare_test_plan_for_run", fail)
-    monkeypatch.setattr(
-        conformance.configuration_contracts.compiled_plan_adapter,
-        "materialize_execution_manifest_requests",
-        fail,
-    )
     mock_fetch_discovery.return_value = {}
     client = Client()
     response = client.post("/builder/new/")
@@ -377,9 +371,6 @@ def test_rest_accepts_dcr_registration_with_explicit_observation_mapping(
             REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "dcr" / "v3_4" / "participant-plan.json"
         ).read_text(encoding="utf-8")
     )
-    raw_plan["schemaVersion"] = "2.0"
-    raw_plan["specification"]["testScope"] = raw_plan["specification"].pop("requirementsScope")
-    raw_plan["suiteReleaseId"] = "obl.open-banking-mvp.test-catalogue-release"
     raw_plan["selectedCapabilityIds"] = ["dcr.v34.capability.registration"]
     raw_plan["executionConfiguration"] = {
         "compatibilityRuntimeInputs": {},

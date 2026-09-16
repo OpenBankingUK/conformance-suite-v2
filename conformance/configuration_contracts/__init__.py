@@ -1,61 +1,16 @@
-"""Versioned configuration contracts for the replacement plan architecture."""
+"""Schema-version 2.0 configuration contracts and runtime preparation."""
 
 from conformance.configuration_contracts.compiled_plan_adapter import (
     LegacyExecutionEngine,
     PreparedExecutionManifest,
     ResolvedPlanAdapterError,
-    materialize_execution_manifest_requests,
     validate_execution_manifest_compatibility,
-)
-from conformance.configuration_contracts.compiler import (
-    CompilationFindingCode,
-    ParticipantPlanCompilationError,
-    compile_participant_plan,
-    resolve_participant_plan,
 )
 from conformance.configuration_contracts.diagnostics import (
     ConfigurationContractError,
     ConfigurationDiagnostic,
     DiagnosticCode,
     DiagnosticSeverity,
-)
-from conformance.configuration_contracts.execution_manifest import (
-    ExecutionManifestGenerationError,
-    generate_execution_manifest,
-)
-from conformance.configuration_contracts.loader import (
-    CATALOGUE_SCHEMA_VERSION,
-    EXECUTION_MANIFEST_SCHEMA_VERSION,
-    PLAN_SCHEMA_VERSION,
-    SUITE_RELEASE_SCHEMA_VERSION,
-    dump_execution_manifest,
-    dump_participant_plan,
-    dump_requirements_catalogue,
-    dump_resolved_plan,
-    dump_suite_release,
-    dump_test_definition_catalogue,
-    execution_manifest_id,
-    execution_manifest_to_document,
-    load_execution_manifest,
-    load_participant_plan,
-    load_requirements_catalogue,
-    load_resolved_plan,
-    load_suite_release,
-    load_test_definition_catalogue,
-    parse_execution_manifest,
-    parse_participant_plan,
-    parse_requirements_catalogue,
-    parse_resolved_plan,
-    parse_suite_release,
-    parse_test_definition_catalogue,
-    participant_plan_to_document,
-    requirements_catalogue_to_document,
-    resolved_plan_to_document,
-    suite_release_to_document,
-    test_definition_catalogue_to_document,
-    validate_bundled_schemas,
-    validate_catalogue_references,
-    verify_suite_release_artifacts,
 )
 from conformance.configuration_contracts.models import (
     ArtifactReference,
@@ -68,13 +23,10 @@ from conformance.configuration_contracts.models import (
     EvidenceMode,
     ExecutionDetachedJws,
     ExecutionEvidencePolicy,
-    ExecutionManifest,
     ExecutionManifestAssertion,
     ExecutionManifestHeader,
     ExecutionManifestInput,
-    ExecutionManifestProvenance,
     ExecutionManifestRequest,
-    ExecutionManifestStep,
     ExecutionPsuAuthorization,
     ExecutionResponseSignature,
     ExecutionTokenEndpointAuth,
@@ -84,41 +36,25 @@ from conformance.configuration_contracts.models import (
     GeneratedValueStrategy,
     HttpMethod,
     InputResolutionSource,
-    NormativeReference,
     ParticipantExecutionConfiguration,
     ParticipantInput,
-    ParticipantPlan,
     PredefinedInput,
     PredefinedInputValue,
     RequestBaseUrlSource,
     RequestInputBinding,
     RequestModification,
     RequestStateBinding,
-    Requirement,
-    RequirementRule,
-    RequirementsCatalogue,
-    RequirementTargetType,
     ResolutionReason,
     ResolvedCapability,
-    ResolvedEndpoint,
-    ResolvedPlan,
-    ResolvedPlanProvenance,
-    ResolvedPredefinedInput,
-    ResolvedRequirement,
-    ResolvedTestInstance,
     ResponseSignatureSource,
     SelectionOrigin,
     Sha256Digest,
-    SpecificationReference,
     StableId,
     StandingOrderFrequency,
     SuiteRelease,
     TechnicalSource,
     TestAssertion,
-    TestDefinition,
-    TestDefinitionCatalogue,
     TestOutput,
-    TestRequest,
     TokenEndpointAuthSource,
     ToolRelease,
 )
@@ -130,104 +66,106 @@ from conformance.configuration_contracts.suite_release_artifacts import (
     preflight_suite_release_artifacts,
 )
 from conformance.configuration_contracts.v2_compiler import (
-    CompilationFindingCode as V2CompilationFindingCode,
-)
-from conformance.configuration_contracts.v2_compiler import (
-    ParticipantPlanCompilationError as V2ParticipantPlanCompilationError,
-)
-from conformance.configuration_contracts.v2_compiler import (
-    compile_participant_plan as compile_participant_plan_v2,
-)
-from conformance.configuration_contracts.v2_compiler import (
-    resolve_participant_plan as resolve_participant_plan_v2,
+    CompilationFindingCode,
+    ParticipantPlanCompilationError,
+    compile_participant_plan,
+    resolve_participant_plan,
 )
 from conformance.configuration_contracts.v2_execution_manifest import (
-    ExecutionManifestGenerationError as V2ExecutionManifestGenerationError,
-)
-from conformance.configuration_contracts.v2_execution_manifest import (
-    generate_execution_manifest as generate_execution_manifest_v2,
+    ExecutionManifestGenerationError,
+    generate_execution_manifest,
 )
 from conformance.configuration_contracts.v2_loader import (
-    dump_execution_manifest as dump_execution_manifest_v2,
+    dump_execution_manifest,
+    dump_participant_plan,
+    dump_resolved_plan,
+    dump_suite_policy,
+    dump_test_definition_catalogue,
+    execution_manifest_id,
+    execution_manifest_to_document,
+    load_execution_manifest,
+    load_participant_plan,
+    load_resolved_plan,
+    load_suite_policy,
+    load_suite_release,
+    load_test_definition_catalogue,
+    parse_execution_manifest,
+    parse_participant_plan,
+    parse_resolved_plan,
+    parse_suite_policy,
+    parse_suite_release,
+    parse_test_definition_catalogue,
+    participant_plan_to_document,
+    resolved_plan_to_document,
+    suite_policy_to_document,
+    test_definition_catalogue_to_document,
+    validate_bundled_schemas,
+    validate_catalogue_references,
 )
-from conformance.configuration_contracts.v2_loader import (
-    dump_participant_plan as dump_participant_plan_v2,
+from conformance.configuration_contracts.v2_models import (
+    ExecutionManifest,
+    ExecutionManifestProvenance,
+    ExecutionManifestStep,
+    ParticipantPlan,
+    ResolvedEndpoint,
+    ResolvedPlan,
+    ResolvedPlanProvenance,
+    ResolvedPredefinedInput,
+    ResolvedTestInstance,
+    Specification,
+    SuitePolicy,
+    TestApplicability,
+    TestDefinition,
+    TestDefinitionCatalogue,
+    TestDefinitionRequest,
 )
-from conformance.configuration_contracts.v2_loader import (
-    dump_resolved_plan as dump_resolved_plan_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    dump_suite_policy as dump_suite_policy_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    dump_test_definition_catalogue as dump_test_definition_catalogue_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    load_execution_manifest as load_execution_manifest_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    load_participant_plan as load_participant_plan_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    load_resolved_plan as load_resolved_plan_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    load_suite_policy as load_suite_policy_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    load_suite_release as load_suite_release_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    load_test_definition_catalogue as load_test_definition_catalogue_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    parse_execution_manifest as parse_execution_manifest_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    parse_participant_plan as parse_participant_plan_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    parse_resolved_plan as parse_resolved_plan_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    parse_suite_policy as parse_suite_policy_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    parse_suite_release as parse_suite_release_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    parse_test_definition_catalogue as parse_test_definition_catalogue_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    suite_policy_to_document as suite_policy_to_document_v2,
-)
-from conformance.configuration_contracts.v2_loader import (
-    validate_bundled_schemas as validate_bundled_schemas_v2,
-)
-from conformance.configuration_contracts.v2_models import SuitePolicy
+
+V2CompilationFindingCode = CompilationFindingCode
+V2ExecutionManifestGenerationError = ExecutionManifestGenerationError
+V2ParticipantPlanCompilationError = ParticipantPlanCompilationError
+compile_participant_plan_v2 = compile_participant_plan
+dump_execution_manifest_v2 = dump_execution_manifest
+dump_participant_plan_v2 = dump_participant_plan
+dump_resolved_plan_v2 = dump_resolved_plan
+dump_suite_policy_v2 = dump_suite_policy
+dump_test_definition_catalogue_v2 = dump_test_definition_catalogue
+generate_execution_manifest_v2 = generate_execution_manifest
+load_execution_manifest_v2 = load_execution_manifest
+load_participant_plan_v2 = load_participant_plan
+load_resolved_plan_v2 = load_resolved_plan
+load_suite_policy_v2 = load_suite_policy
+load_suite_release_v2 = load_suite_release
+load_test_definition_catalogue_v2 = load_test_definition_catalogue
+parse_execution_manifest_v2 = parse_execution_manifest
+parse_participant_plan_v2 = parse_participant_plan
+parse_resolved_plan_v2 = parse_resolved_plan
+parse_suite_policy_v2 = parse_suite_policy
+parse_suite_release_v2 = parse_suite_release
+parse_test_definition_catalogue_v2 = parse_test_definition_catalogue
+resolve_participant_plan_v2 = resolve_participant_plan
+suite_policy_to_document_v2 = suite_policy_to_document
+validate_bundled_schemas_v2 = validate_bundled_schemas
 
 __all__ = [
     "ArtifactReference",
-    "CATALOGUE_SCHEMA_VERSION",
     "Capability",
     "CompilationFinding",
     "CompilationFindingCode",
     "ConfigurationContractError",
     "ConfigurationDiagnostic",
-    "DiagnosticCode",
-    "DiagnosticSeverity",
     "DetachedJwsOmittedClaim",
     "DetachedJwsProfile",
     "DetachedJwsSource",
-    "EXECUTION_MANIFEST_SCHEMA_VERSION",
+    "DiagnosticCode",
+    "DiagnosticSeverity",
     "Endpoint",
     "EvidenceMode",
     "ExecutionDetachedJws",
     "ExecutionEvidencePolicy",
-    "ExecutionManifestHeader",
     "ExecutionManifest",
     "ExecutionManifestAssertion",
     "ExecutionManifestGenerationError",
+    "ExecutionManifestHeader",
     "ExecutionManifestInput",
     "ExecutionManifestProvenance",
     "ExecutionManifestRequest",
@@ -242,17 +180,15 @@ __all__ = [
     "HttpMethod",
     "InputResolutionSource",
     "LegacyExecutionEngine",
-    "NormativeReference",
-    "PLAN_SCHEMA_VERSION",
-    "PreparedExecutionManifest",
-    "ParticipantInput",
     "ParticipantExecutionConfiguration",
+    "ParticipantInput",
     "ParticipantPlan",
     "ParticipantPlanCompilationError",
     "PredefinedInput",
     "PredefinedInputValue",
-    "RequestInputBinding",
+    "PreparedExecutionManifest",
     "RequestBaseUrlSource",
+    "RequestInputBinding",
     "RequestModification",
     "RequestStateBinding",
     "ResolutionReason",
@@ -262,18 +198,12 @@ __all__ = [
     "ResolvedPlanAdapterError",
     "ResolvedPlanProvenance",
     "ResolvedPredefinedInput",
-    "ResolvedRequirement",
-    "ResolvedTestInstance",
     "ResolvedSuiteArtifact",
+    "ResolvedTestInstance",
     "ResponseSignatureSource",
-    "Requirement",
-    "RequirementRule",
-    "RequirementTargetType",
-    "RequirementsCatalogue",
-    "SUITE_RELEASE_SCHEMA_VERSION",
-    "Sha256Digest",
     "SelectionOrigin",
-    "SpecificationReference",
+    "Sha256Digest",
+    "Specification",
     "StableId",
     "StandingOrderFrequency",
     "SuiteRelease",
@@ -282,70 +212,67 @@ __all__ = [
     "SuiteReleaseArtifactErrorCode",
     "SuiteReleaseArtifactResolver",
     "TechnicalSource",
+    "TestApplicability",
     "TestAssertion",
     "TestDefinition",
     "TestDefinitionCatalogue",
+    "TestDefinitionRequest",
     "TestOutput",
-    "TestRequest",
     "TokenEndpointAuthSource",
     "ToolRelease",
-    "materialize_execution_manifest_requests",
-    "compile_participant_plan",
-    "dump_execution_manifest",
-    "dump_participant_plan",
-    "dump_requirements_catalogue",
-    "dump_resolved_plan",
-    "dump_suite_release",
-    "dump_test_definition_catalogue",
-    "execution_manifest_id",
-    "execution_manifest_to_document",
-    "generate_execution_manifest",
-    "load_execution_manifest",
-    "load_requirements_catalogue",
-    "load_participant_plan",
-    "load_resolved_plan",
-    "load_suite_release",
-    "load_test_definition_catalogue",
-    "parse_execution_manifest",
-    "parse_requirements_catalogue",
-    "parse_participant_plan",
-    "parse_resolved_plan",
-    "parse_suite_release",
-    "parse_test_definition_catalogue",
-    "preflight_suite_release_artifacts",
-    "requirements_catalogue_to_document",
-    "participant_plan_to_document",
-    "resolved_plan_to_document",
-    "resolve_participant_plan",
-    "suite_release_to_document",
-    "test_definition_catalogue_to_document",
-    "validate_bundled_schemas",
-    "validate_catalogue_references",
-    "validate_execution_manifest_compatibility",
-    "verify_suite_release_artifacts",
     "V2CompilationFindingCode",
     "V2ExecutionManifestGenerationError",
     "V2ParticipantPlanCompilationError",
+    "compile_participant_plan",
     "compile_participant_plan_v2",
+    "dump_execution_manifest",
     "dump_execution_manifest_v2",
+    "dump_participant_plan",
     "dump_participant_plan_v2",
+    "dump_resolved_plan",
     "dump_resolved_plan_v2",
+    "dump_suite_policy",
     "dump_suite_policy_v2",
+    "dump_test_definition_catalogue",
     "dump_test_definition_catalogue_v2",
+    "execution_manifest_id",
+    "execution_manifest_to_document",
+    "generate_execution_manifest",
     "generate_execution_manifest_v2",
+    "load_execution_manifest",
     "load_execution_manifest_v2",
+    "load_participant_plan",
     "load_participant_plan_v2",
+    "load_resolved_plan",
     "load_resolved_plan_v2",
-    "load_suite_release_v2",
+    "load_suite_policy",
     "load_suite_policy_v2",
+    "load_suite_release",
+    "load_suite_release_v2",
+    "load_test_definition_catalogue",
     "load_test_definition_catalogue_v2",
+    "parse_execution_manifest",
     "parse_execution_manifest_v2",
+    "parse_participant_plan",
     "parse_participant_plan_v2",
+    "parse_resolved_plan",
     "parse_resolved_plan_v2",
-    "parse_suite_release_v2",
+    "parse_suite_policy",
     "parse_suite_policy_v2",
+    "parse_suite_release",
+    "parse_suite_release_v2",
+    "parse_test_definition_catalogue",
     "parse_test_definition_catalogue_v2",
+    "participant_plan_to_document",
+    "preflight_suite_release_artifacts",
+    "resolve_participant_plan",
     "resolve_participant_plan_v2",
+    "suite_policy_to_document",
     "suite_policy_to_document_v2",
+    "resolved_plan_to_document",
+    "test_definition_catalogue_to_document",
+    "validate_bundled_schemas",
     "validate_bundled_schemas_v2",
+    "validate_catalogue_references",
+    "validate_execution_manifest_compatibility",
 ]

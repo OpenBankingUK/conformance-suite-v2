@@ -13,13 +13,11 @@ import json
 import logging
 import threading
 from collections.abc import Mapping
-from typing import cast
 
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import RunPlanStep, RunRecord, RunStore, run_store
 from conformance.catalogue import CatalogueRequestStep, CompiledTestPlan
 from conformance.configuration_contracts import PreparedExecutionManifest
-from conformance.configuration_contracts.models import ExecutionManifestStep
 from conformance.context import RuntimeConfig
 from conformance.execution_log import (
     BufferedExecutionLogger,
@@ -175,7 +173,7 @@ def _execution_manifest_steps_snapshot(
     prepared: PreparedExecutionManifest,
 ) -> tuple[RunPlanStep, ...]:
     """Build the pending run directly from immutable manifest steps."""
-    steps = cast(tuple[ExecutionManifestStep, ...], prepared.manifest.steps)
+    steps = prepared.manifest.steps
     return tuple(
         RunPlanStep(
             step_id=str(step.id),

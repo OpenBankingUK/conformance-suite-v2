@@ -51,7 +51,7 @@
       "value": "EvryDay"
     }
   ],
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "scheme": "open-banking-uk",
   "securityProfile": "fapi1-advanced",
   "selectedCapabilityIds": [
@@ -63,8 +63,8 @@
   ],
   "specification": {
     "id": "read-write-api",
-    "requirementsScope": "pis",
+    "testScope": "pis",
     "version": "3.1.11"
   },
-  "suiteReleaseId": "obl.pis-v311.catalogue-fixture"
+  "suiteReleaseId": "obl.open-banking-mvp.test-catalogue-release"
 }
