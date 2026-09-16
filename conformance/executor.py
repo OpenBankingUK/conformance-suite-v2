@@ -621,7 +621,7 @@ def run_execution_manifest(
     dcr_jwt_id_factory: Callable[[], str] | None = None,
 ) -> SmokeCheckResult:
     """Execute only work declared by one immutable execution manifest."""
-    manifest = cast(ExecutionManifest, prepared_manifest.manifest)
+    manifest = prepared_manifest.manifest
     runtime_inputs = prepared_manifest.runtime_inputs
     runtime_input_base_dir = prepared_manifest.runtime_input_base_dir
     validate_execution_manifest_compatibility(prepared_manifest)

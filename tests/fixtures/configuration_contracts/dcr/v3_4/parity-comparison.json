@@ -10,13 +10,6 @@
     "file": "parity-contract.json",
     "purpose": "migration-cross-check-only"
   },
-  "documentedGaps": [
-    {
-      "classification": "genuine-omission",
-      "id": "dcr.v34.requirement.deletion-token-invalidation",
-      "rationale": "The DCR operation inventory has no independent protected resource that can distinguish token invalidation from the deleted ClientId becoming unknown. The requirement remains in the requirements catalogue as documented-only and is surfaced as not assessed."
-    }
-  ],
   "intentionalChanges": [
     {
       "authority": "Open Banking DCR 3.4 Endpoints",
@@ -44,7 +37,7 @@
       "classification": "intentional-correction",
       "id": "dcr-v34-migration-004",
       "legacyBehavior": "client_secret_post is rejected as a metadata value because the current runner cannot execute it.",
-      "replacementDecision": "The requirements catalogue retains every source-defined token_endpoint_auth_method; runtime support policy remains outside normative requirements."
+      "replacementDecision": "The executable catalogue retains every source-defined token_endpoint_auth_method; runtime support policy remains separate."
     },
     {
       "authority": "Open Banking DCR 3.4 OBClientRegistrationRequest1 processing rules",
@@ -345,8 +338,8 @@
     }
   ],
   "documentType": "dcr-parity-comparison",
-  "requirementsCatalogueId": "obl.dcr-v34.requirements",
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
+  "testCatalogueId": "obl.dcr-v34.tests.v2",
   "summary": {
     "genuine-omission": 0,
     "intentional-correction": 2,

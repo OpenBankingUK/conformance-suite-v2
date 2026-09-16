@@ -16,27 +16,11 @@ from conformance.version import REPORT_METADATA_VERSION, resolve_conformance_too
 if TYPE_CHECKING:
     from conformance.approved_releases import ApprovedReleasePolicy
     from conformance.catalogue import CompiledTestPlan
-    from conformance.configuration_contracts.models import (
-        ExecutionManifest as V1ExecutionManifest,
-    )
-    from conformance.configuration_contracts.models import (
-        ParticipantPlan as V1ParticipantPlan,
-    )
-    from conformance.configuration_contracts.models import (
-        RequirementsCatalogue,
-    )
-    from conformance.configuration_contracts.models import (
-        ResolvedPlan as V1ResolvedPlan,
-    )
     from conformance.configuration_contracts.v2_models import (
-        ExecutionManifest as V2ExecutionManifest,
-    )
-    from conformance.configuration_contracts.v2_models import (
+        ExecutionManifest,
         ParticipantPlan,
+        ResolvedPlan,
         TestDefinitionCatalogue,
-    )
-    from conformance.configuration_contracts.v2_models import (
-        ResolvedPlan as V2ResolvedPlan,
     )
     from conformance.test_plan import TestPlan
 
@@ -110,8 +94,8 @@ class ResultTraceabilitySource:
         participant_plan_snapshot: Secret-safe snapshot of participant intent.
     """
 
-    execution_manifest: V1ExecutionManifest | V2ExecutionManifest
-    resolved_plan: V1ResolvedPlan | V2ResolvedPlan
+    execution_manifest: ExecutionManifest
+    resolved_plan: ResolvedPlan
     participant_plan_snapshot: Mapping[str, JsonValue]
 
     def __post_init__(self) -> None:
@@ -286,8 +270,8 @@ def build_smoke_check_result(
 
 
 def build_safe_participant_plan_snapshot(
-    participant_plan: V1ParticipantPlan | ParticipantPlan,
-    catalogue: RequirementsCatalogue | TestDefinitionCatalogue,
+    participant_plan: ParticipantPlan,
+    catalogue: TestDefinitionCatalogue,
 ) -> JsonObject:
     """Build a participant-intent snapshot without persisting sensitive values.
 
@@ -329,9 +313,6 @@ def build_safe_participant_plan_snapshot(
                 }
             )
         snapshot_inputs.append(snapshot_input)
-    specification = participant_plan.specification
-    is_v2 = participant_plan.schema_version == "2.0"
-    scope = specification.test_scope if hasattr(specification, "test_scope") else specification.requirements_scope
     snapshot: JsonObject = {
         "documentType": participant_plan.document_type,
         "id": str(participant_plan.id),
@@ -342,7 +323,7 @@ def build_safe_participant_plan_snapshot(
         "selectedCapabilityIds": [str(capability_id) for capability_id in participant_plan.selected_capability_ids],
         "specification": {
             "id": str(participant_plan.specification.id),
-            ("testScope" if is_v2 else "requirementsScope"): str(scope),
+            "testScope": str(participant_plan.specification.test_scope),
             "version": participant_plan.specification.version,
         },
         "suiteReleaseId": str(participant_plan.suite_release_id),

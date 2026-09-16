@@ -60,32 +60,6 @@ class HttpMethod(StrEnum):
     PUT = "PUT"
 
 
-class RequirementTargetType(StrEnum):
-    """Kinds of catalogue object that a requirements rule can require."""
-
-    ENDPOINT = "endpoint"
-    PREDEFINED_INPUT = "predefined-input"
-
-
-@dataclass(frozen=True, slots=True)
-class SpecificationReference:
-    """Specification and functional scope governed by a requirements catalogue."""
-
-    id: StableId
-    version: str
-    requirements_scope: StableId
-
-
-@dataclass(frozen=True, slots=True)
-class NormativeReference:
-    """Stable citation into normative Open Banking material."""
-
-    id: StableId
-    title: str
-    uri: str
-    section: str
-
-
 @dataclass(frozen=True, slots=True)
 class TechnicalSource:
     """Content-addressed technical source used to define executable operations."""
@@ -135,7 +109,7 @@ type PredefinedInputValue = str | StandingOrderFrequency
 
 @dataclass(frozen=True, slots=True)
 class PredefinedInput:
-    """Standards-owned logical input permitted for a capability."""
+    """Catalogue-owned logical input permitted for a capability."""
 
     id: StableId
     label: str
@@ -145,44 +119,6 @@ class PredefinedInput:
     sensitivity: str
     example_value: PredefinedInputValue
     default_value: PredefinedInputValue | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class RequirementRule:
-    """One explicit conditional requirement rule from the initial vocabulary."""
-
-    type: str
-    capability_id: StableId
-    target_type: RequirementTargetType
-    target_id: StableId
-
-
-@dataclass(frozen=True, slots=True)
-class Requirement:
-    """One normative obligation with explicit rule and citations."""
-
-    id: StableId
-    statement: str
-    rule: RequirementRule
-    normative_reference_ids: tuple[StableId, ...]
-    assessment: str = "tested"
-
-
-@dataclass(frozen=True, slots=True)
-class RequirementsCatalogue:
-    """Immutable Standards-owned requirements for one specification scope."""
-
-    schema_version: str
-    document_type: str
-    id: StableId
-    scheme: StableId
-    specification: SpecificationReference
-    normative_references: tuple[NormativeReference, ...]
-    technical_sources: tuple[TechnicalSource, ...]
-    capabilities: tuple[Capability, ...]
-    endpoints: tuple[Endpoint, ...]
-    predefined_inputs: tuple[PredefinedInput, ...]
-    requirements: tuple[Requirement, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,19 +163,6 @@ class TestOutput:
 
 
 @dataclass(frozen=True, slots=True)
-class TestRequest:
-    """Operation and logical-input bindings used by one test definition."""
-
-    endpoint_id: StableId
-    input_bindings: tuple[RequestInputBinding, ...]
-    modifications: tuple[RequestModification, ...]
-    state_bindings: tuple[RequestStateBinding, ...] = ()
-    content_type: str | None = None
-    transport_profile: StableId | None = None
-    authorization_profile: StableId | None = None
-
-
-@dataclass(frozen=True, slots=True)
 class TestAssertion:
     """One strict assertion declared by a test definition."""
 
@@ -255,33 +178,6 @@ class TestAssertion:
 
 
 @dataclass(frozen=True, slots=True)
-class TestDefinition:
-    """Reusable executable test description with explicit requirement coverage."""
-
-    id: StableId
-    name: str
-    description: str
-    purpose: str
-    capability_id: StableId
-    covered_requirement_ids: tuple[StableId, ...]
-    dependencies: tuple[StableId, ...]
-    request: TestRequest
-    assertions: tuple[TestAssertion, ...]
-    outputs: tuple[TestOutput, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class TestDefinitionCatalogue:
-    """Immutable test-author-owned catalogue for reusable definitions."""
-
-    schema_version: str
-    document_type: str
-    id: StableId
-    requirements_catalogue_id: StableId
-    test_definitions: tuple[TestDefinition, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class ParticipantInput:
     """One participant-supplied value for a predefined logical input."""
 
@@ -293,8 +189,8 @@ class ParticipantInput:
 class ParticipantExecutionConfiguration:
     """Participant environment values used after scope compilation.
 
-    The compiler deliberately ignores this configuration. Trusted catalogues
-    remain authoritative for requirements, test selection, and logical input
+    The compiler deliberately ignores this configuration. Trusted test
+    catalogues remain authoritative for work selection and logical input
     bindings; these values only configure the compatibility execution engine.
     """
 
@@ -302,22 +198,6 @@ class ParticipantExecutionConfiguration:
     compatibility_runtime_inputs: Mapping[str, JsonValue]
     dynamic_client_registration: Mapping[str, JsonValue]
     metadata: Mapping[str, JsonValue]
-
-
-@dataclass(frozen=True, slots=True)
-class ParticipantPlan:
-    """Participant intent and execution environment for one trusted scope."""
-
-    schema_version: str
-    document_type: str
-    id: StableId
-    suite_release_id: StableId
-    scheme: StableId
-    specification: SpecificationReference
-    security_profile: str
-    selected_capability_ids: tuple[StableId, ...]
-    predefined_inputs: tuple[ParticipantInput, ...]
-    execution_configuration: ParticipantExecutionConfiguration | None = None
 
 
 class SelectionOrigin(StrEnum):
@@ -345,7 +225,6 @@ class FindingSourceDocument(StrEnum):
     """Configuration document addressed by a compilation finding pointer."""
 
     PARTICIPANT_PLAN = "participant-plan"
-    REQUIREMENTS_CATALOGUE = "requirements-catalogue"
     TEST_DEFINITION_CATALOGUE = "test-definition-catalogue"
     RESOLVED_PLAN = "resolved-plan"
 
@@ -368,52 +247,6 @@ class ResolvedCapability:
 
 
 @dataclass(frozen=True, slots=True)
-class ResolvedEndpoint:
-    """Endpoint inferred by applying immutable catalogue requirements."""
-
-    id: StableId
-    origin: SelectionOrigin
-    requirement_ids: tuple[StableId, ...]
-    reasons: tuple[ResolutionReason, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedPredefinedInput:
-    """Trace-safe logical input selected and resolved for execution."""
-
-    id: StableId
-    source: InputResolutionSource
-    value: PredefinedInputValue | None
-    redacted: bool
-    requirement_ids: tuple[StableId, ...]
-    reasons: tuple[ResolutionReason, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedRequirement:
-    """Applicable immutable requirement and its normative references."""
-
-    id: StableId
-    capability_id: StableId
-    target_type: RequirementTargetType
-    target_id: StableId
-    normative_reference_ids: tuple[StableId, ...]
-    reasons: tuple[ResolutionReason, ...]
-    assessment: str = "tested"
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedTestInstance:
-    """Deterministic compiled instance of one reusable test definition."""
-
-    id: StableId
-    test_definition_id: StableId
-    dependency_ids: tuple[StableId, ...]
-    covered_requirement_ids: tuple[StableId, ...]
-    reasons: tuple[ResolutionReason, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class CompilationFinding:
     """Stable validation or policy finding retained in resolved output."""
 
@@ -425,42 +258,8 @@ class CompilationFinding:
     related_ids: tuple[StableId, ...]
 
 
-@dataclass(frozen=True, slots=True)
-class ResolvedPlanProvenance:
-    """Exact release and configuration sources used for compilation."""
-
-    participant_plan_id: StableId
-    suite_release_id: StableId
-    suite_release_version: str
-    suite_published_at: str
-    requirements_catalogue_id: StableId
-    test_definition_catalogue_id: StableId
-    tool_releases: tuple[ToolRelease, ...]
-    artifacts: tuple[ArtifactReference, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedPlan:
-    """Generated, inspectable result of participant-plan compilation."""
-
-    schema_version: str
-    document_type: str
-    id: StableId
-    selection_valid: bool
-    scheme: StableId
-    specification: SpecificationReference
-    security_profile: str
-    capabilities: tuple[ResolvedCapability, ...]
-    endpoints: tuple[ResolvedEndpoint, ...]
-    requirements: tuple[ResolvedRequirement, ...]
-    predefined_inputs: tuple[ResolvedPredefinedInput, ...]
-    test_instances: tuple[ResolvedTestInstance, ...]
-    findings: tuple[CompilationFinding, ...]
-    provenance: ResolvedPlanProvenance
-
-
 class EvidenceMode(StrEnum):
-    """Evidence handling modes supported by the initial runner boundary."""
+    """Evidence handling modes supported by the runner boundary."""
 
     MASKED = "masked"
     NONE = "none"
@@ -676,47 +475,3 @@ class ExecutionEvidencePolicy:
 
     request: EvidenceMode
     response: EvidenceMode
-
-
-@dataclass(frozen=True, slots=True)
-class ExecutionManifestStep:
-    """One ordered runner-facing test instance and its executable request."""
-
-    id: StableId
-    test_instance_id: StableId
-    test_definition_id: StableId
-    name: str
-    dependency_ids: tuple[StableId, ...]
-    covered_requirement_ids: tuple[StableId, ...]
-    request: ExecutionManifestRequest
-    assertions: tuple[ExecutionManifestAssertion, ...]
-    outputs: tuple[TestOutput, ...]
-    evidence: ExecutionEvidencePolicy
-
-
-@dataclass(frozen=True, slots=True)
-class ExecutionManifestProvenance:
-    """Immutable source provenance copied from the resolved plan."""
-
-    resolved_plan_id: StableId
-    participant_plan_id: StableId
-    suite_release_id: StableId
-    suite_release_version: str
-    suite_published_at: str
-    requirements_catalogue_id: StableId
-    test_definition_catalogue_id: StableId
-    tool_releases: tuple[ToolRelease, ...]
-    artifacts: tuple[ArtifactReference, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class ExecutionManifest:
-    """Generated immutable instructions consumed by the runner boundary."""
-
-    schema_version: str
-    document_type: str
-    id: StableId
-    security_profile: str
-    inputs: tuple[ExecutionManifestInput, ...]
-    steps: tuple[ExecutionManifestStep, ...]
-    provenance: ExecutionManifestProvenance

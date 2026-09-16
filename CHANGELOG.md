@@ -22,9 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compilation, manifests, and results no longer consume or emit requirements,
   normative references, assessment states, or requirement-coverage links.
   Traceability is now suite release → test definition → resolved instance →
-  manifest step/assertion → observation. Existing v1 requirements contracts
-  remain isolated as compatibility/deletion-only code for the follow-up
-  cleanup.
+  manifest step/assertion → observation. The obsolete v1 requirements
+  catalogues, schemas, release bindings, models, loaders, compiler,
+  materializer, fixtures, and focused migration tests have been removed.
 - Participant launch now carries complete request, authorization, signing,
   assertion, output, and evidence instructions directly from the v2 catalogue
   into the immutable execution manifest. It no longer rebuilds a v1

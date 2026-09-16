@@ -133,13 +133,12 @@ The following private runtime compatibility remains intentionally:
 | `conformance.dcr_execution` | Executes DCR protocol exchanges declared by immutable v2 manifest steps. |
 | `conformance.executor.run_compiled_test_plan` | Narrow deletion-only harness used by focused legacy runtime and golden tests. Public launch surfaces call `run_execution_manifest`. |
 | `tests/fixtures/current_pipeline` and pinned parity ledgers | Comparison evidence proving that compatibility execution retains the characterised support matrix; they are not accepted participant documents. |
-| `configuration_contracts/bundles/pis-domestic-standing-order-v4_0` | Focused schema/compiler fixture for the original vertical slice; it is not registered in the production suite release. |
-| `configuration_contracts/schemas/v1/requirements-catalogue.schema.json`, v1 requirements models/loaders/compiler, and checked-in `requirements.json` files | Isolated compatibility/deletion-only debt retained for PR2. No production release or participant caller consumes them. |
 
-Do not remove these structures until their remaining focused tests have moved.
 Production work selection, ordering, requests, assertions, outputs, and evidence
 come exclusively from the released v2 catalogue and immutable execution
-manifest; runtime lowering may not consult a compiled v1 catalogue graph.
+manifest; runtime lowering may not consult a compiled legacy catalogue graph.
+There is no machine-readable normative catalogue or requirement-level
+assessment contract.
 
 ## Shared plan-document contract
 
