@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- AIS accounts participant plans now compile and launch through the shared
+  catalogue, execution-manifest, scheduling, and compatibility-runtime
+  boundaries. Account-access-consent GET and DELETE tests map to executable
+  operations with stable observation traceability instead of failing launch
+  when the mandatory consent capability is inferred.
+
 ### Added
 
 - A single `participant-plan` 1.0 surface now drives browser construction and

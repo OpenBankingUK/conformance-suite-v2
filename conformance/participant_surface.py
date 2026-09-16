@@ -310,7 +310,12 @@ def _manifest_observation_ids(
     compiled_plan: CompiledTestPlan,
 ) -> Mapping[str, str]:
     request_candidates = [
-        (request.method, request.path, request.step_id)
+        (
+            request.method,
+            request.path,
+            request.step_id,
+            request.compatibility_test_definition_ids,
+        )
         for test_case in compiled_plan.test_cases
         for request in test_case.request_steps
     ]
@@ -330,22 +335,51 @@ def _manifest_observation_ids(
             dcr_observations[str(manifest_step.id)] = observation_id
         return MappingProxyType(dcr_observations)
 
-    unused = list(request_candidates)
+    explicitly_mapped: dict[str, tuple[str, str, str]] = {}
+    for method, path, step_id, test_definition_ids in request_candidates:
+        for test_definition_id in test_definition_ids:
+            if test_definition_id in explicitly_mapped:
+                raise ParticipantSurfaceError(
+                    "Compatibility catalogue reference unresolved: "
+                    f"test definition {test_definition_id} maps to multiple executable observations"
+                )
+            explicitly_mapped[test_definition_id] = (method, path, step_id)
+
+    unused = [(method, path, step_id) for method, path, step_id, _definition_ids in request_candidates]
+    reserved_step_ids = {step_id for _method, _path, step_id in explicitly_mapped.values()}
     observations: dict[str, str] = {}
     for manifest_step in manifest.steps:
         normalized_manifest_path = _normalized_placeholder_path(manifest_step.request.path)
-        match_index = next(
-            (
-                index
-                for index, (method, path, _step_id) in enumerate(unused)
-                if method == manifest_step.request.method.value
-                and _normalized_placeholder_path(path).endswith(normalized_manifest_path)
-            ),
-            None,
-        )
+        test_definition_id = str(manifest_step.test_definition_id)
+        explicit_candidate = explicitly_mapped.get(test_definition_id)
+        if explicit_candidate is not None:
+            explicit_method, explicit_path, _explicit_step_id = explicit_candidate
+            if explicit_method != manifest_step.request.method.value or not _normalized_placeholder_path(
+                explicit_path
+            ).endswith(normalized_manifest_path):
+                raise ParticipantSurfaceError(
+                    "Compatibility catalogue reference unresolved: "
+                    f"test definition {test_definition_id} maps to "
+                    f"{explicit_method} {explicit_path}, not "
+                    f"{manifest_step.request.method.value} {manifest_step.request.path}"
+                )
+            match_index = unused.index(explicit_candidate) if explicit_candidate in unused else None
+        else:
+            match_index = next(
+                (
+                    index
+                    for index, (method, path, _step_id) in enumerate(unused)
+                    if method == manifest_step.request.method.value
+                    and _step_id not in reserved_step_ids
+                    and _normalized_placeholder_path(path).endswith(normalized_manifest_path)
+                ),
+                None,
+            )
         if match_index is None:
             raise ParticipantSurfaceError(
-                f"Compatibility execution has no observation for manifest step {manifest_step.id!s}"
+                "Compatibility catalogue reference unresolved: no executable observation matches "
+                f"manifest step {manifest_step.id!s} "
+                f"({manifest_step.request.method.value} {manifest_step.request.path})"
             )
         _method, _path, observation_id = unused.pop(match_index)
         observations[str(manifest_step.id)] = observation_id
@@ -475,7 +509,10 @@ def _legacy_read_write_endpoints(
             None,
         )
         if legacy_ref is None:
-            raise ParticipantSurfaceError(f"No compatibility endpoint matches {endpoint.method.value} {endpoint.path}")
+            raise ParticipantSurfaceError(
+                "Compatibility catalogue reference unresolved: "
+                f"no executable operation matches {endpoint.method.value} {endpoint.path}"
+            )
         endpoints.append(
             {
                 "method": endpoint.method.value,

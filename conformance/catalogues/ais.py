@@ -29,7 +29,7 @@ from conformance.json_types import JsonValue
 AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="ais")
 """Catalogue boundary for AIS accounts-and-transactions legacy FCS import."""
 
-AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_VERSION = "2026.07.legacy-fcs-ais-at.1"
+AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_VERSION = "2026.09.ais-consent-management.2"
 """Content version for the imported AIS accounts-and-transactions catalogue."""
 
 _AIS_BASE_PATH = "/open-banking/v4.0/aisp"
@@ -46,6 +46,45 @@ _ACCOUNT_BY_ID_ENDPOINT = EndpointRef(method="GET", path=f"{_AIS_BASE_PATH}/acco
 _ACCOUNT_BALANCES_ENDPOINT = EndpointRef(method="GET", path=f"{_AIS_BASE_PATH}/accounts/{{AccountId}}/balances")
 _ACCOUNT_TRANSACTIONS_ENDPOINT = EndpointRef(method="GET", path=f"{_AIS_BASE_PATH}/accounts/{{AccountId}}/transactions")
 _TRANSACTIONS_ENDPOINT = EndpointRef(method="GET", path=f"{_AIS_BASE_PATH}/transactions")
+_ACCOUNT_ACCESS_CONSENT_CREATE_ENDPOINT = EndpointRef(
+    method="POST",
+    path=f"{_AIS_BASE_PATH}/account-access-consents",
+)
+_ACCOUNT_ACCESS_CONSENT_ENDPOINT = EndpointRef(
+    method="GET",
+    path=f"{_AIS_BASE_PATH}/account-access-consents/{{ConsentId}}",
+)
+_ACCOUNT_ACCESS_CONSENT_DELETE_ENDPOINT = EndpointRef(
+    method="DELETE",
+    path=f"{_AIS_BASE_PATH}/account-access-consents/{{ConsentId}}",
+)
+_CAPTURED_ACCOUNT_ACCESS_CONSENT_ID = "${steps.ais-at-setup-basic-consent-request.response.body.Data.ConsentId}"
+_BASIC_ACCOUNT_ACCESS_CONSENT_BODY: JsonValue = {
+    "Data": {
+        "Permissions": [
+            "ReadAccountsBasic",
+            "ReadBalances",
+            "ReadBeneficiariesBasic",
+            "ReadDirectDebits",
+            "ReadOffers",
+            "ReadParty",
+            "ReadPartyPSU",
+            "ReadProducts",
+            "ReadScheduledPaymentsBasic",
+            "ReadStandingOrdersBasic",
+            "ReadStatementsBasic",
+            "ReadTransactionsBasic",
+            "ReadTransactionsCredits",
+            "ReadTransactionsDebits",
+        ],
+    },
+    "Risk": {},
+}
+_EMPTY_PERMISSIONS_CONSENT_BODY: JsonValue = {"Data": {"Permissions": []}, "Risk": {}}
+_INVALID_TRANSACTION_PERMISSIONS_CONSENT_BODY: JsonValue = {
+    "Data": {"Permissions": ["ReadAccountsBasic", "ReadTransactionsCredits"]},
+    "Risk": {},
+}
 
 _RESOURCE_BASE_URL = RuntimeInputRequirement(
     input_id="resourceBaseUrl",
@@ -1038,8 +1077,11 @@ def _case(
     request_method: HttpMethod,
     request_path: str,
     runtime_requirements: tuple[RuntimeInputRequirement, ...] = (),
+    body_template: JsonValue | None = None,
     assertions: tuple[CatalogueAssertion, ...] = (),
     generated_values: Mapping[str, GeneratedRuntimeValue] | None = None,
+    request_token_id: str | None = None,
+    compatibility_test_definition_id: str | None = None,
     permission_profile: _AisPermissionProfile = "basic",
     specification_versions: tuple[str, ...] = (),
 ) -> CatalogueTestCase:
@@ -1058,9 +1100,13 @@ def _case(
         request_method: HTTP method represented by this case.
         request_path: Standards path represented by this case.
         runtime_requirements: Runtime inputs needed to execute the request.
+        body_template: Optional catalogue-owned JSON request body.
         assertions: Locked assertions represented by this case.
         generated_values: Additional generated runtime values scoped to the
             request step.
+        request_token_id: Optional semantic token required by this request.
+        compatibility_test_definition_id: Replacement test definition mapped
+            to this compatibility request.
         permission_profile: Legacy AIS permission profile used for protected
             resource requests that consume an account-access token.
         specification_versions: User-facing specification versions this case
@@ -1074,10 +1120,14 @@ def _case(
         requirement.input_id for requirement in runtime_requirements if requirement.source == "plan"
     )
     request_headers = open_banking_request_headers_for() if is_open_banking_api_request else ()
-    required_token_id = None
+    required_token_id = request_token_id
     if test_case_id == "ais-at-setup-consent":
         required_token_id = _AIS_CLIENT_CREDENTIALS_AUTH_ID
-    elif _ACCESS_TOKEN in runtime_requirements and _INVALID_ACCESS_TOKEN not in runtime_requirements:
+    elif (
+        required_token_id is None
+        and _ACCESS_TOKEN in runtime_requirements
+        and _INVALID_ACCESS_TOKEN not in runtime_requirements
+    ):
         required_token_id = _AIS_RESOURCE_AUTH_IDS[permission_profile]
     produced_token_id = None
     request_generated_values: dict[str, GeneratedRuntimeValue] = (
@@ -1085,11 +1135,16 @@ def _case(
     )
     if generated_values is not None:
         request_generated_values.update(generated_values)
+    effective_compliance_scope = (
+        (*compliance_scope, "legacy-compatibility:replacement-test-definition-adapter")
+        if compatibility_test_definition_id is not None
+        else compliance_scope
+    )
     return CatalogueTestCase(
         test_case_id=test_case_id,
         name=name,
         role=role,
-        compliance_scope=compliance_scope,
+        compliance_scope=effective_compliance_scope,
         applicability=_applicability(
             *endpoint_refs,
             required_capability_ids=required_capability_ids,
@@ -1106,7 +1161,11 @@ def _case(
                 path=request_path,
                 runtime_input_refs=runtime_input_refs,
                 headers=request_headers,
+                body_template=body_template,
                 generated_values=request_generated_values,
+                compatibility_test_definition_ids=(
+                    (compatibility_test_definition_id,) if compatibility_test_definition_id is not None else ()
+                ),
                 required_token_id=required_token_id,
                 produced_token_id=produced_token_id,
                 authorization_profile=permission_profile if required_token_id is not None else None,
@@ -1605,6 +1664,17 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
             required=False,
             endpoint_refs=(_ACCOUNT_TRANSACTIONS_ENDPOINT, _TRANSACTIONS_ENDPOINT),
         ),
+        EndpointCapability(
+            capability_id="ais.account-access-consents.management",
+            label="AIS account-access consent management",
+            description="Compatibility execution for retrieving and deleting an account-access consent.",
+            required=True,
+            endpoint_refs=(
+                _ACCOUNT_ACCESS_CONSENT_CREATE_ENDPOINT,
+                _ACCOUNT_ACCESS_CONSENT_ENDPOINT,
+                _ACCOUNT_ACCESS_CONSENT_DELETE_ENDPOINT,
+            ),
+        ),
     )
     + _AIS_LEGACY_EXTRA_CAPABILITIES,
     test_cases=tuple(
@@ -1619,7 +1689,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                     "legacy-fcs-source:OpenBankingUK/conformance-suite@develop/manifests/ob_3.1_accounts_transactions_fca.json",
                     "legacy-fcs-source:OpenBankingUK/conformance-suite@develop/manifests/ob_4.0_accounts_transactions_fca.json",
                 ),
-                endpoint_refs=(_ACCOUNTS_ENDPOINT,),
+                endpoint_refs=(_ACCOUNT_ACCESS_CONSENT_CREATE_ENDPOINT,),
                 required_capability_ids=(),
                 dependencies=(),
                 mandatory=True,
@@ -1642,12 +1712,88 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 request_method="POST",
                 request_path=f"{_AIS_BASE_PATH}/account-access-consents",
                 runtime_requirements=(_RESOURCE_BASE_URL,),
+                compatibility_test_definition_id="ais.v401.test.post.account_access_consents.positive",
                 assertions=(
                     _assertion(
                         "status-201",
                         "http_status",
                         "Consent creation returns HTTP 201",
                         {"expected": 201},
+                    ),
+                ),
+            ),
+            _case(
+                "ais-at-consent-create-401",
+                name="Reject account-access consent creation without an access token",
+                role="security",
+                compliance_scope=("compatibility-test-definition:ais.test.post.account_access_consents.unauthorized",),
+                endpoint_refs=(_ACCOUNT_ACCESS_CONSENT_CREATE_ENDPOINT,),
+                dependencies=("ais-at-setup-consent",),
+                mandatory=True,
+                request_method="POST",
+                request_path=f"{_AIS_BASE_PATH}/account-access-consents",
+                runtime_requirements=(_RESOURCE_BASE_URL,),
+                body_template=_BASIC_ACCOUNT_ACCESS_CONSENT_BODY,
+                compatibility_test_definition_id="ais.v401.test.post.account_access_consents.unauthorized",
+                assertions=(
+                    _assertion(
+                        "status-401",
+                        "http_status",
+                        "Consent creation without an access token returns HTTP 401",
+                        {"expected": 401},
+                    ),
+                ),
+            ),
+            _case(
+                "ais-at-consent-create-empty-permissions-400",
+                name="Reject account-access consent creation with empty permissions",
+                role="security",
+                compliance_scope=(
+                    "compatibility-test-definition:ais.test.post.account_access_consents.empty-permissions",
+                ),
+                endpoint_refs=(_ACCOUNT_ACCESS_CONSENT_CREATE_ENDPOINT,),
+                dependencies=("ais-at-setup-consent",),
+                mandatory=True,
+                request_method="POST",
+                request_path=f"{_AIS_BASE_PATH}/account-access-consents",
+                runtime_requirements=(_RESOURCE_BASE_URL,),
+                body_template=_EMPTY_PERMISSIONS_CONSENT_BODY,
+                request_token_id=_AIS_CLIENT_CREDENTIALS_AUTH_ID,
+                compatibility_test_definition_id=("ais.v401.test.post.account_access_consents.empty-permissions"),
+                assertions=(
+                    _assertion(
+                        "status-400",
+                        "http_status",
+                        "Consent creation with empty permissions returns HTTP 400",
+                        {"expected": 400},
+                    ),
+                ),
+            ),
+            _case(
+                "ais-at-consent-create-invalid-transaction-permissions-400",
+                name="Reject inconsistent account-access transaction permissions",
+                role="security",
+                compliance_scope=(
+                    "compatibility-test-definition:"
+                    "ais.test.post.account_access_consents.invalid-transaction-permissions",
+                ),
+                endpoint_refs=(_ACCOUNT_ACCESS_CONSENT_CREATE_ENDPOINT,),
+                dependencies=("ais-at-setup-consent",),
+                mandatory=True,
+                request_method="POST",
+                request_path=f"{_AIS_BASE_PATH}/account-access-consents",
+                runtime_requirements=(_RESOURCE_BASE_URL,),
+                body_template=_INVALID_TRANSACTION_PERMISSIONS_CONSENT_BODY,
+                request_token_id=_AIS_CLIENT_CREDENTIALS_AUTH_ID,
+                compatibility_test_definition_id=(
+                    "ais.v401.test.post.account_access_consents.invalid-transaction-permissions"
+                ),
+                assertions=(
+                    _assertion(
+                        "status-400",
+                        "http_status",
+                        "Consent creation with inconsistent transaction permissions returns HTTP 400",
+                        {"expected": 400},
                     ),
                 ),
             ),
@@ -1676,6 +1822,168 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 ),
             ),
             _case(
+                "ais-at-consent-get-200",
+                name="Retrieve an account-access consent",
+                role="consent",
+                compliance_scope=(
+                    "compatibility-test-definition:ais.test.get.account_access_consents.consentid.positive",
+                ),
+                endpoint_refs=(_ACCOUNT_ACCESS_CONSENT_ENDPOINT,),
+                dependencies=("ais-at-setup-consent",),
+                mandatory=True,
+                request_method="GET",
+                request_path=(f"{_AIS_BASE_PATH}/account-access-consents/{_CAPTURED_ACCOUNT_ACCESS_CONSENT_ID}"),
+                runtime_requirements=(_RESOURCE_BASE_URL,),
+                request_token_id=_AIS_CLIENT_CREDENTIALS_AUTH_ID,
+                compatibility_test_definition_id=("ais.v401.test.get.account_access_consents.consentid.positive"),
+                assertions=(
+                    _assertion(
+                        "status-200",
+                        "http_status",
+                        "Consent retrieval returns HTTP 200",
+                        {"expected": 200},
+                    ),
+                    _assertion(
+                        "fapi-header",
+                        "header",
+                        "Consent retrieval response includes x-fapi-interaction-id",
+                        {"name": "x-fapi-interaction-id", "rule": "present"},
+                    ),
+                ),
+            ),
+            _case(
+                "ais-at-consent-get-401",
+                name="Reject account-access consent retrieval without an access token",
+                role="security",
+                compliance_scope=(
+                    "compatibility-test-definition:ais.test.get.account_access_consents.consentid.unauthorized",
+                ),
+                endpoint_refs=(_ACCOUNT_ACCESS_CONSENT_ENDPOINT,),
+                dependencies=("ais-at-setup-consent",),
+                mandatory=True,
+                request_method="GET",
+                request_path=(f"{_AIS_BASE_PATH}/account-access-consents/{_CAPTURED_ACCOUNT_ACCESS_CONSENT_ID}"),
+                runtime_requirements=(_RESOURCE_BASE_URL,),
+                compatibility_test_definition_id=("ais.v401.test.get.account_access_consents.consentid.unauthorized"),
+                assertions=(
+                    _assertion(
+                        "status-401",
+                        "http_status",
+                        "Consent retrieval without an access token returns HTTP 401",
+                        {"expected": 401},
+                    ),
+                ),
+            ),
+            _case(
+                "ais-at-consent-get-invalid-400-403",
+                name="Reject account-access consent retrieval with an invalid ConsentId",
+                role="security",
+                compliance_scope=(
+                    "compatibility-test-definition:ais.test.get.account_access_consents.consentid.invalid-resource",
+                ),
+                endpoint_refs=(_ACCOUNT_ACCESS_CONSENT_ENDPOINT,),
+                dependencies=("ais-at-setup-consent",),
+                mandatory=True,
+                request_method="GET",
+                request_path=f"{_AIS_BASE_PATH}/account-access-consents/${{generated.invalidConsentId}}",
+                runtime_requirements=(_RESOURCE_BASE_URL,),
+                generated_values={"invalidConsentId": "invalid-resource-id"},
+                request_token_id=_AIS_CLIENT_CREDENTIALS_AUTH_ID,
+                compatibility_test_definition_id=(
+                    "ais.v401.test.get.account_access_consents.consentid.invalid-resource"
+                ),
+                assertions=(
+                    _assertion(
+                        "status-400-403",
+                        "http_status",
+                        "Invalid ConsentId retrieval returns HTTP 400 or 403",
+                        {"expectedOneOf": [400, 403]},
+                    ),
+                ),
+            ),
+            _case(
+                "ais-at-consent-delete-204",
+                name="Delete an account-access consent",
+                role="consent",
+                compliance_scope=(
+                    "compatibility-test-definition:ais.test.delete.account_access_consents.consentid.positive",
+                ),
+                endpoint_refs=(_ACCOUNT_ACCESS_CONSENT_DELETE_ENDPOINT,),
+                dependencies=("ais-at-consent-get-200",),
+                mandatory=True,
+                request_method="DELETE",
+                request_path=(f"{_AIS_BASE_PATH}/account-access-consents/{_CAPTURED_ACCOUNT_ACCESS_CONSENT_ID}"),
+                runtime_requirements=(_RESOURCE_BASE_URL,),
+                request_token_id=_AIS_CLIENT_CREDENTIALS_AUTH_ID,
+                compatibility_test_definition_id=("ais.v401.test.delete.account_access_consents.consentid.positive"),
+                assertions=(
+                    _assertion(
+                        "status-204",
+                        "http_status",
+                        "Consent deletion returns HTTP 204",
+                        {"expected": 204},
+                    ),
+                    _assertion(
+                        "fapi-header",
+                        "header",
+                        "Consent deletion response includes x-fapi-interaction-id",
+                        {"name": "x-fapi-interaction-id", "rule": "present"},
+                    ),
+                ),
+            ),
+            _case(
+                "ais-at-consent-delete-401",
+                name="Reject account-access consent deletion without an access token",
+                role="security",
+                compliance_scope=(
+                    "compatibility-test-definition:ais.test.delete.account_access_consents.consentid.unauthorized",
+                ),
+                endpoint_refs=(_ACCOUNT_ACCESS_CONSENT_DELETE_ENDPOINT,),
+                dependencies=("ais-at-consent-get-200",),
+                mandatory=True,
+                request_method="DELETE",
+                request_path=(f"{_AIS_BASE_PATH}/account-access-consents/{_CAPTURED_ACCOUNT_ACCESS_CONSENT_ID}"),
+                runtime_requirements=(_RESOURCE_BASE_URL,),
+                compatibility_test_definition_id=(
+                    "ais.v401.test.delete.account_access_consents.consentid.unauthorized"
+                ),
+                assertions=(
+                    _assertion(
+                        "status-401",
+                        "http_status",
+                        "Consent deletion without an access token returns HTTP 401",
+                        {"expected": 401},
+                    ),
+                ),
+            ),
+            _case(
+                "ais-at-consent-delete-invalid-400-403",
+                name="Reject account-access consent deletion with an invalid ConsentId",
+                role="security",
+                compliance_scope=(
+                    "compatibility-test-definition:ais.test.delete.account_access_consents.consentid.invalid-resource",
+                ),
+                endpoint_refs=(_ACCOUNT_ACCESS_CONSENT_DELETE_ENDPOINT,),
+                dependencies=("ais-at-consent-get-200",),
+                mandatory=True,
+                request_method="DELETE",
+                request_path=f"{_AIS_BASE_PATH}/account-access-consents/${{generated.invalidConsentId}}",
+                runtime_requirements=(_RESOURCE_BASE_URL,),
+                generated_values={"invalidConsentId": "invalid-resource-id"},
+                request_token_id=_AIS_CLIENT_CREDENTIALS_AUTH_ID,
+                compatibility_test_definition_id=(
+                    "ais.v401.test.delete.account_access_consents.consentid.invalid-resource"
+                ),
+                assertions=(
+                    _assertion(
+                        "status-400-403",
+                        "http_status",
+                        "Invalid ConsentId deletion returns HTTP 400 or 403",
+                        {"expectedOneOf": [400, 403]},
+                    ),
+                ),
+            ),
+            _case(
                 "ais-at-accounts-list-200",
                 name="List accounts returns HTTP 200 with FAPI headers",
                 role="resource",
@@ -1696,6 +2004,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 request_method="GET",
                 request_path=f"{_AIS_BASE_PATH}/accounts",
                 runtime_requirements=_COMMON_RESOURCE_RUNTIME_REQUIREMENTS,
+                compatibility_test_definition_id="ais.v401.test.get.accounts.basic-permission",
                 assertions=(
                     _assertion("status-200", "http_status", "Accounts list returns HTTP 200", {"expected": 200}),
                     _assertion(
@@ -1732,6 +2041,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 request_method="GET",
                 request_path=f"{_AIS_BASE_PATH}/accounts",
                 runtime_requirements=_COMMON_RESOURCE_RUNTIME_REQUIREMENTS,
+                compatibility_test_definition_id="ais.v401.test.get.accounts.positive",
                 assertions=(
                     _assertion("status-200", "http_status", "Accounts detail list returns HTTP 200", {"expected": 200}),
                     _assertion(
@@ -1739,6 +2049,71 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                         "header",
                         "Accounts detail list response includes x-fapi-interaction-id",
                         {"name": "x-fapi-interaction-id", "rule": "present"},
+                    ),
+                ),
+                permission_profile="detail",
+            ),
+            _case(
+                "ais-at-accounts-list-missing-token-401",
+                name="List accounts rejects a missing access token",
+                role="security",
+                compliance_scope=("compatibility-test-definition:ais.test.get.accounts.unauthorized",),
+                endpoint_refs=(_ACCOUNTS_ENDPOINT,),
+                dependencies=("ais-at-setup-token",),
+                mandatory=True,
+                request_method="GET",
+                request_path=f"{_AIS_BASE_PATH}/accounts",
+                runtime_requirements=(_RESOURCE_BASE_URL,),
+                compatibility_test_definition_id="ais.v401.test.get.accounts.unauthorized",
+                assertions=(
+                    _assertion(
+                        "status-401",
+                        "http_status",
+                        "Accounts list without an access token returns HTTP 401",
+                        {"expected": 401},
+                    ),
+                ),
+            ),
+            _case(
+                "ais-at-accounts-list-wrong-permission-403",
+                name="List accounts rejects an insufficient permission",
+                role="security",
+                compliance_scope=("compatibility-test-definition:ais.test.get.accounts.wrong-permission",),
+                endpoint_refs=(_ACCOUNTS_ENDPOINT,),
+                dependencies=("ais-at-setup-token",),
+                mandatory=True,
+                request_method="GET",
+                request_path=f"{_AIS_BASE_PATH}/accounts",
+                runtime_requirements=(_RESOURCE_BASE_URL,),
+                request_token_id=_AIS_CLIENT_CREDENTIALS_AUTH_ID,
+                compatibility_test_definition_id="ais.v401.test.get.accounts.wrong-permission",
+                assertions=(
+                    _assertion(
+                        "status-403",
+                        "http_status",
+                        "Accounts list with insufficient permission returns HTTP 403",
+                        {"expected": 403},
+                    ),
+                ),
+            ),
+            _case(
+                "ais-at-accounts-list-playback",
+                name="List accounts replays x-fapi-interaction-id",
+                role="security",
+                compliance_scope=("compatibility-test-definition:ais.test.get.accounts.interaction-id-playback",),
+                endpoint_refs=(_ACCOUNTS_ENDPOINT,),
+                dependencies=("ais-at-setup-token",),
+                mandatory=True,
+                request_method="GET",
+                request_path=f"{_AIS_BASE_PATH}/accounts",
+                runtime_requirements=_COMMON_RESOURCE_RUNTIME_REQUIREMENTS,
+                compatibility_test_definition_id=("ais.v401.test.get.accounts.interaction-id-playback"),
+                assertions=(
+                    _assertion(
+                        "fapi-playback",
+                        "header",
+                        "Accounts list response replays x-fapi-interaction-id",
+                        {"name": "x-fapi-interaction-id", "rule": "playback"},
                     ),
                 ),
                 permission_profile="detail",
@@ -1789,6 +2164,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 request_method="GET",
                 request_path=f"{_AIS_BASE_PATH}/accounts/{{AccountId}}",
                 runtime_requirements=_ACCOUNT_RESOURCE_RUNTIME_REQUIREMENTS,
+                compatibility_test_definition_id=("ais.v401.test.get.accounts.accountid.basic-permission"),
                 assertions=(
                     _assertion("status-200", "http_status", "Account by id returns HTTP 200", {"expected": 200}),
                     _assertion(
@@ -1825,6 +2201,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 request_method="GET",
                 request_path=f"{_AIS_BASE_PATH}/accounts/{{AccountId}}",
                 runtime_requirements=_ACCOUNT_RESOURCE_RUNTIME_REQUIREMENTS,
+                compatibility_test_definition_id="ais.v401.test.get.accounts.accountid.positive",
                 assertions=(
                     _assertion("status-200", "http_status", "Account by id detail returns HTTP 200", {"expected": 200}),
                     _assertion(
@@ -1832,6 +2209,73 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                         "header",
                         "Account by id detail response includes x-fapi-interaction-id",
                         {"name": "x-fapi-interaction-id", "rule": "present"},
+                    ),
+                ),
+                permission_profile="detail",
+            ),
+            _case(
+                "ais-at-account-by-id-missing-token-401",
+                name="Account by id rejects a missing access token",
+                role="security",
+                compliance_scope=("compatibility-test-definition:ais.test.get.accounts.accountid.unauthorized",),
+                endpoint_refs=(_ACCOUNT_BY_ID_ENDPOINT,),
+                dependencies=("ais-at-setup-token",),
+                mandatory=True,
+                request_method="GET",
+                request_path=f"{_AIS_BASE_PATH}/accounts/{{AccountId}}",
+                runtime_requirements=(_RESOURCE_BASE_URL, _CONSENTED_ACCOUNT_ID),
+                compatibility_test_definition_id=("ais.v401.test.get.accounts.accountid.unauthorized"),
+                assertions=(
+                    _assertion(
+                        "status-401",
+                        "http_status",
+                        "Account by id without an access token returns HTTP 401",
+                        {"expected": 401},
+                    ),
+                ),
+            ),
+            _case(
+                "ais-at-account-by-id-wrong-permission-403",
+                name="Account by id rejects an insufficient permission",
+                role="security",
+                compliance_scope=("compatibility-test-definition:ais.test.get.accounts.accountid.wrong-permission",),
+                endpoint_refs=(_ACCOUNT_BY_ID_ENDPOINT,),
+                dependencies=("ais-at-setup-token",),
+                mandatory=True,
+                request_method="GET",
+                request_path=f"{_AIS_BASE_PATH}/accounts/{{AccountId}}",
+                runtime_requirements=(_RESOURCE_BASE_URL, _CONSENTED_ACCOUNT_ID),
+                request_token_id=_AIS_CLIENT_CREDENTIALS_AUTH_ID,
+                compatibility_test_definition_id=("ais.v401.test.get.accounts.accountid.wrong-permission"),
+                assertions=(
+                    _assertion(
+                        "status-403",
+                        "http_status",
+                        "Account by id with insufficient permission returns HTTP 403",
+                        {"expected": 403},
+                    ),
+                ),
+            ),
+            _case(
+                "ais-at-account-by-id-invalid-400-403",
+                name="Account by id rejects an invalid AccountId",
+                role="security",
+                compliance_scope=("compatibility-test-definition:ais.test.get.accounts.accountid.invalid-resource",),
+                endpoint_refs=(_ACCOUNT_BY_ID_ENDPOINT,),
+                dependencies=("ais-at-setup-token",),
+                mandatory=True,
+                request_method="GET",
+                request_path=f"{_AIS_BASE_PATH}/accounts/${{generated.invalidAccountId}}",
+                runtime_requirements=(_RESOURCE_BASE_URL,),
+                generated_values={"invalidAccountId": "invalid-resource-id"},
+                request_token_id=_AIS_DETAIL_RESOURCE_AUTH_ID,
+                compatibility_test_definition_id=("ais.v401.test.get.accounts.accountid.invalid-resource"),
+                assertions=(
+                    _assertion(
+                        "status-400-403",
+                        "http_status",
+                        "Invalid AccountId returns HTTP 400 or 403",
+                        {"expectedOneOf": [400, 403]},
                     ),
                 ),
                 permission_profile="detail",
@@ -1880,6 +2324,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                     _ACCESS_TOKEN,
                     _CONSENTED_ACCOUNT_ID,
                 ),
+                compatibility_test_definition_id=("ais.v401.test.get.accounts.accountid.interaction-id-playback"),
                 assertions=(
                     _assertion(
                         "fapi-playback",

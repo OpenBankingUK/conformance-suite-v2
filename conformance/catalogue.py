@@ -471,6 +471,8 @@ class CatalogueRequestStep:
             response values and ``${generated.*}`` placeholders for per-run
             generated values.
         generated_values: Runtime value strategies scoped to this request step.
+        compatibility_test_definition_ids: Replacement test-definition IDs
+            whose manifest steps this legacy request can execute.
         required_token_id: Optional semantic token id used to build the
             ``Authorization`` header from runtime token state.
         produced_token_id: Optional semantic token id populated from an
@@ -496,6 +498,7 @@ class CatalogueRequestStep:
     headers: tuple[CatalogueRequestHeader, ...] = ()
     body_template: JsonValue | None = None
     generated_values: Mapping[str, GeneratedRuntimeValue] = field(default_factory=lambda: MappingProxyType({}))
+    compatibility_test_definition_ids: tuple[str, ...] = ()
     required_token_id: str | None = None
     produced_token_id: str | None = None
     authorization_profile: str | None = None

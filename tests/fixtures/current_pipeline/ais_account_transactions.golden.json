@@ -18,6 +18,24 @@
         "testCaseId": "ais-at-setup-consent"
       },
       {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-consent-create-401"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-consent-create-empty-permissions-400"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-consent-create-invalid-transaction-permissions-400"
+      },
+      {
         "dependencyOf": [
           "ais-at-account-transactions-200",
           "ais-at-account-transactions-401",
@@ -33,6 +51,42 @@
         "dependencyOf": [],
         "reason": "no matching implemented endpoint",
         "selected": false,
+        "testCaseId": "ais-at-consent-get-200"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-consent-get-401"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-consent-get-invalid-400-403"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-consent-delete-204"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-consent-delete-401"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-consent-delete-invalid-400-403"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
         "testCaseId": "ais-at-accounts-list-200"
       },
       {
@@ -40,6 +94,24 @@
         "reason": "no matching implemented endpoint",
         "selected": false,
         "testCaseId": "ais-at-accounts-list-detail-200"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-accounts-list-missing-token-401"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-accounts-list-wrong-permission-403"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-accounts-list-playback"
       },
       {
         "dependencyOf": [],
@@ -58,6 +130,24 @@
         "reason": "no matching implemented endpoint",
         "selected": false,
         "testCaseId": "ais-at-account-by-id-detail-200"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-account-by-id-missing-token-401"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-account-by-id-wrong-permission-403"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-account-by-id-invalid-400-403"
       },
       {
         "dependencyOf": [],
@@ -590,7 +680,7 @@
     ],
     "catalogue": {
       "api": "read-write",
-      "catalogueVersion": "ais:2026.07.legacy-fcs-ais-at.1",
+      "catalogueVersion": "ais:2026.09.ais-consent-management.2",
       "standard": "open-banking-uk",
       "version": "4.0.1"
     },
@@ -783,7 +873,7 @@
   "result": {
     "catalogue": {
       "api": "read-write",
-      "catalogueVersion": "ais:2026.07.legacy-fcs-ais-at.1",
+      "catalogueVersion": "ais:2026.09.ais-consent-management.2",
       "certifying": true,
       "generatedTestCaseIds": [
         "ais-at-setup-discovery",

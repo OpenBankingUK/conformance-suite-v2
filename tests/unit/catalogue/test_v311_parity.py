@@ -1042,12 +1042,13 @@ def test_v311_vrp_authorization_produces_the_required_token() -> None:
     assert funds_step.required_token_id in produced_token_ids
 
 
-def test_every_non_setup_v311_case_maps_to_a_selected_parity_row() -> None:
-    """Prevent execution cases that are not present in the pinned v1.10.0 rows."""
+def test_every_non_setup_v311_case_has_legacy_or_compatibility_traceability() -> None:
+    """Require each execution case to identify its legacy row or compatibility source."""
     for api, catalogue in _V311_CATALOGUES.items():
         for test_case in catalogue.test_cases:
             if test_case.role == "setup" or any(
-                scope.startswith("legacy-fcs-precondition:") for scope in test_case.compliance_scope
+                scope.startswith(("legacy-fcs-precondition:", "legacy-compatibility:"))
+                for scope in test_case.compliance_scope
             ):
                 continue
             assert _case_script_ids(test_case.compliance_scope, api=api), test_case.test_case_id
