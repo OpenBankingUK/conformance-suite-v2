@@ -4,6 +4,8 @@
 >
 > **Decision date:** 2026-09-14
 >
+> **Architecture correction:** 2026-09-16 (`TPA-084` through `TPA-089`)
+>
 > This document is authoritative for the migration boundaries and decisions
 > marked **Accepted** below. Items marked **Deferred**, **Superseded**, or
 > **Compatibility only** are not part of the replacement architecture.
@@ -15,12 +17,14 @@ artefacts with stable schemas and end-to-end traceability.
 
 The governing principle is:
 
-> Specification requirements, participant intent, compilation, execution, and
-> assessment are separate concerns.
+> Human-authored test definitions, participant intent, compilation, execution,
+> and assessment are separate concerns.
 
 The runner executes an immutable manifest produced by a compiler. It does not
 infer Open Banking obligations. The compiler resolves a participant plan
-against trusted requirements and reusable test definitions.
+against an approved, human-authored test catalogue. Normative specifications
+inform human test design and review; they are not transcribed into a
+machine-readable requirements authority used by the runtime or validator.
 
 This is a strangler migration. Existing behaviour is characterised before it
 is replaced, new contracts are introduced alongside current code, one vertical
@@ -43,21 +47,35 @@ The status terms in this document have precise meanings:
 | Term | Meaning |
 | --- | --- |
 | **Suite release descriptor** | OBL-authored document that binds compatible released configuration artefacts, schemas, catalogues, tool releases, and content hashes. |
-| **Requirements catalogue** | Standards/domain-authored rules describing obligations, conditionality, cardinality, normative references, and allowed configurable inputs. |
-| **Test definition catalogue** | Test-author-authored reusable test cases, request bindings, assertions, dependencies, applicability, and covered requirement IDs. |
+| **Requirements catalogue** | Superseded runtime concept. Normative requirements may be explained in reviewer-facing documentation but are not a machine-readable configuration or certification authority. |
+| **Test definition catalogue** | Human-authored and human-approved reusable test cases, request bindings, assertions, dependencies, inputs, and applicability. It is not generated directly from a specification. |
 | **Participant test plan** | Participant intent: target release, declared implementation scope, environment configuration, and values for predefined inputs. |
-| **Resolved plan** | Generated, inspectable explanation of how a participant plan was resolved against requirements and test definitions. |
+| **Resolved plan** | Generated, inspectable explanation of how a participant plan was resolved against the approved test catalogue. |
 | **Execution manifest** | Generated, immutable, runner-facing instructions containing only resolved executable work. |
 | **Result and evidence** | Runner-generated observations, outcomes, safe evidence, and traceability identifiers. |
-| **Certification assessment** | Independently calculated evaluation of completeness and eligibility against trusted requirements and release policy. |
+| **Certification assessment** | Independently calculated evaluation of approved-test completeness, outcomes, and eligibility against the suite release and release policy. It is not an automated judgement over every normative specification requirement. |
 | **Certificate** | Formal business artefact produced by the certification process; not an MVP runtime output. |
 | **Security profile** | A protocol security profile such as FAPI 1 Advanced. In the current `1.0` plan, `specification.profile` has only this meaning. |
-| **Requirements scope** | The Standards-owned functional scope against which obligations are resolved. AIS, PIS, CBPII, and VRP are currently exposed as resource/API families, not silently redefined as security profiles. |
+| **Test scope** | The released functional scope against which the approved test catalogue resolves applicability. AIS, PIS, CBPII, and VRP are currently exposed as resource/API families, not silently redefined as security profiles. Existing `requirementsScope` wire names are migration debt, not authority for a requirements catalogue. |
 
 Names used for target concepts in this document are architectural terms, not
 accepted JSON property names unless a later schema decision says otherwise.
 
-## Accepted architecture decisions
+> **Current authority:** `TPA-084` through `TPA-089` supersede every earlier
+> clause that makes a machine-readable requirements catalogue, normative
+> requirement applicability, or requirement-level coverage part of the target
+> runtime or certification assessment. Earlier entries remain below as
+> migration history and must not be used to reintroduce those concepts.
+>
+> Decisions `TPA-001` through `TPA-083` record the architecture accepted and
+> implemented at each migration stage. Where their wording conflicts with
+> `TPA-084` through `TPA-089`, that wording is **Superseded**, not current
+> implementation guidance.
+
+## Architecture decision history
+
+The following decisions remain binding except where the current-authority note
+above or a later decision explicitly supersedes them.
 
 | ID | Decision | Rationale |
 | --- | --- | --- |
@@ -88,9 +106,9 @@ accepted JSON property names unless a later schema decision says otherwise.
 ### Stable traceability chain
 
 ```text
-requirement ID
+approved suite release
     |
-    | covered by
+    | pins
     v
 test definition ID
     |
@@ -107,22 +125,22 @@ manifest step ID
 result observation ID
 ```
 
-One requirement may be covered by several tests. One test may provide evidence
-for several requirements. These are explicit references, never naming
-conventions.
+Every assessed result must trace to a test definition pinned by the approved
+suite release. Specification-to-test rationale may be maintained in
+reviewer-facing documentation, but it is not a runtime coverage edge and is not
+used by the validator to claim assessment of a normative requirement.
 
 ## Artefact ownership and authority
 
 | Artefact | Author/producer | Authority and responsibility |
 | --- | --- | --- |
 | Suite release descriptor | OBL release owner | Selects compatible, immutable input artefacts and records exact digests. It does not define requirement or test semantics itself. |
-| Requirements catalogue | Standards/domain experts | Authoritative for normative obligations, conditionality, cardinality, allowed inputs, and normative references. |
-| Test definition catalogue | Test authors | Authoritative for executable cases, request bindings, assertions, dependencies, applicability, and declared requirement coverage. |
-| Participant test plan | Participant or builder | Authoritative only for participant intent and supplied values. It cannot redefine requirements or executable test definitions. |
+| Test definition catalogue | Test authors and approvers | Human-authored authority for executable cases, request bindings, assertions, dependencies, inputs, and applicability. It is reviewed against the relevant specifications but is not generated from them. |
+| Participant test plan | Participant or builder | Authoritative only for participant intent and supplied values. It cannot redefine approved executable test definitions. |
 | Resolved plan | Compiler | Authoritative record of resolution for one compilation. It is generated, inspectable, deterministic, and not participant-editable. |
 | Execution manifest | Compiler | Authoritative runner input for one execution. It contains resolved instructions and immutable suite-release and configuration traceability, not unresolved domain rules or legacy comparison inputs. |
-| Results/evidence | Runner | Authoritative record of observations made during that execution. It does not decide normative completeness by itself. |
-| Certification assessment | Trusted validator | Authoritative assessment of completeness and eligibility against trusted requirements and release policy. |
+| Results/evidence | Runner | Authoritative record of observations made during that execution. It does not decide approved-test completeness by itself. |
+| Certification assessment | Trusted validator | Authoritative assessment of approved-test completeness, outcomes, and eligibility against the approved suite release and release policy. |
 | Certificate | Certification process | Formal business decision and artefact, deferred beyond MVP. |
 
 Schema authority is per document version. The external schema owns structural
@@ -202,9 +220,9 @@ type-dependent semantic rule not expressed by the source OpenAPI schema.
 
 ```mermaid
 flowchart LR
-    SPEC["OpenAPI and normative specification"]
+    SPEC["OpenAPI and normative specifications"]
+    AUTHORS["Human test authors and approvers"]
     RELEASE["Suite release descriptor"]
-    REQ["Requirements catalogue"]
     TESTS["Test definition catalogue"]
     PLAN["Participant test plan"]
     COMPILER["Deterministic compiler"]
@@ -215,11 +233,9 @@ flowchart LR
     ASSESS["Independent assessment"]
     CERT["Certificate (post-MVP)"]
 
-    SPEC --> REQ
-    SPEC --> TESTS
-    RELEASE --> REQ
+    SPEC --> AUTHORS
+    AUTHORS --> TESTS
     RELEASE --> TESTS
-    REQ --> COMPILER
     TESTS --> COMPILER
     PLAN --> COMPILER
     COMPILER --> RESOLVED
@@ -227,7 +243,7 @@ flowchart LR
     MANIFEST --> RUNNER
     RUNNER --> RESULT
     RESULT --> ASSESS
-    REQ --> ASSESS
+    TESTS --> ASSESS
     RELEASE --> ASSESS
     ASSESS -. future .-> CERT
 ```
@@ -236,22 +252,23 @@ flowchart LR
 
 | Question | Concept |
 | --- | --- |
-| Does participant intent satisfy applicable requirements? | Plan or selection validity |
+| Can participant intent be resolved to an applicable approved test set? | Plan or selection validity |
 | May this selection be compiled and run under the active policy? | Compilation/execution permission |
 | Could the evidence contribute to a certification submission? | Certification eligibility |
-| Did an executable test satisfy its requirement? | Test outcome |
-| Was the complete applicable scope assessed successfully? | Overall conformance assessment |
+| Did an executable test produce its expected outcome? | Test outcome |
+| Did the complete applicable approved test set finish successfully? | Overall automated assessment |
 
 The accepted internal meanings are:
 
 - **Certification-eligible**: the run has the required scope and evidence
   conditions to contribute to certification.
 - **Not certification-eligible**: the run cannot support certification.
-- **Conformant**: a complete eligible assessment passed its applicable
-  requirements.
-- **Non-conformant**: an applicable requirement was assessed and failed.
+- **Conformant**: a complete eligible automated assessment passed its
+  applicable approved tests. This does not claim that the tool assessed every
+  normative specification requirement.
+- **Non-conformant**: an applicable approved test failed.
 - **Not assessed overall**: insufficient applicable scope was executed to make
-  an overall conformance judgement.
+  an overall automated judgement.
 - **Passed**, **failed**, **skipped**, and **warned**: individual test or step
   outcomes.
 
@@ -309,10 +326,13 @@ migration layers:
 - treating a locally generated passing report as an automated certification
   decision or proof of authenticity.
 
-## Migration sequence
+## Historical migration sequence
 
-Each PR is a separate layer. A layer must not introduce concepts owned by a
-later PR.
+This sequence records how the current implementation was built. It is not the
+plan for the catalogue-consolidation correction introduced by `TPA-084`
+through `TPA-089`. In particular, references below to creating, loading, or
+assessing requirements catalogues describe implemented migration history, not
+new target work.
 
 ### PR 0: architecture record
 
@@ -492,13 +512,63 @@ runtime contract.
 | `TPA-082` | Before a client request is constructed, the suite-release resolver verifies the manifest identity, accepted release ID and version, complete artifact identity set, repository-root path containment, artifact kind and media type, SHA-256 digest, document syntax, schema source ID, and JSON Pointer. Response schemas are dereferenced from those verified bytes. | A stale manifest, substituted release, changed artifact, path escape, malformed source, or unresolved schema fails closed with zero network calls. |
 | `TPA-083` | The launch compiler currently retains one migration-only materializer that copies characterised request templates and protocol metadata from the compiled compatibility catalogue into the content-addressed manifest. The compiled object is discarded before runner preparation. `run_compiled_test_plan` remains only for direct legacy-runtime characterization tests. | This preserves the existing cross-family wire contracts while enforcing the runner boundary now. Moving the copied templates into every reusable test-definition document is a catalogue-authoring cleanup and cannot reintroduce compiled-plan input to the runner. |
 
-Certification eligibility and trusted requirement assessment are unchanged by
-this layer. They remain the responsibility of the independent assessment layer.
+The statement in the original execution cutover that certification assessment
+uses trusted requirements is superseded by the correction below.
+
+### Human-authored test-catalogue authority correction
+
+The following decisions correct the machine-readable requirements model
+introduced earlier in this migration. They are the current architecture and
+supersede conflicting portions of `TPA-001` through `TPA-018`, `TPA-030`
+through `TPA-041`, the catalogue-family decisions, `TPA-064` through
+`TPA-068`, `TPA-076` through `TPA-077`, and the preceding
+manifest-authoritative assessment note.
+
+| ID | Decision | Rationale |
+| --- | --- | --- |
+| `TPA-084` | The target architecture has no machine-readable normative requirements catalogue. Normative specifications, standards obligations, and non-executable requirements remain source material for human test design, review, and documentation; the runtime and validator do not independently parse or reproduce them as certification authority. | The product needs to execute and report an approved test suite, not maintain a second machine-readable representation of the standards or imply that all normative obligations are automatically assessable. |
+| `TPA-085` | Test authors manually write the test-definition catalogues and human approvers review them against the applicable specifications. Catalogues must not be generated directly from normative specification text. The approved catalogue itself owns executable scope, capability and input definitions, applicability, dependencies, request construction, assertions, expected outcomes, and evidence policy. | Human authorship preserves deliberate test design and review. Consolidating executable authority avoids an artificial requirement-to-test layer while retaining deterministic, inspectable test configuration. |
+| `TPA-086` | A suite release binds the exact approved test-catalogue, schema, technical-source, and policy bytes. The compiler resolves participant intent directly against that released catalogue and produces the inspectable plan and immutable execution manifest. Existing requirement-catalogue artefacts may remain only as migration compatibility inputs until their executable metadata is moved into the test catalogue. | Content-addressed release approval provides the trust boundary actually needed by compilation and execution without treating a standards transcription as runtime authority. |
+| `TPA-087` | Assessment traceability is `suite release -> test definition -> compiled instance -> manifest step/assertion -> result observation`. The trusted validator verifies that chain, rejects substituted or stale artefacts and blocking findings, determines completeness from the applicable approved tests, and evaluates their outcomes under release policy. It does not calculate requirement-level coverage or claim that a passing run proves every normative obligation. | This supports independent validation of what the approved suite actually executed while keeping the result claim no broader than the available evidence. |
+| `TPA-088` | `documented-only`, manual-evidence, and other non-executable requirement states are outside the executable catalogue and automated assessment contract. Such obligations may be described in documentation or handled by a separate human certification process, but they neither appear as synthetic tests nor make an otherwise complete automated run indeterminate. | The automated tool should report tests and results. It must not invent evidence contracts for obligations that have no executable test or silently turn those obligations into runtime certification logic. |
+| `TPA-089` | The requirement-catalogue schema and artefacts, `coveredRequirementIds`, `normativeReferenceIds`, requirement `assessment`, requirement-derived applicability, and requirement-level result links are superseded target concepts. A follow-up migration must consolidate still-needed executable metadata into the human-authored test catalogue and then remove those structures. New work must not deepen dependencies on them. | The repository already implements the superseded split, so safe removal requires an explicit migration rather than pretending the correction has already been implemented. Recording the destination now prevents certification work from entrenching the wrong authority. |
+
+### Catalogue-consolidation migration debt
+
+The repository currently implements the superseded requirements split. Its
+requirements-catalogue schemas and artefacts, requirement rules and assessment
+states, requirement-derived compiler output, `coveredRequirementIds`,
+`normativeReferenceIds`, and requirement-level result traceability are
+**Compatibility only** until removed. They remain necessary to keep the
+working system intact during migration, but they are not target authority and
+must not gain new consumers.
+
+The next catalogue-consolidation layer must:
+
+- move executable scope, capabilities, predefined inputs, applicability,
+  dependencies, request construction, assertions, expected outcomes, and
+  evidence policy into the manually authored and approved test catalogue;
+- bind that catalogue and its supporting schemas, technical sources, and
+  release policy directly from the suite release;
+- preserve deterministic participant-plan resolution, execution-manifest
+  generation, runtime behaviour, masking, and evidence while removing the
+  requirement-to-test edge;
+- replace resolved-plan, manifest, result, and assessment links with the
+  accepted suite-release-to-observation chain from `TPA-087`; and
+- remove the superseded requirement artefacts and fields only after all
+  production consumers have migrated.
+
+Certification-validator implementation must wait for that consolidated
+catalogue contract. It must not treat the current requirements catalogue,
+runner-calculated eligibility, `documented-only` findings, or requirement-level
+coverage links as certification authority.
 
 ## Rules for every implementation layer
 
 - Preserve a working system throughout the migration.
 - Read this record and all later accepted decisions before editing.
+- Do not add new dependencies on the requirements-catalogue migration debt
+  identified by `TPA-089`.
 - Keep new artefacts versioned, deterministic, traceable, and backed by valid
   and invalid golden fixtures.
 - Add targeted unit coverage and a component proof when a layer reaches an
