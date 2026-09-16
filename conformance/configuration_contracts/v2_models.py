@@ -86,6 +86,17 @@ class TestDefinitionCatalogue:
 
 
 @dataclass(frozen=True, slots=True)
+class SuitePolicy:
+    """Released policy governing automated assessment of executable tests."""
+
+    schema_version: str
+    document_type: str
+    id: StableId
+    result_claim: str
+    blocking_finding_severities: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ParticipantPlan:
     """Participant intent and compatibility runtime environment."""
 

@@ -83,6 +83,7 @@ from conformance.configuration_contracts.v2_models import (
     ResolvedPredefinedInput,
     ResolvedTestInstance,
     Specification,
+    SuitePolicy,
     TestApplicability,
     TestDefinition,
     TestDefinitionCatalogue,
@@ -177,6 +178,11 @@ def load_execution_manifest(path: Path) -> ExecutionManifest:
     return parse_execution_manifest(_load(path))
 
 
+def load_suite_policy(path: Path) -> SuitePolicy:
+    """Load released automated-assessment policy."""
+    return parse_suite_policy(_load(path))
+
+
 def parse_suite_release(raw: object) -> SuiteRelease:
     """Validate and map a 2.0 suite release."""
     _validate(raw, "suite-release")
@@ -188,6 +194,19 @@ def parse_suite_release(raw: object) -> SuiteRelease:
     if diagnostics:
         raise ConfigurationContractError(diagnostics)
     return document
+
+
+def parse_suite_policy(raw: object) -> SuitePolicy:
+    """Validate and map a released automated-assessment policy."""
+    _validate(raw, "suite-policy")
+    document = cast(dict[str, object], raw)
+    return SuitePolicy(
+        schema_version=cast(str, document["schemaVersion"]),
+        document_type=cast(str, document["documentType"]),
+        id=StableId(cast(str, document["id"])),
+        result_claim=cast(str, document["resultClaim"]),
+        blocking_finding_severities=tuple(cast(list[str], document["blockingFindingSeverities"])),
+    )
 
 
 def parse_test_definition_catalogue(raw: object) -> TestDefinitionCatalogue:
@@ -936,6 +955,17 @@ def execution_manifest_to_document(manifest: ExecutionManifest) -> JsonObject:
     }
 
 
+def suite_policy_to_document(policy: SuitePolicy) -> JsonObject:
+    """Render released automated-assessment policy deterministically."""
+    return {
+        "blockingFindingSeverities": list(policy.blocking_finding_severities),
+        "documentType": policy.document_type,
+        "id": str(policy.id),
+        "resultClaim": policy.result_claim,
+        "schemaVersion": policy.schema_version,
+    }
+
+
 def execution_manifest_id(manifest: ExecutionManifest) -> StableId:
     """Return the manifest's content address with its ID slot normalised."""
     document = execution_manifest_to_document(manifest)
@@ -962,6 +992,11 @@ def dump_resolved_plan(plan: ResolvedPlan) -> str:
 def dump_execution_manifest(manifest: ExecutionManifest) -> str:
     """Serialize an execution manifest deterministically."""
     return json.dumps(execution_manifest_to_document(manifest), indent=2, sort_keys=True) + "\n"
+
+
+def dump_suite_policy(policy: SuitePolicy) -> str:
+    """Serialize released automated-assessment policy deterministically."""
+    return json.dumps(suite_policy_to_document(policy), indent=2, sort_keys=True) + "\n"
 
 
 def validate_bundled_schemas() -> tuple[ConfigurationDiagnostic, ...]:

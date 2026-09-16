@@ -351,9 +351,9 @@ spans both categories; the directories decide which category each test is in.
 
 ## Certification validator coverage
 
-The OBL-side validator is an internal-tool surface. It intentionally still
-accepts the manifest representation used for the original run and an independent
-approved-release policy.
+The OBL-side validator is an internal-tool surface. It accepts the submitted
+result, resolved plan, and execution manifest separately from the approved
+schema-version 2.0 suite release.
 
 Focused run:
 
@@ -367,15 +367,17 @@ DJANGO_DEBUG=true uv run pytest \
   tests/unit/validation/test_model_bank_config_signing.py \
   tests/unit/validation/test_certification_validator.py \
   tests/unit/validation/test_certification_cli.py \
+  tests/component/validation/test_certification_validator.py \
   -v
 ```
 
-Coverage must include approved versions, unapproved versions, absent policies,
-mandatory passed/warn acceptance, mandatory failed/skipped/missing rejection,
-malformed report rejection, and Confluence summary rendering. Tests must also
-show that mandatory coverage and release approval are recomputed from
-independently supplied inputs rather than accepted from any self-assessment in
-the report.
+Coverage includes release/version mismatches, stale identities and hashes,
+substituted catalogues and technical sources, blocking compiler findings,
+unknown or missing trace nodes and observations, prerequisite/skip
+contradictions, incomplete runs, runner-claim contradictions, malformed input,
+and Confluence summary rendering. Positive coverage proves that a complete,
+correctly traced approved run produces separate individual outcomes, automated
+assessment, and certification eligibility.
 
 These are consistency and certification-readiness tests. Phase 1 tests must not
 treat a passing local validation as proof of report authenticity. Tests for

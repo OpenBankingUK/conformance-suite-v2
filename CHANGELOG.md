@@ -41,6 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Certification validation now independently consumes the approved v2 suite
+  release, content-addressed test catalogue, schemas, technical sources, suite
+  policy, resolved plan, execution manifest, and result observations. It
+  verifies the complete release-to-observation chain, derives applicable-test
+  completeness and outcomes without trusting runner eligibility or legacy
+  mandatory flags, and reports individual outcomes, automated assessment, and
+  certification eligibility separately.
 - Immutable execution manifests are now the sole work definition consumed by
   the Read/Write and DCR runners. Manifests carry complete URL, query, header,
   body, generated-value, OAuth, PSU, JWS, output, assertion, dependency, and
