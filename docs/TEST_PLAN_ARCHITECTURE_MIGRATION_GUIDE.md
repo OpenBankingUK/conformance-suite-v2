@@ -4,7 +4,7 @@
 >
 > **Decision date:** 2026-09-14
 >
-> **Architecture correction:** 2026-09-16 (`TPA-084` through `TPA-089`)
+> **Architecture correction:** 2026-09-23 (`TPA-084` through `TPA-090`)
 >
 > This document is authoritative for the migration boundaries and decisions
 > marked **Accepted** below. Items marked **Deferred**, **Superseded**, or
@@ -61,7 +61,7 @@ The status terms in this document have precise meanings:
 Names used for target concepts in this document are architectural terms, not
 accepted JSON property names unless a later schema decision says otherwise.
 
-> **Current authority:** `TPA-084` through `TPA-089` supersede every earlier
+> **Current authority:** `TPA-084` through `TPA-090` supersede every earlier
 > clause that makes a machine-readable requirements catalogue, normative
 > requirement applicability, or requirement-level coverage part of the target
 > runtime or certification assessment. Earlier entries remain below as
@@ -69,7 +69,7 @@ accepted JSON property names unless a later schema decision says otherwise.
 >
 > Decisions `TPA-001` through `TPA-083` record the architecture accepted and
 > implemented at each migration stage. Where their wording conflicts with
-> `TPA-084` through `TPA-089`, that wording is **Superseded**, not current
+> `TPA-084` through `TPA-090`, that wording is **Superseded**, not current
 > implementation guidance.
 
 ## Architecture decision history
@@ -532,6 +532,7 @@ manifest-authoritative assessment note.
 | `TPA-087` | Assessment traceability is `suite release -> test definition -> compiled instance -> manifest step/assertion -> result observation`. The trusted validator verifies that chain, rejects substituted or stale artefacts and blocking findings, determines completeness from the applicable approved tests, and evaluates their outcomes under release policy. It does not calculate requirement-level coverage or claim that a passing run proves every normative obligation. | This supports independent validation of what the approved suite actually executed while keeping the result claim no broader than the available evidence. |
 | `TPA-088` | `documented-only`, manual-evidence, and other non-executable requirement states are outside the executable catalogue and automated assessment contract. Such obligations may be described in documentation or handled by a separate human certification process, but they neither appear as synthetic tests nor make an otherwise complete automated run indeterminate. | The automated tool should report tests and results. It must not invent evidence contracts for obligations that have no executable test or silently turn those obligations into runtime certification logic. |
 | `TPA-089` | The requirement-catalogue schema and artefacts, `coveredRequirementIds`, `normativeReferenceIds`, requirement `assessment`, requirement-derived applicability, and requirement-level result links are superseded target concepts. A follow-up migration must consolidate still-needed executable metadata into the human-authored test catalogue and then remove those structures. New work must not deepen dependencies on them. | The repository already implements the superseded split, so safe removal requires an explicit migration rather than pretending the correction has already been implemented. Recording the destination now prevents certification work from entrenching the wrong authority. |
+| `TPA-090` | Dotted stable IDs remain unchanged when compilation appends `.instance.request`; runtime step placeholders resolve that complete ID. Cross-step references must resolve to an earlier producer in dependency closure. PSU authorization metadata has exactly one positive consent owner, consumers reference that owner explicitly, and nested authorization/token helpers are emitted only when a selected consumer requires them. | Preserves traceability identity while making dataflow and authorization lifecycle deterministic. It prevents compatibility lowering from inventing journeys for standalone or negative tests and lets invalid migrated references fail before network access. |
 
 ### Catalogue-consolidation production cutover
 

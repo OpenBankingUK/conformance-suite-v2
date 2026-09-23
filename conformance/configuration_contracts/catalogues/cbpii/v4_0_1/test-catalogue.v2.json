@@ -280,7 +280,8 @@
         "inputBindings": [],
         "method": "GET",
         "modifications": [],
-        "path": "/open-banking/v4.0/cbpii/funds-confirmation-consents/${steps.cbpii.v401.test.funds_confirmation_consents.create.without-financial-id.instance.request.response.body.Data.ConsentId}",
+        "path": "/open-banking/v4.0/cbpii/funds-confirmation-consents/${steps.cbpii.v401.test.funds_confirmation_consents.create.positive.instance.request.response.body.Data.ConsentId}",
+        "requiredPsuAuthorizationStepId": "setup-cbpii-consent-authorisation",
         "requiredTokenId": "cbpii-client-credentials",
         "requiredTokenScope": "fundsconfirmations",
         "runtimeInputRefs": [
@@ -313,7 +314,7 @@
         }
       ],
       "dependencies": [
-        "cbpii.v401.test.funds_confirmation_consents.consentid.read.positive"
+        "cbpii.v401.test.funds_confirmation_consents.create.positive"
       ],
       "description": "Checks whether the instructed amount is available under an authorised consent.",
       "evidencePolicy": {
@@ -355,7 +356,7 @@
         ],
         "jsonBodyTemplate": {
           "Data": {
-            "ConsentId": "${steps.cbpii.v401.test.funds_confirmation_consents.create.without-financial-id.instance.request.response.body.Data.ConsentId}",
+            "ConsentId": "${steps.cbpii.v401.test.funds_confirmation_consents.create.positive.instance.request.response.body.Data.ConsentId}",
             "InstructedAmount": {
               "Amount": "10.00",
               "Currency": "GBP"
@@ -374,6 +375,7 @@
           }
         ],
         "path": "/open-banking/v4.0/cbpii/funds-confirmations",
+        "requiredPsuAuthorizationStepId": "setup-cbpii-consent-authorisation",
         "requiredTokenId": "cbpii-funds-confirmation",
         "runtimeInputRefs": [
           "resourceBaseUrl"
@@ -399,7 +401,7 @@
         }
       ],
       "dependencies": [
-        "cbpii.v401.test.funds_confirmation_consents.consentid.read.positive"
+        "cbpii.v401.test.funds_confirmation_consents.create.positive"
       ],
       "description": "Revokes an existing funds-confirmation consent.",
       "evidencePolicy": {
@@ -421,7 +423,7 @@
         "inputBindings": [],
         "method": "DELETE",
         "modifications": [],
-        "path": "/open-banking/v4.0/cbpii/funds-confirmation-consents/${steps.cbpii.v401.test.funds_confirmation_consents.create.without-financial-id.instance.request.response.body.Data.ConsentId}",
+        "path": "/open-banking/v4.0/cbpii/funds-confirmation-consents/${steps.cbpii.v401.test.funds_confirmation_consents.create.positive.instance.request.response.body.Data.ConsentId}",
         "requiredTokenId": "cbpii-client-credentials",
         "requiredTokenScope": "fundsconfirmations",
         "runtimeInputRefs": [
@@ -514,13 +516,6 @@
           }
         ],
         "path": "/open-banking/v4.0/cbpii/funds-confirmation-consents",
-        "psuAuthorization": {
-          "authorizationStepId": "setup-cbpii-consent-authorisation",
-          "authorizationStepName": "Authorise CBPII funds-confirmation consent",
-          "flowLabel": "CBPII funds confirmation",
-          "tokenId": "cbpii-funds-confirmation",
-          "tokenStepId": "setup-token-cbpii-funds-confirmation"
-        },
         "requiredTokenId": "cbpii-client-credentials",
         "requiredTokenScope": "fundsconfirmations",
         "runtimeInputRefs": [
@@ -613,13 +608,6 @@
           }
         ],
         "path": "/open-banking/v4.0/cbpii/funds-confirmation-consents",
-        "psuAuthorization": {
-          "authorizationStepId": "setup-cbpii-consent-authorisation",
-          "authorizationStepName": "Authorise CBPII funds-confirmation consent",
-          "flowLabel": "CBPII funds confirmation",
-          "tokenId": "cbpii-funds-confirmation",
-          "tokenStepId": "setup-token-cbpii-funds-confirmation"
-        },
         "requiredTokenId": "cbpii-client-credentials",
         "requiredTokenScope": "fundsconfirmations",
         "runtimeInputRefs": [
@@ -712,13 +700,6 @@
           }
         ],
         "path": "/open-banking/v4.0/cbpii/funds-confirmation-consents",
-        "psuAuthorization": {
-          "authorizationStepId": "setup-cbpii-consent-authorisation",
-          "authorizationStepName": "Authorise CBPII funds-confirmation consent",
-          "flowLabel": "CBPII funds confirmation",
-          "tokenId": "cbpii-funds-confirmation",
-          "tokenStepId": "setup-token-cbpii-funds-confirmation"
-        },
         "requiredTokenId": "cbpii-client-credentials",
         "requiredTokenScope": "fundsconfirmations",
         "runtimeInputRefs": [
@@ -757,6 +738,9 @@
       "request": {
         "baseUrlSource": "resource",
         "endpointId": "cbpii.v401.endpoint.funds_confirmation_consents.consentid.delete",
+        "generatedValues": {
+          "invalidFundsConfirmationConsentId": "legacy-invalid-consent-id"
+        },
         "headerTemplates": [
           {
             "generatedValue": "uuid4",
@@ -771,10 +755,10 @@
             "location": "path-parameter",
             "operation": "replace",
             "target": "ConsentId",
-            "value": "non-existent-consent-id"
+            "value": "${generated.invalidFundsConfirmationConsentId}"
           }
         ],
-        "path": "/open-banking/v4.0/cbpii/funds-confirmation-consents/${steps.cbpii.v401.test.funds_confirmation_consents.create.without-financial-id.instance.request.response.body.Data.ConsentId}",
+        "path": "/open-banking/v4.0/cbpii/funds-confirmation-consents/{ConsentId}",
         "requiredTokenId": "cbpii-client-credentials",
         "requiredTokenScope": "fundsconfirmations",
         "runtimeInputRefs": [
@@ -872,13 +856,6 @@
           }
         ],
         "path": "/open-banking/v4.0/cbpii/funds-confirmation-consents",
-        "psuAuthorization": {
-          "authorizationStepId": "setup-cbpii-consent-authorisation",
-          "authorizationStepName": "Authorise CBPII funds-confirmation consent",
-          "flowLabel": "CBPII funds confirmation",
-          "tokenId": "cbpii-funds-confirmation",
-          "tokenStepId": "setup-token-cbpii-funds-confirmation"
-        },
         "requiredTokenId": "cbpii-client-credentials",
         "requiredTokenScope": "fundsconfirmations",
         "runtimeInputRefs": [
@@ -976,13 +953,6 @@
           }
         ],
         "path": "/open-banking/v4.0/cbpii/funds-confirmation-consents",
-        "psuAuthorization": {
-          "authorizationStepId": "setup-cbpii-consent-authorisation",
-          "authorizationStepName": "Authorise CBPII funds-confirmation consent",
-          "flowLabel": "CBPII funds confirmation",
-          "tokenId": "cbpii-funds-confirmation",
-          "tokenStepId": "setup-token-cbpii-funds-confirmation"
-        },
         "requiredTokenId": "cbpii-client-credentials",
         "requiredTokenScope": "fundsconfirmations",
         "runtimeInputRefs": [
@@ -1080,13 +1050,6 @@
           }
         ],
         "path": "/open-banking/v4.0/cbpii/funds-confirmation-consents",
-        "psuAuthorization": {
-          "authorizationStepId": "setup-cbpii-consent-authorisation",
-          "authorizationStepName": "Authorise CBPII funds-confirmation consent",
-          "flowLabel": "CBPII funds confirmation",
-          "tokenId": "cbpii-funds-confirmation",
-          "tokenStepId": "setup-token-cbpii-funds-confirmation"
-        },
         "requiredTokenId": "cbpii-client-credentials",
         "requiredTokenScope": "fundsconfirmations",
         "runtimeInputRefs": [
@@ -1184,13 +1147,6 @@
           }
         ],
         "path": "/open-banking/v4.0/cbpii/funds-confirmation-consents",
-        "psuAuthorization": {
-          "authorizationStepId": "setup-cbpii-consent-authorisation",
-          "authorizationStepName": "Authorise CBPII funds-confirmation consent",
-          "flowLabel": "CBPII funds confirmation",
-          "tokenId": "cbpii-funds-confirmation",
-          "tokenStepId": "setup-token-cbpii-funds-confirmation"
-        },
         "requiredTokenId": "cbpii-client-credentials",
         "requiredTokenScope": "fundsconfirmations",
         "runtimeInputRefs": [
@@ -1293,13 +1249,6 @@
           }
         ],
         "path": "/open-banking/v4.0/cbpii/funds-confirmation-consents",
-        "psuAuthorization": {
-          "authorizationStepId": "setup-cbpii-consent-authorisation",
-          "authorizationStepName": "Authorise CBPII funds-confirmation consent",
-          "flowLabel": "CBPII funds confirmation",
-          "tokenId": "cbpii-funds-confirmation",
-          "tokenStepId": "setup-token-cbpii-funds-confirmation"
-        },
         "requiredTokenId": "cbpii-client-credentials",
         "requiredTokenScope": "fundsconfirmations",
         "runtimeInputRefs": [

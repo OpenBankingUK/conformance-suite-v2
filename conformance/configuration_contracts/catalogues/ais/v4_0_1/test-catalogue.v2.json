@@ -767,7 +767,7 @@
             "target": "access-context"
           }
         ],
-        "path": "/open-banking/v4.0/aisp/account-access-consents/${steps.ais-at-setup-basic-consent-request.response.body.Data.ConsentId}",
+        "path": "/open-banking/v4.0/aisp/account-access-consents/${steps.ais.v401.test.post.account_access_consents.positive.instance.request.response.body.Data.ConsentId}",
         "requiredTokenId": "ais-client-credentials",
         "requiredTokenScope": "accounts",
         "runtimeInputRefs": [
@@ -818,7 +818,7 @@
             "target": "Authorization"
           }
         ],
-        "path": "/open-banking/v4.0/aisp/account-access-consents/${steps.ais-at-setup-basic-consent-request.response.body.Data.ConsentId}",
+        "path": "/open-banking/v4.0/aisp/account-access-consents/${steps.ais.v401.test.post.account_access_consents.positive.instance.request.response.body.Data.ConsentId}",
         "runtimeInputRefs": [
           "resourceBaseUrl"
         ]
@@ -944,7 +944,7 @@
             "target": "access-context"
           }
         ],
-        "path": "/open-banking/v4.0/aisp/account-access-consents/${steps.ais-at-setup-basic-consent-request.response.body.Data.ConsentId}",
+        "path": "/open-banking/v4.0/aisp/account-access-consents/${steps.ais.v401.test.post.account_access_consents.positive.instance.request.response.body.Data.ConsentId}",
         "requiredTokenId": "ais-client-credentials",
         "requiredTokenScope": "accounts",
         "runtimeInputRefs": [
@@ -995,7 +995,7 @@
             "target": "Authorization"
           }
         ],
-        "path": "/open-banking/v4.0/aisp/account-access-consents/${steps.ais-at-setup-basic-consent-request.response.body.Data.ConsentId}",
+        "path": "/open-banking/v4.0/aisp/account-access-consents/${steps.ais.v401.test.post.account_access_consents.positive.instance.request.response.body.Data.ConsentId}",
         "runtimeInputRefs": [
           "resourceBaseUrl"
         ]

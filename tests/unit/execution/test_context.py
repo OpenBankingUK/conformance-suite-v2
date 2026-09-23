@@ -50,6 +50,29 @@ def _runtime_config_context() -> ExecutionContext:
     )
 
 
+def _dotted_step_context() -> ExecutionContext:
+    """Build a context containing step ids with overlapping dotted prefixes."""
+    return ExecutionContext(
+        steps={
+            "payments": StepRecord(
+                request=RequestRecord(method="GET", url="https://rs.example.com/payments"),
+                response=ResponseRecord(status_code=200, body={"marker": "short"}),
+            ),
+            "payments.create": StepRecord(
+                request=RequestRecord(method="POST", url="https://rs.example.com/payments/create"),
+                response=ResponseRecord(
+                    status_code=201,
+                    body={"marker": "dotted", "Data": {"ConsentId": "consent-123"}},
+                ),
+            ),
+            "payments.response.exchange": StepRecord(
+                request=RequestRecord(method="PUT", url="https://rs.example.com/payments/exchange"),
+                response=ResponseRecord(status_code=202, body={"marker": "keyword"}),
+            ),
+        }
+    )
+
+
 def _oauth_context() -> ExecutionContext:
     """Build a context carrying OAuth non-secret config values alongside base fields."""
     return ExecutionContext(
@@ -216,6 +239,37 @@ class TestResolvePlaceholdersHappyPaths:
         result = resolve_placeholders("${steps.openid-discovery.request.method}", ctx)
         assert result == "GET"
 
+    def test_preserves_legacy_hyphenated_step_id(self) -> None:
+        ctx = _discovery_context()
+        result = resolve_placeholders("${steps.openid-discovery.response.body.issuer}", ctx)
+        assert result == "https://auth.example.com"
+
+    def test_resolves_dotted_step_response_body(self) -> None:
+        ctx = _dotted_step_context()
+        result = resolve_placeholders("${steps.payments.create.response.body.Data.ConsentId}", ctx)
+        assert result == "consent-123"
+
+    def test_resolves_dotted_step_response_status_code(self) -> None:
+        ctx = _dotted_step_context()
+        result = resolve_placeholders("${steps.payments.create.response.status_code}", ctx)
+        assert result == "201"
+
+    def test_resolves_dotted_step_request_fields(self) -> None:
+        ctx = _dotted_step_context()
+        template = "${steps.payments.create.request.method} ${steps.payments.create.request.url}"
+        result = resolve_placeholders(template, ctx)
+        assert result == "POST https://rs.example.com/payments/create"
+
+    def test_resolves_longest_matching_dotted_step_id(self) -> None:
+        ctx = _dotted_step_context()
+        result = resolve_placeholders("${steps.payments.create.response.body.marker}", ctx)
+        assert result == "dotted"
+
+    def test_resolves_dotted_step_id_containing_direction_segment(self) -> None:
+        ctx = _dotted_step_context()
+        result = resolve_placeholders("${steps.payments.response.exchange.response.body.marker}", ctx)
+        assert result == "keyword"
+
     def test_returns_template_unchanged_when_no_placeholders(self) -> None:
         ctx = _discovery_context()
         result = resolve_placeholders("https://example.com/plain", ctx)
@@ -367,6 +421,11 @@ class TestResolvePlaceholdersErrors:
         ctx = _discovery_context()
         with pytest.raises(PlaceholderResolutionError, match="Step 'unknown' not found"):
             resolve_placeholders("${steps.unknown.response.body.x}", ctx)
+
+    def test_missing_dotted_step_reports_complete_id(self) -> None:
+        ctx = _dotted_step_context()
+        with pytest.raises(PlaceholderResolutionError, match=r"Step 'payments\.missing' not found"):
+            resolve_placeholders("${steps.payments.missing.response.body.x}", ctx)
 
     def test_missing_body_path_segment(self) -> None:
         ctx = _discovery_context()
@@ -547,6 +606,18 @@ class TestResolvePlaceholdersErrors:
             resolve_placeholders("${steps.failed.response.body.x}", ctx)
         # And the subclass relationship is preserved for callers catching the base.
         assert issubclass(MissingPredecessorResponseError, PlaceholderResolutionError)
+
+    def test_dotted_step_with_no_response(self) -> None:
+        ctx = ExecutionContext(
+            steps={
+                "payments.create": StepRecord(
+                    request=RequestRecord(method="POST", url="https://rs.example.com/payments"),
+                    response=None,
+                )
+            }
+        )
+        with pytest.raises(MissingPredecessorResponseError, match=r"Step 'payments\.create' has no response"):
+            resolve_placeholders("${steps.payments.create.response.body.x}", ctx)
 
     def test_invalid_request_field(self) -> None:
         ctx = _discovery_context()

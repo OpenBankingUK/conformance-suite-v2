@@ -164,6 +164,9 @@ def test_psu_headless_step_captures_code_from_redirect() -> None:
     assert result.status == "passed"
     assert context.steps["psu"].response is not None
     assert context.steps["psu"].response.body["code"] == "headless-code"
+    captured_session = store.get("run-headless", state)
+    assert captured_session is not None
+    assert captured_session.status == "captured"
     assert len(requested_urls) == 1
     requested_url = urlsplit(requested_urls[0])
     assert requested_url.scheme == "https"
@@ -310,3 +313,70 @@ def test_psu_headless_step_fails_when_authorization_endpoint_returns_ok() -> Non
     assert result.status_code == 200
     assert "did not return a redirect" in result.message
     assert context.steps["psu"].response is None
+
+
+@pytest.mark.parametrize(
+    "failure",
+    (
+        "transport",
+        "non-redirect",
+        "missing-location",
+        "mismatched-target",
+        "missing-state",
+        "mismatched-state",
+        "missing-result",
+        "oauth-error",
+    ),
+)
+def test_psu_headless_terminal_failure_discards_only_registered_session(failure: str) -> None:
+    """Every terminal headless failure rolls back its session without removing siblings."""
+    run_id = f"run-headless-cleanup-{failure}"
+    state = "f" * 32
+    sibling_state = "k" * 32
+    store = AuthSessionStore()
+    store.register(run_id, state=sibling_state)
+    responses = {
+        "non-redirect": httpx.Response(200),
+        "missing-location": httpx.Response(302),
+        "mismatched-target": httpx.Response(
+            302,
+            headers={"Location": f"https://evil.example.com/callback?state={state}&code=code"},
+        ),
+        "missing-state": httpx.Response(
+            302,
+            headers={"Location": "https://conformance.example.com/callback?code=code"},
+        ),
+        "mismatched-state": httpx.Response(
+            302,
+            headers={"Location": f"https://conformance.example.com/callback?state={'w' * 32}&code=code"},
+        ),
+        "missing-result": httpx.Response(
+            302,
+            headers={"Location": f"https://conformance.example.com/callback?state={state}"},
+        ),
+        "oauth-error": httpx.Response(
+            302,
+            headers={"Location": f"https://conformance.example.com/callback?state={state}&error=access_denied"},
+        ),
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if failure == "transport":
+            raise httpx.ConnectError("connection failed", request=request)
+        return responses[failure]
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result, _ = _execute_v1_psu_step(
+            psu_headless_step(state=state),
+            context=ExecutionContext(),
+            client=client,
+            run_id=run_id,
+            auth_session_store=store,
+            execution_logger=BufferedExecutionLogger(run_id=run_id, developer_mode=False),
+            clock=FakeClock().monotonic,
+            sleep=FakeClock().sleep,
+        )
+
+    assert result.status == "failed"
+    assert store.get(run_id, state) is None
+    assert store.get(run_id, sibling_state) is not None

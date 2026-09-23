@@ -722,6 +722,7 @@ def _execution_manifest_to_runtime_manifest(
         if item.value is not None or str(item.id) in runtime_inputs
     }
     sensitive_input_ids = {item.id for item in manifest.inputs if item.redacted}
+    required_psu_authorization_ids = _required_psu_authorization_ids(manifest)
     state_output_templates = {
         output.id: _response_output_template(step.id, output.json_pointer)
         for step in manifest.steps
@@ -755,14 +756,160 @@ def _execution_manifest_to_runtime_manifest(
                     profiles=ais_profiles,
                 )
             )
-        if manifest_step.request.psu_authorization is not None:
+        if (
+            manifest_step.request.psu_authorization is not None
+            and manifest_step.request.psu_authorization.authorization_step_id in required_psu_authorization_ids
+        ):
             steps.extend(_execution_manifest_psu_steps(manifest_step))
-    return Manifest(
+    runtime_manifest = Manifest(
         schema_version="v1",
         name=f"Execution manifest {manifest.id!s}",
         certification_coverage="complete",
         steps=tuple(steps),
     )
+    _validate_runtime_step_references(runtime_manifest.steps)
+    return runtime_manifest
+
+
+def _required_psu_authorization_ids(manifest: ExecutionManifest) -> frozenset[StableId]:
+    """Validate PSU owner/consumer relationships and return required helper IDs."""
+    owners: dict[StableId, ExecutionManifestStep] = {}
+    token_owners: dict[StableId, ExecutionManifestStep] = {}
+    for step in manifest.steps:
+        metadata = step.request.psu_authorization
+        if metadata is None:
+            continue
+        previous = owners.get(metadata.authorization_step_id)
+        if previous is not None:
+            raise ValueError(
+                f"PSU authorization step {metadata.authorization_step_id!s} has multiple owners: "
+                f"{previous.id!s}, {step.id!s}"
+            )
+        owners[metadata.authorization_step_id] = step
+        previous_token_owner = token_owners.get(metadata.token_id)
+        if previous_token_owner is not None:
+            raise ValueError(
+                f"PSU token {metadata.token_id!s} has multiple owners: {previous_token_owner.id!s}, {step.id!s}"
+            )
+        token_owners[metadata.token_id] = step
+
+    dependencies = {step.id: step.dependency_ids for step in manifest.steps}
+
+    def dependency_closure(step_id: StableId) -> set[StableId]:
+        closure: set[StableId] = set()
+        pending = list(dependencies[step_id])
+        while pending:
+            dependency_id = pending.pop()
+            if dependency_id in closure:
+                continue
+            closure.add(dependency_id)
+            pending.extend(dependencies.get(dependency_id, ()))
+        return closure
+
+    required: set[StableId] = set()
+    for step in manifest.steps:
+        authorization_id = step.request.required_psu_authorization_step_id
+        token_owner = (
+            None if step.request.required_token_id is None else token_owners.get(step.request.required_token_id)
+        )
+        if token_owner is not None:
+            token_metadata = token_owner.request.psu_authorization
+            if token_metadata is None:
+                raise ValueError(f"PSU token owner {token_owner.id!s} has no authorization metadata")
+            if authorization_id != token_metadata.authorization_step_id:
+                raise ValueError(
+                    f"Manifest step {step.id!s} consumes PSU token {step.request.required_token_id!s}, "
+                    f"but does not require its owner {token_metadata.authorization_step_id!s}"
+                )
+        if authorization_id is None:
+            continue
+        owner = owners.get(authorization_id)
+        if owner is None:
+            raise ValueError(
+                f"Manifest step {step.id!s} requires undefined PSU authorization step {authorization_id!s}"
+            )
+        if owner.id not in dependency_closure(step.id):
+            raise ValueError(
+                f"Manifest step {step.id!s} requires PSU authorization step {authorization_id!s}, "
+                f"but owner {owner.id!s} is outside its dependency closure"
+            )
+        required.add(authorization_id)
+    return frozenset(required)
+
+
+_RUNTIME_STEP_PLACEHOLDER_PATTERN = re.compile(r"\$\{steps\.([^}]+)\}")
+"""Runtime placeholder token whose step id is resolved against known steps."""
+
+
+def _validate_runtime_step_references(steps: tuple[V1Step, ...]) -> None:
+    """Reject unresolved, duplicate, or forward runtime step references."""
+    indexes: dict[str, int] = {}
+    for index, step in enumerate(steps):
+        if step.id in indexes:
+            raise ValueError(f"Lowered runtime manifest contains duplicate step id {step.id!r}")
+        indexes[step.id] = index
+
+    step_ids = tuple(sorted(indexes, key=len, reverse=True))
+    for index, step in enumerate(steps):
+        for template in _runtime_step_templates(step):
+            for match in _RUNTIME_STEP_PLACEHOLDER_PATTERN.finditer(template):
+                expression = match.group(1)
+                referenced_id = next(
+                    (
+                        step_id
+                        for step_id in step_ids
+                        if expression.startswith(f"{step_id}.request.") or expression.startswith(f"{step_id}.response.")
+                    ),
+                    None,
+                )
+                if referenced_id is None:
+                    raise ValueError(
+                        f"Lowered runtime step {step.id!r} contains an unresolved step placeholder: {match.group(0)}"
+                    )
+                if indexes[referenced_id] >= index:
+                    raise ValueError(
+                        f"Lowered runtime step {step.id!r} references non-preceding step {referenced_id!r}"
+                    )
+
+
+def _runtime_step_templates(step: V1Step) -> tuple[str, ...]:
+    """Collect placeholder-bearing strings from one lowered runtime step."""
+    templates: list[str] = []
+    if isinstance(step, ManifestStep):
+        templates.append(step.request.url)
+        if step.request.headers is not None:
+            templates.extend(step.request.headers.values())
+        if isinstance(step.request.body, JsonBody):
+            _collect_string_values(step.request.body.value, templates)
+        elif isinstance(step.request.body, FormBody):
+            templates.extend(step.request.body.fields.values())
+        return tuple(templates)
+
+    templates.extend((step.authorization_endpoint, step.client_id, step.redirect_uri))
+    if step.state is not None:
+        templates.append(step.state)
+    if step.nonce is not None:
+        templates.append(step.nonce)
+    if isinstance(step.request_object, str):
+        templates.append(step.request_object)
+    elif isinstance(step.request_object, GeneratedRequestObject):
+        if step.request_object.audience is not None:
+            templates.append(step.request_object.audience)
+        if step.request_object.openbanking_intent_id is not None:
+            templates.append(step.request_object.openbanking_intent_id)
+    return tuple(templates)
+
+
+def _collect_string_values(value: JsonValue, destination: list[str]) -> None:
+    """Append every string leaf in a JSON value to ``destination``."""
+    if isinstance(value, str):
+        destination.append(value)
+    elif isinstance(value, Mapping):
+        for item in value.values():
+            _collect_string_values(item, destination)
+    elif isinstance(value, tuple | list):
+        for item in value:
+            _collect_string_values(item, destination)
 
 
 def _run_authoritative_execution_manifest(
@@ -4151,14 +4298,19 @@ def _execute_v1_psu_step_inner(
             nonce=resolved_nonce,
         )
     except MissingPredecessorResponseError as error:
-        return _skipped_step(
-            manifest_step.id,
-            context=context,
-            method="GET",
-            url=resolved_result_url,
-            error=error,
-            request_evidence=request_evidence,
-            execution_logger=execution_logger,
+        return _finalize_psu_authorization_session(
+            _skipped_step(
+                manifest_step.id,
+                context=context,
+                method="GET",
+                url=resolved_result_url,
+                error=error,
+                request_evidence=request_evidence,
+                execution_logger=execution_logger,
+            ),
+            auth_session_store=auth_session_store,
+            run_id=run_id,
+            state=session.state,
         )
     except PlaceholderResolutionError as error:
         execution_logger.emit(
@@ -4168,34 +4320,44 @@ def _execute_v1_psu_step_inner(
         )
         request_record = RequestRecord(method="GET", url=resolved_result_url)
         new_context = record_step(context, manifest_step.id, request_record, None)
-        return (
-            _attach_evidence(
-                StepResult(
-                    name=manifest_step.id,
-                    status="failed",
-                    message=f"Placeholder resolution failed: {error}",
-                    url=resolved_result_url,
+        return _finalize_psu_authorization_session(
+            (
+                _attach_evidence(
+                    StepResult(
+                        name=manifest_step.id,
+                        status="failed",
+                        message=f"Placeholder resolution failed: {error}",
+                        url=resolved_result_url,
+                    ),
+                    request_evidence=request_evidence,
+                    response_evidence=None,
                 ),
-                request_evidence=request_evidence,
-                response_evidence=None,
+                new_context,
             ),
-            new_context,
+            auth_session_store=auth_session_store,
+            run_id=run_id,
+            state=session.state,
         )
     except (SigningCredentialError, JwtSigningError, ValueError) as error:
         request_record = RequestRecord(method="GET", url=resolved_result_url)
         new_context = record_step(context, manifest_step.id, request_record, None)
-        return (
-            _attach_evidence(
-                StepResult(
-                    name=manifest_step.id,
-                    status="failed",
-                    message=f"Unable to build PSU request object: {error}",
-                    url=resolved_result_url,
+        return _finalize_psu_authorization_session(
+            (
+                _attach_evidence(
+                    StepResult(
+                        name=manifest_step.id,
+                        status="failed",
+                        message=f"Unable to build PSU request object: {error}",
+                        url=resolved_result_url,
+                    ),
+                    request_evidence=request_evidence,
+                    response_evidence=None,
                 ),
-                request_evidence=request_evidence,
-                response_evidence=None,
+                new_context,
             ),
-            new_context,
+            auth_session_store=auth_session_store,
+            run_id=run_id,
+            state=session.state,
         )
 
     authorization_url = build_authorization_url(
@@ -4228,19 +4390,24 @@ def _execute_v1_psu_step_inner(
     )
 
     if manifest_step.mode == "headless":
-        return _execute_headless_psu_authorization(
-            manifest_step,
-            context=context,
-            client=client,
-            run_id=run_id,
+        return _finalize_psu_authorization_session(
+            _execute_headless_psu_authorization(
+                manifest_step,
+                context=context,
+                client=client,
+                run_id=run_id,
+                auth_session_store=auth_session_store,
+                execution_logger=execution_logger,
+                authorization_url=authorization_url,
+                result_url=result_url,
+                request_record=request_record,
+                request_evidence=request_evidence,
+                registered_state=session.state,
+                redirect_uri=resolved_redirect_uri,
+            ),
             auth_session_store=auth_session_store,
-            execution_logger=execution_logger,
-            authorization_url=authorization_url,
-            result_url=result_url,
-            request_record=request_record,
-            request_evidence=request_evidence,
-            registered_state=session.state,
-            redirect_uri=resolved_redirect_uri,
+            run_id=run_id,
+            state=session.state,
         )
 
     deadline = clock() + PSU_AUTHORIZATION_TIMEOUT_SECONDS
@@ -4249,30 +4416,54 @@ def _execute_v1_psu_step_inner(
         current_session = auth_session_store.get(run_id, session.state)
         if current_session is None or current_session.status == "awaiting":
             continue
-        return _complete_psu_step_from_session(
-            manifest_step,
-            context=context,
-            request_record=request_record,
-            request_evidence=request_evidence,
-            authorization_url=authorization_url,
-            result_url=result_url,
-            current_session=current_session,
+        return _finalize_psu_authorization_session(
+            _complete_psu_step_from_session(
+                manifest_step,
+                context=context,
+                request_record=request_record,
+                request_evidence=request_evidence,
+                authorization_url=authorization_url,
+                result_url=result_url,
+                current_session=current_session,
+            ),
+            auth_session_store=auth_session_store,
+            run_id=run_id,
+            state=session.state,
         )
 
-    return (
-        _attach_evidence(
-            StepResult(
-                name=manifest_step.id,
-                status="failed",
-                message=f"{manifest_step.name} timed out waiting for PSU authorisation callback",
-                url=result_url,
-                details={"timeoutSeconds": PSU_AUTHORIZATION_TIMEOUT_SECONDS},
+    return _finalize_psu_authorization_session(
+        (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"{manifest_step.name} timed out waiting for PSU authorisation callback",
+                    url=result_url,
+                    details={"timeoutSeconds": PSU_AUTHORIZATION_TIMEOUT_SECONDS},
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
             ),
-            request_evidence=request_evidence,
-            response_evidence=None,
+            record_step(context, manifest_step.id, request_record, None),
         ),
-        record_step(context, manifest_step.id, request_record, None),
+        auth_session_store=auth_session_store,
+        run_id=run_id,
+        state=session.state,
     )
+
+
+def _finalize_psu_authorization_session(
+    execution: tuple[StepResult, ExecutionContext],
+    *,
+    auth_session_store: AuthSessionStore,
+    run_id: str,
+    state: str,
+) -> tuple[StepResult, ExecutionContext]:
+    """Discard a failed PSU session while preserving successful captures and siblings."""
+    result, _ = execution
+    if result.status != "passed":
+        auth_session_store.discard(run_id, state)
+    return execution
 
 
 def _resolve_psu_request_object(

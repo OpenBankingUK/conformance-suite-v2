@@ -12,6 +12,7 @@ import pytest
 from conformance.configuration_contracts import (
     ExecutionManifestAssertion,
     ExecutionManifestHeader,
+    ExecutionPsuAuthorization,
     HttpMethod,
     PreparedExecutionManifest,
     RequestBaseUrlSource,
@@ -21,9 +22,13 @@ from conformance.configuration_contracts import (
     load_suite_release,
     preflight_suite_release_artifacts,
 )
-from conformance.executor import _execution_manifest_to_runtime_manifest, run_execution_manifest
+from conformance.executor import (
+    _execution_manifest_to_runtime_manifest,
+    _validate_runtime_step_references,
+    run_execution_manifest,
+)
 from conformance.json_types import JsonObject
-from conformance.manifest import JsonBody, ManifestStep
+from conformance.manifest import GeneratedRequestObject, JsonBody, ManifestRequest, ManifestStep, PsuAuthorizationStep
 from conformance.participant_surface import prepare_participant_plan_for_run
 from tests.support.paths import REPO_ROOT
 
@@ -314,6 +319,162 @@ def test_form_body_template_is_sent_exactly(tmp_path: Path) -> None:
     assert len(captured) == 1
     assert captured[0].headers["content-type"].startswith("application/x-www-form-urlencoded")
     assert captured[0].content == b"grant_type=client_credentials&scope=payments"
+
+
+def test_runtime_reference_validation_accepts_dotted_preceding_step_ids() -> None:
+    producer = ManifestStep(
+        id="scheme.test.producer.instance.request",
+        name="Producer",
+        request=ManifestRequest(method="POST", url="https://api.example.com/producer"),
+        assertions=(),
+    )
+    consumer = ManifestStep(
+        id="scheme.test.consumer.instance.request",
+        name="Consumer",
+        request=ManifestRequest(
+            method="GET",
+            url=(
+                "https://api.example.com/resources/"
+                "${steps.scheme.test.producer.instance.request.response.body.Data.ResourceId}"
+            ),
+        ),
+        assertions=(),
+    )
+
+    _validate_runtime_step_references((producer, consumer))
+
+
+def test_runtime_reference_validation_rejects_unresolved_and_forward_steps() -> None:
+    unresolved = ManifestStep(
+        id="consumer",
+        name="Consumer",
+        request=ManifestRequest(
+            method="GET",
+            url="https://api.example.com/${steps.missing.instance.request.response.body.id}",
+        ),
+        assertions=(),
+    )
+    with pytest.raises(ValueError, match="unresolved step placeholder"):
+        _validate_runtime_step_references((unresolved,))
+
+    producer = replace(
+        unresolved,
+        id="producer.instance.request",
+        request=ManifestRequest(method="GET", url="https://api.example.com/producer"),
+    )
+    forward = replace(
+        unresolved,
+        request=ManifestRequest(
+            method="GET",
+            url="${steps.producer.instance.request.response.body.id}",
+        ),
+    )
+    with pytest.raises(ValueError, match="non-preceding step"):
+        _validate_runtime_step_references((forward, producer))
+
+
+def test_execution_manifest_only_inserts_psu_helpers_for_selected_consumers(tmp_path: Path) -> None:
+    prepared = _prepared_manifest(
+        tmp_path,
+        method="POST",
+        path="/consents",
+        header="value",
+        body={"Data": {}},
+    )
+    owner = replace(
+        prepared.manifest.steps[0],
+        id=StableId("scheme.test.consent.instance.request"),
+        test_instance_id=StableId("scheme.test.consent.instance"),
+        test_definition_id=StableId("scheme.test.consent"),
+        request=replace(
+            prepared.manifest.steps[0].request,
+            psu_authorization=ExecutionPsuAuthorization(
+                authorization_step_id=StableId("setup-consent-authorisation"),
+                authorization_step_name="Authorise consent",
+                token_step_id=StableId("setup-consent-token"),
+                token_id=StableId("payment-access"),
+                flow_label="payment",
+            ),
+        ),
+    )
+    owner_only = replace(prepared.manifest, steps=(owner,))
+    runtime = _execution_manifest_to_runtime_manifest(
+        owner_only,
+        runtime_inputs=prepared.runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=None,
+        artifact_resolver=prepared.artifact_resolver,
+    )
+    assert [step.id for step in runtime.steps] == [str(owner.id)]
+
+    consumer = replace(
+        owner,
+        id=StableId("scheme.test.payment.instance.request"),
+        test_instance_id=StableId("scheme.test.payment.instance"),
+        test_definition_id=StableId("scheme.test.payment"),
+        dependency_ids=(owner.id,),
+        request=replace(
+            owner.request,
+            path="/payments",
+            psu_authorization=None,
+            required_token_id=StableId("payment-access"),
+            required_psu_authorization_step_id=StableId("setup-consent-authorisation"),
+        ),
+    )
+    journey = replace(prepared.manifest, steps=(owner, consumer))
+    runtime = _execution_manifest_to_runtime_manifest(
+        journey,
+        runtime_inputs=prepared.runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=None,
+        artifact_resolver=prepared.artifact_resolver,
+    )
+    assert [step.id for step in runtime.steps] == [
+        str(owner.id),
+        "setup-consent-authorisation",
+        "setup-consent-token",
+        str(consumer.id),
+    ]
+    authorization = runtime.steps[1]
+    assert isinstance(authorization, PsuAuthorizationStep)
+    assert isinstance(authorization.request_object, GeneratedRequestObject)
+    assert authorization.request_object.openbanking_intent_id == (
+        "${steps.scheme.test.consent.instance.request.response.body.Data.ConsentId}"
+    )
+
+    wrong_owner = replace(
+        owner,
+        id=StableId("scheme.test.other-consent.instance.request"),
+        test_instance_id=StableId("scheme.test.other-consent.instance"),
+        test_definition_id=StableId("scheme.test.other-consent"),
+        request=replace(
+            owner.request,
+            psu_authorization=ExecutionPsuAuthorization(
+                authorization_step_id=StableId("setup-other-authorisation"),
+                authorization_step_name="Authorise other consent",
+                token_step_id=StableId("setup-other-token"),
+                token_id=StableId("other-access"),
+                flow_label="other",
+            ),
+        ),
+    )
+    mismatched_consumer = replace(
+        consumer,
+        dependency_ids=(owner.id, wrong_owner.id),
+        request=replace(
+            consumer.request,
+            required_psu_authorization_step_id=StableId("setup-other-authorisation"),
+        ),
+    )
+    mismatched = replace(prepared.manifest, steps=(owner, wrong_owner, mismatched_consumer))
+    with pytest.raises(ValueError, match="consumes PSU token payment-access"):
+        _execution_manifest_to_runtime_manifest(
+            mismatched,
+            runtime_inputs=prepared.runtime_inputs,
+            runtime_input_base_dir=tmp_path,
+            runtime_config=None,
+            artifact_resolver=prepared.artifact_resolver,
+        )
 
 
 def _prepared_manifest(

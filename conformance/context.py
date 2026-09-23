@@ -369,9 +369,7 @@ def _resolve_dot_path(dot_path: str, context: ExecutionContext) -> str:
     if len(segments) < 4 or segments[0] != "steps":
         raise PlaceholderResolutionError(f"Invalid placeholder path: ${{{dot_path}}}")
 
-    step_id = segments[1]
-    direction = segments[2]  # "request" or "response"
-    field_name = segments[3]
+    step_id, direction, field_name, remaining = _split_step_path(dot_path, segments, context)
 
     if step_id not in context.steps:
         raise PlaceholderResolutionError(f"Step '{step_id}' not found in execution context")
@@ -379,13 +377,60 @@ def _resolve_dot_path(dot_path: str, context: ExecutionContext) -> str:
     record = context.steps[step_id]
 
     if direction == "request":
-        return _resolve_request_path(record.request, field_name, segments[4:], dot_path)
+        return _resolve_request_path(record.request, field_name, remaining, dot_path)
     if direction == "response":
         if record.response is None:
             raise MissingPredecessorResponseError(f"Step '{step_id}' has no response (request may have failed)")
-        return _resolve_response_path(record.response, field_name, segments[4:], dot_path)
+        return _resolve_response_path(record.response, field_name, remaining, dot_path)
 
     raise PlaceholderResolutionError(f"Invalid placeholder path segment '{direction}': ${{{dot_path}}}")
+
+
+def _split_step_path(
+    dot_path: str,
+    segments: list[str],
+    context: ExecutionContext,
+) -> tuple[str, str, str, list[str]]:
+    """Separate a complete step id from its request or response path.
+
+    Known step ids are matched longest-first so a dotted id that extends
+    another id is not mistaken for a field suffix. When no known id matches,
+    the request/response boundary is used to retain the complete missing id in
+    the resulting error.
+
+    Args:
+        dot_path: Full placeholder expression without its delimiters.
+        segments: Dot-separated path segments.
+        context: Execution context containing known step ids.
+
+    Returns:
+        The step id, direction, field name, and remaining field path.
+    """
+    known_prefixes: list[tuple[str, list[str]]] = []
+    for step_id in sorted(context.steps, key=len, reverse=True):
+        prefix = f"steps.{step_id}."
+        if dot_path.startswith(prefix):
+            suffix = dot_path[len(prefix) :].split(".")
+            known_prefixes.append((step_id, suffix))
+            if len(suffix) >= 2 and suffix[0] in {"request", "response"}:
+                return step_id, suffix[0], suffix[1], suffix[2:]
+
+    for direction_index in range(len(segments) - 2, 1, -1):
+        if segments[direction_index] in {"request", "response"}:
+            step_id = ".".join(segments[1:direction_index])
+            return (
+                step_id,
+                segments[direction_index],
+                segments[direction_index + 1],
+                segments[direction_index + 2 :],
+            )
+
+    if known_prefixes:
+        step_id, suffix = known_prefixes[0]
+        if len(suffix) >= 2:
+            return step_id, suffix[0], suffix[1], suffix[2:]
+
+    return segments[1], segments[2], segments[3], segments[4:]
 
 
 _ALLOWED_CONFIG_PLACEHOLDERS = (

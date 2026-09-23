@@ -522,6 +522,13 @@
         "method": "POST",
         "modifications": [],
         "path": "/open-banking/v4.0/pisp/domestic-payment-consents",
+        "psuAuthorization": {
+          "authorizationStepId": "setup-pis-domestic-payment-consent-authorisation",
+          "authorizationStepName": "Authorise domestic payment consent",
+          "flowLabel": "domestic payment",
+          "tokenId": "pis-domestic-payment-access",
+          "tokenStepId": "setup-token-pis-domestic-payment-access"
+        },
         "requiredTokenId": "pis-payment-access",
         "requiredTokenScope": "payments",
         "responseSignature": {
@@ -590,7 +597,7 @@
         "inputBindings": [],
         "method": "GET",
         "modifications": [],
-        "path": "/open-banking/v4.0/pisp/domestic-payment-consents/${steps.pis-v4-domestic-payment-consent-create-request.response.body.Data.ConsentId}",
+        "path": "/open-banking/v4.0/pisp/domestic-payment-consents/${steps.pis.v401.test.domestic_payment_consents.positive.instance.request.response.body.Data.ConsentId}",
         "requiredPsuAuthorizationStepId": "setup-pis-domestic-payment-consent-authorisation",
         "requiredTokenId": "pis-payment-access",
         "requiredTokenScope": "payments",
@@ -649,7 +656,7 @@
         "inputBindings": [],
         "method": "GET",
         "modifications": [],
-        "path": "/open-banking/v4.0/pisp/domestic-payment-consents/${steps.pis-v4-domestic-payment-consent-create-request.response.body.Data.ConsentId}/funds-confirmation",
+        "path": "/open-banking/v4.0/pisp/domestic-payment-consents/${steps.pis.v401.test.domestic_payment_consents.positive.instance.request.response.body.Data.ConsentId}/funds-confirmation",
         "requiredPsuAuthorizationStepId": "setup-pis-domestic-payment-consent-authorisation",
         "requiredTokenId": "pis-domestic-payment-access",
         "responseSignature": {
@@ -747,19 +754,19 @@
         ],
         "jsonBodyTemplate": {
           "Data": {
-            "ConsentId": "${steps.pis-v4-domestic-payment-consent-create-request.response.body.Data.ConsentId}",
+            "ConsentId": "${steps.pis.v401.test.domestic_payment_consents.positive.instance.request.response.body.Data.ConsentId}",
             "Initiation": {
               "CreditorAccount": {
-                "Identification": "${steps.pis-v4-domestic-payment-consent-create-request.response.body.Data.Initiation.CreditorAccount.Identification}",
-                "Name": "${steps.pis-v4-domestic-payment-consent-create-request.response.body.Data.Initiation.CreditorAccount.Name}",
-                "SchemeName": "${steps.pis-v4-domestic-payment-consent-create-request.response.body.Data.Initiation.CreditorAccount.SchemeName}"
+                "Identification": "${steps.pis.v401.test.domestic_payment_consents.positive.instance.request.response.body.Data.Initiation.CreditorAccount.Identification}",
+                "Name": "${steps.pis.v401.test.domestic_payment_consents.positive.instance.request.response.body.Data.Initiation.CreditorAccount.Name}",
+                "SchemeName": "${steps.pis.v401.test.domestic_payment_consents.positive.instance.request.response.body.Data.Initiation.CreditorAccount.SchemeName}"
               },
               "EndToEndIdentification": "e2e-domestic-pay",
               "InstructedAmount": {
-                "Amount": "${steps.pis-v4-domestic-payment-consent-create-request.response.body.Data.Initiation.InstructedAmount.Amount}",
-                "Currency": "${steps.pis-v4-domestic-payment-consent-create-request.response.body.Data.Initiation.InstructedAmount.Currency}"
+                "Amount": "${steps.pis.v401.test.domestic_payment_consents.positive.instance.request.response.body.Data.Initiation.InstructedAmount.Amount}",
+                "Currency": "${steps.pis.v401.test.domestic_payment_consents.positive.instance.request.response.body.Data.Initiation.InstructedAmount.Currency}"
               },
-              "InstructionIdentification": "${steps.pis-v4-domestic-payment-consent-create-request.response.body.Data.Initiation.InstructionIdentification}"
+              "InstructionIdentification": "${steps.pis.v401.test.domestic_payment_consents.positive.instance.request.response.body.Data.Initiation.InstructionIdentification}"
             }
           },
           "Risk": {}
@@ -963,11 +970,11 @@
         "modifications": [],
         "path": "/open-banking/v4.0/pisp/domestic-scheduled-payment-consents",
         "psuAuthorization": {
-          "authorizationStepId": "setup-pis-domestic-scheduled-payment-consent-authorisation",
-          "authorizationStepName": "Authorise domestic scheduled payment consent",
-          "flowLabel": "domestic scheduled payment",
+          "authorizationStepId": "setup-pis-domestic-scheduled-payment-legacy-consent-authorisation",
+          "authorizationStepName": "Authorise legacy domestic scheduled payment consent",
+          "flowLabel": "legacy domestic scheduled payment",
           "tokenId": "pis-domestic-scheduled-payment-access",
-          "tokenStepId": "setup-token-pis-domestic-scheduled-payment-access"
+          "tokenStepId": "setup-token-pis-domestic-scheduled-payment-legacy-access"
         },
         "requiredTokenId": "pis-payment-access",
         "requiredTokenScope": "payments",
@@ -1035,8 +1042,8 @@
         "inputBindings": [],
         "method": "GET",
         "modifications": [],
-        "path": "/open-banking/v4.0/pisp/domestic-scheduled-payment-consents/${steps.pis.v401.test.domestic-scheduled-payment-consent.utc-datetime.instance.request.response.body.Data.ConsentId}",
-        "requiredPsuAuthorizationStepId": "setup-pis-domestic-scheduled-payment-consent-authorisation",
+        "path": "/open-banking/v4.0/pisp/domestic-scheduled-payment-consents/${steps.pis.v401.test.domestic_scheduled_payment_consents.positive.instance.request.response.body.Data.ConsentId}",
+        "requiredPsuAuthorizationStepId": "setup-pis-domestic-scheduled-payment-legacy-consent-authorisation",
         "requiredTokenId": "pis-payment-access",
         "requiredTokenScope": "payments",
         "responseSignature": {
@@ -1148,20 +1155,20 @@
         ],
         "jsonBodyTemplate": {
           "Data": {
-            "ConsentId": "${steps.pis-v4-domestic-scheduled-payment-consent-create-and-authorise-request.response.body.Data.ConsentId}",
+            "ConsentId": "${steps.pis.v401.test.domestic_scheduled_payment_consents.positive.instance.request.response.body.Data.ConsentId}",
             "Initiation": {
               "CreditorAccount": {
-                "Identification": "${steps.pis-v4-domestic-scheduled-payment-consent-create-and-authorise-request.response.body.Data.Initiation.CreditorAccount.Identification}",
-                "Name": "${steps.pis-v4-domestic-scheduled-payment-consent-create-and-authorise-request.response.body.Data.Initiation.CreditorAccount.Name}",
-                "SchemeName": "${steps.pis-v4-domestic-scheduled-payment-consent-create-and-authorise-request.response.body.Data.Initiation.CreditorAccount.SchemeName}"
+                "Identification": "${steps.pis.v401.test.domestic_scheduled_payment_consents.positive.instance.request.response.body.Data.Initiation.CreditorAccount.Identification}",
+                "Name": "${steps.pis.v401.test.domestic_scheduled_payment_consents.positive.instance.request.response.body.Data.Initiation.CreditorAccount.Name}",
+                "SchemeName": "${steps.pis.v401.test.domestic_scheduled_payment_consents.positive.instance.request.response.body.Data.Initiation.CreditorAccount.SchemeName}"
               },
               "EndToEndIdentification": "e2e-domestic-sched-pay",
               "InstructedAmount": {
-                "Amount": "${steps.pis-v4-domestic-scheduled-payment-consent-create-and-authorise-request.response.body.Data.Initiation.InstructedAmount.Amount}",
-                "Currency": "${steps.pis-v4-domestic-scheduled-payment-consent-create-and-authorise-request.response.body.Data.Initiation.InstructedAmount.Currency}"
+                "Amount": "${steps.pis.v401.test.domestic_scheduled_payment_consents.positive.instance.request.response.body.Data.Initiation.InstructedAmount.Amount}",
+                "Currency": "${steps.pis.v401.test.domestic_scheduled_payment_consents.positive.instance.request.response.body.Data.Initiation.InstructedAmount.Currency}"
               },
-              "InstructionIdentification": "${steps.pis-v4-domestic-scheduled-payment-consent-create-and-authorise-request.response.body.Data.Initiation.InstructionIdentification}",
-              "RequestedExecutionDateTime": "${steps.pis-v4-domestic-scheduled-payment-consent-create-and-authorise-request.response.body.Data.Initiation.RequestedExecutionDateTime}"
+              "InstructionIdentification": "${steps.pis.v401.test.domestic_scheduled_payment_consents.positive.instance.request.response.body.Data.Initiation.InstructionIdentification}",
+              "RequestedExecutionDateTime": "${steps.pis.v401.test.domestic_scheduled_payment_consents.positive.instance.request.response.body.Data.Initiation.RequestedExecutionDateTime}"
             }
           },
           "Risk": {}
@@ -1462,7 +1469,7 @@
         "inputBindings": [],
         "method": "GET",
         "modifications": [],
-        "path": "/open-banking/v4.0/pisp/domestic-standing-order-consents/${steps.pis.v401.test.domestic-standing-order-consent.invalid-frequency.instance.request.response.body.Data.ConsentId}",
+        "path": "/open-banking/v4.0/pisp/domestic-standing-order-consents/${steps.pis.v401.test.domestic_standing_order_consents.positive.instance.request.response.body.Data.ConsentId}",
         "requiredPsuAuthorizationStepId": "setup-pis-domestic-standing-order-consent-authorisation",
         "requiredTokenId": "pis-payment-access",
         "requiredTokenScope": "payments",
@@ -1573,7 +1580,7 @@
         ],
         "jsonBodyTemplate": {
           "Data": {
-            "ConsentId": "${steps.pis.v401.test.domestic-standing-order-consent.invalid-frequency.instance.request.response.body.Data.ConsentId}",
+            "ConsentId": "${steps.pis.v401.test.domestic_standing_order_consents.positive.instance.request.response.body.Data.ConsentId}",
             "Initiation": {
               "CreditorAccount": {
                 "Identification": "${runtime.pisCreditorAccountIdentification}",
@@ -1662,7 +1669,7 @@
         "inputBindings": [],
         "method": "GET",
         "modifications": [],
-        "path": "/open-banking/v4.0/pisp/domestic-standing-orders/${steps.pis-v4-domestic-standing-order-create-request.response.body.Data.DomesticStandingOrderId}",
+        "path": "/open-banking/v4.0/pisp/domestic-standing-orders/${steps.pis.v401.test.domestic_standing_orders.positive.instance.request.response.body.Data.DomesticStandingOrderId}",
         "requiredPsuAuthorizationStepId": "setup-pis-domestic-standing-order-consent-authorisation",
         "requiredTokenId": "pis-payment-access",
         "requiredTokenScope": "payments",
@@ -2961,13 +2968,6 @@
           }
         ],
         "path": "/open-banking/v4.0/pisp/domestic-scheduled-payment-consents",
-        "psuAuthorization": {
-          "authorizationStepId": "setup-pis-domestic-scheduled-payment-consent-authorisation",
-          "authorizationStepName": "Authorise domestic scheduled payment consent",
-          "flowLabel": "domestic scheduled payment",
-          "tokenId": "pis-domestic-scheduled-payment-access",
-          "tokenStepId": "setup-token-pis-domestic-scheduled-payment-access"
-        },
         "requiredTokenId": "pis-payment-access",
         "requiredTokenScope": "payments",
         "runtimeInputRefs": [
@@ -3098,13 +3098,6 @@
           }
         ],
         "path": "/open-banking/v4.0/pisp/domestic-scheduled-payment-consents",
-        "psuAuthorization": {
-          "authorizationStepId": "setup-pis-domestic-scheduled-payment-consent-authorisation",
-          "authorizationStepName": "Authorise domestic scheduled payment consent",
-          "flowLabel": "domestic scheduled payment",
-          "tokenId": "pis-domestic-scheduled-payment-access",
-          "tokenStepId": "setup-token-pis-domestic-scheduled-payment-access"
-        },
         "requiredTokenId": "pis-payment-access",
         "requiredTokenScope": "payments",
         "runtimeInputRefs": [
@@ -3242,13 +3235,6 @@
           }
         ],
         "path": "/open-banking/v4.0/pisp/domestic-standing-order-consents",
-        "psuAuthorization": {
-          "authorizationStepId": "setup-pis-domestic-standing-order-consent-authorisation",
-          "authorizationStepName": "Authorise domestic standing-order consent",
-          "flowLabel": "domestic standing-order",
-          "tokenId": "pis-domestic-standing-order-access",
-          "tokenStepId": "setup-token-pis-domestic-standing-order-access"
-        },
         "requiredTokenId": "pis-payment-access",
         "requiredTokenScope": "payments",
         "responseSignature": {
