@@ -472,7 +472,8 @@
         "inputBindings": [],
         "method": "GET",
         "modifications": [],
-        "path": "/open-banking/v4.0/pisp/domestic-vrp-consents/${steps.vrp-consent-create-awaiting-authorisation-v4-request.response.body.Data.ConsentId}",
+        "path": "/open-banking/v4.0/pisp/domestic-vrp-consents/${steps.vrp.v401.test.consent-create.positive.instance.request.response.body.Data.ConsentId}",
+        "requiredPsuAuthorizationStepId": "vrp-consent-create-awaiting-authorisation-v4-authorisation",
         "requiredTokenId": "vrp-payment-access",
         "requiredTokenScope": "payments",
         "responseSignature": {
@@ -558,7 +559,7 @@
         ],
         "jsonBodyTemplate": {
           "Data": {
-            "ConsentId": "${steps.vrp-consent-create-awaiting-authorisation-v4-request.response.body.Data.ConsentId}",
+            "ConsentId": "${steps.vrp.v401.test.consent-create.positive.instance.request.response.body.Data.ConsentId}",
             "InstructedAmount": {
               "Amount": "${runtime.vrpInstructedAmountAmount}",
               "Currency": "${runtime.vrpInstructedAmountCurrency}"
@@ -568,7 +569,8 @@
         },
         "method": "POST",
         "modifications": [],
-        "path": "/open-banking/v4.0/pisp/domestic-vrp-consents/${steps.vrp-consent-create-awaiting-authorisation-v4-request.response.body.Data.ConsentId}/funds-confirmation",
+        "path": "/open-banking/v4.0/pisp/domestic-vrp-consents/${steps.vrp.v401.test.consent-create.positive.instance.request.response.body.Data.ConsentId}/funds-confirmation",
+        "requiredPsuAuthorizationStepId": "vrp-consent-create-awaiting-authorisation-v4-authorisation",
         "requiredTokenId": "vrp-consent-create-awaiting-authorisation-v4-psu-payment-access",
         "responseSignature": {
           "source": "discovery-jwks"
@@ -758,6 +760,7 @@
           }
         ],
         "path": "/open-banking/v4.0/pisp/domestic-vrps",
+        "requiredPsuAuthorizationStepId": "vrp-consent-create-awaiting-authorisation-v4-authorisation",
         "requiredTokenId": "vrp-consent-create-awaiting-authorisation-v4-psu-payment-access",
         "responseSignature": {
           "source": "discovery-jwks"
@@ -819,7 +822,8 @@
         "inputBindings": [],
         "method": "GET",
         "modifications": [],
-        "path": "/open-banking/v4.0/pisp/domestic-vrps/${steps.vrp-payment-create-initial-v4-request.response.body.Data.DomesticVRPId}",
+        "path": "/open-banking/v4.0/pisp/domestic-vrps/${steps.vrp.v401.test.payment-create.initial.instance.request.response.body.Data.DomesticVRPId}",
+        "requiredPsuAuthorizationStepId": "vrp-consent-create-awaiting-authorisation-v4-authorisation",
         "requiredTokenId": "vrp-payment-access",
         "requiredTokenScope": "payments",
         "responseSignature": {
@@ -1007,6 +1011,7 @@
           }
         ],
         "path": "/open-banking/v4.0/pisp/domestic-vrps",
+        "requiredPsuAuthorizationStepId": "vrp-consent-create-awaiting-authorisation-v4-authorisation",
         "requiredTokenId": "vrp-consent-create-awaiting-authorisation-v4-psu-payment-access",
         "responseSignature": {
           "source": "discovery-jwks"
@@ -1068,7 +1073,8 @@
         "inputBindings": [],
         "method": "GET",
         "modifications": [],
-        "path": "/open-banking/v4.0/pisp/domestic-vrps/${steps.vrp-payment-create-initial-v4-request.response.body.Data.DomesticVRPId}",
+        "path": "/open-banking/v4.0/pisp/domestic-vrps/${steps.vrp.v401.test.payment-create.repeated.instance.request.response.body.Data.DomesticVRPId}",
+        "requiredPsuAuthorizationStepId": "vrp-consent-create-awaiting-authorisation-v4-authorisation",
         "requiredTokenId": "vrp-payment-access",
         "requiredTokenScope": "payments",
         "responseSignature": {
@@ -1126,7 +1132,8 @@
         "inputBindings": [],
         "method": "GET",
         "modifications": [],
-        "path": "/open-banking/v4.0/pisp/domestic-vrps/${steps.vrp-payment-create-repeated-v4-request.response.body.Data.DomesticVRPId}/payment-details",
+        "path": "/open-banking/v4.0/pisp/domestic-vrps/${steps.vrp.v401.test.payment-create.repeated.instance.request.response.body.Data.DomesticVRPId}/payment-details",
+        "requiredPsuAuthorizationStepId": "vrp-consent-create-awaiting-authorisation-v4-authorisation",
         "requiredTokenId": "vrp-payment-access",
         "requiredTokenScope": "payments",
         "responseSignature": {
@@ -1295,6 +1302,7 @@
         "method": "PUT",
         "modifications": [],
         "path": "/open-banking/v4.0/pisp/domestic-vrp-consents/{ConsentId}",
+        "requiredPsuAuthorizationStepId": "vrp-consent-create-awaiting-authorisation-v4-authorisation",
         "requiredTokenId": "vrp-payment-access",
         "requiredTokenScope": "payments",
         "responseSignature": {
@@ -1386,6 +1394,7 @@
         "method": "PATCH",
         "modifications": [],
         "path": "/open-banking/v4.0/pisp/domestic-vrp-consents/{ConsentId}",
+        "requiredPsuAuthorizationStepId": "vrp-consent-create-awaiting-authorisation-v4-authorisation",
         "requiredTokenId": "vrp-payment-access",
         "requiredTokenScope": "payments",
         "responseSignature": {
@@ -1451,7 +1460,8 @@
         "inputBindings": [],
         "method": "DELETE",
         "modifications": [],
-        "path": "/open-banking/v4.0/pisp/domestic-vrp-consents/${steps.vrp-consent-create-awaiting-authorisation-v4-request.response.body.Data.ConsentId}",
+        "path": "/open-banking/v4.0/pisp/domestic-vrp-consents/${steps.vrp.v401.test.consent-create.positive.instance.request.response.body.Data.ConsentId}",
+        "requiredPsuAuthorizationStepId": "vrp-consent-create-awaiting-authorisation-v4-authorisation",
         "requiredTokenId": "vrp-payment-access",
         "requiredTokenScope": "payments",
         "runtimeInputRefs": [
@@ -1506,7 +1516,8 @@
         "inputBindings": [],
         "method": "GET",
         "modifications": [],
-        "path": "/open-banking/v4.0/pisp/domestic-vrp-consents/${steps.vrp-consent-create-awaiting-authorisation-v4-request.response.body.Data.ConsentId}",
+        "path": "/open-banking/v4.0/pisp/domestic-vrp-consents/${steps.vrp.v401.test.consent-create.positive.instance.request.response.body.Data.ConsentId}",
+        "requiredPsuAuthorizationStepId": "vrp-consent-create-awaiting-authorisation-v4-authorisation",
         "requiredTokenId": "vrp-payment-access",
         "requiredTokenScope": "payments",
         "responseSignature": {

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -347,6 +349,156 @@ def test_v2_catalogue_rejects_broken_technical_source_and_output_dataflow() -> N
 
     assert any(
         item.instance_path.endswith("/request/stateBindings/0/outputId") for item in output_error.value.diagnostics
+    )
+
+
+def test_v2_catalogue_rejects_invalid_psu_owner_consumer_relationships() -> None:
+    raw = _raw_catalogue("cbpii", "v4_0_1")
+    owner_index, owner = next(
+        (index, item) for index, item in enumerate(raw["testDefinitions"]) if item["request"].get("psuAuthorization")
+    )
+    consumer_index, consumer = next(
+        (index, item)
+        for index, item in enumerate(raw["testDefinitions"])
+        if item["request"].get("requiredTokenId") == "cbpii-funds-confirmation"
+    )
+
+    owner["purpose"] = "negative"
+    consumer["request"]["requiredPsuAuthorizationStepId"] = "missing-authorization"
+
+    with pytest.raises(ConfigurationContractError) as captured:
+        parse_test_definition_catalogue_v2(raw)
+
+    diagnostic_paths = {item.instance_path for item in captured.value.diagnostics}
+    assert f"/testDefinitions/{owner_index}/request/psuAuthorization" in diagnostic_paths
+    assert f"/testDefinitions/{consumer_index}/request/requiredPsuAuthorizationStepId" in diagnostic_paths
+
+    raw = _raw_catalogue("cbpii", "v4_0_1")
+    consumer_index, consumer = next(
+        (index, item)
+        for index, item in enumerate(raw["testDefinitions"])
+        if item["request"].get("requiredTokenId") == "cbpii-funds-confirmation"
+    )
+    consumer["request"].pop("requiredPsuAuthorizationStepId")
+
+    with pytest.raises(ConfigurationContractError) as missing_relationship:
+        parse_test_definition_catalogue_v2(raw)
+
+    assert any(
+        item.instance_path == f"/testDefinitions/{consumer_index}/request/requiredPsuAuthorizationStepId"
+        and "does not require its owner" in item.message
+        for item in missing_relationship.value.diagnostics
+    )
+
+    raw = _raw_catalogue("pis", "v4_0_1")
+    owners = [
+        (item["id"], item["request"]["psuAuthorization"])
+        for item in raw["testDefinitions"]
+        if item["request"].get("psuAuthorization")
+    ]
+    owner_by_token = {metadata["tokenId"]: (owner_id, metadata) for owner_id, metadata in owners}
+    consumer_index, consumer = next(
+        (index, item)
+        for index, item in enumerate(raw["testDefinitions"])
+        if item["request"].get("requiredTokenId") in owner_by_token
+    )
+    correct_owner_id, correct_metadata = owner_by_token[consumer["request"]["requiredTokenId"]]
+    wrong_owner_id, wrong_metadata = next(
+        (owner_id, metadata)
+        for owner_id, metadata in owners
+        if metadata["authorizationStepId"] != correct_metadata["authorizationStepId"]
+    )
+    assert correct_owner_id != wrong_owner_id
+    consumer["request"]["requiredPsuAuthorizationStepId"] = wrong_metadata["authorizationStepId"]
+    consumer["dependencies"].append(wrong_owner_id)
+
+    with pytest.raises(ConfigurationContractError) as mismatched_owner:
+        parse_test_definition_catalogue_v2(raw)
+
+    assert any(
+        item.instance_path == f"/testDefinitions/{consumer_index}/request/requiredPsuAuthorizationStepId"
+        and "does not require its owner" in item.message
+        for item in mismatched_owner.value.diagnostics
+    )
+
+
+@pytest.mark.parametrize(("scope", "version"), [("v3_1_11", "v311"), ("v4_0_1", "v401")])
+def test_cbpii_authorised_consent_read_requires_psu_authorization(scope: str, version: str) -> None:
+    raw = _raw_catalogue("cbpii", scope)
+    read = next(
+        item
+        for item in raw["testDefinitions"]
+        if item["id"] == f"cbpii.{version}.test.funds_confirmation_consents.consentid.read.positive"
+    )
+
+    assert read["request"]["requiredPsuAuthorizationStepId"] == "setup-cbpii-consent-authorisation"
+
+
+def test_v2_catalogue_rejects_orphan_and_duplicate_psu_owners() -> None:
+    raw = _raw_catalogue("vrp", "v4_0_1")
+    owner_index, owner = next(
+        (index, item) for index, item in enumerate(raw["testDefinitions"]) if item["request"].get("psuAuthorization")
+    )
+    for item in raw["testDefinitions"]:
+        item["request"].pop("requiredPsuAuthorizationStepId", None)
+
+    duplicate_index, duplicate = next(
+        (index, item)
+        for index, item in enumerate(raw["testDefinitions"])
+        if index != owner_index and item["purpose"] == "positive"
+    )
+    duplicate["request"]["psuAuthorization"] = deepcopy(owner["request"]["psuAuthorization"])
+    duplicate["request"]["psuAuthorization"]["tokenStepId"] = duplicate["request"]["psuAuthorization"][
+        "authorizationStepId"
+    ]
+
+    with pytest.raises(ConfigurationContractError) as captured:
+        parse_test_definition_catalogue_v2(raw)
+
+    diagnostic_paths = {item.instance_path for item in captured.value.diagnostics}
+    assert f"/testDefinitions/{owner_index}/request/psuAuthorization" in diagnostic_paths
+    assert f"/testDefinitions/{duplicate_index}/request/psuAuthorization/authorizationStepId" in diagnostic_paths
+    assert f"/testDefinitions/{duplicate_index}/request/psuAuthorization/tokenStepId" in diagnostic_paths
+
+
+def test_v2_catalogue_rejects_unknown_and_out_of_dependency_step_placeholders() -> None:
+    raw = _raw_catalogue("vrp", "v4_0_1")
+    definition_index, definition = next(
+        (index, item)
+        for index, item in enumerate(raw["testDefinitions"])
+        if "${steps." in item["request"]["path"] and ".instance.request" in item["request"]["path"]
+    )
+    definition["request"]["path"] = re.sub(
+        r"\$\{steps\..+?\.response\.",
+        "${steps.vrp.v401.test.missing.instance.request.response.",
+        definition["request"]["path"],
+    )
+    definition["dependencies"] = []
+
+    with pytest.raises(ConfigurationContractError) as captured:
+        parse_test_definition_catalogue_v2(raw)
+
+    assert any(
+        item.instance_path == f"/testDefinitions/{definition_index}/request/path" for item in captured.value.diagnostics
+    )
+
+    raw = _raw_catalogue("vrp", "v4_0_1")
+    definition_index, definition = next(
+        (index, item) for index, item in enumerate(raw["testDefinitions"]) if "${steps." in item["request"]["path"]
+    )
+    definition["request"]["path"] = re.sub(
+        r"\$\{steps\..+?\.response\.",
+        "${steps.not-a-step.response.",
+        definition["request"]["path"],
+    )
+
+    with pytest.raises(ConfigurationContractError) as malformed_id:
+        parse_test_definition_catalogue_v2(raw)
+
+    assert any(
+        item.instance_path == f"/testDefinitions/{definition_index}/request/path"
+        and item.code is DiagnosticCode.REFERENCE_UNRESOLVED
+        for item in malformed_id.value.diagnostics
     )
 
 

@@ -65,7 +65,7 @@
       "uri": "conformance/configuration_contracts/policies/open-banking-mvp-execution-policy.json"
     },
     {
-      "digest": "sha256:d0bb508402728d5ef48805fc0285866c071b5f8ca7d67e472bd0b58dcf4ba231",
+      "digest": "sha256:12f936b400e9b97e0381975f16618c89a9e339c41eefe82b652553da607d2eed",
       "id": "obl.ais-v311.tests.v2",
       "kind": "test-definition-catalogue",
       "mediaType": "application/json",
@@ -81,7 +81,7 @@
       "uri": "conformance/standards/ob_read_write/v3_1_11/account-info-openapi.json"
     },
     {
-      "digest": "sha256:607159f1b9bc8706a81207e25a3a8a2da401e3246ea55ce9800c5fc95e2b5a41",
+      "digest": "sha256:eee82e9567084afbda9c56a6425c23c43f0b1786230af83cf3c11cef8545a4df",
       "id": "obl.ais-v401.tests.v2",
       "kind": "test-definition-catalogue",
       "mediaType": "application/json",
@@ -97,7 +97,7 @@
       "uri": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
     },
     {
-      "digest": "sha256:e8706ca4b9efb79208a219839abb34461ac5344c2f2d6e7a9189bf81e8cf40ee",
+      "digest": "sha256:042037c79061dfa1372539922ac01bc454de380df3c6253303287089c499bea0",
       "id": "obl.cbpii-v311.tests.v2",
       "kind": "test-definition-catalogue",
       "mediaType": "application/json",
@@ -113,7 +113,7 @@
       "uri": "conformance/standards/ob_read_write/v3_1_11/confirmation-funds-openapi.json"
     },
     {
-      "digest": "sha256:7cd1b42eadce51ef3216fc8c0799812cea0cdd12c80a5636827de61958a8ad89",
+      "digest": "sha256:4fb3c7e80e7364f995e96dd178698807a4212ce36f82ac8229ada5a186302eb9",
       "id": "obl.cbpii-v401.tests.v2",
       "kind": "test-definition-catalogue",
       "mediaType": "application/json",
@@ -145,7 +145,7 @@
       "uri": "conformance/standards/ob_dcr/v3_4/client-registration-openapi.yaml"
     },
     {
-      "digest": "sha256:2e870a32164b044035f3b654f60d5352cbef0478e363568bc8858fd94e781ef2",
+      "digest": "sha256:109dc425bf75a6651d189d0b0557220c53a1da9624ea6ea243159da322778f37",
       "id": "obl.pis-v311.tests.v2",
       "kind": "test-definition-catalogue",
       "mediaType": "application/json",
@@ -161,7 +161,7 @@
       "uri": "conformance/standards/ob_read_write/v3_1_11/payment-initiation-openapi.json"
     },
     {
-      "digest": "sha256:d12feb186213f946a1c0271948ca49ee75d1643c30affd92940827f2457619a3",
+      "digest": "sha256:b3ea48fb411a96e5e51844a76febd50b7b2e2973e7c7bc6c382804a2619d1448",
       "id": "obl.pis-v401.tests.v2",
       "kind": "test-definition-catalogue",
       "mediaType": "application/json",
@@ -177,7 +177,7 @@
       "uri": "conformance/standards/ob_read_write/v4_0_1/payment-initiation-openapi.json"
     },
     {
-      "digest": "sha256:f2d1f1af6b689b3b72e79a9b1969a94ceb8a65f2ded325bc3b5e1db8804118f8",
+      "digest": "sha256:4f79b5761902bf603133bfa52e28f746515c9c61460209478b958e2ccd2913a7",
       "id": "obl.vrp-v311.tests.v2",
       "kind": "test-definition-catalogue",
       "mediaType": "application/json",
@@ -193,7 +193,7 @@
       "uri": "conformance/standards/ob_read_write/v3_1_11/vrp-openapi.json"
     },
     {
-      "digest": "sha256:70cdff266d6c47d89e3311454698f88c926f72e44603e8ae33d5a0267f78b454",
+      "digest": "sha256:337b52dea72fd9ffa5eea138ee9192de1a50e9fa0b438249ed91c17d7e3309c2",
       "id": "obl.vrp-v401.tests.v2",
       "kind": "test-definition-catalogue",
       "mediaType": "application/json",

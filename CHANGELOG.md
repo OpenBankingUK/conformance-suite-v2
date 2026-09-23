@@ -33,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Schema-v2 execution now resolves dotted manifest step IDs without truncating
+  them at the first separator. Read/Write catalogue references and PSU
+  owner/consumer relationships are validated before execution, authorization
+  helpers run only for selected dependent journeys, and failed PSU setup no
+  longer consumes the per-run authorization-session allowance.
 - Imported participant-plan security settings now populate every guided
   Discovery and Security editor control. Saving either page updates only its
   canonical fields, so optional values can be deliberately cleared without

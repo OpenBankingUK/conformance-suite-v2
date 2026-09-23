@@ -140,6 +140,16 @@ manifest; runtime lowering may not consult a compiled legacy catalogue graph.
 There is no machine-readable normative catalogue or requirement-level
 assessment contract.
 
+Generated v2 manifest step IDs preserve the catalogue's dotted stable identity
+and append `.instance.request`; runtime `${steps.<id>...}` resolution must treat
+that complete value as the step ID. Every cross-step request reference must
+target an earlier producer in the test's dependency closure. A consent request's
+`psuAuthorization` declares the owner of nested authorization/token helpers,
+while downstream requests name that helper through
+`requiredPsuAuthorizationStepId`. Lowering emits those helpers only when such a
+consumer is selected, so standalone positive and negative request-validation
+tests must not carry unused PSU authorization metadata.
+
 ## Shared plan-document contract
 
 The participant-facing contract is `participant-plan` schema version `2.0`:

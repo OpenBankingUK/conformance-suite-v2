@@ -105,6 +105,7 @@ _SCHEMA_NAMES = (
 )
 _SCHEMA_IDS = {name: f"https://schemas.openbanking.org.uk/conformance/v2/{name}.schema.json" for name in _SCHEMA_NAMES}
 _TEMPLATE_PLACEHOLDER = re.compile(r"\$\{(runtime|generated)\.([^}]+)\}")
+_STEP_PLACEHOLDER = re.compile(r"\$\{steps\.([^}]+)\}")
 _COMPATIBLE_INPUT_TRANSFORMS = {
     "string": frozenset({"identity", "identity-string"}),
     "date-time": frozenset({"identity-string", "rfc3339-date-time"}),
@@ -469,6 +470,70 @@ def validate_catalogue_references(
     input_ids = {item.id for item in catalogue.predefined_inputs}
     definitions = {item.id: item for item in catalogue.test_definitions}
     inputs_by_id = {item.id: item for item in catalogue.predefined_inputs}
+    runtime_step_producers = {f"{item.id!s}.instance.request": item.id for item in catalogue.test_definitions}
+    psu_owners: dict[StableId, tuple[int, TestDefinition]] = {}
+    helper_owners: dict[StableId, tuple[int, TestDefinition]] = {}
+    psu_token_owners: dict[StableId, tuple[int, TestDefinition]] = {}
+    for test_index, definition in enumerate(catalogue.test_definitions):
+        metadata = definition.request.psu_authorization
+        if metadata is None:
+            continue
+        if definition.purpose != "positive":
+            diagnostics.append(
+                _diagnostic(
+                    DiagnosticCode.RULE_INCONSISTENT,
+                    "PSU authorization metadata may only be declared by a positive consent-producing test",
+                    f"/testDefinitions/{test_index}/request/psuAuthorization",
+                )
+            )
+        previous_owner = psu_owners.get(metadata.authorization_step_id)
+        if previous_owner is not None:
+            diagnostics.append(
+                _diagnostic(
+                    DiagnosticCode.RULE_INCONSISTENT,
+                    (
+                        f"PSU authorization step {metadata.authorization_step_id!s} is already owned by "
+                        f"{previous_owner[1].id!s}"
+                    ),
+                    f"/testDefinitions/{test_index}/request/psuAuthorization/authorizationStepId",
+                )
+            )
+        else:
+            psu_owners[metadata.authorization_step_id] = (test_index, definition)
+        if metadata.authorization_step_id == metadata.token_step_id:
+            diagnostics.append(
+                _diagnostic(
+                    DiagnosticCode.RULE_INCONSISTENT,
+                    "PSU authorization and token helper IDs must be distinct",
+                    f"/testDefinitions/{test_index}/request/psuAuthorization/tokenStepId",
+                )
+            )
+        previous_token_owner = psu_token_owners.get(metadata.token_id)
+        if previous_token_owner is not None:
+            diagnostics.append(
+                _diagnostic(
+                    DiagnosticCode.RULE_INCONSISTENT,
+                    f"PSU token {metadata.token_id!s} is already produced by {previous_token_owner[1].id!s}",
+                    f"/testDefinitions/{test_index}/request/psuAuthorization/tokenId",
+                )
+            )
+        else:
+            psu_token_owners[metadata.token_id] = (test_index, definition)
+        for field_name, helper_id in (
+            ("authorizationStepId", metadata.authorization_step_id),
+            ("tokenStepId", metadata.token_step_id),
+        ):
+            previous_helper_owner = helper_owners.get(helper_id)
+            if previous_helper_owner is not None and previous_helper_owner[1].id != definition.id:
+                diagnostics.append(
+                    _diagnostic(
+                        DiagnosticCode.RULE_INCONSISTENT,
+                        f"Nested protocol helper id {helper_id!s} is already owned by {previous_helper_owner[1].id!s}",
+                        f"/testDefinitions/{test_index}/request/psuAuthorization/{field_name}",
+                    )
+                )
+            else:
+                helper_owners[helper_id] = (test_index, definition)
     for index, endpoint in enumerate(catalogue.endpoints):
         if endpoint.source_id not in source_ids:
             diagnostics.append(_unresolved(endpoint.source_id, f"/endpoints/{index}/sourceId", "technical source"))
@@ -639,8 +704,74 @@ def validate_catalogue_references(
                 )
     diagnostics.extend(_cycle_diagnostics(catalogue.capabilities, "capabilities", "required_capability_ids"))
     diagnostics.extend(_cycle_diagnostics(catalogue.test_definitions, "testDefinitions", "dependencies"))
+    consumed_psu_authorization_ids: set[StableId] = set()
+    known_runtime_step_ids = frozenset((*runtime_step_producers, *(str(helper_id) for helper_id in helper_owners)))
     for test_index, definition in enumerate(catalogue.test_definitions):
         closure = _dependency_closure(definition.id, definitions)
+        for referenced_step_id, reference_path in _request_step_references(
+            definition.request,
+            base=f"/testDefinitions/{test_index}/request",
+            known_step_ids=known_runtime_step_ids,
+        ):
+            producer = runtime_step_producers.get(referenced_step_id)
+            if producer is not None and producer not in closure:
+                diagnostics.append(
+                    _diagnostic(
+                        DiagnosticCode.RULE_INCONSISTENT,
+                        f"Step placeholder producer {producer!s} is outside the test dependency closure",
+                        reference_path,
+                    )
+                )
+            elif referenced_step_id not in known_runtime_step_ids:
+                diagnostics.append(
+                    _diagnostic(
+                        DiagnosticCode.REFERENCE_UNRESOLVED,
+                        f"Step placeholder references unknown v2 runtime step {referenced_step_id!r}",
+                        reference_path,
+                    )
+                )
+        required_psu_id = definition.request.required_psu_authorization_step_id
+        token_owner_entry = (
+            None
+            if definition.request.required_token_id is None
+            else psu_token_owners.get(definition.request.required_token_id)
+        )
+        if token_owner_entry is not None:
+            expected_psu_id = token_owner_entry[1].request.psu_authorization
+            if expected_psu_id is None:
+                diagnostics.append(
+                    _diagnostic(
+                        DiagnosticCode.RULE_INCONSISTENT,
+                        f"PSU token {definition.request.required_token_id!s} has no authorization owner",
+                        f"/testDefinitions/{test_index}/request/requiredTokenId",
+                    )
+                )
+            elif required_psu_id != expected_psu_id.authorization_step_id:
+                diagnostics.append(
+                    _diagnostic(
+                        DiagnosticCode.RULE_INCONSISTENT,
+                        (
+                            f"Request consumes PSU token {definition.request.required_token_id!s} "
+                            f"but does not require its owner {expected_psu_id.authorization_step_id!s}"
+                        ),
+                        f"/testDefinitions/{test_index}/request/requiredPsuAuthorizationStepId",
+                    )
+                )
+        if required_psu_id is not None:
+            owner_entry = psu_owners.get(required_psu_id)
+            path = f"/testDefinitions/{test_index}/request/requiredPsuAuthorizationStepId"
+            if owner_entry is None:
+                diagnostics.append(_unresolved(required_psu_id, path, "PSU authorization owner"))
+            else:
+                consumed_psu_authorization_ids.add(required_psu_id)
+                if owner_entry[1].id not in closure:
+                    diagnostics.append(
+                        _diagnostic(
+                            DiagnosticCode.RULE_INCONSISTENT,
+                            (f"PSU authorization owner {owner_entry[1].id!s} is outside the test dependency closure"),
+                            path,
+                        )
+                    )
         for binding_index, state_binding in enumerate(definition.request.state_bindings):
             producer = output_producers.get(state_binding.output_id)
             path = f"/testDefinitions/{test_index}/request/stateBindings/{binding_index}/outputId"
@@ -662,6 +793,15 @@ def validate_catalogue_references(
                         f"/testDefinitions/{test_index}/request/stateBindings/{binding_index}/target",
                     )
                 )
+    for authorization_id, (test_index, definition) in psu_owners.items():
+        if authorization_id not in consumed_psu_authorization_ids:
+            diagnostics.append(
+                _diagnostic(
+                    DiagnosticCode.RULE_INCONSISTENT,
+                    f"PSU authorization owner {definition.id!s} has no dependent consumer",
+                    f"/testDefinitions/{test_index}/request/psuAuthorization",
+                )
+            )
     return tuple(diagnostics)
 
 
@@ -746,6 +886,55 @@ def _request_template_diagnostics(
                 path=f"{base}/request/headerTemplates/{index}/literalValue",
             )
     return tuple(diagnostics)
+
+
+def _request_step_references(
+    request: TestDefinitionRequest,
+    *,
+    base: str,
+    known_step_ids: frozenset[str],
+) -> tuple[tuple[str, str], ...]:
+    """Return step placeholder IDs and their request-document locations."""
+    references: list[tuple[str, str]] = []
+    ordered_step_ids = tuple(sorted(known_step_ids, key=len, reverse=True))
+
+    def inspect(value: object, *, path: str) -> None:
+        if isinstance(value, str):
+            for match in _STEP_PLACEHOLDER.finditer(value):
+                expression = match.group(1)
+                referenced_id = next(
+                    (
+                        step_id
+                        for step_id in ordered_step_ids
+                        if expression.startswith(f"{step_id}.request.") or expression.startswith(f"{step_id}.response.")
+                    ),
+                    None,
+                )
+                if referenced_id is None:
+                    marker_indexes = (
+                        expression.find(".request."),
+                        expression.find(".response."),
+                    )
+                    valid_marker_indexes = tuple(index for index in marker_indexes if index > 0)
+                    referenced_id = expression[: min(valid_marker_indexes)] if valid_marker_indexes else expression
+                references.append((referenced_id, path))
+            return
+        if isinstance(value, Mapping):
+            for key, item in value.items():
+                token = str(key).replace("~", "~0").replace("/", "~1")
+                inspect(item, path=f"{path}/{token}")
+            return
+        if isinstance(value, tuple | list):
+            for index, item in enumerate(value):
+                inspect(item, path=f"{path}/{index}")
+
+    inspect(request.path, path=f"{base}/path")
+    inspect(request.json_body_template, path=f"{base}/jsonBodyTemplate")
+    inspect(request.query_templates, path=f"{base}/queryTemplates")
+    inspect(request.form_body_template, path=f"{base}/formBodyTemplate")
+    for index, header in enumerate(request.header_templates):
+        inspect(header.literal_value, path=f"{base}/headerTemplates/{index}/literalValue")
+    return tuple(references)
 
 
 def test_definition_catalogue_to_document(catalogue: TestDefinitionCatalogue) -> JsonObject:

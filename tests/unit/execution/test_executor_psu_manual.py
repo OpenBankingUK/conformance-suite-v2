@@ -52,6 +52,9 @@ def test_psu_manual_step_captures_code_into_context() -> None:
     assert "response_type=code+id_token" in result.url
     assert context.steps["psu"].response is not None
     assert context.steps["psu"].response.body["code"] == "auth-code-123"
+    captured_session = store.get("run-1", "s" * 32)
+    assert captured_session is not None
+    assert captured_session.status == "captured"
     url_events = [event for event in execution_logger.events() if event.type == "psu-authorization-url"]
     assert len(url_events) == 1
     assert url_events[0].payload["client_id"] == "***"  # noqa: S105 — masked sentinel, not a real secret
@@ -94,6 +97,8 @@ def test_psu_manual_step_prefers_runtime_authorization_endpoint_override() -> No
 def test_psu_manual_step_records_authorization_error() -> None:
     """Manual mode converts an ASPSP error redirect into a failed step."""
     store = AuthSessionStore()
+    sibling_state = "k" * 32
+    store.register("run-err", state=sibling_state)
     step = psu_manual_step()
 
     def capture_error_once() -> None:
@@ -117,17 +122,22 @@ def test_psu_manual_step_records_authorization_error() -> None:
     assert result.details["error_description"] == "PSU declined consent"
     assert result.details["request"] != {}
     assert context.steps["psu"].response is None
+    assert store.get("run-err", "s" * 32) is None
+    assert store.get("run-err", sibling_state) is not None
 
 
 def test_psu_manual_step_times_out() -> None:
     """Manual mode fails when no callback resolves before the deadline."""
+    store = AuthSessionStore()
+    sibling_state = "k" * 32
+    store.register("run-timeout", state=sibling_state)
     fake_clock = FakeClock()
     result, context = _execute_v1_psu_step(
         psu_manual_step(),
         context=ExecutionContext(),
         client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
         run_id="run-timeout",
-        auth_session_store=AuthSessionStore(),
+        auth_session_store=store,
         execution_logger=BufferedExecutionLogger(run_id="run-timeout", developer_mode=False),
         clock=fake_clock.monotonic,
         sleep=fake_clock.sleep,
@@ -137,6 +147,8 @@ def test_psu_manual_step_times_out() -> None:
     assert result.details["timeoutSeconds"] == PSU_AUTHORIZATION_TIMEOUT_SECONDS
     assert result.details["request"] != {}
     assert context.steps["psu"].response is None
+    assert store.get("run-timeout", "s" * 32) is None
+    assert store.get("run-timeout", sibling_state) is not None
 
 
 def test_psu_manual_timeout_masks_authorization_url_query_evidence() -> None:
@@ -279,6 +291,8 @@ def test_psu_manual_step_invalid_signing_credentials_fail_the_step(tmp_path: Pat
         tmp_path: Pytest temporary directory used to hold invalid signing PEM files.
     """
     store = AuthSessionStore()
+    sibling_state = "k" * 32
+    store.register("run-psu-invalid-signing-manual", state=sibling_state)
     step = psu_manual_step(request_object=GeneratedRequestObject(source="fapi-signing"))
 
     result, context = _execute_v1_psu_step(
@@ -296,9 +310,37 @@ def test_psu_manual_step_invalid_signing_credentials_fail_the_step(tmp_path: Pat
         "Unable to build PSU request object: fapiSigning.signingCertificatePath must contain a valid PEM certificate"
     )
     assert context.steps["psu"].response is None
+    assert store.get("run-psu-invalid-signing-manual", "s" * 32) is None
+    assert store.get("run-psu-invalid-signing-manual", sibling_state) is not None
 
     rendered = json.dumps(result.to_json_object())
     assert "request=ey" not in rendered
+
+
+def test_psu_manual_step_request_object_placeholder_failure_discards_registered_session() -> None:
+    """A request-object setup failure rolls back only its newly registered session."""
+    store = AuthSessionStore()
+    sibling_state = "k" * 32
+    store.register("run-request-object-placeholder", state=sibling_state)
+
+    result, context = _execute_v1_psu_step(
+        psu_manual_step(request_object="${invalid.placeholder}"),
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-request-object-placeholder",
+        auth_session_store=store,
+        execution_logger=BufferedExecutionLogger(
+            run_id="run-request-object-placeholder",
+            developer_mode=False,
+        ),
+        clock=FakeClock().monotonic,
+        sleep=FakeClock().sleep,
+    )
+
+    assert result.status == "failed"
+    assert context.steps["psu"].response is None
+    assert store.get("run-request-object-placeholder", "s" * 32) is None
+    assert store.get("run-request-object-placeholder", sibling_state) is not None
 
 
 def test_psu_manual_step_placeholder_failure_records_masked_request_url() -> None:
