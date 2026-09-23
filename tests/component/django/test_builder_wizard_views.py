@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from unittest.mock import Mock, patch
 
@@ -108,6 +109,96 @@ class TestBuilderWizardUi:
         assert "Payment Initiation" in content
         assert "Variable Recurring Payments" in content
         assert 'name="endpoints"' not in content
+
+    def test_saved_scope_and_capabilities_remain_checked_when_reopened(self) -> None:
+        """A scope saved through the UI remains selected on a later GET."""
+        client = Client()
+        created = client.post("/builder/new/")
+        draft_id = _draft_id_from_builder_redirect(created["Location"])
+        client.post(
+            created["Location"],
+            data={
+                "scheme": "open-banking-uk",
+                "specification": "read-write",
+                "version": "4.0.1",
+            },
+        )
+        scope_url = f"/builder/{draft_id}/scope/"
+
+        saved = client.post(
+            scope_url,
+            data={
+                "test_scope": "pis",
+                "capabilities": ["pis.v401.capability.domestic-standing-order"],
+            },
+        )
+        reopened = client.get(scope_url)
+        content = reopened.content.decode()
+
+        assert saved.status_code == 302
+        assert reopened.status_code == 200
+        assert re.search(r'name="test_scope"\s+value="pis"\s+checked', content)
+        assert re.search(
+            r'name="capabilities"\s+value="pis\.v401\.capability\.domestic-standing-order"\s+checked',
+            content,
+        )
+        assert not re.search(r'name="test_scope"\s+value="cbpii"\s+checked', content)
+
+    def test_saved_business_values_remain_editable_when_reopened(self) -> None:
+        """Friendly Business fields remain authoritative across repeated saves."""
+        client = Client()
+        created = client.post("/builder/new/")
+        draft_id = _draft_id_from_builder_redirect(created["Location"])
+        client.post(
+            created["Location"],
+            data={
+                "scheme": "open-banking-uk",
+                "specification": "read-write",
+                "version": "4.0.1",
+            },
+        )
+        client.post(
+            f"/builder/{draft_id}/scope/",
+            data={
+                "test_scope": "cbpii",
+                "capabilities": ["cbpii.v401.capability.confirmation-of-funds"],
+            },
+        )
+        business_url = f"/builder/{draft_id}/config/"
+        first_values = {
+            "cbpii_debtor_account_scheme_name": "first-scheme",
+            "cbpii_debtor_account_identification": "first-identification",
+            "cbpii_debtor_account_name": "First debtor",
+        }
+
+        first_save = client.post(business_url, data=first_values)
+        reopened = client.get(business_url)
+
+        assert first_save.status_code == 302
+        assert reopened.status_code == 200
+        reopened_content = reopened.content.decode()
+        for value in first_values.values():
+            assert f'value="{value}"' in reopened_content
+        assert re.search(
+            r'name="cbpii_debtor_account_json"[^>]*>\s*</textarea>',
+            reopened_content,
+        )
+
+        second_values = {
+            "cbpii_debtor_account_scheme_name": "second-scheme",
+            "cbpii_debtor_account_identification": "second-identification",
+            "cbpii_debtor_account_name": "Second debtor",
+        }
+        second_save = client.post(business_url, data=second_values)
+        reopened_again = client.get(business_url)
+
+        assert second_save.status_code == 302
+        assert reopened_again.status_code == 200
+        final_content = reopened_again.content.decode()
+        for value in second_values.values():
+            assert f'value="{value}"' in final_content
+        for value in first_values.values():
+            assert f'value="{value}"' not in final_content
 
     def test_removed_single_page_builder_routes_return_404(self) -> None:
         client = Client()

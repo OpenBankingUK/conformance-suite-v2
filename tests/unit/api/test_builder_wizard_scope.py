@@ -11,14 +11,19 @@ from conformance.api.builder_draft_store import SessionBuilderDraftStore
 from conformance.api.builder_wizard import (
     CatalogueBoundaryForm,
     DiscoveryConfigForm,
+    ParticipantScopeSelectionForm,
     ScopeSelectionForm,
     SecurityConfigForm,
     catalogue_boundary_continue_blocker,
     catalogue_boundary_options,
     catalogue_scope_hierarchy,
+    discovery_config_form_initial,
     endpoint_capability_value,
     merge_discovery_config,
+    merge_discovery_security_environment,
+    merge_security_environment,
     plan_document_from_draft,
+    security_config_form_initial,
 )
 from conformance.catalogue import PlanDocumentBoundary
 from conformance.json_types import JsonValue
@@ -55,12 +60,130 @@ def test_discovery_config_form_allows_blank_for_manual_security_entry() -> None:
     assert merge_discovery_config(stale_config, form.config) == {}
 
 
+def test_imported_security_environment_hydrates_guided_forms() -> None:
+    """Canonical imported security values populate every guided editor field."""
+    security_environment: dict[str, JsonValue] = {
+        "discoveryUrl": "https://as.example.com/.well-known/openid-configuration",
+        "clientId": "client-123",
+        "redirectUri": "https://client.example.com/callback",
+        "authorizationEndpoint": "https://as.example.com/authorize",
+        "issuer": "https://as.example.com",
+        "tokenEndpoint": "https://as.example.com/token",
+        "resourceBaseUrl": "https://rs.example.com",
+        "responseType": "code id_token",
+        "signingAlgorithm": "PS256",
+        "signingCertificatePath": "/certs/signing.pem",
+        "signingPrivateKeyPath": "/certs/signing.key",
+        "signingKeyId": "signing-key",
+        "clientAssertionIssuer": "assertion-issuer",
+        "clientAssertionSubject": "assertion-subject",
+        "clientAuthMethod": "private_key_jwt",
+        "clientAuthSigningAlgorithm": "PS256",
+        "mtls": {
+            "enabled": False,
+            "caBundlePath": "/certs/ca.pem",
+            "certificatePath": "/certs/transport.pem",
+            "privateKeyPath": "/certs/transport.key",
+        },
+    }
+
+    assert discovery_config_form_initial(
+        {},
+        security_environment=security_environment,
+    ) == {"discovery_url": security_environment["discoveryUrl"]}
+    initial = security_config_form_initial({}, {}, security_environment=security_environment)
+
+    assert initial == {
+        "oauth_client_id": "client-123",
+        "oauth_redirect_uri": "https://client.example.com/callback",
+        "oauth_authorization_endpoint": "https://as.example.com/authorize",
+        "oauth_issuer": "https://as.example.com",
+        "oauth_token_endpoint": "https://as.example.com/token",
+        "oauth_response_type": "code id_token",
+        "oauth_request_object_signing_alg": "PS256",
+        "resource_server_base_url": "https://rs.example.com",
+        "signing_certificate_path": "/certs/signing.pem",
+        "signing_private_key_path": "/certs/signing.key",
+        "signing_kid": "signing-key",
+        "signing_client_assertion_issuer": "assertion-issuer",
+        "signing_client_assertion_subject": "assertion-subject",
+        "signing_token_endpoint_auth_method": "private_key_jwt",
+        "signing_client_auth_algorithm": "PS256",
+        "mtls_enabled": "false",
+        "tls_ca_bundle_path": "/certs/ca.pem",
+        "tls_client_certificate_path": "/certs/transport.pem",
+        "tls_client_private_key_path": "/certs/transport.key",
+        "dcr_software_statement_assertion_path": "",
+        "dcr_registration_audience": "",
+        "dcr_execution_mode": "certification",
+        "dcr_registration_issuer_override": "",
+        "dcr_redirect_uris_override": "",
+        "dcr_signing_certificate_path": "",
+        "dcr_transport_subject_dn_override": "",
+        "dcr_use_numeric_oid_subject_dn": False,
+        "dcr_disable_keep_alive": False,
+        "metadata_aspsp_name": "",
+        "metadata_brand_name": "",
+        "metadata_environment_name": "",
+    }
+
+
+def test_security_environment_page_ownership_supports_clearing() -> None:
+    """Each guided page replaces only its canonical security fields."""
+    imported: dict[str, JsonValue] = {
+        "discoveryUrl": "https://old.example.com/.well-known/openid-configuration",
+        "clientId": "old-client",
+        "issuer": "https://old.example.com",
+    }
+
+    after_discovery = merge_discovery_security_environment(
+        imported,
+        {"discoveryUrl": "https://new.example.com/.well-known/openid-configuration"},
+    )
+    assert after_discovery == {
+        "discoveryUrl": "https://new.example.com/.well-known/openid-configuration",
+        "clientId": "old-client",
+        "issuer": "https://old.example.com",
+    }
+
+    after_security = merge_security_environment(after_discovery, {"clientId": "new-client"})
+    assert after_security == {
+        "discoveryUrl": "https://new.example.com/.well-known/openid-configuration",
+        "clientId": "new-client",
+    }
+
+    assert merge_discovery_security_environment(after_security, {}) == {"clientId": "new-client"}
+
+
 def test_security_config_form_allows_run_dependent_fields_to_be_blank() -> None:
     """Security form defers run-dependent requiredness until scope is selected."""
     form = SecurityConfigForm(data={})
 
     assert form.is_valid(), form.errors.as_json()
     assert form.config == {}
+    assert form.security_environment == {}
+
+
+def test_security_config_form_serialises_explicit_mtls_state() -> None:
+    """Read/Write security form retains an explicit disabled mTLS state."""
+    form = SecurityConfigForm(
+        data={
+            "mtls_enabled": "false",
+            "tls_client_certificate_path": "/certs/client.pem",
+            "tls_client_private_key_path": "/certs/client.key",
+            "signing_client_auth_algorithm": "PS256",
+        }
+    )
+
+    assert form.is_valid(), form.errors.as_json()
+    assert form.security_environment == {
+        "clientAuthSigningAlgorithm": "PS256",
+        "mtls": {
+            "enabled": False,
+            "certificatePath": "/certs/client.pem",
+            "privateKeyPath": "/certs/client.key",
+        },
+    }
 
 
 def test_security_config_form_requires_complete_conditional_groups() -> None:
@@ -193,6 +316,44 @@ def test_catalogue_boundary_form_defers_resource_group_selection() -> None:
 
     assert form.is_valid(), form.errors.as_json()
     assert form.selected_resource_group_ids == ()
+
+
+def test_participant_scope_form_hydrates_saved_scalar_scope_and_capabilities() -> None:
+    """Persisted scope and capability values select trusted catalogue options."""
+    capability_id = "cbpii.v401.capability.confirmation-of-funds"
+    form = ParticipantScopeSelectionForm(
+        boundary=PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1"),
+        initial={
+            "test_scope": "cbpii",
+            "capabilities": [capability_id],
+        },
+    )
+
+    selected_scope = next(option for option in form.scope_options if option.selected)
+    selected_capability_ids = {capability.id for capability in selected_scope.capabilities if capability.selected}
+
+    assert form.initial == {
+        "test_scope": "cbpii",
+        "capabilities": [capability_id],
+    }
+    assert selected_scope.id == "cbpii"
+    assert selected_capability_ids == {capability_id}
+
+
+def test_participant_scope_form_does_not_select_stale_scalar_scope() -> None:
+    """Persisted scalar values cannot bypass trusted catalogue choices."""
+    form = ParticipantScopeSelectionForm(
+        boundary=PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1"),
+        initial={
+            "test_scope": "retired-scope",
+            "capabilities": ["cbpii.v401.capability.confirmation-of-funds"],
+        },
+    )
+
+    scope_choices = {option.id for option in form.scope_options}
+
+    assert "retired-scope" not in scope_choices
+    assert not any(option.selected for option in form.scope_options)
 
 
 def test_catalogue_boundary_form_allows_dcr_without_resource_groups() -> None:

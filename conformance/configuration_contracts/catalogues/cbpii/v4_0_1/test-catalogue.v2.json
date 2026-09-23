@@ -72,7 +72,7 @@
       "requiredForCapabilityIds": [
         "cbpii.v401.capability.confirmation-of-funds"
       ],
-      "sensitivity": "sensitive",
+      "sensitivity": "non-sensitive",
       "valueType": "string"
     },
     {

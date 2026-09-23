@@ -10,12 +10,16 @@ from conformance.api.builder_wizard import (
     BusinessConfigForm,
     ConfigVisibility,
     ExecutionConfigForm,
+    business_config_form_initial,
     catalogue_scope_hierarchy,
     config_visibility_for_draft,
+    merge_participant_business_config,
+    participant_plan_from_draft,
     plan_document_from_draft,
     runtime_input_prompts_for_draft,
 )
 from conformance.catalogue import PlanDocumentBoundary
+from conformance.json_types import JsonObject, JsonValue
 
 pytestmark = pytest.mark.unit
 
@@ -457,6 +461,282 @@ def test_config_visibility_marks_all_pis_business_inputs_for_all_pis_endpoints()
     assert visibility.pis_requested_execution_date_time_required is True
     assert visibility.pis_first_payment_date_time_required is True
     assert visibility.pis_standing_order_frequency_required is True
+
+
+@pytest.mark.parametrize("version", ["3.1.11", "4.0.1"])
+@pytest.mark.parametrize("scope", ["ais", "pis", "cbpii", "vrp"])
+def test_business_config_initial_hydrates_canonical_participant_inputs(
+    scope: str,
+    version: str,
+) -> None:
+    """Canonical participant inputs hydrate every Business page scope."""
+    version_id = {"3.1.11": "v311", "4.0.1": "v401"}[version]
+    values_by_scope: dict[str, dict[str, JsonValue]] = {
+        "ais": {
+            "consentedAccountId": "account-123",
+            f"ais.{version_id}.input.from-booking-date-time": "2026-01-01T00:00:00Z",
+            f"ais.{version_id}.input.to-booking-date-time": "2026-01-31T00:00:00Z",
+        },
+        "pis": {
+            f"pis.{version_id}.input.creditor-account-scheme-name": "UK.OBIE.SortCodeAccountNumber",
+            f"pis.{version_id}.input.creditor-account-identification": "08080021325698",
+            f"pis.{version_id}.input.creditor-account-name": "Merchant",
+            f"pis.{version_id}.input.instructed-amount": "10.00",
+            f"pis.{version_id}.input.instructed-currency": "GBP",
+        },
+        "cbpii": {
+            f"cbpii.{version_id}.input.debtor-account-scheme": "UK.OBIE.SortCodeAccountNumber",
+            f"cbpii.{version_id}.input.debtor-account-identification": "08080021325698",
+            f"cbpii.{version_id}.input.debtor-account-name": "Debtor",
+        },
+        "vrp": {
+            f"vrp.{version_id}.input.creditor-account-scheme-name": "UK.OBIE.SortCodeAccountNumber",
+            f"vrp.{version_id}.input.creditor-account-identification": "70000170000005",
+            f"vrp.{version_id}.input.creditor-account-name": "VRP creditor",
+            f"vrp.{version_id}.input.instructed-amount": "1.00",
+            f"vrp.{version_id}.input.currency": "GBP",
+            f"vrp.{version_id}.input.valid-from-date-time": "2026-09-15T00:00:00Z",
+            f"vrp.{version_id}.input.valid-to-date-time": "2026-10-15T00:00:00Z",
+        },
+    }
+    expected_by_scope: dict[str, dict[str, str]] = {
+        "ais": {
+            "ais_consented_account_id": "account-123",
+            "ais_transaction_from_date": "2026-01-01T00:00:00Z",
+            "ais_transaction_to_date": "2026-01-31T00:00:00Z",
+        },
+        "pis": {
+            "pis_creditor_account_scheme_name": "UK.OBIE.SortCodeAccountNumber",
+            "pis_creditor_account_identification": "08080021325698",
+            "pis_creditor_account_name": "Merchant",
+            "pis_instructed_amount_amount": "10.00",
+            "pis_instructed_amount_currency": "GBP",
+        },
+        "cbpii": {
+            "cbpii_debtor_account_scheme_name": "UK.OBIE.SortCodeAccountNumber",
+            "cbpii_debtor_account_identification": "08080021325698",
+            "cbpii_debtor_account_name": "Debtor",
+        },
+        "vrp": {
+            "vrp_creditor_account_scheme_name": "UK.OBIE.SortCodeAccountNumber",
+            "vrp_creditor_account_identification": "70000170000005",
+            "vrp_creditor_account_name": "VRP creditor",
+            "vrp_instructed_amount_amount": "1.00",
+            "vrp_instructed_amount_currency": "GBP",
+            "vrp_valid_from_date_time": "2026-09-15T00:00:00Z",
+            "vrp_valid_to_date_time": "2026-10-15T00:00:00Z",
+        },
+    }
+    config: JsonObject = {"inputs": {input_id: {"value": value} for input_id, value in values_by_scope[scope].items()}}
+
+    initial = business_config_form_initial(
+        config,
+        test_scope=scope,
+        specification_version=version,
+    )
+
+    for field_name, expected_value in expected_by_scope[scope].items():
+        assert initial[field_name] == expected_value
+
+
+@pytest.mark.parametrize(
+    ("version", "frequency", "expected_field", "expected_value"),
+    [
+        ("3.1.11", "IntrvlWkDay:01:03", "pis_standing_order_frequency_v311", "IntrvlWkDay:01:03"),
+        (
+            "4.0.1",
+            {"frequencyType": "WEEK", "pointInTime": "03"},
+            "pis_standing_order_frequency_type",
+            "WEEK",
+        ),
+    ],
+)
+def test_business_config_initial_hydrates_versioned_pis_frequency(
+    version: str,
+    frequency: JsonValue,
+    expected_field: str,
+    expected_value: str,
+) -> None:
+    """PIS standing-order frequency retains its version-specific form."""
+    version_id = {"3.1.11": "v311", "4.0.1": "v401"}[version]
+
+    config: JsonObject = {
+        "inputs": {
+            f"pis.{version_id}.input.standing-order-frequency": {
+                "value": frequency,
+            }
+        }
+    }
+    initial = business_config_form_initial(
+        config,
+        test_scope="pis",
+        specification_version=version,
+    )
+
+    assert initial[expected_field] == expected_value
+    if version == "4.0.1":
+        assert initial["pis_standing_order_frequency_point_in_time"] == "03"
+        assert initial["pis_standing_order_frequency_json"] is None
+
+
+def test_business_config_initial_uses_json_only_for_unrepresentable_objects() -> None:
+    """Advanced JSON cannot silently override lossless friendly controls."""
+    friendly = business_config_form_initial(
+        {
+            "cbpii": {
+                "debtorAccount": {
+                    "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                    "identification": "08080021325698",
+                    "name": "Debtor",
+                }
+            }
+        }
+    )
+    advanced = business_config_form_initial(
+        {
+            "cbpii": {
+                "debtorAccount": {
+                    "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                    "identification": "08080021325698",
+                    "name": "Debtor",
+                    "secondaryIdentification": "secondary",
+                }
+            }
+        }
+    )
+
+    assert friendly["cbpii_debtor_account_name"] == "Debtor"
+    assert friendly["cbpii_debtor_account_json"] is None
+    assert advanced["cbpii_debtor_account_name"] is None
+    assert '"secondaryIdentification": "secondary"' in str(advanced["cbpii_debtor_account_json"])
+
+
+def test_business_config_merge_replaces_owned_inputs_and_preserves_runtime_inputs() -> None:
+    """Business saves replace debtor inputs without touching CBPII amount data."""
+    original: JsonObject = {
+        "inputs": {
+            "cbpii.v401.input.debtor-account-scheme": {"value": "old-scheme"},
+            "cbpii.v401.input.debtor-account-identification": {"value": "old-identification"},
+            "cbpii.v401.input.debtor-account-name": {"value": "old-name"},
+            "cbpii.v401.input.instructed-amount": {"value": "10.00"},
+            "cbpii.v401.input.instructed-currency": {"value": "GBP"},
+            "unrelated": {"value": "preserved"},
+        }
+    }
+    section: JsonObject = {
+        "cbpii": {
+            "debtorAccount": {
+                "schemeName": "new-scheme",
+                "identification": "new-identification",
+                "name": "new-name",
+            }
+        }
+    }
+
+    updated = merge_participant_business_config(
+        original,
+        section,
+        test_scope="cbpii",
+        specification_version="4.0.1",
+    )
+
+    assert updated["inputs"] == {
+        "cbpii.v401.input.debtor-account-scheme": {"value": "new-scheme"},
+        "cbpii.v401.input.debtor-account-identification": {"value": "new-identification"},
+        "cbpii.v401.input.debtor-account-name": {"value": "new-name"},
+        "cbpii.v401.input.instructed-amount": {"value": "10.00"},
+        "cbpii.v401.input.instructed-currency": {"value": "GBP"},
+        "unrelated": {"value": "preserved"},
+    }
+
+
+def test_business_config_merge_removes_cleared_optional_inputs() -> None:
+    """Clearing optional AIS defaults removes stale canonical values."""
+    updated = merge_participant_business_config(
+        {
+            "inputs": {
+                "consentedAccountId": {"value": "account-123"},
+                "ais.v401.input.from-booking-date-time": {"value": "2026-01-01T00:00:00Z"},
+                "ais.v401.input.to-booking-date-time": {"value": "2026-01-31T00:00:00Z"},
+                "unrelated": {"value": "preserved"},
+            }
+        },
+        {},
+        test_scope="ais",
+        specification_version="4.0.1",
+    )
+
+    assert updated["inputs"] == {"unrelated": {"value": "preserved"}}
+
+
+@pytest.mark.parametrize(
+    ("scope", "capabilities", "config", "expected_input_count"),
+    [
+        (
+            "ais",
+            ("ais.v401.capability.accounts",),
+            {
+                "ais": {
+                    "resourceIds": {"accountIds": [{"accountId": "account-123"}]},
+                    "transactionFromDate": "2026-01-01T00:00:00Z",
+                    "transactionToDate": "2026-01-31T00:00:00Z",
+                }
+            },
+            2,
+        ),
+        (
+            "vrp",
+            (
+                "vrp.v401.capability.domestic-vrp",
+                "vrp.v401.capability.funds-confirmation",
+                "vrp.v401.capability.consent-version-replacement",
+                "vrp.v401.capability.consent-version-patch",
+            ),
+            {
+                "vrp": {
+                    "creditorAccount": {
+                        "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                        "identification": "70000170000005",
+                        "name": "VRP creditor",
+                    },
+                    "instructedAmount": {"amount": "1.00", "currency": "GBP"},
+                    "validFromDateTime": "2026-09-15T00:00:00Z",
+                    "validToDateTime": "2026-10-15T00:00:00Z",
+                }
+            },
+            7,
+        ),
+    ],
+)
+def test_participant_plan_promotes_all_grouped_business_inputs(
+    scope: str,
+    capabilities: tuple[str, ...],
+    config: dict[str, JsonValue],
+    expected_input_count: int,
+) -> None:
+    """AIS and VRP grouped values export under canonical participant ids."""
+    draft = (
+        SessionBuilderDraftStore(SessionStore())
+        .create()
+        .with_catalogue_boundary(
+            scheme="open-banking-uk",
+            specification="read-write",
+            version="4.0.1",
+        )
+        .with_scope_selection(
+            resource_group_ids=(scope,),
+            endpoint_ids=capabilities,
+            endpoint_capability_ids={},
+        )
+        .with_config(config=config)
+    )
+
+    plan = participant_plan_from_draft(draft)
+
+    assert len(plan.predefined_inputs) == expected_input_count
+    assert plan.execution_configuration is not None
+    compatibility_inputs = plan.execution_configuration.compatibility_runtime_inputs
+    assert not any(input_id.startswith(("fromBooking", "toBooking", "vrp")) for input_id in compatibility_inputs)
 
 
 def test_business_config_form_requires_cbpii_debtor_account_values() -> None:

@@ -593,7 +593,7 @@ def test_v2_parsers_round_trip_without_legacy_contract_modules() -> None:
 
 def test_sensitive_values_are_masked_in_plan_manifest_export_and_result_trace() -> None:
     release = load_suite_release_v2(_RELEASE_PATH)
-    catalogue = load_test_definition_catalogue_v2(_ROOT / "catalogues" / "cbpii" / "v4_0_1" / "test-catalogue.v2.json")
+    catalogue = load_test_definition_catalogue_v2(_ROOT / "catalogues" / "pis" / "v4_0_1" / "test-catalogue.v2.json")
     plan = parse_participant_plan_v2(_participant_document(release.id, catalogue))
     resolved = compile_participant_plan_v2(release, catalogue, plan)
     manifest = generate_execution_manifest_v2(resolved, catalogue)

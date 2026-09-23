@@ -251,7 +251,7 @@ def test_scope_specific_amounts_reach_compatibility_runtime(
     assert _participant_input_runtime_values(plan, scope=family)[expected_input_id] == expected_value
 
 
-def test_cbpii_manifest_keeps_sensitive_input_out_of_generated_value() -> None:
+def test_cbpii_manifest_retains_all_non_sensitive_debtor_account_inputs() -> None:
     raw_plan = json.loads(
         (
             REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "cbpii" / "v4_0_1" / "participant-plan.json"
@@ -271,9 +271,17 @@ def test_cbpii_manifest_keeps_sensitive_input_out_of_generated_value() -> None:
         resolved,
         catalogue.test_catalogue,
     )
-    debtor_id = next(item for item in manifest.inputs if item.id.endswith("debtor-account-identification"))
-    assert debtor_id.redacted is True
-    assert debtor_id.value is None
-    debtor_name = next(item for item in manifest.inputs if item.id.endswith("debtor-account-name"))
-    assert debtor_name.redacted is False
-    assert debtor_name.value == "Debtor account"
+    debtor_inputs = {
+        str(item.id).rsplit(".", maxsplit=1)[-1]: item
+        for item in manifest.inputs
+        if ".input.debtor-account-" in str(item.id)
+    }
+    assert set(debtor_inputs) == {
+        "debtor-account-scheme",
+        "debtor-account-identification",
+        "debtor-account-name",
+    }
+    assert all(item.redacted is False for item in debtor_inputs.values())
+    assert debtor_inputs["debtor-account-scheme"].value == "UK.OBIE.SortCodeAccountNumber"
+    assert debtor_inputs["debtor-account-identification"].value == "08080021325698"
+    assert debtor_inputs["debtor-account-name"].value == "Debtor account"

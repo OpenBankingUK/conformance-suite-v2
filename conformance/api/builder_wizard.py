@@ -134,11 +134,79 @@ _SECURITY_CONFIG_KEYS = frozenset(
 )
 """Config keys owned by the OAuth/FAPI/security step."""
 
+_DISCOVERY_SECURITY_ENVIRONMENT_KEYS = frozenset({"discoveryUrl"})
+"""Canonical security-environment keys owned by the discovery step."""
+
+_SECURITY_SECURITY_ENVIRONMENT_KEYS = frozenset(
+    {
+        "authorizationEndpoint",
+        "clientAssertionIssuer",
+        "clientAssertionSubject",
+        "clientAuthMethod",
+        "clientAuthSigningAlgorithm",
+        "clientId",
+        "issuer",
+        "mtls",
+        "redirectUri",
+        "resourceBaseUrl",
+        "responseType",
+        "signingAlgorithm",
+        "signingCertificatePath",
+        "signingKeyId",
+        "signingPrivateKeyPath",
+        "tokenEndpoint",
+    }
+)
+"""Canonical security-environment keys owned by the security step."""
+
 SecurityRequirementStatus = Literal["required", "conditional", "optional"]
 """User-facing field requirement status values for builder security fields."""
 
 _RUNTIME_CONFIG_KEYS = frozenset({"inputs"})
 """Config keys owned by the runtime-artifact step."""
+
+_PARTICIPANT_INPUT_VERSION_IDS = {"3.1.11": "v311", "4.0.1": "v401"}
+"""Stable participant input id segments keyed by specification version."""
+
+_BUSINESS_INPUT_SLUGS_BY_SCOPE: Mapping[str, Mapping[str, str]] = {
+    "ais": {
+        "fromBookingDateTime": "from-booking-date-time",
+        "toBookingDateTime": "to-booking-date-time",
+    },
+    "cbpii": {
+        "debtorAccountSchemeName": "debtor-account-scheme",
+        "debtorAccountIdentification": "debtor-account-identification",
+        "debtorAccountName": "debtor-account-name",
+    },
+    "pis": {
+        "pisCreditorAccountSchemeName": "creditor-account-scheme-name",
+        "pisCreditorAccountIdentification": "creditor-account-identification",
+        "pisCreditorAccountName": "creditor-account-name",
+        "pisInternationalCreditorAccountSchemeName": "international-creditor-account-scheme-name",
+        "pisInternationalCreditorAccountIdentification": "international-creditor-account-identification",
+        "pisInternationalCreditorAccountName": "international-creditor-account-name",
+        "pisInstructedAmountAmount": "instructed-amount",
+        "pisInstructedAmountCurrency": "instructed-currency",
+        "pisCurrencyOfTransfer": "currency-of-transfer",
+        "pisRequestedExecutionDateTime": "requested-execution-date-time",
+        "pisFirstPaymentDateTime": "first-payment-date-time",
+    },
+    "vrp": {
+        "vrpCreditorAccountSchemeName": "creditor-account-scheme-name",
+        "vrpCreditorAccountIdentification": "creditor-account-identification",
+        "vrpCreditorAccountName": "creditor-account-name",
+        "vrpInstructedAmountAmount": "instructed-amount",
+        "vrpInstructedAmountCurrency": "currency",
+        "vrpValidFromDateTime": "valid-from-date-time",
+        "vrpValidToDateTime": "valid-to-date-time",
+    },
+}
+"""Grouped runtime aliases mapped to page-owned participant input slugs."""
+
+_BUSINESS_COMPATIBILITY_INPUT_IDS_BY_SCOPE: Mapping[str, frozenset[str]] = {
+    "ais": frozenset({"consentedAccountId"}),
+}
+"""Non-catalogue runtime inputs owned by the Business page."""
 
 
 @dataclass(frozen=True)
@@ -563,6 +631,14 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         requirement="Required when FAPI signing/client-auth is configured for selected token or signing flows.",
     ),
     SecurityFieldMetadata(
+        name="signing_client_auth_algorithm",
+        status="optional",
+        label="Optional",
+        type_hint="JOSE alg, for example PS256",
+        description="Signing algorithm used for token-endpoint client assertions.",
+        requirement="Use the algorithm advertised by discovery unless the environment requires an explicit override.",
+    ),
+    SecurityFieldMetadata(
         name="signing_kid",
         status="conditional",
         label="Conditional",
@@ -609,6 +685,14 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         type_hint="Absolute file path",
         description="Custom CA bundle used to verify the ASPSP TLS certificate.",
         requirement="Only needed for environments that use a private or non-standard issuing CA.",
+    ),
+    SecurityFieldMetadata(
+        name="mtls_enabled",
+        status="optional",
+        label="Optional",
+        type_hint="Enabled, disabled, or not specified",
+        description="Explicit mTLS state retained in the participant-plan security environment.",
+        requirement="Set this when certificate references must not implicitly determine whether mTLS is enabled.",
     ),
     SecurityFieldMetadata(
         name="tls_client_certificate_path",
@@ -940,8 +1024,7 @@ class ParticipantScopeSelectionForm(forms.Form):
         """Build choices directly from trusted executable catalogues."""
         self.boundary = boundary
         self.catalogues = participant_catalogues_for_boundary(boundary)
-        selected_scope_values = _raw_or_initial_values(data, initial, "test_scope")
-        selected_scope = selected_scope_values[0] if selected_scope_values else None
+        selected_scope = _raw_or_initial_value(data, initial, "test_scope")
         if selected_scope is None and len(self.catalogues) == 1:
             selected_scope = str(self.catalogues[0].test_catalogue.specification.test_scope)
         selected_capabilities = _raw_or_initial_values(data, initial, "capabilities")
@@ -1515,6 +1598,8 @@ class SecurityConfigForm(forms.Form):
         signing_client_assertion_issuer: Optional private-key JWT issuer.
         signing_client_assertion_subject: Optional private-key JWT subject.
         signing_token_endpoint_auth_method: Optional token endpoint auth method.
+        signing_client_auth_algorithm: Optional client-auth signing algorithm.
+        mtls_enabled: Optional explicit canonical mTLS state.
         tls_ca_bundle_path: Optional absolute CA bundle path.
         tls_client_certificate_path: Optional absolute mTLS client certificate path.
         tls_client_private_key_path: Optional absolute mTLS private-key path.
@@ -1530,9 +1615,8 @@ class SecurityConfigForm(forms.Form):
         metadata_aspsp_name: Shared ASPSP reporting name.
         metadata_brand_name: Shared brand reporting name.
         metadata_environment_name: Shared environment reporting name.
-        signing_client_auth_algorithm: Optional client-auth signing algorithm.
         config: Parsed partial v2 config owned by this step.
-        security_environment: Canonical shared security values emitted in DCR mode.
+        security_environment: Canonical shared security values emitted by the form.
         dynamic_client_registration: Canonical DCR-only values emitted in DCR mode.
         metadata: Canonical reporting metadata emitted in DCR mode.
         execution_mode: Canonical execution mode emitted in DCR mode.
@@ -1571,6 +1655,15 @@ class SecurityConfigForm(forms.Form):
     )
     signing_token_endpoint_auth_method: forms.ChoiceField = forms.ChoiceField(
         label="Token endpoint auth method",
+        required=False,
+    )
+    signing_client_auth_algorithm: forms.CharField = forms.CharField(
+        label="Client authentication signing algorithm",
+        required=False,
+    )
+    mtls_enabled: forms.ChoiceField = forms.ChoiceField(
+        label="mTLS state",
+        choices=(("", "Not specified"), ("true", "Enabled"), ("false", "Disabled")),
         required=False,
     )
     tls_ca_bundle_path: forms.CharField = forms.CharField(label="CA bundle absolute path", required=False)
@@ -1617,11 +1710,6 @@ class SecurityConfigForm(forms.Form):
     metadata_aspsp_name: forms.CharField = forms.CharField(label="ASPSP name", required=False)
     metadata_brand_name: forms.CharField = forms.CharField(label="Brand name", required=False)
     metadata_environment_name: forms.CharField = forms.CharField(label="Environment name", required=False)
-    signing_client_auth_algorithm: forms.CharField = forms.CharField(
-        label="Client authentication signing algorithm",
-        required=False,
-    )
-
     config: JsonObject | None = None
     security_environment: JsonObject | None = None
     dynamic_client_registration: JsonObject | None = None
@@ -1721,6 +1809,7 @@ class SecurityConfigForm(forms.Form):
             self.execution_mode = cast(PlanExecutionMode, cleaned_data["dcr_execution_mode"])
         else:
             self.config = _security_config_from_fields(cleaned_data)
+            self.security_environment = _security_environment_from_fields(cleaned_data)
         return cleaned_data
 
 
@@ -2166,11 +2255,19 @@ def config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, object]:
     return initial
 
 
-def business_config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, object]:
+def business_config_form_initial(
+    config: Mapping[str, JsonValue],
+    *,
+    test_scope: str | None = None,
+    specification_version: str | None = None,
+) -> dict[str, object]:
     """Return business-default form initial values from a v2 config object.
 
     Args:
         config: Draft executable config object.
+        test_scope: Optional participant test scope used to project canonical
+            participant input ids into friendly fields.
+        specification_version: Optional participant specification version.
 
     Returns:
         Initial form values keyed by business-default field name.
@@ -2178,12 +2275,13 @@ def business_config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, o
     initial: dict[str, object] = {}
     ais = _object_config_value(config, "ais")
     resource_ids = _object_config_value(ais, "resourceIds")
+    simple_account_id = _simple_ais_account_id(resource_ids)
     initial.update(
         {
-            "ais_consented_account_id": _first_form_config_object_string(resource_ids.get("accountIds"), "accountId"),
+            "ais_consented_account_id": simple_account_id,
             "ais_transaction_from_date": _string_config_value(ais, "transactionFromDate"),
             "ais_transaction_to_date": _string_config_value(ais, "transactionToDate"),
-            "ais_resource_ids_json": _json_config_value(ais, "resourceIds"),
+            "ais_resource_ids_json": None if simple_account_id is not None else _json_config_value(ais, "resourceIds"),
         }
     )
 
@@ -2192,44 +2290,104 @@ def business_config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, o
     international_creditor_account = _object_config_value(pis, "internationalCreditorAccount")
     instructed_amount = _object_config_value(pis, "instructedAmount")
     standing_order_frequency = _object_config_value(pis, "standingOrderFrequency")
+    creditor_account_is_friendly = _object_is_friendly_strings(
+        creditor_account,
+        allowed_keys=frozenset({"schemeName", "identification", "name"}),
+    )
+    international_account_is_friendly = _object_is_friendly_strings(
+        international_creditor_account,
+        allowed_keys=frozenset({"schemeName", "identification", "name"}),
+    )
+    instructed_amount_is_friendly = _object_is_friendly_strings(
+        instructed_amount,
+        allowed_keys=frozenset({"amount", "currency"}),
+    )
+    standing_order_frequency_is_friendly = _object_is_friendly_strings(
+        standing_order_frequency,
+        allowed_keys=frozenset({"type", "pointInTime"}),
+    )
     initial.update(
         {
-            "pis_creditor_account_scheme_name": _string_config_value(creditor_account, "schemeName"),
-            "pis_creditor_account_identification": _string_config_value(creditor_account, "identification"),
-            "pis_creditor_account_name": _string_config_value(creditor_account, "name"),
-            "pis_creditor_account_json": _json_config_value(pis, "creditorAccount"),
+            "pis_creditor_account_scheme_name": (
+                _string_config_value(creditor_account, "schemeName") if creditor_account_is_friendly else None
+            ),
+            "pis_creditor_account_identification": (
+                _string_config_value(creditor_account, "identification") if creditor_account_is_friendly else None
+            ),
+            "pis_creditor_account_name": (
+                _string_config_value(creditor_account, "name") if creditor_account_is_friendly else None
+            ),
+            "pis_creditor_account_json": (
+                None if creditor_account_is_friendly else _json_config_value(pis, "creditorAccount")
+            ),
             "pis_international_creditor_account_scheme_name": _string_config_value(
                 international_creditor_account,
                 "schemeName",
-            ),
+            )
+            if international_account_is_friendly
+            else None,
             "pis_international_creditor_account_identification": _string_config_value(
                 international_creditor_account,
                 "identification",
+            )
+            if international_account_is_friendly
+            else None,
+            "pis_international_creditor_account_name": (
+                _string_config_value(international_creditor_account, "name")
+                if international_account_is_friendly
+                else None
             ),
-            "pis_international_creditor_account_name": _string_config_value(international_creditor_account, "name"),
-            "pis_international_creditor_account_json": _json_config_value(pis, "internationalCreditorAccount"),
-            "pis_instructed_amount_amount": _string_config_value(instructed_amount, "amount"),
-            "pis_instructed_amount_currency": _string_config_value(instructed_amount, "currency"),
-            "pis_instructed_amount_json": _json_config_value(pis, "instructedAmount"),
+            "pis_international_creditor_account_json": (
+                None if international_account_is_friendly else _json_config_value(pis, "internationalCreditorAccount")
+            ),
+            "pis_instructed_amount_amount": (
+                _string_config_value(instructed_amount, "amount") if instructed_amount_is_friendly else None
+            ),
+            "pis_instructed_amount_currency": (
+                _string_config_value(instructed_amount, "currency") if instructed_amount_is_friendly else None
+            ),
+            "pis_instructed_amount_json": (
+                None if instructed_amount_is_friendly else _json_config_value(pis, "instructedAmount")
+            ),
             "pis_currency_of_transfer": _string_config_value(pis, "currencyOfTransfer"),
             "pis_requested_execution_date_time": _string_config_value(pis, "requestedExecutionDateTime"),
             "pis_first_payment_date_time": _string_config_value(pis, "firstPaymentDateTime"),
             "pis_standing_order_frequency_v311": _string_config_value(pis, "standingOrderFrequencyV31"),
-            "pis_standing_order_frequency_type": _string_config_value(standing_order_frequency, "type"),
-            "pis_standing_order_frequency_point_in_time": _string_config_value(standing_order_frequency, "pointInTime"),
-            "pis_standing_order_frequency_json": _json_config_value(pis, "standingOrderFrequency"),
+            "pis_standing_order_frequency_type": (
+                _string_config_value(standing_order_frequency, "type") if standing_order_frequency_is_friendly else None
+            ),
+            "pis_standing_order_frequency_point_in_time": (
+                _string_config_value(standing_order_frequency, "pointInTime")
+                if standing_order_frequency_is_friendly
+                else None
+            ),
+            "pis_standing_order_frequency_json": (
+                None if standing_order_frequency_is_friendly else _json_config_value(pis, "standingOrderFrequency")
+            ),
             "conditional_properties_json": _display_json_value(config.get("conditionalProperties")),
         }
     )
 
     cbpii = _object_config_value(config, "cbpii")
     debtor_account = _object_config_value(cbpii, "debtorAccount")
+    debtor_account_is_friendly = _object_is_friendly_strings(
+        debtor_account,
+        allowed_keys=frozenset({"schemeName", "identification", "name"}),
+    )
     initial.update(
         {
-            "cbpii_debtor_account_scheme_name": _string_config_value(debtor_account, "schemeName"),
-            "cbpii_debtor_account_identification": _string_config_value(debtor_account, "identification"),
-            "cbpii_debtor_account_name": _string_config_value(debtor_account, "name"),
-            "cbpii_debtor_account_json": _json_config_value(cbpii, "debtorAccount"),
+            "cbpii_debtor_account_scheme_name": (
+                _string_config_value(debtor_account, "schemeName") if debtor_account_is_friendly else None
+            ),
+            "cbpii_debtor_account_identification": (
+                _string_config_value(debtor_account, "identification") if debtor_account_is_friendly else None
+            ),
+            "cbpii_debtor_account_name": (
+                _string_config_value(debtor_account, "name") if debtor_account_is_friendly else None
+            ),
+            "cbpii_debtor_account_json": (
+                None if debtor_account_is_friendly else _json_config_value(cbpii, "debtorAccount")
+            ),
         }
     )
     vrp = _object_config_value(config, "vrp")
@@ -2246,20 +2404,208 @@ def business_config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, o
             "vrp_valid_to_date_time": _string_config_value(vrp, "validToDateTime"),
         }
     )
+    if test_scope is not None and specification_version is not None:
+        _overlay_participant_business_input_initial(
+            initial,
+            config,
+            test_scope=test_scope,
+            specification_version=specification_version,
+        )
     return initial
 
 
-def discovery_config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, object]:
+def _simple_ais_account_id(resource_ids: Mapping[str, JsonValue]) -> str | None:
+    """Return an AIS account id when the object is losslessly form-friendly."""
+    if set(resource_ids) != {"accountIds"}:
+        return None
+    account_ids = resource_ids.get("accountIds")
+    if not isinstance(account_ids, list) or len(account_ids) != 1:
+        return None
+    account = account_ids[0]
+    if not isinstance(account, dict) or set(account) != {"accountId"}:
+        return None
+    account_id = account.get("accountId")
+    return account_id if isinstance(account_id, str) else None
+
+
+def _object_is_friendly_strings(
+    value: Mapping[str, JsonValue],
+    *,
+    allowed_keys: frozenset[str],
+) -> bool:
+    """Return whether an object can be represented by friendly string fields."""
+    return set(value).issubset(allowed_keys) and all(isinstance(item, str) for item in value.values())
+
+
+def _overlay_participant_business_input_initial(
+    initial: dict[str, object],
+    config: Mapping[str, JsonValue],
+    *,
+    test_scope: str,
+    specification_version: str,
+) -> None:
+    """Overlay canonical participant inputs onto grouped Business form state."""
+    values = _participant_runtime_values(
+        config,
+        test_scope=test_scope,
+        specification_version=specification_version,
+    )
+
+    def set_string(input_id: str, field_name: str) -> bool:
+        value = values.get(input_id)
+        if not isinstance(value, str):
+            return False
+        initial[field_name] = value
+        return True
+
+    if test_scope == "ais":
+        if set_string("consentedAccountId", "ais_consented_account_id"):
+            initial["ais_resource_ids_json"] = None
+        set_string(
+            _participant_input_id(test_scope, specification_version, "from-booking-date-time"),
+            "ais_transaction_from_date",
+        )
+        set_string(
+            _participant_input_id(test_scope, specification_version, "to-booking-date-time"),
+            "ais_transaction_to_date",
+        )
+        return
+
+    if test_scope == "cbpii":
+        mapped = (
+            ("debtor-account-scheme", "cbpii_debtor_account_scheme_name"),
+            ("debtor-account-identification", "cbpii_debtor_account_identification"),
+            ("debtor-account-name", "cbpii_debtor_account_name"),
+        )
+        mapped_any = False
+        for slug, field_name in mapped:
+            mapped_any = (
+                set_string(_participant_input_id(test_scope, specification_version, slug), field_name) or mapped_any
+            )
+        if mapped_any:
+            initial["cbpii_debtor_account_json"] = None
+        return
+
+    if test_scope == "pis":
+        grouped_fields = (
+            (
+                "pis_creditor_account_json",
+                (
+                    ("creditor-account-scheme-name", "pis_creditor_account_scheme_name"),
+                    ("creditor-account-identification", "pis_creditor_account_identification"),
+                    ("creditor-account-name", "pis_creditor_account_name"),
+                ),
+            ),
+            (
+                "pis_international_creditor_account_json",
+                (
+                    (
+                        "international-creditor-account-scheme-name",
+                        "pis_international_creditor_account_scheme_name",
+                    ),
+                    (
+                        "international-creditor-account-identification",
+                        "pis_international_creditor_account_identification",
+                    ),
+                    ("international-creditor-account-name", "pis_international_creditor_account_name"),
+                ),
+            ),
+            (
+                "pis_instructed_amount_json",
+                (
+                    ("instructed-amount", "pis_instructed_amount_amount"),
+                    ("instructed-currency", "pis_instructed_amount_currency"),
+                ),
+            ),
+        )
+        for json_field, field_bindings in grouped_fields:
+            mapped_any = False
+            for slug, field_name in field_bindings:
+                mapped_any = (
+                    set_string(_participant_input_id(test_scope, specification_version, slug), field_name) or mapped_any
+                )
+            if mapped_any:
+                initial[json_field] = None
+        for slug, field_name in (
+            ("currency-of-transfer", "pis_currency_of_transfer"),
+            ("requested-execution-date-time", "pis_requested_execution_date_time"),
+            ("first-payment-date-time", "pis_first_payment_date_time"),
+        ):
+            set_string(_participant_input_id(test_scope, specification_version, slug), field_name)
+        frequency = values.get(_participant_input_id(test_scope, specification_version, "standing-order-frequency"))
+        if specification_version == "3.1.11" and isinstance(frequency, str):
+            initial["pis_standing_order_frequency_v311"] = frequency
+        elif specification_version == "4.0.1" and isinstance(frequency, dict):
+            friendly_frequency = _canonical_frequency_as_friendly_fields(frequency)
+            if friendly_frequency is not None:
+                initial["pis_standing_order_frequency_type"] = friendly_frequency.get("type")
+                initial["pis_standing_order_frequency_point_in_time"] = friendly_frequency.get("pointInTime")
+                initial["pis_standing_order_frequency_json"] = None
+            else:
+                initial["pis_standing_order_frequency_type"] = None
+                initial["pis_standing_order_frequency_point_in_time"] = None
+                initial["pis_standing_order_frequency_json"] = _display_json_value(
+                    _canonical_frequency_as_grouped_config(frequency)
+                )
+        return
+
+    if test_scope == "vrp":
+        for slug, field_name in (
+            ("creditor-account-scheme-name", "vrp_creditor_account_scheme_name"),
+            ("creditor-account-identification", "vrp_creditor_account_identification"),
+            ("creditor-account-name", "vrp_creditor_account_name"),
+            ("instructed-amount", "vrp_instructed_amount_amount"),
+            ("currency", "vrp_instructed_amount_currency"),
+            ("valid-from-date-time", "vrp_valid_from_date_time"),
+            ("valid-to-date-time", "vrp_valid_to_date_time"),
+        ):
+            set_string(_participant_input_id(test_scope, specification_version, slug), field_name)
+
+
+def _canonical_frequency_as_friendly_fields(value: Mapping[str, JsonValue]) -> JsonObject | None:
+    """Return a canonical v4 frequency when friendly fields are lossless."""
+    if not _object_is_friendly_strings(
+        value,
+        allowed_keys=frozenset({"frequencyType", "pointInTime"}),
+    ):
+        return None
+    frequency: JsonObject = {}
+    frequency_type = value.get("frequencyType")
+    point_in_time = value.get("pointInTime")
+    if isinstance(frequency_type, str):
+        frequency["type"] = frequency_type
+    if isinstance(point_in_time, str):
+        frequency["pointInTime"] = point_in_time
+    return frequency
+
+
+def _canonical_frequency_as_grouped_config(value: Mapping[str, JsonValue]) -> JsonObject:
+    """Translate canonical v4 frequency keys into grouped config keys."""
+    frequency = _copy_json_mapping(value)
+    frequency_type = frequency.pop("frequencyType", None)
+    if frequency_type is not None:
+        frequency["type"] = frequency_type
+    return frequency
+
+
+def discovery_config_form_initial(
+    config: Mapping[str, JsonValue],
+    *,
+    security_environment: Mapping[str, JsonValue] | None = None,
+) -> dict[str, object]:
     """Return discovery form initial values from a v2 config object.
 
     Args:
         config: Draft executable config object.
+        security_environment: Optional canonical security configuration retained
+            from an imported participant plan.
 
     Returns:
         Initial form values keyed by discovery field name.
     """
     initial: dict[str, object] = {
-        "discovery_url": _string_config_value(config, "discoveryUrl"),
+        "discovery_url": _string_config_value(config, "discoveryUrl")
+        or _string_config_value(security_environment or {}, "discoveryUrl"),
     }
     return initial
 
@@ -2290,67 +2636,86 @@ def security_config_form_initial(
     resource_server = _object_config_value(config, "resourceServer")
     signing = _object_config_value(config, "fapiSigning")
     tls = _object_config_value(config, "tls")
-    initial: dict[str, object] = {
-        "oauth_client_id": _string_config_value(oauth, "clientId"),
-        "oauth_redirect_uri": _string_config_value(oauth, "redirectUri"),
-        "oauth_authorization_endpoint": _config_or_discovery_string(
-            oauth,
-            "authorizationEndpoint",
-            discovery_metadata,
-            "authorization_endpoint",
-        ),
-        "oauth_issuer": _config_or_discovery_string(oauth, "issuer", discovery_metadata, "issuer"),
-        "oauth_token_endpoint": _config_or_discovery_string(
-            oauth,
-            "tokenEndpoint",
-            discovery_metadata,
-            "token_endpoint",
-        ),
-        "oauth_response_type": _string_config_value(oauth, "responseType")
-        or _single_discovery_list_value(discovery_metadata, "response_types_supported"),
-        "oauth_request_object_signing_alg": _string_config_value(oauth, "requestObjectSigningAlg")
-        or _single_discovery_list_value(discovery_metadata, "request_object_signing_alg_values_supported"),
-        "resource_server_base_url": _string_config_value(resource_server, "baseUrl")
-        or _string_config_value(oauth, "resourceBaseUrl"),
-        "signing_certificate_path": _string_config_value(signing, "signingCertificatePath"),
-        "signing_private_key_path": _string_config_value(signing, "signingPrivateKeyPath"),
-        "signing_kid": _string_config_value(signing, "kid"),
-        "signing_client_assertion_issuer": _string_config_value(signing, "clientAssertionIssuer"),
-        "signing_client_assertion_subject": _string_config_value(signing, "clientAssertionSubject"),
-        "signing_token_endpoint_auth_method": _string_config_value(signing, "tokenEndpointAuthMethod"),
-        "tls_ca_bundle_path": _string_config_value(tls, "caBundlePath"),
-        "tls_client_certificate_path": _string_config_value(tls, "clientCertificatePath"),
-        "tls_client_private_key_path": _string_config_value(tls, "clientPrivateKeyPath"),
-    }
     canonical_security = security_environment or {}
     canonical_mtls = _object_config_value(canonical_security, "mtls")
+
+    def editable_string(
+        section: Mapping[str, JsonValue],
+        config_key: str,
+        canonical_key: str,
+    ) -> str:
+        return _string_config_value(section, config_key) or _string_config_value(
+            canonical_security,
+            canonical_key,
+        )
+
+    initial: dict[str, object] = {
+        "oauth_client_id": editable_string(oauth, "clientId", "clientId"),
+        "oauth_redirect_uri": editable_string(oauth, "redirectUri", "redirectUri"),
+        "oauth_authorization_endpoint": editable_string(
+            oauth,
+            "authorizationEndpoint",
+            "authorizationEndpoint",
+        )
+        or _string_config_value(discovery_metadata, "authorization_endpoint"),
+        "oauth_issuer": editable_string(oauth, "issuer", "issuer")
+        or _string_config_value(discovery_metadata, "issuer"),
+        "oauth_token_endpoint": editable_string(oauth, "tokenEndpoint", "tokenEndpoint")
+        or _string_config_value(discovery_metadata, "token_endpoint"),
+        "oauth_response_type": editable_string(oauth, "responseType", "responseType")
+        or _single_discovery_list_value(discovery_metadata, "response_types_supported"),
+        "oauth_request_object_signing_alg": editable_string(
+            oauth,
+            "requestObjectSigningAlg",
+            "signingAlgorithm",
+        )
+        or _single_discovery_list_value(discovery_metadata, "request_object_signing_alg_values_supported"),
+        "resource_server_base_url": _string_config_value(resource_server, "baseUrl")
+        or editable_string(oauth, "resourceBaseUrl", "resourceBaseUrl"),
+        "signing_certificate_path": editable_string(
+            signing,
+            "signingCertificatePath",
+            "signingCertificatePath",
+        ),
+        "signing_private_key_path": editable_string(
+            signing,
+            "signingPrivateKeyPath",
+            "signingPrivateKeyPath",
+        ),
+        "signing_kid": editable_string(signing, "kid", "signingKeyId"),
+        "signing_client_assertion_issuer": editable_string(
+            signing,
+            "clientAssertionIssuer",
+            "clientAssertionIssuer",
+        ),
+        "signing_client_assertion_subject": editable_string(
+            signing,
+            "clientAssertionSubject",
+            "clientAssertionSubject",
+        ),
+        "signing_token_endpoint_auth_method": editable_string(
+            signing,
+            "tokenEndpointAuthMethod",
+            "clientAuthMethod",
+        ),
+        "signing_client_auth_algorithm": _string_config_value(
+            canonical_security,
+            "clientAuthSigningAlgorithm",
+        )
+        or _single_discovery_list_value(
+            discovery_metadata,
+            "token_endpoint_auth_signing_alg_values_supported",
+        ),
+        "mtls_enabled": _mtls_enabled_form_value(canonical_mtls, tls),
+        "tls_ca_bundle_path": _string_config_value(tls, "caBundlePath")
+        or _string_config_value(canonical_mtls, "caBundlePath"),
+        "tls_client_certificate_path": _string_config_value(tls, "clientCertificatePath")
+        or _string_config_value(canonical_mtls, "certificatePath"),
+        "tls_client_private_key_path": _string_config_value(tls, "clientPrivateKeyPath")
+        or _string_config_value(canonical_mtls, "privateKeyPath"),
+    }
     dcr = dynamic_client_registration or {}
     reporting_metadata = metadata or {}
-    if canonical_security:
-        initial.update(
-            {
-                "signing_private_key_path": _string_config_value(
-                    canonical_security,
-                    "signingPrivateKeyPath",
-                ),
-                "signing_kid": _string_config_value(canonical_security, "signingKeyId"),
-                "signing_token_endpoint_auth_method": _string_config_value(
-                    canonical_security,
-                    "clientAuthMethod",
-                ),
-                "signing_client_auth_algorithm": _string_config_value(
-                    canonical_security,
-                    "clientAuthSigningAlgorithm",
-                )
-                or _single_discovery_list_value(
-                    discovery_metadata,
-                    "token_endpoint_auth_signing_alg_values_supported",
-                ),
-                "tls_ca_bundle_path": _string_config_value(canonical_mtls, "caBundlePath"),
-                "tls_client_certificate_path": _string_config_value(canonical_mtls, "certificatePath"),
-                "tls_client_private_key_path": _string_config_value(canonical_mtls, "privateKeyPath"),
-            }
-        )
     initial.update(
         {
             "dcr_software_statement_assertion_path": _string_config_value(
@@ -2419,6 +2784,105 @@ def merge_business_config(config: Mapping[str, JsonValue], section_config: Mappi
     return merge_config_sections(config, section_config, section_keys=_BUSINESS_CONFIG_KEYS)
 
 
+def merge_participant_business_config(
+    config: Mapping[str, JsonValue],
+    section_config: Mapping[str, JsonValue],
+    *,
+    test_scope: str,
+    specification_version: str,
+) -> JsonObject:
+    """Replace grouped and canonical inputs owned by the Business page."""
+    updated = merge_business_config(config, section_config)
+    source_ids = _business_input_source_ids(
+        test_scope=test_scope,
+        specification_version=specification_version,
+    )
+    target_ids = _business_input_target_ids(
+        test_scope=test_scope,
+        specification_version=specification_version,
+    )
+    for input_id in source_ids:
+        updated.pop(input_id, None)
+    for container_key in ("inputs", "runtimeInputs"):
+        raw_container = updated.get(container_key)
+        if not isinstance(raw_container, dict):
+            continue
+        container = _copy_json_mapping(raw_container)
+        for input_id in source_ids:
+            container.pop(input_id, None)
+        if container:
+            updated[container_key] = container
+        else:
+            updated.pop(container_key, None)
+
+    effective_values = _participant_runtime_values(
+        updated,
+        test_scope=test_scope,
+        specification_version=specification_version,
+    )
+    raw_inputs = updated.get("inputs")
+    inputs = _copy_json_mapping(raw_inputs) if isinstance(raw_inputs, dict) else {}
+    for input_id in target_ids:
+        value = effective_values.get(input_id)
+        if value is not None and (not isinstance(value, str) or value.strip()):
+            inputs[input_id] = {"value": _copy_json_value(value)}
+    if inputs:
+        updated["inputs"] = inputs
+    else:
+        updated.pop("inputs", None)
+    return updated
+
+
+def _business_input_source_ids(
+    *,
+    test_scope: str,
+    specification_version: str,
+) -> frozenset[str]:
+    """Return canonical and compatibility ids replaced by the Business page."""
+    aliases = set(_BUSINESS_INPUT_SLUGS_BY_SCOPE.get(test_scope, {}))
+    aliases.update(_BUSINESS_COMPATIBILITY_INPUT_IDS_BY_SCOPE.get(test_scope, ()))
+    aliases.update(
+        _business_input_target_ids(
+            test_scope=test_scope,
+            specification_version=specification_version,
+        )
+    )
+    if test_scope == "pis":
+        aliases.update(
+            {
+                "pisStandingOrderFrequencyV31",
+                "pisStandingOrderFrequencyType",
+                "pisStandingOrderFrequencyCountPerPeriod",
+                "pisStandingOrderFrequencyPointInTime",
+            }
+        )
+    return frozenset(aliases)
+
+
+def _business_input_target_ids(
+    *,
+    test_scope: str,
+    specification_version: str,
+) -> frozenset[str]:
+    """Return canonical ids whose values are owned by the Business page."""
+    targets = {
+        _participant_input_id(test_scope, specification_version, slug)
+        for slug in _BUSINESS_INPUT_SLUGS_BY_SCOPE.get(test_scope, {}).values()
+    }
+    targets.update(_BUSINESS_COMPATIBILITY_INPUT_IDS_BY_SCOPE.get(test_scope, ()))
+    if test_scope == "pis":
+        targets.add(_participant_input_id(test_scope, specification_version, "standing-order-frequency"))
+    return frozenset(targets)
+
+
+def _participant_input_id(test_scope: str, specification_version: str, slug: str) -> str:
+    """Return a versioned canonical participant input id."""
+    version_id = _PARTICIPANT_INPUT_VERSION_IDS.get(specification_version)
+    if version_id is None:
+        raise CatalogueError(f"Unsupported {test_scope.upper()} specification version {specification_version!r}")
+    return f"{test_scope}.{version_id}.input.{slug}"
+
+
 def merge_discovery_config(config: Mapping[str, JsonValue], section_config: Mapping[str, JsonValue]) -> JsonObject:
     """Return ``config`` with discovery fields replaced.
 
@@ -2432,6 +2896,18 @@ def merge_discovery_config(config: Mapping[str, JsonValue], section_config: Mapp
     return merge_config_sections(config, section_config, section_keys=_DISCOVERY_CONFIG_KEYS)
 
 
+def merge_discovery_security_environment(
+    security_environment: Mapping[str, JsonValue],
+    section_config: Mapping[str, JsonValue],
+) -> JsonObject:
+    """Replace canonical security fields owned by the discovery step."""
+    return _replace_security_environment_fields(
+        security_environment,
+        security_environment_from_plan_config(section_config),
+        owned_keys=_DISCOVERY_SECURITY_ENVIRONMENT_KEYS,
+    )
+
+
 def merge_security_config(config: Mapping[str, JsonValue], section_config: Mapping[str, JsonValue]) -> JsonObject:
     """Return ``config`` with OAuth/FAPI/security fields replaced.
 
@@ -2443,6 +2919,33 @@ def merge_security_config(config: Mapping[str, JsonValue], section_config: Mappi
         Updated config with security keys replaced.
     """
     return merge_config_sections(config, section_config, section_keys=_SECURITY_CONFIG_KEYS)
+
+
+def merge_security_environment(
+    security_environment: Mapping[str, JsonValue],
+    section_environment: Mapping[str, JsonValue],
+) -> JsonObject:
+    """Replace canonical security fields owned by the security step."""
+    return _replace_security_environment_fields(
+        security_environment,
+        section_environment,
+        owned_keys=_SECURITY_SECURITY_ENVIRONMENT_KEYS,
+    )
+
+
+def _replace_security_environment_fields(
+    security_environment: Mapping[str, JsonValue],
+    replacement: Mapping[str, JsonValue],
+    *,
+    owned_keys: Iterable[str],
+) -> JsonObject:
+    """Replace one builder page's canonical security-environment fields."""
+    updated = _copy_json_mapping(security_environment)
+    for key in owned_keys:
+        updated.pop(key, None)
+    for key, value in replacement.items():
+        updated[key] = _copy_json_value(value)
+    return updated
 
 
 def merge_runtime_input_config(config: Mapping[str, JsonValue], section_config: Mapping[str, JsonValue]) -> JsonObject:
@@ -2493,17 +2996,11 @@ def participant_plan_from_draft(
     if catalogue is None:
         raise CatalogueError(f"Test scope {scope!r} is not available for this specification")
     config_object = _copy_json_mapping(config if config is not None else draft.config)
-    runtime_values = _runtime_input_values_from_config(config_object)
-    if scope == "pis":
-        _promote_pis_business_inputs(
-            runtime_values,
-            specification_version=catalogue.test_catalogue.specification.version,
-        )
-    elif scope == "cbpii":
-        _promote_cbpii_business_inputs(
-            runtime_values,
-            specification_version=catalogue.test_catalogue.specification.version,
-        )
+    runtime_values = _participant_runtime_values(
+        config_object,
+        test_scope=scope,
+        specification_version=catalogue.test_catalogue.specification.version,
+    )
     predefined_input_ids = {str(item.id) for item in catalogue.test_catalogue.predefined_inputs}
     predefined_inputs: list[JsonValue] = []
     for predefined_input in catalogue.test_catalogue.predefined_inputs:
@@ -2531,7 +3028,7 @@ def participant_plan_from_draft(
             "compatibilityRuntimeInputs": compatibility_runtime_inputs,
             "dynamicClientRegistration": _copy_json_mapping(draft.dynamic_client_registration),
             "metadata": _copy_json_mapping(draft.metadata),
-            "securityEnvironment": _merged_plan_context(
+            "securityEnvironment": _merged_security_environment(
                 draft.security_environment,
                 security_environment_from_plan_config(config_object),
             ),
@@ -2574,7 +3071,11 @@ def participant_runtime_input_prompts_for_draft(
             if required not in selected_ids:
                 selected_ids.add(required)
                 pending.append(required)
-    runtime_values = _runtime_input_values_from_config(draft.config)
+    runtime_values = _participant_runtime_values(
+        draft.config,
+        test_scope=scope,
+        specification_version=catalogue.test_catalogue.specification.version,
+    )
     return tuple(
         WizardRuntimeInputPrompt(
             input_id=str(predefined_input.id),
@@ -2675,7 +3176,7 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
                 "version": boundary.version,
             },
             "executionMode": draft.execution_mode,
-            "securityEnvironment": _merged_plan_context(
+            "securityEnvironment": _merged_security_environment(
                 draft.security_environment,
                 security_environment_from_plan_config(config_object),
             ),
@@ -2724,7 +3225,7 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
         raise CatalogueError(f"Unknown endpoint id(s): {', '.join(sorted(unknown_endpoint_ids))}")
 
     config_object = _copy_json_mapping(config if config is not None else draft.config)
-    security_environment = _merged_plan_context(
+    security_environment = _merged_security_environment(
         draft.security_environment,
         security_environment_from_plan_config(config_object),
     )
@@ -3815,6 +4316,43 @@ def _security_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObje
     return config
 
 
+def _security_environment_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
+    """Build canonical Read/Write security fields from validated form values."""
+    environment: JsonObject = {}
+    field_keys = {
+        "authorizationEndpoint": "oauth_authorization_endpoint",
+        "clientAssertionIssuer": "signing_client_assertion_issuer",
+        "clientAssertionSubject": "signing_client_assertion_subject",
+        "clientAuthMethod": "signing_token_endpoint_auth_method",
+        "clientAuthSigningAlgorithm": "signing_client_auth_algorithm",
+        "clientId": "oauth_client_id",
+        "issuer": "oauth_issuer",
+        "redirectUri": "oauth_redirect_uri",
+        "resourceBaseUrl": "resource_server_base_url",
+        "responseType": "oauth_response_type",
+        "signingAlgorithm": "oauth_request_object_signing_alg",
+        "signingCertificatePath": "signing_certificate_path",
+        "signingKeyId": "signing_kid",
+        "signingPrivateKeyPath": "signing_private_key_path",
+        "tokenEndpoint": "oauth_token_endpoint",
+    }
+    for canonical_key, field_name in field_keys.items():
+        _set_optional_string(environment, canonical_key, cleaned_data.get(field_name))
+
+    mtls: JsonObject = {}
+    mtls_enabled = cleaned_data.get("mtls_enabled")
+    if mtls_enabled == "true":
+        mtls["enabled"] = True
+    elif mtls_enabled == "false":
+        mtls["enabled"] = False
+    _set_optional_string(mtls, "caBundlePath", cleaned_data.get("tls_ca_bundle_path"))
+    _set_optional_string(mtls, "certificatePath", cleaned_data.get("tls_client_certificate_path"))
+    _set_optional_string(mtls, "privateKeyPath", cleaned_data.get("tls_client_private_key_path"))
+    if mtls:
+        environment["mtls"] = mtls
+    return environment
+
+
 def _dcr_security_environment_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
     """Build canonical shared security fields entered for a DCR plan.
 
@@ -4343,6 +4881,14 @@ def _merged_plan_context(
     return merged
 
 
+def _merged_security_environment(
+    canonical_environment: Mapping[str, JsonValue],
+    derived_environment: Mapping[str, JsonValue],
+) -> JsonObject:
+    """Fill missing canonical security fields from executable config."""
+    return _merged_plan_context(derived_environment, canonical_environment)
+
+
 def _scoped_business_plan_context(
     imported_context: Mapping[str, JsonValue],
     derived_context: Mapping[str, JsonValue],
@@ -4552,6 +5098,11 @@ def _merge_structured_config_runtime_values(values: JsonObject, config: Mapping[
     _set_derived_runtime_value(values, "pisStandingOrderFrequencyType", standing_order_frequency.get("type"))
     _set_derived_runtime_value(
         values,
+        "pisStandingOrderFrequencyCountPerPeriod",
+        standing_order_frequency.get("countPerPeriod"),
+    )
+    _set_derived_runtime_value(
+        values,
         "pisStandingOrderFrequencyPointInTime",
         standing_order_frequency.get("pointInTime"),
     )
@@ -4565,43 +5116,59 @@ def _merge_structured_config_runtime_values(values: JsonObject, config: Mapping[
     _set_derived_runtime_value(values, "pisFirstPaymentDateTime", pis.get("firstPaymentDateTime"))
 
 
+def _participant_runtime_values(
+    config: Mapping[str, JsonValue],
+    *,
+    test_scope: str,
+    specification_version: str,
+) -> JsonObject:
+    """Return effective participant inputs with grouped aliases promoted."""
+    values = _runtime_input_values_from_config(config)
+    if test_scope == "pis":
+        _promote_pis_business_inputs(values, specification_version=specification_version)
+    else:
+        _promote_simple_business_inputs(
+            values,
+            test_scope=test_scope,
+            specification_version=specification_version,
+        )
+    return values
+
+
+def _promote_simple_business_inputs(
+    values: JsonObject,
+    *,
+    test_scope: str,
+    specification_version: str,
+) -> None:
+    """Move simple grouped Business values onto canonical participant ids."""
+    for alias, slug in _BUSINESS_INPUT_SLUGS_BY_SCOPE.get(test_scope, {}).items():
+        value = values.pop(alias, None)
+        logical_id = _participant_input_id(test_scope, specification_version, slug)
+        if value is not None and logical_id not in values:
+            values[logical_id] = value
+
+
 def _promote_pis_business_inputs(
     values: JsonObject,
     *,
     specification_version: str,
 ) -> None:
     """Move browser PIS form values onto versioned predefined-input IDs."""
-    version_id = {"3.1.11": "v311", "4.0.1": "v401"}.get(specification_version)
-    if version_id is None:
-        raise CatalogueError(f"Unsupported PIS specification version {specification_version!r}")
-    aliases = {
-        "pisCreditorAccountSchemeName": "creditor-account-scheme-name",
-        "pisCreditorAccountIdentification": "creditor-account-identification",
-        "pisCreditorAccountName": "creditor-account-name",
-        "pisInternationalCreditorAccountSchemeName": "international-creditor-account-scheme-name",
-        "pisInternationalCreditorAccountIdentification": "international-creditor-account-identification",
-        "pisInternationalCreditorAccountName": "international-creditor-account-name",
-        "pisInstructedAmountAmount": "instructed-amount",
-        "pisInstructedAmountCurrency": "instructed-currency",
-        "pisCurrencyOfTransfer": "currency-of-transfer",
-        "pisRequestedExecutionDateTime": "requested-execution-date-time",
-        "pisFirstPaymentDateTime": "first-payment-date-time",
-    }
-    for alias, slug in aliases.items():
-        value = values.pop(alias, None)
-        logical_id = f"pis.{version_id}.input.{slug}"
-        if value is not None and logical_id not in values:
-            values[logical_id] = value
-    if version_id == "v311":
+    _promote_simple_business_inputs(
+        values,
+        test_scope="pis",
+        specification_version=specification_version,
+    )
+    logical_id = _participant_input_id("pis", specification_version, "standing-order-frequency")
+    if specification_version == "3.1.11":
         legacy_frequency = values.pop("pisStandingOrderFrequencyV31", None)
-        logical_id = "pis.v311.input.standing-order-frequency"
         if legacy_frequency is not None and logical_id not in values:
             values[logical_id] = legacy_frequency
-    else:
+    elif specification_version == "4.0.1":
         frequency_type = values.pop("pisStandingOrderFrequencyType", None)
         count_per_period = values.pop("pisStandingOrderFrequencyCountPerPeriod", None)
         point_in_time = values.pop("pisStandingOrderFrequencyPointInTime", None)
-        logical_id = "pis.v401.input.standing-order-frequency"
         if frequency_type is not None and logical_id not in values:
             frequency_value: JsonObject = {"frequencyType": frequency_type}
             if count_per_period is not None:
@@ -4609,29 +5176,8 @@ def _promote_pis_business_inputs(
             if point_in_time is not None:
                 frequency_value["pointInTime"] = point_in_time
             values[logical_id] = frequency_value
-
-
-def _promote_cbpii_business_inputs(
-    values: JsonObject,
-    *,
-    specification_version: str,
-) -> None:
-    """Move browser CBPII form values onto versioned predefined-input IDs."""
-    version_id = {"3.1.11": "v311", "4.0.1": "v401"}.get(specification_version)
-    if version_id is None:
-        raise CatalogueError(f"Unsupported CBPII specification version {specification_version!r}")
-    aliases = {
-        "debtorAccountSchemeName": "debtor-account-scheme",
-        "debtorAccountIdentification": "debtor-account-identification",
-        "debtorAccountName": "debtor-account-name",
-        "cbpiiInstructedAmountAmount": "instructed-amount",
-        "cbpiiInstructedAmountCurrency": "instructed-currency",
-    }
-    for alias, slug in aliases.items():
-        value = values.pop(alias, None)
-        logical_id = f"cbpii.{version_id}.input.{slug}"
-        if value is not None and logical_id not in values:
-            values[logical_id] = value
+    else:
+        raise CatalogueError(f"Unsupported PIS specification version {specification_version!r}")
 
 
 def _set_derived_runtime_value(values: JsonObject, input_id: str, value: JsonValue | None) -> None:
@@ -4933,28 +5479,17 @@ def _object_config_value(config: Mapping[str, JsonValue], key: str) -> Mapping[s
     return value if isinstance(value, dict) else {}
 
 
-def _config_or_discovery_string(
-    config: Mapping[str, JsonValue],
-    config_key: str,
-    discovery_metadata: Mapping[str, JsonValue],
-    metadata_key: str,
+def _mtls_enabled_form_value(
+    canonical_mtls: Mapping[str, JsonValue],
+    tls: Mapping[str, JsonValue],
 ) -> str:
-    """Return a config value, falling back to a discovery metadata value.
-
-    Args:
-        config: Config section to inspect first.
-        config_key: Config key to read.
-        discovery_metadata: Session-only discovery metadata object.
-        metadata_key: Discovery metadata key to read when config is blank.
-
-    Returns:
-        Config string, discovery metadata string, or an empty string.
-    """
-    value = _string_config_value(config, config_key)
-    if value:
-        return value
-    metadata_value = discovery_metadata.get(metadata_key)
-    return metadata_value if isinstance(metadata_value, str) else ""
+    """Return the explicit mTLS form choice without inferring over canonical state."""
+    enabled = canonical_mtls.get("enabled")
+    if isinstance(enabled, bool):
+        return "true" if enabled else "false"
+    certificate_path = _string_config_value(tls, "clientCertificatePath")
+    private_key_path = _string_config_value(tls, "clientPrivateKeyPath")
+    return "true" if certificate_path and private_key_path else ""
 
 
 def _json_config_value(config: Mapping[str, JsonValue], key: str) -> str:
@@ -5105,6 +5640,30 @@ def _raw_or_initial_values(
     if initial is None:
         return ()
     return _cleaned_string_tuple(initial.get(key))
+
+
+def _raw_or_initial_value(
+    data: Mapping[str, object] | None,
+    initial: Mapping[str, object] | None,
+    key: str,
+) -> str | None:
+    """Return one form value from bound data or scalar initial state.
+
+    Args:
+        data: Optional bound form data.
+        initial: Optional initial state for unbound forms.
+        key: Form field key to read.
+
+    Returns:
+        The submitted or initial string value, or ``None`` when absent.
+    """
+    if data is not None:
+        values = _raw_values(data, key)
+        return values[0] if values else None
+    if initial is None:
+        return None
+    value = initial.get(key)
+    return value if isinstance(value, str) and value else None
 
 
 def _raw_values(data: Mapping[str, object], key: str) -> tuple[str, ...]:

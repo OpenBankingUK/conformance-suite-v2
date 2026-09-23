@@ -29,10 +29,12 @@ from conformance.api.builder_wizard import (
     catalogue_boundary_continue_blocker,
     config_visibility_for_participant_draft,
     discovery_config_form_initial,
-    merge_business_config,
     merge_discovery_config,
+    merge_discovery_security_environment,
+    merge_participant_business_config,
     merge_runtime_input_config,
     merge_security_config,
+    merge_security_environment,
     model_bank_config_from_plan_config,
     participant_plan_from_draft,
     participant_runtime_input_prompts_for_draft,
@@ -312,13 +314,19 @@ def builder_config(request: HttpRequest, draft_id: str) -> HttpResponse:
     draft = draft_store.get(draft_id)
     if draft is None:
         return HttpResponseNotFound("Builder draft not found")
-    if _draft_boundary(draft) is None:
-        return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
     boundary = _draft_boundary(draft)
-    if boundary is not None and not boundary_requires_resource_groups(boundary):
+    if boundary is None:
+        return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
+    if not boundary_requires_resource_groups(boundary):
         return redirect("builder-discovery-config", draft_id=draft.draft_id)
     if not draft.resource_group_ids:
         return redirect("builder-scope", draft_id=draft.draft_id)
+    test_scope = draft.resource_group_ids[0]
+    form_initial = business_config_form_initial(
+        draft.config,
+        test_scope=test_scope,
+        specification_version=boundary.version,
+    )
 
     try:
         config_visibility = config_visibility_for_participant_draft(draft)
@@ -328,7 +336,7 @@ def builder_config(request: HttpRequest, draft_id: str) -> HttpResponse:
             "conformance/builder_business_config.html",
             _builder_business_config_context(
                 draft=draft,
-                form=BusinessConfigForm(initial=business_config_form_initial(draft.config)),
+                form=BusinessConfigForm(initial=form_initial),
                 review_error=f"Scope validation failed: {error}",
             ),
             status=400,
@@ -337,11 +345,20 @@ def builder_config(request: HttpRequest, draft_id: str) -> HttpResponse:
     if request.method == "POST":
         form = BusinessConfigForm(
             data=request.POST,
-            initial=business_config_form_initial(draft.config),
+            initial=form_initial,
             config_visibility=config_visibility,
         )
         if form.is_valid() and form.config is not None:
-            draft_store.save(draft.with_config(config=merge_business_config(draft.config, form.config)))
+            draft_store.save(
+                draft.with_config(
+                    config=merge_participant_business_config(
+                        draft.config,
+                        form.config,
+                        test_scope=test_scope,
+                        specification_version=boundary.version,
+                    )
+                )
+            )
             return redirect("builder-runtime-config", draft_id=draft.draft_id)
         return render(
             request,
@@ -351,7 +368,7 @@ def builder_config(request: HttpRequest, draft_id: str) -> HttpResponse:
         )
 
     form = BusinessConfigForm(
-        initial=business_config_form_initial(draft.config),
+        initial=form_initial,
         config_visibility=config_visibility,
     )
     return render(
@@ -383,17 +400,28 @@ def builder_discovery_config(request: HttpRequest, draft_id: str) -> HttpRespons
     if request.method == "POST":
         form = DiscoveryConfigForm(
             data=request.POST,
-            initial=discovery_config_form_initial(draft.config),
+            initial=discovery_config_form_initial(
+                draft.config,
+                security_environment=draft.security_environment,
+            ),
             discovery_required=_is_dcr_draft(draft),
         )
         if form.is_valid() and form.config is not None:
             updated_config = merge_discovery_config(draft.config, form.config)
+            updated_security_environment = merge_discovery_security_environment(
+                draft.security_environment,
+                form.config,
+            )
             metadata = (
                 _fetch_discovery_metadata(updated_config) if _metadata_string(updated_config, "discoveryUrl") else {}
             )
-            draft_store.save(
-                draft.with_config(config=updated_config).with_discovery_metadata(discovery_metadata=metadata)
+            updated_draft = draft.with_config(config=updated_config).with_plan_context(
+                security_environment=updated_security_environment,
+                business_test_data=draft.business_test_data,
+                metadata=draft.metadata,
+                execution_mode=draft.execution_mode,
             )
+            draft_store.save(updated_draft.with_discovery_metadata(discovery_metadata=metadata))
             return redirect("builder-security-config", draft_id=draft.draft_id)
         return render(
             request,
@@ -403,7 +431,10 @@ def builder_discovery_config(request: HttpRequest, draft_id: str) -> HttpRespons
         )
 
     form = DiscoveryConfigForm(
-        initial=discovery_config_form_initial(draft.config),
+        initial=discovery_config_form_initial(
+            draft.config,
+            security_environment=draft.security_environment,
+        ),
         discovery_required=_is_dcr_draft(draft),
     )
     return render(
@@ -448,10 +479,19 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
             updated_config = merge_security_config(draft.config, form.config)
             validation_error = None if _is_dcr_draft(draft) else _validate_model_config(updated_config)
             if validation_error is None:
-                updated_draft = draft.with_config(config=updated_config)
+                updated_security_environment = merge_security_environment(
+                    draft.security_environment,
+                    form.security_environment or {},
+                )
+                updated_draft = draft.with_config(config=updated_config).with_plan_context(
+                    security_environment=updated_security_environment,
+                    business_test_data=draft.business_test_data,
+                    metadata=draft.metadata,
+                    execution_mode=draft.execution_mode,
+                )
                 if _is_dcr_draft(draft):
                     updated_draft = updated_draft.with_plan_context(
-                        security_environment=form.security_environment or {},
+                        security_environment=updated_security_environment,
                         business_test_data=draft.business_test_data,
                         metadata=form.metadata or {},
                         execution_mode=form.execution_mode or draft.execution_mode,
