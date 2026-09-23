@@ -9,7 +9,6 @@ from typing import cast
 import pytest
 
 import conformance.catalogue_registry
-import conformance.configuration_contracts.compiled_plan_adapter
 import conformance.test_plan_validation
 from conformance.configuration_contracts import (
     ConfigurationContractError,
@@ -22,7 +21,6 @@ from conformance.configuration_contracts.v2_loader import (
     parse_participant_plan,
     participant_plan_to_document,
 )
-from conformance.json_types import JsonObject
 from conformance.participant_surface import (
     ParticipantSurfaceError,
     _participant_input_runtime_values,
@@ -37,14 +35,6 @@ pytestmark = pytest.mark.unit
 
 _SURFACE_PLAN_PATH = (
     REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "pis" / "v4_0_1" / "participant-plan.surface.json"
-)
-_INVALID_EXECUTION_PATH = (
-    REPO_ROOT
-    / "tests"
-    / "fixtures"
-    / "configuration_contracts"
-    / "v1"
-    / "participant-plan.invalid-execution-property.json"
 )
 
 
@@ -230,11 +220,6 @@ def test_legacy_authorities_cannot_affect_v2_compile_review_or_launch(
 
     monkeypatch.setattr(conformance.catalogue_registry, "resolve_catalogue", fail)
     monkeypatch.setattr(conformance.test_plan_validation, "prepare_test_plan_for_run", fail)
-    monkeypatch.setattr(
-        conformance.configuration_contracts.compiled_plan_adapter,
-        "materialize_execution_manifest_requests",
-        fail,
-    )
     raw_plan = json.loads(_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
 
     _plan, catalogue, resolved = compile_participant_document(raw_plan)
@@ -262,7 +247,6 @@ def test_scope_specific_amounts_reach_compatibility_runtime(
             REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / family / "v4_0_1" / "participant-plan.json"
         ).read_text(encoding="utf-8")
     )
-    raw_plan = _as_v2_participant_plan(raw_plan)
     plan = parse_participant_plan(raw_plan)
     assert _participant_input_runtime_values(plan, scope=family)[expected_input_id] == expected_value
 
@@ -273,7 +257,6 @@ def test_cbpii_manifest_keeps_sensitive_input_out_of_generated_value() -> None:
             REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "cbpii" / "v4_0_1" / "participant-plan.json"
         ).read_text(encoding="utf-8")
     )
-    raw_plan = _as_v2_participant_plan(raw_plan)
     predefined_inputs = raw_plan["predefinedInputs"]
     assert isinstance(predefined_inputs, list)
     predefined_inputs.append(
@@ -294,12 +277,3 @@ def test_cbpii_manifest_keeps_sensitive_input_out_of_generated_value() -> None:
     debtor_name = next(item for item in manifest.inputs if item.id.endswith("debtor-account-name"))
     assert debtor_name.redacted is False
     assert debtor_name.value == "Debtor account"
-
-
-def _as_v2_participant_plan(raw_plan: JsonObject) -> JsonObject:
-    raw_plan["schemaVersion"] = "2.0"
-    raw_plan["suiteReleaseId"] = "obl.open-banking-mvp.test-catalogue-release"
-    specification = raw_plan["specification"]
-    assert isinstance(specification, dict)
-    specification["testScope"] = specification.pop("requirementsScope")
-    return raw_plan

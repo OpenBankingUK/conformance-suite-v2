@@ -111,8 +111,8 @@
     }
   ],
   "documentType": "vrp-parity-comparison",
-  "requirementsCatalogueId": "obl.vrp-v401.requirements",
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
+  "testCatalogueId": "obl.vrp-v401.tests.v2",
   "summary": {
     "genuine-omission": 0,
     "intentional-correction": 0,

@@ -31,7 +31,7 @@
       "value": "2026-10-15T00:00:00Z"
     }
   ],
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "scheme": "open-banking-uk",
   "securityProfile": "fapi1-advanced",
   "selectedCapabilityIds": [
@@ -40,8 +40,8 @@
   ],
   "specification": {
     "id": "read-write-api",
-    "requirementsScope": "vrp",
+    "testScope": "vrp",
     "version": "3.1.11"
   },
-  "suiteReleaseId": "obl.vrp-v311.catalogue-fixture"
+  "suiteReleaseId": "obl.open-banking-mvp.test-catalogue-release"
 }
