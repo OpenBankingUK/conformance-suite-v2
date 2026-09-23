@@ -132,6 +132,12 @@
                         </select>
                         <div class="helper">{{ security_requirements.signing_token_endpoint_auth_method.description }} Type: {{ security_requirements.signing_token_endpoint_auth_method.type_hint }}. {{ security_requirements.signing_token_endpoint_auth_method.requirement }}</div>
                     </div>
+                    <div>
+                        <label for="{{ form.signing_client_auth_algorithm.id_for_label }}">Client authentication signing algorithm {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_client_auth_algorithm.status label=security_requirements.signing_client_auth_algorithm.label only %}</label>
+                        {{ form.signing_client_auth_algorithm.errors }}
+                        <input id="{{ form.signing_client_auth_algorithm.id_for_label }}" name="signing_client_auth_algorithm" type="text" value="{{ form.signing_client_auth_algorithm.value|default_if_none:'' }}" autocomplete="off">
+                        <div class="helper">{{ security_requirements.signing_client_auth_algorithm.description }} Type: {{ security_requirements.signing_client_auth_algorithm.type_hint }}. {{ security_requirements.signing_client_auth_algorithm.requirement }}</div>
+                    </div>
                 </div>
             </section>
             {% endif %}
@@ -285,6 +291,18 @@
                 <h3 id="tls-heading">TLS/certificates</h3>
                 <p class="helper">{% if dcr_mode %}mTLS client certificate and private key references are required for DCR. The CA bundle is optional.{% else %}mTLS client certificate and private key are conditional: provide both paths together, or leave both blank.{% endif %}</p>
                 <div class="grid field-row">
+                    {% if not dcr_mode %}
+                    <div>
+                        <label for="{{ form.mtls_enabled.id_for_label }}">mTLS state {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.mtls_enabled.status label=security_requirements.mtls_enabled.label only %}</label>
+                        {{ form.mtls_enabled.errors }}
+                        <select id="{{ form.mtls_enabled.id_for_label }}" name="mtls_enabled">
+                            {% for value,label in form.mtls_enabled.field.choices %}
+                                <option value="{{ value }}" {% if form.mtls_enabled.value == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="helper">{{ security_requirements.mtls_enabled.description }} {{ security_requirements.mtls_enabled.requirement }}</div>
+                    </div>
+                    {% endif %}
                     <div>
                         <label for="{{ form.tls_ca_bundle_path.id_for_label }}">CA bundle absolute path {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.tls_ca_bundle_path.status label=security_requirements.tls_ca_bundle_path.label only %}</label>
                         {{ form.tls_ca_bundle_path.errors }}

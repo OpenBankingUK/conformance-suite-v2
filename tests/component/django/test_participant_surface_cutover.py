@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -28,6 +29,12 @@ _SURFACE_PLAN_PATH = (
 )
 _AIS_ACCOUNTS_SURFACE_PLAN_PATH = (
     REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "ais" / "v4_0_1" / "participant-plan.surface.json"
+)
+_CBPII_PLAN_PATH = (
+    REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "cbpii" / "v4_0_1" / "participant-plan.json"
+)
+_VRP_PLAN_PATH = (
+    REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "vrp" / "v4_0_1" / "participant-plan.json"
 )
 
 
@@ -251,6 +258,277 @@ def test_browser_import_rejects_catalogue_unsupported_security_profile() -> None
 
     assert response.status_code == 400
     assert b"plan.reference.security-profile-unsupported" in response.content
+
+
+def test_browser_import_hydrates_scope_and_capability_controls() -> None:
+    """Imported scope selections remain checked in the guided editor."""
+    client = Client()
+    raw_plan = json.loads(_CBPII_PLAN_PATH.read_text(encoding="utf-8"))
+    raw_plan["predefinedInputs"].append(
+        {
+            "inputId": "cbpii.v401.input.debtor-account-name",
+            "value": "Debtor account",
+        }
+    )
+
+    imported = client.post(
+        reverse("builder-import"),
+        data={"plan_json": json.dumps(raw_plan)},
+    )
+
+    assert imported.status_code == 302
+    draft_id = _draft_id(imported["Location"])
+    scope_page = client.get(reverse("builder-scope", kwargs={"draft_id": draft_id}))
+    content = scope_page.content.decode()
+    assert scope_page.status_code == 200
+    assert re.search(r'name="test_scope"\s+value="cbpii"\s+checked', content)
+    assert re.search(
+        r'name="capabilities"\s+value="cbpii\.v401\.capability\.confirmation-of-funds"\s+checked',
+        content,
+    )
+    assert not re.search(r'name="test_scope"\s+value="ais"\s+checked', content)
+
+
+def test_browser_import_hydrates_and_replaces_business_defaults() -> None:
+    """Imported Business values remain visible and authoritative after edits."""
+    client = Client()
+    raw_plan = json.loads(_CBPII_PLAN_PATH.read_text(encoding="utf-8"))
+    raw_plan["predefinedInputs"].append(
+        {
+            "inputId": "cbpii.v401.input.debtor-account-name",
+            "value": "Debtor account",
+        }
+    )
+
+    imported = client.post(
+        reverse("builder-import"),
+        data={"plan_json": json.dumps(raw_plan)},
+    )
+
+    assert imported.status_code == 302
+    draft_id = _draft_id(imported["Location"])
+    business_page = client.get(reverse("builder-config", kwargs={"draft_id": draft_id}))
+    content = business_page.content.decode()
+    assert business_page.status_code == 200
+    assert 'name="cbpii_debtor_account_scheme_name"' in content
+    assert 'value="UK.OBIE.SortCodeAccountNumber"' in content
+    assert 'name="cbpii_debtor_account_identification"' in content
+    assert 'value="08080021325698"' in content
+    assert 'name="cbpii_debtor_account_name"' in content
+    assert 'value="Debtor account"' in content
+
+    updated = {
+        "cbpii_debtor_account_scheme_name": "updated-scheme",
+        "cbpii_debtor_account_identification": "updated-identification",
+        "cbpii_debtor_account_name": "Updated debtor",
+    }
+    saved = client.post(
+        reverse("builder-config", kwargs={"draft_id": draft_id}),
+        data=updated,
+    )
+    exported = client.post(
+        reverse("builder-export", kwargs={"draft_id": draft_id}),
+        data={"include_secrets": "1"},
+    )
+
+    assert saved.status_code == 302
+    assert exported.status_code == 200
+    original_inputs = {item["inputId"]: item["value"] for item in raw_plan["predefinedInputs"]}
+    exported_inputs = {item["inputId"]: item["value"] for item in json.loads(exported.content)["predefinedInputs"]}
+    assert exported_inputs["cbpii.v401.input.debtor-account-scheme"] == "updated-scheme"
+    assert exported_inputs["cbpii.v401.input.debtor-account-identification"] == "updated-identification"
+    assert exported_inputs["cbpii.v401.input.debtor-account-name"] == "Updated debtor"
+    assert (
+        exported_inputs["cbpii.v401.input.instructed-amount"] == original_inputs["cbpii.v401.input.instructed-amount"]
+    )
+    assert (
+        exported_inputs["cbpii.v401.input.instructed-currency"]
+        == original_inputs["cbpii.v401.input.instructed-currency"]
+    )
+    safe_export = client.get(reverse("builder-export", kwargs={"draft_id": draft_id}))
+    safe_inputs = {item["inputId"]: item["value"] for item in json.loads(safe_export.content)["predefinedInputs"]}
+    assert safe_inputs["cbpii.v401.input.debtor-account-scheme"] == "updated-scheme"
+    assert safe_inputs["cbpii.v401.input.debtor-account-identification"] == "updated-identification"
+    assert safe_inputs["cbpii.v401.input.debtor-account-name"] == "Updated debtor"
+
+
+@pytest.mark.parametrize(
+    ("plan_path", "field_name", "expected_value"),
+    [
+        (_AIS_ACCOUNTS_SURFACE_PLAN_PATH, "ais_consented_account_id", "account-123"),
+        (_SURFACE_PLAN_PATH, "pis_creditor_account_name", "Merchant"),
+        (_VRP_PLAN_PATH, "vrp_creditor_account_name", "VRP creditor"),
+    ],
+)
+def test_browser_import_hydrates_business_defaults_for_each_scope(
+    plan_path: Path,
+    field_name: str,
+    expected_value: str,
+) -> None:
+    """Imported AIS, PIS, and VRP inputs cross the real browser boundary."""
+    client = Client()
+    raw_plan = json.loads(plan_path.read_text(encoding="utf-8"))
+
+    imported = client.post(
+        reverse("builder-import"),
+        data={"plan_json": json.dumps(raw_plan)},
+    )
+
+    assert imported.status_code == 302
+    draft_id = _draft_id(imported["Location"])
+    business_page = client.get(reverse("builder-config", kwargs={"draft_id": draft_id}))
+    content = business_page.content.decode()
+    assert business_page.status_code == 200
+    assert f'name="{field_name}"' in content
+    assert f'value="{expected_value}"' in content
+
+
+@patch("conformance.api.ui_views._fetch_discovery_metadata")
+def test_browser_import_hydrates_and_replaces_canonical_security_fields(
+    mock_fetch_discovery: Mock,
+    tmp_path: Path,
+) -> None:
+    """Imported security values remain visible, editable, and clearable."""
+    mock_fetch_discovery.return_value = {}
+    signing_certificate = tmp_path / "signing.pem"
+    signing_private_key = tmp_path / "signing.key"
+    ca_bundle = tmp_path / "ca.pem"
+    transport_certificate = tmp_path / "transport.pem"
+    transport_private_key = tmp_path / "transport.key"
+    for path in (
+        signing_certificate,
+        signing_private_key,
+        ca_bundle,
+        transport_certificate,
+        transport_private_key,
+    ):
+        path.touch()
+    client = Client()
+    raw_plan = json.loads(_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
+    imported_security = {
+        "discoveryUrl": "https://as.example.com/.well-known/openid-configuration",
+        "clientId": "imported-client",
+        "redirectUri": "https://client.example.com/imported-callback",
+        "authorizationEndpoint": "https://as.example.com/authorize",
+        "issuer": "https://as.example.com",
+        "tokenEndpoint": "https://as.example.com/token",
+        "resourceBaseUrl": "https://rs.example.com",
+        "responseType": "code id_token",
+        "signingAlgorithm": "PS256",
+        "signingCertificatePath": str(signing_certificate),
+        "signingPrivateKeyPath": str(signing_private_key),
+        "signingKeyId": "imported-signing-key",
+        "clientAssertionIssuer": "imported-assertion-issuer",
+        "clientAssertionSubject": "imported-assertion-subject",
+        "clientAuthMethod": "private_key_jwt",
+        "clientAuthSigningAlgorithm": "PS256",
+        "mtls": {
+            "enabled": False,
+            "caBundlePath": str(ca_bundle),
+            "certificatePath": str(transport_certificate),
+            "privateKeyPath": str(transport_private_key),
+        },
+    }
+    raw_plan["executionConfiguration"]["securityEnvironment"] = imported_security
+
+    imported = client.post(
+        reverse("builder-import"),
+        data={"plan_json": json.dumps(raw_plan)},
+    )
+
+    assert imported.status_code == 302
+    draft_id = _draft_id(imported["Location"])
+    untouched_export = client.post(
+        reverse("builder-export", kwargs={"draft_id": draft_id}),
+        data={"include_secrets": "1"},
+    )
+    assert untouched_export.status_code == 200
+    assert json.loads(untouched_export.content)["executionConfiguration"]["securityEnvironment"] == imported_security
+
+    discovery_page = client.get(reverse("builder-discovery-config", kwargs={"draft_id": draft_id}))
+    assert discovery_page.status_code == 200
+    assert 'value="https://as.example.com/.well-known/openid-configuration"' in discovery_page.content.decode()
+
+    security_page = client.get(reverse("builder-security-config", kwargs={"draft_id": draft_id}))
+    assert security_page.status_code == 200
+    security_content = security_page.content.decode()
+    for imported_value in (
+        "imported-client",
+        "https://client.example.com/imported-callback",
+        "https://as.example.com/authorize",
+        "https://as.example.com",
+        "https://as.example.com/token",
+        "https://rs.example.com",
+        "code id_token",
+        "PS256",
+        str(signing_certificate),
+        str(signing_private_key),
+        "imported-signing-key",
+        "imported-assertion-issuer",
+        "imported-assertion-subject",
+        str(ca_bundle),
+        str(transport_certificate),
+        str(transport_private_key),
+    ):
+        assert f'value="{imported_value}"' in security_content
+    assert '<option value="private_key_jwt" selected>private_key_jwt</option>' in security_content
+    assert '<option value="false" selected>Disabled</option>' in security_content
+
+    updated_discovery_url = "https://new-as.example.com/.well-known/openid-configuration"
+    discovery_update = client.post(
+        reverse("builder-discovery-config", kwargs={"draft_id": draft_id}),
+        data={"discovery_url": updated_discovery_url},
+    )
+    assert discovery_update.status_code == 302
+
+    security_update = client.post(
+        reverse("builder-security-config", kwargs={"draft_id": draft_id}),
+        data={
+            "oauth_client_id": "updated-client",
+            "oauth_redirect_uri": "https://client.example.com/updated-callback",
+            "oauth_authorization_endpoint": "https://as.example.com/authorize",
+            "oauth_issuer": "",
+            "oauth_token_endpoint": "https://as.example.com/updated-token",
+            "oauth_response_type": "code",
+            "oauth_request_object_signing_alg": "PS256",
+            "resource_server_base_url": "https://updated-rs.example.com",
+            "signing_certificate_path": str(signing_certificate),
+            "signing_private_key_path": str(signing_private_key),
+            "signing_kid": "updated-signing-key",
+            "signing_client_assertion_issuer": "updated-assertion-issuer",
+            "signing_client_assertion_subject": "updated-assertion-subject",
+            "signing_token_endpoint_auth_method": "private_key_jwt",
+            "signing_client_auth_algorithm": "",
+            "mtls_enabled": "false",
+            "tls_ca_bundle_path": "",
+            "tls_client_certificate_path": str(transport_certificate),
+            "tls_client_private_key_path": str(transport_private_key),
+        },
+    )
+    assert security_update.status_code == 302, security_update.content.decode()
+
+    exported = client.post(
+        reverse("builder-export", kwargs={"draft_id": draft_id}),
+        data={"include_secrets": "1"},
+    )
+    assert exported.status_code == 200
+    exported_security = json.loads(exported.content)["executionConfiguration"]["securityEnvironment"]
+    assert exported_security["discoveryUrl"] == updated_discovery_url
+    assert exported_security["clientId"] == "updated-client"
+    assert exported_security["tokenEndpoint"] == "https://as.example.com/updated-token"
+    assert exported_security["resourceBaseUrl"] == "https://updated-rs.example.com"
+    assert exported_security["mtls"] == {
+        "enabled": False,
+        "certificatePath": str(transport_certificate),
+        "privateKeyPath": str(transport_private_key),
+    }
+    assert "issuer" not in exported_security
+    assert "clientAuthSigningAlgorithm" not in exported_security
+
+    safe_export = client.get(reverse("builder-export", kwargs={"draft_id": draft_id}))
+    safe_security = json.loads(safe_export.content)["executionConfiguration"]["securityEnvironment"]
+    assert "clientId" not in safe_security
+    assert "signingKeyId" not in safe_security
 
 
 def test_browser_promotes_cbpii_debtor_name_to_catalogue_input() -> None:

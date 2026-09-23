@@ -140,7 +140,6 @@ _DEBTOR_ACCOUNT_IDENTIFICATION = RuntimeInputRequirement(
     input_id="debtorAccountIdentification",
     input_type="string",
     label="Debtor account identification",
-    sensitive=True,
     description="Account identifier for the participant/model-bank account used in CBPII consent creation.",
 )
 _DEBTOR_ACCOUNT_NAME = RuntimeInputRequirement(

@@ -97,7 +97,7 @@
       "uri": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
     },
     {
-      "digest": "sha256:f1ad3106384a8a941a6ae23df5298784303677bbfe31bfd532e1486b00d5af90",
+      "digest": "sha256:e8706ca4b9efb79208a219839abb34461ac5344c2f2d6e7a9189bf81e8cf40ee",
       "id": "obl.cbpii-v311.tests.v2",
       "kind": "test-definition-catalogue",
       "mediaType": "application/json",
@@ -113,7 +113,7 @@
       "uri": "conformance/standards/ob_read_write/v3_1_11/confirmation-funds-openapi.json"
     },
     {
-      "digest": "sha256:358b875dd76663418007699d9ca99a0772fd5e7509edbfb820e11a913cf7801e",
+      "digest": "sha256:7cd1b42eadce51ef3216fc8c0799812cea0cdd12c80a5636827de61958a8ad89",
       "id": "obl.cbpii-v401.tests.v2",
       "kind": "test-definition-catalogue",
       "mediaType": "application/json",

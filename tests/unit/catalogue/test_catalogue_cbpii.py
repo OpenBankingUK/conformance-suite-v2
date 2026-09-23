@@ -114,7 +114,7 @@ def test_compile_includes_consent_dependency_for_funds_confirmation_endpoint() -
 
 
 def test_compile_surfaces_cbpii_runtime_input_requirements() -> None:
-    """Expose CBPII runtime inputs in traceability without leaking secrets."""
+    """Expose CBPII business inputs in traceability."""
     spec = _spec(
         endpoints=(
             ImplementedEndpoint(
@@ -133,12 +133,15 @@ def test_compile_surfaces_cbpii_runtime_input_requirements() -> None:
     assert traces["accessToken"].value is None
     assert traces["debtorAccountSchemeName"].required is True
     assert traces["debtorAccountSchemeName"].provided is True
+    assert traces["debtorAccountSchemeName"].sensitive is False
     assert traces["debtorAccountSchemeName"].value == "UK.OBIE.SortCodeAccountNumber"
     assert traces["debtorAccountIdentification"].required is True
     assert traces["debtorAccountIdentification"].provided is True
-    assert traces["debtorAccountIdentification"].value is None
+    assert traces["debtorAccountIdentification"].sensitive is False
+    assert traces["debtorAccountIdentification"].value == "12345678901234"
     assert traces["debtorAccountName"].required is True
     assert traces["debtorAccountName"].provided is True
+    assert traces["debtorAccountName"].sensitive is False
     assert traces["debtorAccountName"].value == "Model Bank Account"
     assert traces["fundsConfirmationConsentId"].required is False
     assert traces["fundsConfirmationConsentId"].provided is False

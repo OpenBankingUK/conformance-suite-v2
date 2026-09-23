@@ -33,6 +33,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Imported participant-plan security settings now populate every guided
+  Discovery and Security editor control. Saving either page updates only its
+  canonical fields, so optional values can be deliberately cleared without
+  erasing settings owned by the other page or reappearing during export.
+- Persisted participant-plan test scope and capability selections now remain
+  checked when imported plans or previously saved builder drafts are reopened
+  in the guided editor.
+- Imported and previously saved participant business/request defaults now
+  hydrate every guided control. Business-page edits and clears replace their
+  canonical participant inputs without overwriting runtime-step-owned values.
+- All CBPII debtor-account values are now treated as non-sensitive test data,
+  so their scheme, identification, and name remain visible in traceability,
+  manifests, and participant-plan exports instead of being masked.
 - AIS accounts participant plans now compile and launch through the shared
   catalogue, execution-manifest, scheduling, and compatibility-runtime
   boundaries. Account-access-consent GET and DELETE tests map to executable
