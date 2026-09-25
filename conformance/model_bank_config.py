@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, cast
@@ -15,6 +16,22 @@ from conformance.approved_releases import (
 )
 from conformance.json_types import JsonObject, JsonValue
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
+
+DATA_DIR_ENV = "CONFORMANCE_DATA_DIR"
+"""Container data-root override.
+
+Shared, by env var name only, with ``docker/entrypoint.py``'s
+``CONFORMANCE_DATA_DIR``, which pre-creates writable ``results``/``logs``
+subdirectories under this root. When set, CLI runs default their structured
+result and execution-log output under this root instead of the process
+working directory, so the hardened container's read-only ``/app`` never needs
+to be written to.
+"""
+
+DEFAULT_RESULT_OUTPUT_PATH = Path("out/test-results.json")
+DEFAULT_EXECUTION_LOG_PATH = Path("out/execution-log.ndjson")
+CONTAINER_RESULT_OUTPUT_PATH = Path("results/test-results.json")
+CONTAINER_EXECUTION_LOG_PATH = Path("logs/execution-log.ndjson")
 
 
 class ConfigError(ValueError):
@@ -88,6 +105,14 @@ class ResourceServerConfig:
 class TlsConfig:
     """Transport TLS file paths for outbound model-bank requests.
 
+    In the hardened container these are supplied as absolute paths under the
+    optional read-only ``/certs`` mount (see ``docs/DEVELOPER_GUIDE.md`` for
+    the full mount contract): ``ca_bundle_path`` maps to the CA bundle
+    artifact, and ``client_certificate_path``/``client_private_key_path`` map
+    to the transport/mTLS certificate and key artifacts. Certificate material
+    is never copied into the image or into ``/data``; it is only ever read
+    from the operator-supplied mount.
+
     Attributes:
         ca_bundle_path: Optional CA bundle used to verify the model bank.
         client_certificate_path: Optional client certificate for mTLS.
@@ -102,6 +127,10 @@ class TlsConfig:
 @dataclass(frozen=True)
 class FapiSigningConfig:
     """FAPI signing and token client-auth configuration kept out of placeholders.
+
+    ``signing_certificate_path``/``signing_private_key_path`` map to the
+    signing certificate and key artifacts under the same optional read-only
+    ``/certs`` mount described on :class:`TlsConfig`.
 
     Attributes:
         signing_certificate_path: X.509 certificate path used for PS256 JOSE
@@ -157,9 +186,15 @@ class ModelBankConfig:
         follow_up_mode: Whether to fetch JWKS after discovery succeeds.
         tls: Transport TLS settings for the HTTP client.
         result_output_path: Path where the structured JSON result should be written.
+            Defaults to ``out/test-results.json`` resolved under the output
+            base directory (typically the process CWD), or
+            ``results/test-results.json`` under ``CONFORMANCE_DATA_DIR`` when
+            that environment variable is set (see
+            :func:`load_model_bank_config`).
         execution_log_path: Path where the NDJSON execution log should be
             written. Defaults to ``out/execution-log.ndjson`` resolved under
-            the output base directory (typically the process CWD),
+            the output base directory (typically the process CWD), or
+            ``logs/execution-log.ndjson`` under ``CONFORMANCE_DATA_DIR``,
             independently of ``result_output_path``.
         approved_release_policy: Optional approved-release policy used for
             participant-side report eligibility self-assessment. When absent,
@@ -183,8 +218,8 @@ class ModelBankConfig:
     discovery_url: str | None = None
     follow_up_mode: FollowUpMode = "jwks"
     tls: TlsConfig = field(default_factory=TlsConfig)
-    result_output_path: Path = Path("out/test-results.json")
-    execution_log_path: Path = Path("out/execution-log.ndjson")
+    result_output_path: Path = DEFAULT_RESULT_OUTPUT_PATH
+    execution_log_path: Path = DEFAULT_EXECUTION_LOG_PATH
     approved_release_policy: ApprovedReleasePolicy | None = None
     oauth: OAuthConfig | None = None
     fapi_signing: FapiSigningConfig | None = None
@@ -194,6 +229,13 @@ class ModelBankConfig:
 
 def load_model_bank_config(config_path: Path) -> ModelBankConfig:
     """Load a model-bank JSON config file from disk.
+
+    When ``CONFORMANCE_DATA_DIR`` is set (as ``docker/entrypoint.py`` does in
+    the hardened container), unspecified result/execution-log paths default
+    under that root's ``results``/``logs`` subdirectories instead of the
+    process working directory, so the read-only container image is never
+    written to. Explicit ``resultOutputPath``/``executionLogPath`` values in
+    the config file always take precedence over this default.
 
     Args:
         config_path: Path to the JSON config file.
@@ -215,10 +257,22 @@ def load_model_bank_config(config_path: Path) -> ModelBankConfig:
     if not isinstance(raw_config, dict):
         raise ConfigError("Config root must be a JSON object")
 
+    data_dir = os.environ.get(DATA_DIR_ENV)
+    if data_dir:
+        output_base_dir = Path(data_dir)
+        result_output_default = CONTAINER_RESULT_OUTPUT_PATH
+        execution_log_default = CONTAINER_EXECUTION_LOG_PATH
+    else:
+        output_base_dir = Path.cwd()
+        result_output_default = DEFAULT_RESULT_OUTPUT_PATH
+        execution_log_default = DEFAULT_EXECUTION_LOG_PATH
+
     return parse_model_bank_config(
         raw_config,
         base_dir=resolved_config_path.parent,
-        output_base_dir=Path.cwd(),
+        output_base_dir=output_base_dir,
+        result_output_default=result_output_default,
+        execution_log_default=execution_log_default,
     )
 
 
@@ -227,6 +281,8 @@ def parse_model_bank_config(
     *,
     base_dir: Path,
     output_base_dir: Path | None = None,
+    result_output_default: Path = DEFAULT_RESULT_OUTPUT_PATH,
+    execution_log_default: Path = DEFAULT_EXECUTION_LOG_PATH,
 ) -> ModelBankConfig:
     """Validate raw JSON config data into a typed model-bank config.
 
@@ -235,6 +291,10 @@ def parse_model_bank_config(
         base_dir: Directory used to resolve certificate and approved-release
             policy paths.
         output_base_dir: Directory used to resolve result output paths.
+        result_output_default: Default relative structured-result path, used
+            when the config omits ``resultOutputPath``.
+        execution_log_default: Default relative execution-log path, used when
+            the config omits ``executionLogPath``.
 
     Returns:
         Typed model-bank config ready for execution.
@@ -271,13 +331,13 @@ def parse_model_bank_config(
         raw_config,
         "resultOutputPath",
         base_dir=output_base_dir or Path.cwd(),
-        default=Path("out/test-results.json"),
+        default=result_output_default,
     )
     execution_log_path = _optional_path(
         raw_config,
         "executionLogPath",
         base_dir=output_base_dir or Path.cwd(),
-        default=Path("out/execution-log.ndjson"),
+        default=execution_log_default,
     )
     approved_release_policy = _optional_approved_release_policy(raw_config, root=base_dir)
     oauth = _parse_oauth_config(raw_config)
