@@ -32,9 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Run-detail catalogue evidence summary for selected endpoint/capability counts, generated test-case counts, catalogue version, and non-certifying reasons.
 - Hand-maintained legacy mapping documentation in `docs/FCS_LEGACY_BENCHMARK_MAPPING.md`.
 - Regression coverage for bundled catalogue registration, legacy FCS provenance, restored guided builder capability selection, safe v2 plan-document export, API/CLI capability parity, run-detail catalogue evidence, compiled-plan execution traceability, and result JSON omission of legacy suite metadata.
+- `scripts/release_metadata.py` and its CI-facing `scripts/validate_release.py` CLI, providing strict raw-version parsing, preview/beta/GA channel classification, branch/tag compatibility checks, version-increase and duplicate-publish guards, and a promotion-manifest builder for the Docker release process.
+- `.github/dependabot.yml`, scheduling weekly update PRs for the pinned Docker base image digests, Python (`uv`) dependencies, and GitHub Actions, each gated by the full check suite, hardened runtime smoke test, and vulnerability scan.
 
 ### Changed
 
+- Dockerfile rewritten as a hardened, digest-pinned multi-stage build on Docker Hardened Images (`dhi.io/python`, Debian 13), running as non-root UID/GID 65532 with no shell or package manager in the runtime stage. `docker/entrypoint.py` prepares the `/data` volume, generates and persists a mode-0600 Django secret key, and supplies safe host/session-path defaults before exec'ing into the application; `docker/healthcheck.py` provides an exec-form container health check. `make docker` now runs the image under the full hardened profile (read-only root filesystem, all capabilities dropped, `no-new-privileges`, tmpfs `/tmp`, named `/data` volume) without requiring manually supplied secrets.
+- `docs/CICD_STRATEGY.md` corrected: pulling Docker Hardened Images requires authenticating to the `dhi.io` registry, including in CI, so DHI does affect the GitHub Actions pipeline.
+
+- CI/CD strategy now documents the stable-`main`, `develop`, feature-preview,
+  release-branch, and digest-promotion model for participant-facing Docker
+  preview, beta, RC, and GA images, including the human approval points and
+  source-controlled image tag metadata.
 - Pull request CI now invokes the canonical `make check` gate with a full
   tracked-file secret scan while Docker image build, startup, and `/health/`
   validation run independently in parallel. The duplicated lint/test command
