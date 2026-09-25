@@ -41,7 +41,7 @@
     - [5.1 Version and Image Tag Source of Truth](#51-version-and-image-tag-source-of-truth)
     - [5.2 Human and Automated Responsibilities](#52-human-and-automated-responsibilities)
     - [5.3 Feature Preview Releases](#53-feature-preview-releases)
-    - [5.4 Beta, RC, and GA Releases](#54-beta-rc-and-ga-releases)
+    - [5.4 Beta and GA Releases](#54-beta-and-ga-releases)
     - [5.5 Release Exception Process](#55-release-exception-process)
     - [5.6 Hotfix Process](#56-hotfix-process)
   - [6. Build Status Badge](#6-build-status-badge)
@@ -74,7 +74,7 @@ This model separates four different questions that must not be conflated:
 
 | Branch | Purpose | Direct Push Allowed |
 |---|---|---|
-| `main` | Stable-only branch. Contains GA release history and emergency hotfixes for the currently supported version. Participant-facing stable tags and `latest` are derived from approved GA releases. | **No** |
+| `main` | Stable-only branch. Contains GA release history. Participant-facing stable tags and `latest` are derived from approved GA releases. | **No** |
 | `develop` | Normal integration branch for accepted development work. Feature and bugfix PRs target this branch. No participant-facing images are published from `develop`. | **No** |
 
 ### 1.2 Transient Branches
@@ -84,8 +84,8 @@ This model separates four different questions that must not be conflated:
 | `feature/` | `develop` | `develop`, `preview/<feature>`, or `release/<semver>` | New features and enhancements |
 | `bugfix/` | `develop` | `develop`, `preview/<feature>`, or `release/<semver>` | Non-critical bug fixes |
 | `preview/` | Latest stable tag, for example `v2.1.0` | `develop` only if accepted | Isolated feature trial branch for a participant-facing preview that may never ship |
-| `release/` | `develop` (cut when release scope is selected) | `main` on GA; back-merge or cherry-pick to `develop` as needed | Stages beta, RC, and GA candidates for a specific release |
-| `hotfix/` | `main` | `main` | Critical fixes to the currently released version |
+| `release/` | `develop` for a normal release, or `main` for an urgent fix (see [5.6](#56-hotfix-process)) | `main` on GA; merged back into `develop` afterwards | Stages beta and GA candidates for a specific release |
+| `hotfix/` | `main` | The `release/<patch-version>` branch cut for the fix (see [5.6](#56-hotfix-process)) | Critical fix commits for the currently released version; never published directly |
 
 ### 1.3 Naming Conventions
 
@@ -117,11 +117,13 @@ develop    ───●──●──●──●──●───┴───
 feature/a ────┘     │      │        │ accepted preview merges/cherry-picks here
 feature/b ──────────┘      │        │
                            │
-preview/new-cert-flow ─────●──●── publish 2.1.1.dev1/.dev2
+preview/new-cert-flow ─────●──●── publish 2.1.1-dev.1, 2.1.1-dev.2
                            │
-release/2.2.0 ─────────────┴──●──●── publish 2.2.0-beta.1, 2.2.0-rc.1, 2.2.0
+release/2.2.0 ─────────────┴──●──●── publish 2.2.0-beta.1, 2.2.0-beta.2, 2.2.0
 
-hotfix/107 ─── branches from main, merges back to main, then is merged/cherry-picked to develop and any active release branches
+hotfix/107 ─── branches from main, merges into a release/2.1.1 branch cut from
+               main, which is promoted through the normal beta/GA gate, then
+               merged into main and back into develop
 ```
 
 Every `feature/`/`bugfix/` PR targets `develop` unless it is explicitly scoped
@@ -143,20 +145,21 @@ git checkout v2.1.0
 git checkout -b preview/new-cert-flow
 ```
 
-Preview image tags use PEP 440 development releases for the next possible
-patch version. If the latest stable release is `2.1.0`, separate experimental
-feature previews can use:
+Preview image tags use a `-dev.N` suffix on the next possible patch version.
+If the latest stable release is `2.1.0`, separate experimental feature
+previews can use:
 
 ```text
-2.1.1.dev1
-2.1.1.dev2
+2.1.1-dev.1
+2.1.1-dev.2
 ```
 
 These tags mean "experimental builds after `2.1.0`, before any formal `2.1.1`
 release". They are not post-releases and do not imply that the preview feature
 will be accepted into `2.1.1`. The feature identity is carried by the preview
 branch, PR, release notes, and trial instructions. Formal release prereleases
-use PEP 440 beta and RC forms such as `2.1.1b1` and `2.1.1rc1`.
+use a `-beta.N` suffix, for example `2.1.1-beta.1`; there is no release
+candidate (RC) channel.
 
 If a preview is accepted, merge or cherry-pick the feature into `develop` and
 then include it in a later `release/**` branch. If it is rejected, archive or
@@ -231,9 +234,9 @@ exact checked digest.
 
 | Environment | Used For | Human Action |
 |---|---|---|
-| `preview-release` | Publishing `.devN` image tags from `preview/**` branches | Approver reviews the candidate manifest, trial purpose, version/tag, and checks, then clicks **Approve** |
-| `beta-release` | Publishing `bN` and `rcN` image tags from `release/**` branches | Approver confirms the prerelease is intended for participant testing, then clicks **Approve** |
-| `ga-release` | Publishing stable `X.Y.Z`, `X.Y`, `X`, and `latest` tags | Approver confirms GA readiness, matching tag/release notes, and support handover, then clicks **Approve** |
+| `preview-release` | Publishing `-dev.N` image tags from `preview/**` branches | Approver reviews the candidate manifest, trial purpose, version/tag, and checks, then clicks **Approve** |
+| `beta-release` | Publishing `-beta.N` image tags from `release/**` branches | Approver confirms the prerelease is intended for participant testing, then clicks **Approve** |
+| `ga-release` | Publishing the stable `X.Y.Z` and `latest` tags | Approver confirms GA readiness, matching tag/release notes, and support handover, then clicks **Approve** |
 
 The approval screen must never be used to choose or type a release tag. The
 tag is committed and reviewed before the workflow reaches the Environment
@@ -274,7 +277,7 @@ The following GitHub security features **must** be enabled at the organisation a
 
 Snyk is the primary security scanning platform. Repository dependency and code
 checks run through the Snyk GitHub integration. Candidate container images used
-for preview, beta, RC, and GA publication must also be scanned as part of the
+for preview, beta, and GA publication must also be scanned as part of the
 GitHub Actions quality gate.
 
 | Scan Type | Trigger | Blocks Merge |
@@ -300,6 +303,8 @@ The following secrets must be configured in **Repository Settings → Secrets an
 |---|---|
 | `GITHUB_TOKEN` | Automatically provided by GitHub Actions; no manual setup |
 | `SNYK_TOKEN` | Required for authenticated candidate image scans in GitHub Actions. Configure as an organisation-managed service credential before enabling participant-facing preview or release publication. |
+| `DOCKER_ORG_USERNAME` | Read-only, organisation-owned Docker account username used to authenticate to the `dhi.io` registry (see [Section 11](#11-docker-hardened-images)). Never a personal Docker account. |
+| `DOCKER_ORG_ACCESS_TOKEN` | Access token for the same read-only, organisation-owned Docker account, used alongside `DOCKER_ORG_USERNAME` to pull Docker Hardened Images. |
 
 There are currently no repository-level variables required by CI: the
 supported pytest suite is fully offline and does not target a live model bank
@@ -342,14 +347,16 @@ The external Snyk integration reports dependency/code PR status independently.
 
 | File | Triggers | Purpose |
 |---|---|---|
-| `.github/workflows/ci.yml` | PR + push to protected branches | Canonical `make check` gate plus parallel Docker build and health check |
-| `.github/workflows/image-candidate.yml` | Pushes or approved dispatches for `preview/**` and `release/**` branches | Builds immutable candidate images, runs the full image quality gate, and records the checked digest |
-| `.github/workflows/image-promote.yml` | Successful candidate workflow plus Environment approval | Promotes the already-checked digest to the reviewed participant-facing tag without rebuilding |
+| `.github/workflows/ci.yml` | PR + push to protected branches | Canonical `make check` gate, a fast single-platform Docker build/smoke job, and (for `main`/`release/**`/`preview/**`) the `candidate-image` matrix that builds, smoke-tests, and Snyk-scans native `linux/amd64`/`linux/arm64` images and stages a checksummed promotion manifest as a workflow artifact — without publishing anywhere |
+| `.github/workflows/_promote-image.yml` | Called only by the three workflows below (`workflow_call`) | Locates the successful `candidate-image` run for a given commit, revalidates its manifest, and republishes the exact already-scanned digests as a multi-arch manifest list; never rebuilds |
+| `.github/workflows/promote-preview.yml` | Manual `workflow_dispatch`, gated by the `preview-release` Environment | Promotes a `preview/**` candidate to its `-dev.N` tag |
+| `.github/workflows/promote-beta.yml` | Manual `workflow_dispatch`, gated by the `beta-release` Environment | Promotes a `release/**` candidate to its `-beta.N` tag |
+| `.github/workflows/promote-ga.yml` | Manual `workflow_dispatch`, gated by the `ga-release` Environment | Promotes a `main` candidate to its stable `X.Y.Z` tag and repoints `latest`; opens a `main`-to-`develop` merge-back PR |
 
 ### 4.3 Candidate Image Quality Gate
 
 Every participant-facing image must pass the same quality gate before it can be
-published, regardless of whether it is a feature preview, beta, RC, or GA
+published, regardless of whether it is a feature preview, beta, or GA
 release. The workflow must promote only the digest that passed the gate; it
 must not rebuild during publication.
 
@@ -407,17 +414,12 @@ participant-facing image tags:
 
 ```toml
 [project]
-version = "2.1.1.dev1"
+version = "2.1.1-dev.1"
 ```
 
 ```toml
 [project]
-version = "2.1.1b1"
-```
-
-```toml
-[project]
-version = "2.1.1rc1"
+version = "2.1.1-beta.1"
 ```
 
 ```toml
@@ -425,23 +427,25 @@ version = "2.1.1rc1"
 version = "2.1.1"
 ```
 
-The workflow validates this value with `packaging.version.Version`, preserves
-the raw TOML string for the OCI image tag and report labels, and rejects a
-branch/channel mismatch. Stable GA publication also requires a matching Git
-tag, for example `v2.1.1`.
+The workflow validates this value against the expected `X.Y.Z`, `X.Y.Z-dev.N`,
+or `X.Y.Z-beta.N` forms, preserves the raw TOML string for the OCI image tag
+and report labels, and rejects a branch/channel mismatch. Stable GA
+publication also requires a matching Git tag, for example `v2.1.1`.
 
 **Tag formats:**
 
 | Tag | Example | Type |
 |---|---|---|
-| `X.Y.Z.devN` | `2.1.1.dev1` | Feature preview image |
-| `X.Y.ZbN` | `2.1.1b1` | Beta image |
-| `X.Y.ZrcN` | `2.1.1rc1` | Release candidate image |
+| `X.Y.Z-dev.N` | `2.1.1-dev.1` | Feature preview image |
+| `X.Y.Z-beta.N` | `2.1.1-beta.1` | Beta image |
 | `X.Y.Z` | `2.1.1` | Stable image |
 | `vX.Y.Z` | `v2.1.1` | Stable Git tag |
 
-Immutable version tags must never be overwritten. Moving convenience aliases
-such as `latest` are permitted only for GA releases.
+There is no release candidate (RC) channel — a release branch moves directly
+from `-beta.N` builds to the final `X.Y.Z` GA build.
+
+Immutable version tags must never be overwritten. The only moving alias is
+`latest`, which is repointed on GA releases only.
 
 ---
 
@@ -479,7 +483,7 @@ the next formal patch release number.
 2. The author opens PRs into `preview/<feature-name>` containing only the trial
    feature, project version bump, and any trial documentation.
 3. `pyproject.toml` names the intended preview image tag through
-   `[project].version`, for example `2.1.1.dev1`.
+   `[project].version`, for example `2.1.1-dev.1`.
 4. CI builds the candidate image and runs the full quality gate.
 5. A release approver reviews the `preview-release` Environment gate and clicks
    **Approve**.
@@ -489,40 +493,43 @@ the next formal patch release number.
 Subsequent preview iterations increment only the preview iteration:
 
 ```text
-2.1.1.dev1
-2.1.1.dev2
+2.1.1-dev.1
+2.1.1-dev.2
 ```
 
 If the feature is accepted, merge or cherry-pick it into `develop`. If it is
 rejected, close the branch without consuming a formal release number.
 
-### 5.4 Beta, RC, and GA Releases
+### 5.4 Beta and GA Releases
 
 Release branches are used only once maintainers have selected the scope for a
 known upcoming release.
 
 1. A maintainer creates `release/X.Y.Z` from `develop` when release scope is
-   selected.
+   selected (or from `main`, when the release is an urgent fix — see
+   [5.6](#56-hotfix-process)).
 2. Release preparation PRs into `release/X.Y.Z` update the project version,
    changelog, and any stabilisation fixes.
-3. Beta and RC candidate images publish from the release branch after the full
+3. Beta candidate images publish from the release branch after the full
    quality gate and `beta-release` approval:
 
    ```text
-   2.1.1b1
-   2.1.1b2
-   2.1.1rc1
+   2.1.1-beta.1
+   2.1.1-beta.2
    ```
 
+   There is no release candidate (RC) channel; once maintainers are satisfied
+   with the final beta build, the release branch moves straight to GA.
 4. GA publication requires:
    - `pyproject.toml` project version `2.1.1`;
    - matching Git tag `v2.1.1`;
    - full quality gate success for the candidate digest;
    - `ga-release` Environment approval.
-5. The promotion workflow publishes the checked digest as `2.1.1` and may also
-   publish stable aliases `2.1`, `2`, and `latest`.
-6. The release branch is merged into `main` after GA acceptance and merged or
-   cherry-picked back into `develop` as needed.
+5. The promotion workflow publishes the checked digest as `2.1.1` and repoints
+   the `latest` alias. No other aliases (for example `2.1` or `2`) are
+   published.
+6. The release branch is merged into `main` after GA acceptance and merged
+   back into `develop` afterwards.
 
 ### 5.5 Release Exception Process
 
@@ -544,25 +551,34 @@ repository administrator may merge despite failing status checks.
 
 ### 5.6 Hotfix Process
 
+There is no separate hotfix publication pipeline. `validate_branch_compatibility`
+in `scripts/release_metadata.py` only recognises `preview/<feature>`,
+`release/X.Y.Z`, and `main` — a `hotfix/**` branch can never itself publish a
+participant-facing image. Instead, a hotfix ships as an expedited new patch
+release, going through the same beta/GA gate as any other release:
+
 ```
 1. Branch from main:
    git checkout main && git checkout -b hotfix/107-fix-auth-header
 
 2. Fix, commit, push
-   - PR against main: requires CI pass + 2 approvals
+   - PR against main: requires CI pass + 2 approvals; this validates the fix
+     itself but does not publish an image (main only accepts PRs that already
+     match its current GA version)
 
-3. Add project-version and changelog updates for the hotfix version.
+3. Cut the patch release branch from main once the fix is ready to ship:
+   git checkout main && git checkout -b release/1.2.1
+   git cherry-pick <hotfix-commit>
 
-4. Candidate image workflow builds and checks the hotfix image.
+4. Add the project-version (1.2.1) and changelog updates on release/1.2.1.
 
-5. GA approver approves publication. The workflow promotes the checked digest
-   to the hotfix version tag and stable aliases.
+5. The release branch goes through the normal beta gate (1.2.1-beta.1, ...)
+   and then GA (1.2.1), per Section 5.4. Use the release exception process
+   (Section 5.5) only to bypass an unrelated external CI failure — never to
+   skip the quality gate itself.
 
-6. Merge the hotfix into main.
-
-7. Merge or cherry-pick the hotfix into develop and any active release branch
-   so future releases also carry the fix:
-   git checkout release/1.2.0 && git cherry-pick <hotfix-commit>
+6. After GA, release/1.2.1 is merged into main and back into develop, and the
+   original hotfix/107 branch (already merged into main in step 2) is deleted.
 ```
 
 ---
@@ -627,7 +643,7 @@ Before a new team member can contribute, the following must be completed by a re
 - [ ] Clone the repository and run `uv sync --frozen --no-install-project` to install dependencies
 - [ ] Read this document, [REQUIREMENTS.md](REQUIREMENTS.md), and [TESTING_STRATEGY.md](TESTING_STRATEGY.md)
 - [ ] Complete a first PR against `develop` to verify the pipeline works end-to-end
-- [ ] Read [Section 5](#5-release-process) before preparing a preview, beta, RC, or GA publication PR
+- [ ] Read [Section 5](#5-release-process) before preparing a preview, beta, or GA publication PR
 
 ---
 
@@ -651,7 +667,7 @@ friction:
 ```markdown
 ## What does this PR do?
 
-<!-- Summarise the change and why it was made. Include the issue number if applicable. -->
+<!-- Summarise the change and why it was made. Include the issue number if applicable (e.g. Closes #42). -->
 
 ## Checklist
 
@@ -659,7 +675,7 @@ friction:
 - [ ] `CHANGELOG.md` updated (feat / fix / hotfix / security changes only)
 - [ ] No hardcoded secrets or credentials
 - [ ] `uv.lock` regenerated if `pyproject.toml` changed
-- [ ] `[project].version` updated if this PR prepares a preview, beta, RC, or GA image
+- [ ] `[project].version` updated if this PR prepares a preview, beta, or GA image
 ```
 
 The template is a prompt, not a gate. Authors should complete what is relevant and skip sections that do not apply.
@@ -679,20 +695,22 @@ the policy in this document:
    truth. Do not accept workflow-dispatch tag input for participant-facing
    publication.
 4. Enforce branch/channel compatibility:
-   - `preview/**` may publish only `X.Y.Z.devN`.
-   - `release/**` may publish only `X.Y.ZbN`, `X.Y.ZrcN`, or `X.Y.Z`.
+   - `preview/**` may publish only `X.Y.Z-dev.N`.
+   - `release/**` may publish only `X.Y.Z-beta.N` or `X.Y.Z`. There is no RC
+     channel.
    - `main` receives GA release history only.
 5. Enforce immutable version tags. Fail rather than overwrite an existing
-   preview, beta, RC, or stable image tag.
+   preview, beta, or stable image tag.
 6. Require `SNYK_TOKEN` for candidate image scans and fail on scan/auth
    failures. There is no high/critical allowlist for preview or beta images.
 7. Attach or preserve SBOM and provenance for the promoted digest.
 8. Require the matching GitHub Environment approval before participant-facing
    promotion:
    - `preview-release` for previews;
-   - `beta-release` for beta and RC;
+   - `beta-release` for beta;
    - `ga-release` for stable releases.
-9. Keep Docker Hub disabled until GA distribution policy explicitly enables it.
-   Preview and beta publication target GHCR unless this document is revised.
+9. Never configure Docker Hub as a publish target. GHCR
+   (`ghcr.io/openbankinguk/conformance-suite-v2`) is the sole registry for
+   every channel, including GA.
 10. Update this strategy document and the changelog whenever the workflow
     policy changes.

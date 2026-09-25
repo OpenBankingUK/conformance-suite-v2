@@ -24,12 +24,14 @@
 |---------|
 | `astral-sh/setup-uv` |
 | `docker/*` |
+| `anchore/sbom-action` |
 | `snyk/actions/*` |
 
 **Rationale**: Only the actions required for the CI pipeline are allowlisted:
 
 - **`astral-sh/setup-uv`** — Required for installing `uv` in CI to manage Python and dependencies.
 - **`docker/*`** — Required for building, tagging, and pushing the conformance suite Docker container image.
+- **`anchore/sbom-action`** — Generates the SPDX SBOM for each native-platform candidate image in the `candidate-image` job.
 - **`snyk/actions/*`** — Required for dependency and container security scanning as part of the CI security-scan job.
 
 The principle is to remain closed by default and open incrementally.
@@ -85,9 +87,9 @@ The principle is to remain closed by default and open incrementally.
 | Setting | Value |
 |---------|-------|
 | Default GITHUB_TOKEN permissions | **Read** (repository contents and packages only) |
-| Allow Actions to create and approve PRs | ❌ Unchecked |
+| Allow Actions to create and approve PRs | ✅ Checked |
 
-**Rationale**: Follows the principle of least privilege. Workflows receive read-only access by default; any workflow that requires write permissions must explicitly declare them via the `permissions` key in the workflow YAML. Disabling PR creation and approval by Actions prevents automated workflows from self-approving changes, which would undermine the required code review process.
+**Rationale**: Follows the principle of least privilege for the default: workflows receive read-only access by default, and any workflow that requires write permissions must explicitly declare them via the `permissions` key in the workflow YAML (see the per-job `permissions:` blocks in `.github/workflows/`). This one repository-level setting must be **enabled**, however, because `promote-ga.yml` opens (but never merges or approves) a `main`-to-`develop` merge-back pull request via `gh pr create` using `GITHUB_TOKEN`; GitHub blocks `GITHUB_TOKEN`-authored PR creation entirely when this setting is off, regardless of the workflow's own `permissions:` block. No workflow in this repository calls the PR-approval API, so the "approve" half of this combined toggle is dormant capability, not exercised behaviour — the merge-back PR still requires a human review to satisfy `develop`'s branch protection rules before it can be merged.
 
 ---
 

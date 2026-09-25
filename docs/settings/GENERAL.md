@@ -24,7 +24,7 @@
 
 **Rationale**: `main` is the stable GA branch in the repository branching
 model (see [CICD_STRATEGY.md](../CICD_STRATEGY.md)). Normal development PRs
-target `develop`; participant-facing previews use `preview/**`; beta, RC, and
+target `develop`; participant-facing previews use `preview/**`; beta and
 GA candidates use `release/**`; and `main` records the approved supported
 release history.
 
