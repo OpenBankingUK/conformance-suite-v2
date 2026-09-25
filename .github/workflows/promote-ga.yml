@@ -1,0 +1,61 @@
+name: Promote GA image
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        required: true
+        description: "Exact commit SHA on main to promote (the finalized release/X.Y.Z merge)."
+      tag:
+        required: true
+        description: "The exact vX.Y.Z Git tag identifying the release commit on main."
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    name: Promote
+    uses: ./.github/workflows/_promote-image.yml
+    with:
+      channel: ga
+      source_sha: ${{ inputs.source_sha }}
+      branch: main
+      tag: ${{ inputs.tag }}
+      environment_name: ga-release
+    secrets: inherit
+
+  open-develop-merge-back:
+    name: Open main-to-develop merge-back PR
+    needs: promote
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Open a pull request merging main back into develop
+        # Never merges automatically: a human still reviews and merges this,
+        # same as any other PR into develop.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet origin/develop origin/main -- 2>/dev/null; then
+            echo "develop is already up to date with main; nothing to open."
+            exit 0
+          fi
+          existing="$(gh pr list --base develop --head main --state open --json number --jq '.[0].number // empty')"
+          if [[ -n "$existing" ]]; then
+            echo "Merge-back PR #$existing already open."
+            exit 0
+          fi
+          gh pr create \
+            --base develop \
+            --head main \
+            --title "Merge GA release ${{ inputs.tag }} back into develop" \
+            --body "Automated merge-back after promoting ${{ inputs.tag }} to GA. Review and merge to keep develop current with the released state of main."
