@@ -7,7 +7,7 @@
 | Project | Open Banking UK Conformance Test Tool |
 | Scope | Repository governance, branching strategy, pipeline design |
 | Status | Approved |
-| Date | April 2026 |
+| Date | April 2026 (branching model revised — see [Section 1](#1-branching-strategy-trunk-based-with-staged-release-branches)) |
 
 ---
 
@@ -16,16 +16,16 @@
 - [CI/CD Strategy \& Repository Controls](#cicd-strategy--repository-controls)
   - [Document Control](#document-control)
   - [Table of Contents](#table-of-contents)
-  - [1. Branching Strategy: Git Flow](#1-branching-strategy-git-flow)
+  - [1. Branching Strategy: Trunk-Based with Staged Release Branches](#1-branching-strategy-trunk-based-with-staged-release-branches)
     - [1.1 Permanent Branches](#11-permanent-branches)
     - [1.2 Transient Branches](#12-transient-branches)
     - [1.3 Naming Conventions](#13-naming-conventions)
-    - [1.4 Git Flow Diagram](#14-git-flow-diagram)
+    - [1.4 Branching Diagram](#14-branching-diagram)
+    - [1.5 Moving Work Between Planned Releases](#15-moving-work-between-planned-releases)
   - [2. Branch Protection Rules](#2-branch-protection-rules)
     - [2.1 `main` Branch](#21-main-branch)
-    - [2.2 `develop` Branch](#22-develop-branch)
-    - [2.3 `release/**` Branches](#23-release-branches)
-    - [2.4 Configuring GitHub Copilot as a Required Reviewer](#24-configuring-github-copilot-as-a-required-reviewer)
+    - [2.2 `release/**` Branches](#22-release-branches)
+    - [2.3 Configuring GitHub Copilot as a Required Reviewer](#23-configuring-github-copilot-as-a-required-reviewer)
   - [3. Repository Security Controls](#3-repository-security-controls)
     - [3.1 GitHub Security Features](#31-github-security-features)
     - [3.2 Snyk Integration](#32-snyk-integration)
@@ -50,25 +50,39 @@
 
 ---
 
-## 1. Branching Strategy: Git Flow
+## 1. Branching Strategy: Trunk-Based with Staged Release Branches
 
-The project follows the **Git Flow** branching model with two permanent branches and three transient branch types.
+The project only ever supports **one released version at a time** — participants
+are told to use the latest release or a stated minimum version, not a matrix of
+supported versions. Historically the team also needed to **stage more than one
+planned release in parallel** (e.g. two independent fixes prepared at the same
+time but deliberately shipped in separate releases, with work reassigned
+between them as priorities changed). The branching model below is trunk-based
+to match the single-supported-version reality, while still supporting that
+staging need through **short-lived, independently cuttable `release/**`
+branches** rather than a permanent Git Flow `develop` branch.
+
+> **Migration note**: this repository previously documented a Git Flow model
+> with a permanent `develop` branch. `develop` was never created and CI never
+> ran against it in practice, so this section replaces that model outright. If
+> a `develop` branch or its branch ruleset (see
+> [BRANCH_RULESETS_DEVELOP.md](settings/BRANCH_RULESETS_DEVELOP.md)) exist in
+> GitHub settings, they should be deleted as part of adopting this model.
 
 ### 1.1 Permanent Branches
 
 | Branch | Purpose | Direct Push Allowed |
 |---|---|---|
-| `main` | Represents production-ready, released code | **No** |
-| `develop` | Integration branch; all feature work merges here | **No** |
+| `main` | Trunk. Always green and mergeable, but merging here means "done and available," **not** "will ship next" — actual release contents are composed on `release/**` branches. | **No** |
 
 ### 1.2 Transient Branches
 
 | Prefix | Branch From | Merges Into | Purpose |
 |---|---|---|---|
-| `feature/` | `develop` | `develop` | New features and enhancements |
-| `bugfix/` | `develop` | `develop` | Non-critical bug fixes |
-| `release/` | `develop` | `main` + `develop` | Release stabilisation and prep |
-| `hotfix/` | `main` | `main` + `develop` | Critical production fixes |
+| `feature/` | `main` | `main` | New features and enhancements |
+| `bugfix/` | `main` | `main` | Non-critical bug fixes |
+| `release/` | `main` (cut when release planning starts; **any number can be open at once**) | `main` (on ship) | Stages the exact set of merged commits intended for a specific, plannable release |
+| `hotfix/` | `main` | `main` | Critical fixes to the currently released version |
 
 ### 1.3 Naming Conventions
 
@@ -87,19 +101,42 @@ release/1.2.0
 hotfix/107-fix-auth-header-parsing
 ```
 
-### 1.4 Git Flow Diagram
+### 1.4 Branching Diagram
 
 ```
-main     ────────●──────────────────────────────────────●──────
-                 ↑ initial commit                        ↑ merge from release/1.0.0
-                 │                                       │
-develop  ────────●──────●──────●──────●──────────────────●──────
-                        ↑      ↑      ↑                  ↑
-feature/42 ─────────────┘      │      │            merged
-feature/55 ────────────────────┘      │
-release/1.0.0 ────────────────────────────────────●──── (bumps version, fixes)
-hotfix/107 ─────────────────────────── (branches from main, merges back to main + develop)
+main       ───●──●──●──●──●──●──●──────────●──(tag v1.2.0)──●──●──
+              │  │  │  │  │  │  │          ▲
+feature/42 ───┘  │  │  │  │  │  │          │ merge release/1.2.0 back into main
+feature/55 ──────┘  │  │  │  │  │          │
+feature/60 ─────────┘  │  │  │  │          │
+                        │  │  │  │
+release/1.2.0 ──────────┴──┴──┴──●cherry-pick──●cherry-pick──●─── (stabilise, tag, merge)
+release/1.3.0 (opened in parallel, staged separately) ───────────
+
+hotfix/107 ─── branches from main, merges back to main only (single supported version)
 ```
+
+Every `feature/`/`bugfix/` PR targets `main` first and passes the same CI gate
+regardless of which release (if any) it is ultimately staged for.
+
+### 1.5 Moving Work Between Planned Releases
+
+When two or more releases are being staged concurrently:
+
+1. Once a change is merged to `main`, cherry-pick it into whichever
+   `release/x.y.z` branch it's currently planned for.
+2. If priorities change before that release ships, **revert the cherry-pick**
+   on the original release branch and **cherry-pick it into the new target
+   release branch** instead. The commit on `main` never moves — only which
+   release branch carries it changes.
+3. Once a release branch is tagged and merged into `main`, its contents are
+   final. Moving a *shipped* change to a different release is no longer a
+   re-staging exercise — it becomes a `hotfix/` against the newly released
+   version, or scope for the next release.
+
+This keeps `main` as a single, simple source of truth (one place to test, one
+`git log` to read) while still letting the team plan release contents
+independently of when a fix or feature happens to be finished.
 
 ---
 
@@ -123,33 +160,21 @@ These rules **must** be configured in **GitHub → Repository Settings → Branc
 | Allow administrators to bypass | **Enabled** — repository admins may override in exceptional circumstances; see [Section 5.4](#54-release-exception-process) |
 | Restrict who can push to matching branches | Standards Team leads only |
 
-### 2.2 `develop` Branch
-
-| Rule | Setting |
-|---|---|
-| Require a pull request before merging | **Enabled** |
-| Required approving reviews | **1** (human) |
-| Dismiss stale pull request approvals when new commits are pushed | **Enabled** |
-| Require review from Code Owners | **Enabled** |
-| Require status checks to pass before merging | Not currently configured |
-| Recommended required status checks | `Check`, `Docker Build`, and the external Snyk check |
-| Require branches to be up to date before merging | **Enabled** |
-| Require conversation resolution before merging | **Enabled** |
-| Allow administrators to bypass | **Enabled** — repository admins may override in exceptional circumstances; see [Section 5.4](#54-release-exception-process) |
-
-### 2.3 `release/**` Branches
+### 2.2 `release/**` Branches
 
 | Rule | Setting |
 |---|---|
 | Require a pull request before merging (into `main`) | **Enabled** (via `main` rules) |
 | CI runs automatically on push | **Enabled** |
 
-### 2.4 Configuring GitHub Copilot as a Required Reviewer
+Any number of `release/**` branches may be open at once (see [Section 1.5](#15-moving-work-between-planned-releases)); each is protected identically and independently.
+
+### 2.3 Configuring GitHub Copilot as a Required Reviewer
 
 GitHub Copilot code review is enabled as follows:
 
 1. **GitHub Repository Settings → Copilot → Code review**
-   - Enable "Automatic review requests" for pull requests targeting `main` and `develop`
+   - Enable "Automatic review requests" for pull requests targeting `main`
 2. In the **branch protection rules** for `main`:
    - Set required approving reviews to **2**
    - The Copilot review counts as one of the required reviews when it approves
@@ -213,8 +238,7 @@ or Ozone environment.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ Trigger: Pull Request or push (main, develop, release/*,         │
-│ hotfix/*)                                                       │
+│ Trigger: Pull Request or push (main, release/*, hotfix/*)        │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                ┌───────────────┴───────────────┐
@@ -272,13 +296,16 @@ git push origin v1.2.0
 
 ---
 
-### 5.2 Standard Release (Git Flow)
+### 5.2 Standard Release (Trunk-Based, Staged Release Branch)
 
 ```
-1. Create release branch from develop:
-   git checkout develop && git checkout -b release/1.2.0
+1. Create a release branch from main, when release planning starts —
+   any number of release branches may be open at once:
+   git checkout main && git checkout -b release/1.2.0
 
-2. Stabilise on release branch (version bump, changelog, final fixes)
+2. Stage the intended contents by cherry-picking merged commits from main
+   (see Section 1.5 for moving work between planned releases), plus any
+   version bump / changelog commits made directly on the release branch
    - CI runs automatically on every push
 
 3. Open PR: release/1.2.0 → main
@@ -294,11 +321,6 @@ git push origin v1.2.0
 6. An admin creates the GitHub Release manually via the GitHub UI using the tag.
 
 7. Docker Hub detects the tag and publishes the image automatically.
-
-8. Merge main back into develop to capture the version bump:
-   git checkout develop
-   git merge main
-   git push origin develop
 ```
 
 ### 5.3 Beta Releases
@@ -306,7 +328,7 @@ git push origin v1.2.0
 Beta releases allow pre-release images to be distributed before a final stable tag.
 
 ```
-1. On develop or a release/ branch, when a build is ready for beta testing:
+1. On a release/ branch, when a build is ready for beta testing:
 
 2. An admin pushes a beta tag:
    git tag -a v1.2.0-beta1 -m "Beta 1 for 1.2.0"
@@ -352,8 +374,9 @@ repository administrator may merge despite failing status checks.
 
 4. Docker Hub detects the tag and publishes automatically.
 
-5. Also merge/cherry-pick into develop:
-   git checkout develop && git merge hotfix/107-fix-auth-header
+5. If a release branch is currently staging a future version, cherry-pick the
+   hotfix into it too so the next release also carries the fix:
+   git checkout release/1.2.0 && git cherry-pick <hotfix-commit>
 ```
 
 ---
@@ -397,7 +420,7 @@ Defined in [CODEOWNERS](../.github/CODEOWNERS). The entire repository is owned b
 
 Given the regulatory context of Open Banking UK:
 
-- Branch protection rules prevent force-pushes and history rewriting on `main` and `develop`
+- Branch protection rules prevent force-pushes and history rewriting on `main` and every `release/**` branch
 - All merges to `main` require at least one human sign-off, providing a human accountability chain for every production change
 - Pull request and review history is immutable on GitHub
 - Any admin bypass of branch protection rules must be documented in the PR (see [Section 5.4](#54-release-exception-process))
@@ -413,7 +436,7 @@ Before a new team member can contribute, the following must be completed by a re
 - [ ] Install the **Snyk IDE extension** for local security scanning (available for [VS Code](https://marketplace.visualstudio.com/items?itemName=snyk-security.snyk-vulnerability-scanner) and JetBrains IDEs) — recommended by the Security team
 - [ ] Clone the repository and run `uv sync --frozen --no-install-project` to install dependencies
 - [ ] Read this document, [REQUIREMENTS.md](REQUIREMENTS.md), and [TESTING_STRATEGY.md](TESTING_STRATEGY.md)
-- [ ] Complete a first PR against `develop` to verify the pipeline works end-to-end
+- [ ] Complete a first PR against `main` to verify the pipeline works end-to-end
 
 ---
 

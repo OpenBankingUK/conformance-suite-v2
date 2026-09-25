@@ -22,7 +22,7 @@
 |---------|-------|
 | Default branch | `main` |
 
-**Rationale**: `main` is the production-ready branch in our Git Flow model. All pull requests and commits target `main` by default. The `develop` branch is used for integration but is not the default because releases are cut from `main`.
+**Rationale**: `main` is the trunk in our trunk-based branching model (see [CICD_STRATEGY.md](../CICD_STRATEGY.md)). All pull requests and commits target `main` by default; release contents are staged separately on short-lived `release/**` branches cut from `main`.
 
 ---
 
@@ -102,7 +102,7 @@ Project management is handled at the organisation level, not per-repository. Dis
 | Allow squash merging | On (Default message) |
 | Allow rebase merging | Off |
 
-**Rationale**: Both merge commits and squash merging are enabled at the repository level, but branch rulesets further restrict the allowed methods per branch. The `main` branch ruleset enforces **squash-only** merges (see [BRANCH_RULESETS.md](BRANCH_RULESETS.md)), giving a clean linear history where each commit represents one release or hotfix. Merge commits remain available for branches not covered by restrictive rulesets (e.g. `release/` or `hotfix/` merges back into `develop`). Rebase merging is disabled to avoid rewriting commit history, which can cause problems with our Git Flow model and signed commits.
+**Rationale**: Both merge commits and squash merging are enabled at the repository level, but branch rulesets further restrict the allowed methods per branch. The `main` branch ruleset enforces **squash-only** merges (see [BRANCH_RULESETS.md](BRANCH_RULESETS.md)), giving a clean linear history where each commit represents one release or hotfix. Merge commits remain available for branches not covered by restrictive rulesets (e.g. commits cherry-picked onto a `release/**` branch while it is being staged). Rebase merging is disabled to avoid rewriting commit history, which can cause problems with signed commits.
 
 ---
 

@@ -1,5 +1,13 @@
 # GitHub Settings: Branch Rulesets — develop
 
+> ⚠️ **DEPRECATED**: The repository branching model moved from Git Flow to
+> trunk-based-with-staged-release-branches (see
+> [CICD_STRATEGY.md](../CICD_STRATEGY.md), Section 1). No `develop` branch
+> exists in this repository. **A repository admin should delete this ruleset
+> (Settings → Rules → Rulesets → "develop", ID 15781582) in GitHub**, since a
+> ruleset targeting a non-existent branch is dead configuration. The content
+> below is retained only as a historical record of the prior model.
+
 > **Repository**: `OpenBankingUK/conformance-suite-v2`
 > **Page**: Settings → Rules → Rulesets
 > **Ruleset ID**: 15781582
