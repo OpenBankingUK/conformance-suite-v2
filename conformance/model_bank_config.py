@@ -106,7 +106,7 @@ class TlsConfig:
     """Transport TLS file paths for outbound model-bank requests.
 
     In the hardened container these are supplied as absolute paths under the
-    optional read-only ``/certs`` mount (see ``docs/DEVELOPER_GUIDE.md`` for
+    optional read-only ``/certs`` mount (see ``docs/DOCKER_GUIDE.md`` for
     the full mount contract): ``ca_bundle_path`` maps to the CA bundle
     artifact, and ``client_certificate_path``/``client_private_key_path`` map
     to the transport/mTLS certificate and key artifacts. Certificate material

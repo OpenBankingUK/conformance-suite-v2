@@ -4,6 +4,15 @@ This repository is used to develop the next Open Banking UK Functional
 Conformance Suite before it is ready to merge back into the official
 conformance-suite repository. It is not the official released suite.
 
+## Docker deployment
+
+The hardened Docker image is the primary, supported way to run the suite —
+non-root, read-only root filesystem, no shell or package manager, and no
+manually supplied Django secret required. See
+[`docs/DOCKER_GUIDE.md`](docs/DOCKER_GUIDE.md) for GHCR pull instructions, the
+recommended hardened `docker run`/Compose commands, the `/data` persistence
+layout, and the optional read-only `/certs` mount contract.
+
 ## Participant workflow
 
 Participants no longer select checked-in suites, manifests, or config examples.

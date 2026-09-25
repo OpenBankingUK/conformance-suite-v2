@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Dockerfile rewritten as a hardened, digest-pinned multi-stage build on Docker Hardened Images (`dhi.io/python`, Debian 13), running as non-root UID/GID 65532 with no shell or package manager in the runtime stage. `docker/entrypoint.py` prepares the `/data` volume, generates and persists a mode-0600 Django secret key, and supplies safe host/session-path defaults before exec'ing into the application; `docker/healthcheck.py` provides an exec-form container health check. `make docker` now runs the image under the full hardened profile (read-only root filesystem, all capabilities dropped, `no-new-privileges`, tmpfs `/tmp`, named `/data` volume) without requiring manually supplied secrets.
 - `docs/CICD_STRATEGY.md` corrected: pulling Docker Hardened Images requires authenticating to the `dhi.io` registry, including in CI, so DHI does affect the GitHub Actions pipeline.
+- `docs/DOCKER_GUIDE.md`, `compose.yaml`, and `compose.certs.yaml` document and provide the canonical hardened `docker run`/Compose launch commands, GHCR pull instructions, the `/data` persistence layout, and the optional read-only `/certs` mount contract; `README.md` and `docs/DEVELOPER_GUIDE.md` now point participants at the Docker image as the primary supported way to run the suite.
 
 - CI/CD strategy now documents the stable-`main`, `develop`, feature-preview,
   release-branch, and digest-promotion model for participant-facing Docker
