@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Regression coverage for bundled catalogue registration, legacy FCS provenance, restored guided builder capability selection, safe v2 plan-document export, API/CLI capability parity, run-detail catalogue evidence, compiled-plan execution traceability, and result JSON omission of legacy suite metadata.
 - `scripts/release_metadata.py` and its CI-facing `scripts/validate_release.py` CLI, providing strict raw-version parsing, preview/beta/GA channel classification, branch/tag compatibility checks, version-increase and duplicate-publish guards, and a promotion-manifest builder for the Docker release process.
 - `.github/dependabot.yml`, scheduling weekly update PRs for the pinned Docker base image digests, Python (`uv`) dependencies, and GitHub Actions, each gated by the full check suite, hardened runtime smoke test, and vulnerability scan.
+- `scripts/build_promotion_manifest.py`, a CI-facing CLI that validates branch/channel compatibility and writes the candidate promotion manifest (source SHA, raw version/channel, per-platform image digests, OCI labels) as JSON.
+- `scripts/docker_smoke_test.sh`, the canonical hardened-profile smoke test run against every built candidate image: non-root UID/GID 65532, no shell, immutable root filesystem, `/health/` and `/` endpoints, secret-key persistence across restart, writable `/data/sessions`/`/data/results`/`/data/logs`, a readable-but-non-writable `/certs` mount, and a working CLI command override.
+- `.github/workflows/ci.yml` gained a `plan` job that classifies every run by target branch and fork origin, a `candidate-image` job matrix building native `linux/amd64` and `linux/arm64` images for `main`, `release/**`, and `preview/**` branches, running the full hardened smoke test and a zero-exception Snyk container scan, generating an SPDX SBOM, and uploading the built image plus its metadata as a workflow artifact without publishing anywhere; a `candidate-manifest` job that assembles and uploads the checksummed promotion manifest from those artifacts; and a `reject-fork-candidate` job that fails fork-originated pull requests targeting a candidate-bearing branch with an actionable message.
 
 ### Changed
 
@@ -45,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release-branch, and digest-promotion model for participant-facing Docker
   preview, beta, RC, and GA images, including the human approval points and
   source-controlled image tag metadata.
+- `.github/workflows/ci.yml`'s `docker-build` job now authenticates to `dhi.io` before building (Docker Hardened Images require registry login even to pull), no longer sets a hardcoded `DJANGO_SECRET_KEY`/`DJANGO_ALLOWED_HOSTS` for its smoke test since the entrypoint now generates and persists these itself, and additionally validates both `compose.yaml` and the `compose.certs.yaml` override.
 - Pull request CI now invokes the canonical `make check` gate with a full
   tracked-file secret scan while Docker image build, startup, and `/health/`
   validation run independently in parallel. The duplicated lint/test command

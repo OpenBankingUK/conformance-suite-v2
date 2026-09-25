@@ -1,9 +1,11 @@
 version: 2
 updates:
   # Weekly digest-update PRs for the Docker Hardened Image base images pinned
-  # in the Dockerfile. Each PR runs the full check suite, the hardened
-  # runtime smoke test, and the vulnerability scan (candidate-image CI)
-  # before merge — the same gate as any other candidate.
+  # in the Dockerfile. Each PR runs the full check suite, a single-platform
+  # build, the hardened runtime smoke test, and a Compose-config check (the
+  # `check`/`docker-build` CI jobs) before merge into develop. The full
+  # multi-arch candidate build and zero-exception Snyk scan (`candidate-image`
+  # CI) additionally run once the bump reaches a preview/release/main branch.
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
