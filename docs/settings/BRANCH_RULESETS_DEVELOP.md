@@ -1,12 +1,7 @@
 # GitHub Settings: Branch Rulesets — develop
 
-> ⚠️ **DEPRECATED**: The repository branching model moved from Git Flow to
-> trunk-based-with-staged-release-branches (see
-> [CICD_STRATEGY.md](../CICD_STRATEGY.md), Section 1). No `develop` branch
-> exists in this repository. **A repository admin should delete this ruleset
-> (Settings → Rules → Rulesets → "develop", ID 15781582) in GitHub**, since a
-> ruleset targeting a non-existent branch is dead configuration. The content
-> below is retained only as a historical record of the prior model.
+> `develop` is the protected integration branch for normal development. See
+> [CICD_STRATEGY.md](../CICD_STRATEGY.md), Section 1.
 
 > **Repository**: `OpenBankingUK/conformance-suite-v2`
 > **Page**: Settings → Rules → Rulesets
@@ -32,7 +27,10 @@
 | Include | `refs/heads/develop` |
 | Exclude | _(none)_ |
 
-**Rationale**: The ruleset targets only the `develop` branch — the primary integration branch for day-to-day development in the git flow model. All feature, bugfix, and release branches merge into `develop` before being promoted to `main`.
+**Rationale**: The ruleset targets only the `develop` branch — the primary
+integration branch for day-to-day development. Feature and bugfix PRs merge
+into `develop`; preview branches and release branches are cut from stable or
+development baselines as described in the CI/CD strategy.
 
 ---
 
@@ -70,11 +68,11 @@
 | Setting | Value |
 |---------|-------|
 | Enabled | ✅ |
-| Required approvals | **1** |
+| Required approvals | **2** |
 | Dismiss stale reviews on push | ✅ Enabled |
 | Require approval of the most recent reviewable push | ✅ Enabled |
 | Require conversation resolution before merging | ✅ Enabled |
-| Require review from Code Owners | ❌ Disabled |
+| Require review from Code Owners | ✅ Enabled |
 | Allowed merge methods | **Squash only** |
 | Require review from specific teams | _(none configured)_ |
 | Restrict dismissals to authorised actors only | ❌ Disabled |
@@ -82,11 +80,11 @@
 
 **Rationale**:
 
-- **1 required approval**: Ensures every change to `develop` is reviewed by at least one other developer. Balances review rigour with team velocity for a small team.
+- **2 required approvals**: Requires Copilot review plus human review for the protected integration branch.
 - **Dismiss stale reviews on push**: If new commits are pushed after approval, the approval is invalidated. Prevents approved PRs from being silently modified before merge.
 - **Require last push approval**: The person who pushed the most recent commit cannot be the one who approves the PR. Enforces genuine peer review — no self-approving.
 - **Conversation resolution**: All review comments must be resolved before merge. Prevents unaddressed feedback from slipping through.
-- **Code Owners disabled**: Will be enabled after a `CODEOWNERS` file is committed to the repository (see TODO below).
+- **Code Owners enabled**: Ensures the Standards team reviews changes in owned paths.
 - **Squash only**: Enforces a clean, linear history on `develop`. Each PR becomes a single commit, making `git log` readable and `git bisect` effective. Eliminates merge commits and messy rebase histories.
 
 ### Automatically request Copilot code review
@@ -113,7 +111,7 @@ The following rules are available but intentionally **not enabled**:
 | Require merge queue | Not needed at current team size; can be reconsidered as contributor count grows |
 | Require deployments to succeed | No deployment environments configured yet |
 | Require signed commits | Not enforced at this stage; may revisit based on organisation security policy |
-| Require status checks to pass | **Ready to enable** — the CI workflow now exists (`ci.yml`). Enable after the first successful run on `develop` so GitHub recognises the check contexts (see TODO below) |
+| Require status checks to pass | Enabled for `Check`, candidate image quality gate where applicable, and Snyk status checks |
 | Require code scanning results | Deferred until CodeQL or equivalent is configured in CI |
 | Require code quality results | Not yet configured |
 | Restrict commit metadata | Not needed at this stage |
@@ -123,11 +121,12 @@ The following rules are available but intentionally **not enabled**:
 
 ## Post-setup TODOs
 
-- [ ] **Enable required status checks** — the CI workflow is now committed (`ci.yml` with jobs `Lint & Type Check`, `Unit & Component Tests`, `Docker Build`). After the first successful run on `develop`, enable the "Require status checks to pass" rule and add these check contexts
-- [ ] **Enable Code Owners review** — After committing a `CODEOWNERS` file to the repository, enable `require_code_owner_review` in the pull request rule to enforce ownership-based approvals
+- [ ] **Verify required status check names** after the release workflows are created and add their exact GitHub check contexts to this ruleset.
 
 ---
 
 ## Relationship to the "main" ruleset
 
-This ruleset is intentionally configured identically to the ["main" branch ruleset](BRANCH_RULESETS.md) (ID: 15778634), with the sole difference being the target branch (`refs/heads/develop` instead of `~DEFAULT_BRANCH`). Both long-lived branches receive the same level of protection to maintain consistency across the git flow model.
+This ruleset is intentionally configured to the same review and status-check
+standard as the ["main" branch ruleset](BRANCH_RULESETS.md) (ID: 15778634),
+with the target branch changed to `refs/heads/develop`.
