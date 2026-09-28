@@ -93,6 +93,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Docker browser runs now terminate local HTTPS and accept the legacy
+  `0.0.0.0` host, allowing PSU authorization redirects registered as
+  `https://0.0.0.0:8443/conformancesuite/callback` to reach the callback while
+  the host port remains published only on `127.0.0.1`. The generated local
+  certificate is persisted in the `/data` volume and no private key is baked
+  into the image. Browser/API result and execution-log artifacts are also
+  written under the writable `/data` volume rather than the read-only `/app`
+  filesystem.
+
 - PIS v4 strict parity now executes all 29 legacy FCS v1.10.0 rows as
   independent cases with exact `asserts`/`asserts_one_of` error-code checks,
   response schemas and signature flags, including separate domestic consent

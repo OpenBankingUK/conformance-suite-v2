@@ -56,7 +56,7 @@ docker run -d --name "$CONTAINER_NAME" \
 echo "==> Waiting for the health endpoint"
 HEALTHY=0
 for _ in $(seq 1 15); do
-  if curl -sf http://127.0.0.1:8443/health/ >/dev/null; then
+  if curl -ksf https://127.0.0.1:8443/health/ >/dev/null; then
     HEALTHY=1
     break
   fi
@@ -65,7 +65,12 @@ done
 [[ "$HEALTHY" -eq 1 ]] || fail "container never became healthy"
 
 echo "==> Checking the browser home endpoint"
-curl -sf -o /dev/null http://127.0.0.1:8443/ || fail "home endpoint did not return 200"
+curl -ksf -o /dev/null https://127.0.0.1:8443/ || fail "home endpoint did not return 200"
+
+echo "==> Checking the legacy PSU callback reaches the localhost-published container"
+CALLBACK_STATUS="$(curl --noproxy '*' -ks -o /dev/null -w '%{http_code}' \
+  https://0.0.0.0:8443/conformancesuite/callback)"
+[[ "$CALLBACK_STATUS" == "200" ]] || fail "legacy callback returned HTTP $CALLBACK_STATUS instead of 200"
 
 echo "==> Checking the read-only root filesystem blocks writes outside /data and /tmp"
 if docker exec "$CONTAINER_NAME" python3 -c "open('/app/should-fail', 'w').write('x')" >/dev/null 2>&1; then
@@ -83,12 +88,15 @@ for path in ('/data/sessions', '/data/results', '/data/logs'):
 echo "==> Capturing the persisted secret key"
 FIRST_KEY="$(docker exec "$CONTAINER_NAME" python3 -c "print(open('/data/django-secret-key').read())")"
 [[ -n "$FIRST_KEY" ]] || fail "no secret key was persisted under /data"
+FIRST_CERTIFICATE="$(docker exec "$CONTAINER_NAME" python3 -c \
+  "print(open('/data/tls/localhost-certificate.pem').read())")"
+[[ -n "$FIRST_CERTIFICATE" ]] || fail "no local TLS certificate was persisted under /data"
 
-echo "==> Restarting the container and checking the secret key persists"
+echo "==> Restarting the container and checking runtime identity persists"
 docker restart "$CONTAINER_NAME" >/dev/null
 HEALTHY=0
 for _ in $(seq 1 15); do
-  if curl -sf http://127.0.0.1:8443/health/ >/dev/null; then
+  if curl -ksf https://127.0.0.1:8443/health/ >/dev/null; then
     HEALTHY=1
     break
   fi
@@ -97,6 +105,9 @@ done
 [[ "$HEALTHY" -eq 1 ]] || fail "container never became healthy again after restart"
 SECOND_KEY="$(docker exec "$CONTAINER_NAME" python3 -c "print(open('/data/django-secret-key').read())")"
 [[ "$FIRST_KEY" == "$SECOND_KEY" ]] || fail "secret key changed across restart"
+SECOND_CERTIFICATE="$(docker exec "$CONTAINER_NAME" python3 -c \
+  "print(open('/data/tls/localhost-certificate.pem').read())")"
+[[ "$FIRST_CERTIFICATE" == "$SECOND_CERTIFICATE" ]] || fail "local TLS certificate changed across restart"
 
 echo "==> Stopping the container before the /certs and CLI-override checks"
 docker rm -f "$CONTAINER_NAME" >/dev/null

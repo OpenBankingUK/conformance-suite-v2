@@ -109,6 +109,23 @@ def test_load_model_bank_config_explicit_relative_paths_still_resolve_under_data
     assert config.execution_log_path == data_dir / "custom" / "log.ndjson"
 
 
+def test_parse_model_bank_config_defaults_under_data_dir_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Browser/API config parsing uses the writable container data root."""
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("CONFORMANCE_DATA_DIR", str(data_dir))
+
+    config = parse_model_bank_config(
+        {
+            "environment": "ozone-model-bank",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.result_output_path == data_dir / "results" / "test-results.json"
+    assert config.execution_log_path == data_dir / "logs" / "execution-log.ndjson"
+
+
 def test_load_model_bank_config_ignores_empty_data_dir_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """An empty CONFORMANCE_DATA_DIR value is treated the same as unset."""
     config_path = tmp_path / "model-bank.json"
