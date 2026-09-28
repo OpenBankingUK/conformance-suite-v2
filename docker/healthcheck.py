@@ -11,7 +11,7 @@ import sys
 
 import httpx
 
-HEALTHCHECK_URL = "http://localhost:8443/health/"
+HEALTHCHECK_URL = "https://localhost:8443/health/"
 HEALTHCHECK_HOST_HEADER = "healthcheck.local"
 TIMEOUT_SECONDS = 5.0
 
@@ -28,6 +28,7 @@ def main() -> int:
             HEALTHCHECK_URL,
             headers={"Host": HEALTHCHECK_HOST_HEADER},
             timeout=TIMEOUT_SECONDS,
+            verify=False,  # noqa: S501 - probes the container's generated loopback-only certificate.
         )
         response.raise_for_status()
     except httpx.HTTPError as error:

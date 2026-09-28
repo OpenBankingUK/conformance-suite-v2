@@ -302,6 +302,17 @@ def parse_model_bank_config(
         ConfigError: If required fields are missing, unknown fields are present,
             paths are unsafe, or values have invalid types.
     """
+    if output_base_dir is None:
+        data_dir = os.environ.get(DATA_DIR_ENV)
+        if data_dir:
+            output_base_dir = Path(data_dir)
+            if result_output_default == DEFAULT_RESULT_OUTPUT_PATH:
+                result_output_default = CONTAINER_RESULT_OUTPUT_PATH
+            if execution_log_default == DEFAULT_EXECUTION_LOG_PATH:
+                execution_log_default = CONTAINER_EXECUTION_LOG_PATH
+        else:
+            output_base_dir = Path.cwd()
+
     _reject_unknown_keys(
         raw_config,
         allowed_keys={
@@ -329,13 +340,13 @@ def parse_model_bank_config(
     result_output_path = _optional_path(
         raw_config,
         "resultOutputPath",
-        base_dir=output_base_dir or Path.cwd(),
+        base_dir=output_base_dir,
         default=result_output_default,
     )
     execution_log_path = _optional_path(
         raw_config,
         "executionLogPath",
-        base_dir=output_base_dir or Path.cwd(),
+        base_dir=output_base_dir,
         default=execution_log_default,
     )
     approved_release_policy = _optional_approved_release_policy(raw_config, root=base_dir)

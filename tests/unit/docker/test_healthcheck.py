@@ -16,9 +16,16 @@ class TestMain:
     def test_healthy_response_returns_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A successful health response exits 0."""
 
-        def _fake_get(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
+        def _fake_get(
+            url: str,
+            *,
+            headers: dict[str, str],
+            timeout: float,
+            verify: bool,
+        ) -> httpx.Response:
             assert url == HEALTHCHECK_URL
             assert headers == {"Host": HEALTHCHECK_HOST_HEADER}
+            assert verify is False
             return httpx.Response(200, request=httpx.Request("GET", url))
 
         monkeypatch.setattr(httpx, "get", _fake_get)
@@ -27,7 +34,13 @@ class TestMain:
     def test_error_status_returns_one(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A non-2xx health response exits 1."""
 
-        def _fake_get(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
+        def _fake_get(
+            url: str,
+            *,
+            headers: dict[str, str],
+            timeout: float,
+            verify: bool,
+        ) -> httpx.Response:
             return httpx.Response(503, request=httpx.Request("GET", url))
 
         monkeypatch.setattr(httpx, "get", _fake_get)
@@ -36,7 +49,13 @@ class TestMain:
     def test_connection_failure_returns_one(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A connection failure (app not yet ready) exits 1 rather than raising."""
 
-        def _fake_get(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
+        def _fake_get(
+            url: str,
+            *,
+            headers: dict[str, str],
+            timeout: float,
+            verify: bool,
+        ) -> httpx.Response:
             raise httpx.ConnectError("connection refused", request=httpx.Request("GET", url))
 
         monkeypatch.setattr(httpx, "get", _fake_get)

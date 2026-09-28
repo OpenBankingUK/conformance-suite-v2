@@ -33,10 +33,15 @@ docker run --rm -p 127.0.0.1:8443:8443 \
   ghcr.io/openbankinguk/conformance-suite-v2:<version>
 ```
 
-Open `https://127.0.0.1:8443/` (the container serves plain HTTP; put a
-TLS-terminating proxy in front if you need HTTPS on the published port — see
-[Transport](#transport)). Browser sessions, generated results, and execution
-logs exist only for the life of the container and are lost on exit.
+Open `https://127.0.0.1:8443/`. The container generates a local self-signed
+certificate, so the browser displays a certificate warning on first use.
+Browser sessions, generated results, execution logs, and the ephemeral
+certificate are lost when the container exits.
+
+For an ASPSP registration that still uses the legacy FCS redirect URI, open
+`https://0.0.0.0:8443/` and accept its certificate warning before starting the
+PSU flow. On supported local hosts this reaches the same loopback-published
+container; Docker does not expose a second port or bind the service to the LAN.
 
 ## Recommended durable run
 
@@ -63,16 +68,17 @@ This is exactly what `make docker` runs locally (see the repository
 | `--cap-drop=ALL` | Drops every Linux capability; the process runs as unprivileged UID/GID `65532`. |
 | `--security-opt=no-new-privileges` | Blocks privilege escalation via setuid binaries. |
 | `--tmpfs /tmp:size=64m,mode=1777` | A small, size-bounded scratch space for the application's own temp-file use. |
-| `-v conformance-suite-data:/data` | Persists the generated Django secret key, browser sessions, structured results, and execution logs across restarts. |
+| `-v conformance-suite-data:/data` | Persists the generated Django secret key and local TLS certificate, browser sessions, structured results, and execution logs across restarts. |
 
 ### What lives under `/data`
 
 | Path | Contents |
 | --- | --- |
 | `/data/django-secret-key` | Mode-`0600` generated Django secret key, created on first run and reused afterwards. |
+| `/data/tls/` | Generated local certificate and mode-`0600` private key used by the browser UI and PSU callback. |
 | `/data/sessions/` | Server-side browser wizard session files. |
-| `/data/results/` | Structured JSON results from CLI runs inside the container (`CONFORMANCE_DATA_DIR` defaults to `/data`). |
-| `/data/logs/` | NDJSON execution logs from CLI runs inside the container. |
+| `/data/results/` | Structured JSON results from browser/API and CLI runs inside the container (`CONFORMANCE_DATA_DIR` defaults to `/data`). |
+| `/data/logs/` | NDJSON execution logs from browser/API and CLI runs inside the container. |
 
 If `/data` is not mounted (as in the ephemeral quick start), the container
 still starts: it falls back to an in-memory secret key and Django's own
@@ -141,10 +147,14 @@ local development certificates) if unset.
 
 ## Transport
 
-The container always serves plain HTTP on port 8443. There is no built-in TLS
-termination for the published port; put a reverse proxy in front if you need
-HTTPS towards the browser. UI TLS/LAN exposure beyond localhost is out of
-scope for this image.
+The container serves HTTPS on port 8443 using a generated self-signed
+certificate whose subject alternative names cover `localhost`, `127.0.0.1`,
+`::1`, and the legacy FCS callback host `0.0.0.0`. With a named `/data` volume,
+the certificate and private key persist across restarts; without one they are
+ephemeral. This preserves compatibility with the legacy registered callback
+`https://0.0.0.0:8443/conformancesuite/callback` while Docker publishes the
+port only on host loopback. UI TLS/LAN exposure beyond localhost remains out
+of scope.
 
 ## Health check
 

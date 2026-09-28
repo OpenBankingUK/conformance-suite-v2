@@ -7,14 +7,20 @@ import stat
 from pathlib import Path
 
 import pytest
+from cryptography import x509
 
+import docker.entrypoint as entrypoint
 from docker.entrypoint import (
     DATA_SUBDIRECTORIES,
     DEFAULT_ALLOWED_HOSTS,
+    PERSISTED_TLS_DIRECTORY,
     SECRET_KEY_FILENAME,
+    TLS_CERTIFICATE_FILENAME,
+    TLS_PRIVATE_KEY_FILENAME,
     main,
     prepare_data_dir,
     prepare_environment,
+    prepare_local_tls,
     resolve_secret_key,
 )
 
@@ -88,6 +94,7 @@ class TestPrepareEnvironment:
         prepare_environment(environ, data_dir_root=tmp_path / "data")
         assert environ["DJANGO_SECRET_KEY"]
         assert environ["DJANGO_ALLOWED_HOSTS"] == DEFAULT_ALLOWED_HOSTS
+        assert environ["CONFORMANCE_DATA_DIR"] == str(tmp_path / "data")
         assert environ["DJANGO_SESSION_FILE_PATH"] == str(tmp_path / "data" / "sessions")
 
     def test_ephemeral_mode_skips_session_path(self, tmp_path: Path) -> None:
@@ -102,6 +109,7 @@ class TestPrepareEnvironment:
             data_dir.chmod(stat.S_IRWXU)
         assert environ["DJANGO_SECRET_KEY"]
         assert environ["DJANGO_ALLOWED_HOSTS"] == DEFAULT_ALLOWED_HOSTS
+        assert "CONFORMANCE_DATA_DIR" not in environ
         assert "DJANGO_SESSION_FILE_PATH" not in environ
 
     def test_never_overrides_operator_supplied_values(self, tmp_path: Path) -> None:
@@ -123,6 +131,57 @@ class TestPrepareEnvironment:
         prepare_environment(environ, data_dir_root=tmp_path / "unused")
         assert custom_dir.is_dir()
         assert environ["DJANGO_SESSION_FILE_PATH"] == str(custom_dir / "sessions")
+
+
+class TestPrepareLocalTls:
+    """Behaviour of generated local HTTPS material."""
+
+    def test_generates_persistent_certificate_for_supported_hosts(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """Generated material covers localhost and the legacy callback host."""
+        runtime_directory = tmp_path / "runtime-tls"
+        monkeypatch.setattr(entrypoint, "RUNTIME_TLS_DIRECTORY", runtime_directory)
+        monkeypatch.setattr(entrypoint, "TLS_CERTIFICATE_PATH", runtime_directory / TLS_CERTIFICATE_FILENAME)
+        monkeypatch.setattr(entrypoint, "TLS_PRIVATE_KEY_PATH", runtime_directory / TLS_PRIVATE_KEY_FILENAME)
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+
+        prepare_local_tls(data_dir)
+
+        persisted_directory = data_dir / PERSISTED_TLS_DIRECTORY
+        certificate = x509.load_pem_x509_certificate((persisted_directory / TLS_CERTIFICATE_FILENAME).read_bytes())
+        subject_alternative_names = certificate.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+        assert "localhost" in subject_alternative_names.get_values_for_type(x509.DNSName)
+        assert {str(address) for address in subject_alternative_names.get_values_for_type(x509.IPAddress)} == {
+            "0.0.0.0",  # noqa: S104 - expected certificate SAN, not a bind target.
+            "127.0.0.1",
+            "::1",
+        }
+        assert (runtime_directory / TLS_CERTIFICATE_FILENAME).is_file()
+        assert stat.S_IMODE((runtime_directory / TLS_PRIVATE_KEY_FILENAME).stat().st_mode) == 0o600
+
+    def test_reuses_valid_persistent_certificate(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """A named data volume keeps a stable browser certificate across restarts."""
+        runtime_directory = tmp_path / "runtime-tls"
+        monkeypatch.setattr(entrypoint, "RUNTIME_TLS_DIRECTORY", runtime_directory)
+        monkeypatch.setattr(entrypoint, "TLS_CERTIFICATE_PATH", runtime_directory / TLS_CERTIFICATE_FILENAME)
+        monkeypatch.setattr(entrypoint, "TLS_PRIVATE_KEY_PATH", runtime_directory / TLS_PRIVATE_KEY_FILENAME)
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+
+        prepare_local_tls(data_dir)
+        certificate_path = data_dir / PERSISTED_TLS_DIRECTORY / TLS_CERTIFICATE_FILENAME
+        first_certificate = certificate_path.read_bytes()
+        prepare_local_tls(data_dir)
+
+        assert certificate_path.read_bytes() == first_certificate
 
 
 class TestMain:
@@ -149,3 +208,14 @@ class TestMain:
         assert recorded["file"] == "uvicorn"
         assert recorded["args"] == ["uvicorn", "config.asgi:application"]
         assert os.environ["DJANGO_SECRET_KEY"]
+
+    def test_rejects_incomplete_local_tls_command(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """A command must not request only one half of the generated TLS pair."""
+        monkeypatch.setenv("CONFORMANCE_DATA_DIR", str(tmp_path / "data"))
+
+        with pytest.raises(RuntimeError, match="certificate and private key"):
+            main(["uvicorn", "--ssl-certfile", str(entrypoint.TLS_CERTIFICATE_PATH)])

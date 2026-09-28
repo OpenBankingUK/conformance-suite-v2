@@ -23,7 +23,7 @@ git config core.hooksPath .githooks
 | `make dev` | Django `runserver` on `0.0.0.0:8443` | Yes | Day-to-day browser development. |
 | `make dev-unmasked` | Django `runserver` on `0.0.0.0:8443` | Yes | Local engine debugging with unmasked logs. |
 | `make serve` | Uvicorn on `0.0.0.0:8443` | No | Local production-behaviour check. |
-| `make docker` | Uvicorn in Docker | No | Hardened, production-like container run (see [`docs/DOCKER_GUIDE.md`](DOCKER_GUIDE.md) for the full participant-facing guide). |
+| `make docker` | Uvicorn in Docker | Yes | Hardened, production-like container run with generated local TLS (see [`docs/DOCKER_GUIDE.md`](DOCKER_GUIDE.md) for the full participant-facing guide). |
 
 All runtime entry points bind to port `8443` so callback registrations against
 the legacy FCS callback URI continue to reach the local application.
