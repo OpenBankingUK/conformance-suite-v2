@@ -9,7 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.1] - 2026-09-28
+
+First public beta of the MVP: the Open Banking UK Read/Write v3.1.11 and v4.0.x
+catalogue-backed conformance engine (AIS, PIS, CBPII, VRP) and DCR 3.4 support,
+the canonical JSON-first test-plan schema and guided browser builder, the
+hardened non-root Docker distribution, and the trusted candidate-image build
+and preview/beta/GA promotion pipeline, as detailed below.
+
 ### Added
+
 
 - Browser wizard and configuration support for supplying PEM credentials as
   pasted text or an uploaded file, in addition to an absolute file path. Every
