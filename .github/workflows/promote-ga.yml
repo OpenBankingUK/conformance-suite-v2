@@ -23,6 +23,12 @@ jobs:
       branch: main
       tag: ${{ inputs.tag }}
       environment_name: ga-release
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      attestations: write
+      id-token: write
 
   finalize-ga:
     name: Tag release and open develop merge-back

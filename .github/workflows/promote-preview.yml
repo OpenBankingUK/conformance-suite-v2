@@ -39,3 +39,9 @@ jobs:
       source_sha: ${{ inputs.source_sha }}
       branch: ${{ inputs.branch }}
       environment_name: preview-release
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      attestations: write
+      id-token: write
