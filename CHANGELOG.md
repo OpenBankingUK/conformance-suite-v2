@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Trusted Docker candidate and GHCR promotion infrastructure for preview,
+  beta, and GA channels, including exact-SHA multi-architecture artifacts,
+  blocking Snyk container scans, immutable version tags, Environment approval
+  gates, and SBOM/provenance attestations without importing MVP application
+  behaviour.
 - First-class Open Banking UK Read/Write v3.1.11 support for AIS, PIS, CBPII,
   and VRP, with dedicated v3.1 catalogue boundaries, pinned v3.1.11 OpenAPI
   schemas, explicit request-signing metadata, and a machine-checkable strict

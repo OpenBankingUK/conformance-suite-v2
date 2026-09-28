@@ -200,10 +200,18 @@ The following secrets must be configured in **Repository Settings → Secrets an
 | Secret | Description |
 |---|---|
 | `GITHUB_TOKEN` | Automatically provided by GitHub Actions; no manual setup |
+| `DOCKER_ORG_USERNAME` | Read-only organisation Docker account used to pull Docker Hardened Images |
+| `DOCKER_ORG_ACCESS_TOKEN` | Access token for the read-only Docker organisation account |
+| `SNYK_TOKEN` | Token used by candidate-image jobs for the blocking container scan |
 
 There are currently no repository-level variables required by CI: the
 supported pytest suite is fully offline and does not target a live model bank
 or Ozone environment.
+
+The `preview-release`, `beta-release`, and `ga-release` GitHub Environments
+gate image publication. Each Environment must require human reviewers and
+must restrict deployment branches to `main`; promotion workflows must also be
+dispatched from `main`.
 
 ---
 
@@ -213,8 +221,8 @@ or Ozone environment.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ Trigger: Pull Request or push (main, develop, release/*,         │
-│ hotfix/*)                                                       │
+│ Trigger: Pull Request or push (main, develop, preview/*,         │
+│ release/*, hotfix/*)                                            │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                ┌───────────────┴───────────────┐
@@ -229,11 +237,44 @@ or Ozone environment.
 The external Snyk integration reports its own PR status independently.
 ```
 
+Pushes to `preview/*`, `release/*`, and `main` additionally build candidate
+artifacts when the source tree contains the hardened Docker contract (a DHI
+base, explicit UID/GID `65532:65532`, and `docker/entrypoint.py`). Each
+`linux/amd64` and `linux/arm64` image is built once, smoke-tested, blocked on
+Snyk `high`/`critical` findings, accompanied by an SPDX SBOM, and uploaded as
+a GitHub Actions artifact. Candidate jobs have read-only repository
+permissions and never push an image.
+
+This Docker-contract check is a deliberate bootstrap compatibility gate:
+today's `main` Docker build and smoke test remain unchanged, so installing the
+trusted promotion code does not require importing the MVP Docker/application
+implementation. A `release/2.0.0` branch containing that hardened Docker
+implementation automatically produces candidates with versions such as
+`2.0.0-beta.N`; once the same implementation reaches `main`, GA candidates
+are produced there too.
+
 ### 4.2 Workflow Files
 
 | File | Triggers | Purpose |
 |---|---|---|
-| `.github/workflows/ci.yml` | PR + push to protected branches | Canonical `make check` gate plus parallel Docker build and health check |
+| `.github/workflows/ci.yml` | PR + push to protected branches | Canonical checks, unchanged baseline Docker smoke test, and gated multi-architecture candidate artifacts |
+| `.github/workflows/promote-preview.yml` | Manual dispatch from `main` | Promote an approved `preview/*` candidate |
+| `.github/workflows/promote-beta.yml` | Manual dispatch from `main` | Promote an approved `release/X.Y.Z` beta candidate |
+| `.github/workflows/promote-ga.yml` | Manual dispatch from `main` | Promote an approved, tagged `main` candidate and open the develop merge-back PR |
+| `.github/workflows/_promote-image.yml` | Called by the three promotion workflows | Trusted validation and exact-artifact GHCR publication implementation |
+
+Promotion locates the successful push CI run for the exact source SHA and
+branch, downloads its immutable artifacts, verifies archive checksums,
+revalidates release metadata using scripts checked out from `main`, and
+confirms the source SHA belongs to the requested branch and a merged,
+approved pull request. Candidate CI and release-script files must exactly
+match the trusted copies on `main`; pipeline changes therefore land on
+`main` before release branches consume them. Only then does the
+Environment-gated job receive `packages: write`; it stages the platform
+images under SHA-specific internal tags and assembles the already-tested
+images without rebuilding. Promotion is serialized to prevent tag races,
+rejects an existing immutable version tag, and attests the published
+multi-architecture manifest with provenance and both platform SBOMs.
 
 ### 4.3 Concurrency Control
 
@@ -251,19 +292,18 @@ concurrency:
 
 ### 5.1 Tagging and Release Strategy
 
-Once a PR has been merged into `main`, a repository administrator:
-
-1. Pushes a semver tag from `main`
-2. Creates the GitHub Release manually via the GitHub UI, writing a description based on `CHANGELOG.md`
-
-Docker Hub detects the tag automatically and publishes the image — no further action is needed.
+Publication is a manual promotion of a successful CI candidate, never a
+registry-triggered rebuild. In the Actions UI, select the promotion workflow
+on the `main` branch and provide the exact candidate source SHA and source
+branch. Environment approval is required before GHCR write permission is
+used.
 
 **Tag formats:**
 
 | Tag | Example | Type |
 |---|---|---|
 | `vX.Y.Z` | `v1.2.0` | Stable release |
-| `vX.Y.Z-betaN` | `v1.2.0-beta1` | Beta pre-release |
+| `X.Y.Z-beta.N` in `pyproject.toml` | `2.0.0-beta.1` | Beta image |
 
 ```bash
 git tag -a v1.2.0 -m "Release 1.2.0"
@@ -285,20 +325,20 @@ git push origin v1.2.0
    - Full CI gates enforced (`make check`, Docker build and health check)
    - Requires 2 approvals (Copilot + human)
 
-4. Merge into main (squash or merge commit)
+4. Merge into main (squash or merge commit). The successful `main` push CI
+   run creates the GA candidate without publishing it.
 
 5. An admin tags the merge commit on main and pushes the tag:
    git tag -a v1.2.0 -m "Release 1.2.0"
    git push origin v1.2.0
 
-6. An admin creates the GitHub Release manually via the GitHub UI using the tag.
+6. From `main`, manually dispatch **Promote GA image** with the exact merge
+   commit SHA and tag. Approve the `ga-release` Environment deployment.
 
-7. Docker Hub detects the tag and publishes the image automatically.
+7. The workflow validates and publishes the exact candidate artifacts to GHCR
+   as `X.Y.Z` and `latest`, with provenance and SBOM attestations.
 
-8. Merge main back into develop to capture the version bump:
-   git checkout develop
-   git merge main
-   git push origin develop
+8. Review and merge the main-to-develop PR opened by the GA workflow.
 ```
 
 ### 5.3 Beta Releases
@@ -306,17 +346,15 @@ git push origin v1.2.0
 Beta releases allow pre-release images to be distributed before a final stable tag.
 
 ```
-1. On develop or a release/ branch, when a build is ready for beta testing:
-
-2. An admin pushes a beta tag:
-   git tag -a v1.2.0-beta1 -m "Beta 1 for 1.2.0"
-   git push origin v1.2.0-beta1
-
-3. An admin creates the GitHub pre-release manually via the GitHub UI using the tag.
-
-4. Docker Hub detects the beta tag and publishes the pre-release image automatically.
-
-5. Subsequent betas increment the suffix: v1.2.0-beta2, v1.2.0-beta3, etc.
+1. Set `[project].version` to `X.Y.Z-beta.N` on the matching
+   `release/X.Y.Z` branch and merge the change through an approved PR.
+2. Wait for that exact branch SHA's push CI run to produce both candidate
+   artifacts and the promotion manifest.
+3. From `main`, manually dispatch **Promote beta image** with the exact source
+   SHA and `release/X.Y.Z` branch, then approve the `beta-release` Environment.
+4. The workflow publishes the exact artifacts as immutable
+   `X.Y.Z-beta.N`; it does not create or move `latest`.
+5. Increment `N` in a new approved change for each subsequent beta.
 ```
 
 ### 5.4 Release Exception Process
