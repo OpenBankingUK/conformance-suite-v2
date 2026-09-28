@@ -1,0 +1,42 @@
+name: Promote beta image
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        required: true
+        description: "Exact commit SHA on a release/X.Y.Z branch to promote."
+      branch:
+        required: true
+        description: "The exact release/X.Y.Z branch the commit is on."
+
+permissions:
+  contents: read
+
+jobs:
+  validate-branch:
+    name: Validate branch pattern
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject non-release branches
+        env:
+          INPUT_BRANCH: ${{ inputs.branch }}
+        run: |
+          case "$INPUT_BRANCH" in
+            release/*) exit 0 ;;
+            *)
+              echo "::error::Beta promotion requires a 'release/X.Y.Z' branch, got '$INPUT_BRANCH'." >&2
+              exit 1
+              ;;
+          esac
+
+  promote:
+    name: Promote
+    needs: validate-branch
+    uses: ./.github/workflows/_promote-image.yml
+    with:
+      channel: beta
+      source_sha: ${{ inputs.source_sha }}
+      branch: ${{ inputs.branch }}
+      environment_name: beta-release
+    secrets: inherit
