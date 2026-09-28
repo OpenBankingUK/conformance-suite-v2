@@ -40,6 +40,7 @@ from conformance.api.builder_wizard import (
     plan_document_from_draft,
     plan_document_to_export_json,
     plan_document_with_runtime_placeholders,
+    refresh_security_environment,
     runtime_input_prompts_for_plan_document,
     security_config_form_initial,
     security_credential_rows,
@@ -466,6 +467,13 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
                         metadata=form.metadata or {},
                         execution_mode=form.execution_mode or draft.execution_mode,
                         dynamic_client_registration=form.dynamic_client_registration or {},
+                    )
+                else:
+                    updated_draft = updated_draft.with_plan_context(
+                        security_environment=refresh_security_environment(draft.security_environment, updated_config),
+                        business_test_data=draft.business_test_data,
+                        metadata=draft.metadata,
+                        execution_mode=draft.execution_mode,
                     )
                 draft_store.save(updated_draft)
                 destination = "builder-review" if _is_dcr_draft(draft) else "builder-scope"

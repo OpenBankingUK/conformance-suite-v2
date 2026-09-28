@@ -2017,10 +2017,13 @@ def security_config_form_initial(
     if canonical_security:
         initial.update(
             {
+                "signing_certificate_path": _string_config_value(canonical_security, "signingCertificatePath")
+                or initial["signing_certificate_path"],
                 "signing_private_key_path": _string_config_value(
                     canonical_security,
                     "signingPrivateKeyPath",
-                ),
+                )
+                or initial["signing_private_key_path"],
                 "signing_kid": _string_config_value(canonical_security, "signingKeyId"),
                 "signing_token_endpoint_auth_method": _string_config_value(
                     canonical_security,
@@ -2071,7 +2074,10 @@ def security_config_form_initial(
 
 
 _CREDENTIAL_SOURCE_KEYS: Mapping[str, tuple[tuple[str, str, str], ...]] = {
-    "signing_certificate": (("fapiSigning", "signingCertificatePath", "signingCertificatePem"),),
+    "signing_certificate": (
+        ("securityEnvironment", "signingCertificatePath", "signingCertificatePem"),
+        ("fapiSigning", "signingCertificatePath", "signingCertificatePem"),
+    ),
     "signing_private_key": (
         ("securityEnvironment", "signingPrivateKeyPath", "signingPrivateKeyPem"),
         ("fapiSigning", "signingPrivateKeyPath", "signingPrivateKeyPem"),
@@ -2285,6 +2291,60 @@ def merge_security_config(config: Mapping[str, JsonValue], section_config: Mappi
         Updated config with security keys replaced.
     """
     return merge_config_sections(config, section_config, section_keys=_SECURITY_CONFIG_KEYS)
+
+
+_SECURITY_STEP_ENVIRONMENT_KEYS = (
+    "signingCertificatePath",
+    "signingCertificatePem",
+    "signingPrivateKeyPath",
+    "signingPrivateKeyPem",
+    "signingKeyId",
+    "clientAuthMethod",
+)
+_SECURITY_STEP_MTLS_KEYS = (
+    "caBundlePath",
+    "caBundlePem",
+    "certificatePath",
+    "certificatePem",
+    "privateKeyPath",
+    "privateKeyPem",
+)
+
+
+def refresh_security_environment(
+    security_environment: Mapping[str, JsonValue],
+    config: Mapping[str, JsonValue],
+) -> JsonObject:
+    """Return imported security context updated with values saved by the security step.
+
+    The non-DCR security step writes credentials, the signing key id, and the
+    client authentication method into the executable config, but an imported
+    plan also carries them in ``securityEnvironment``. Without this refresh the
+    imported values keep winning: a credential replaced by pasted PEM would be
+    shown (and exported) as its old file reference alongside the new material.
+
+    Args:
+        security_environment: Canonical security context held by the draft.
+        config: Executable config after the security step saved.
+
+    Returns:
+        Security context whose step-owned keys reflect ``config`` only.
+    """
+    refreshed = _copy_json_mapping(security_environment)
+    for key in _SECURITY_STEP_ENVIRONMENT_KEYS:
+        refreshed.pop(key, None)
+    mtls = refreshed.pop("mtls", None)
+    if isinstance(mtls, dict):
+        remaining = {key: value for key, value in mtls.items() if key not in _SECURITY_STEP_MTLS_KEYS}
+        remaining.pop("enabled", None)
+        if remaining:
+            refreshed["mtls"] = {**remaining, "enabled": False}
+    derived = security_environment_from_plan_config(config)
+    for key in (*_SECURITY_STEP_ENVIRONMENT_KEYS, "mtls"):
+        value = derived.get(key)
+        if value is not None and value != "":
+            refreshed[key] = _copy_json_value(value)
+    return refreshed
 
 
 def merge_runtime_input_config(config: Mapping[str, JsonValue], section_config: Mapping[str, JsonValue]) -> JsonObject:

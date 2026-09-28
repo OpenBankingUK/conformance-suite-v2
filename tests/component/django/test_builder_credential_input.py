@@ -353,3 +353,117 @@ def test_a_stored_inline_ca_bundle_is_summarised_without_material(
 
     assert "Pasted CA bundle (1 certificate)" in revisited
     assert "BEGIN CERTIFICATE" not in revisited
+
+
+def _imported_read_write_security_url(client: Client, security_environment: dict[str, object]) -> str:
+    """Import a read-write plan carrying file-backed credentials and open its security step.
+
+    Args:
+        client: Django test client that owns the builder session.
+        security_environment: Canonical ``securityEnvironment`` for the imported plan.
+
+    Returns:
+        URL of the security configuration step for the imported draft.
+    """
+    plan_document = {
+        "schemaVersion": "1.0",
+        "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI1_ADVANCED"},
+        "executionMode": "development",
+        "securityEnvironment": {
+            "discoveryUrl": "https://aspsp.example.com/.well-known/openid-configuration",
+            "resourceBaseUrl": "https://resource.example.com",
+            **security_environment,
+        },
+        "resourceGroups": [
+            {
+                "id": "AIS",
+                "label": "Accounts",
+                "endpoints": [{"method": "GET", "path": "/open-banking/v4.0/aisp/accounts"}],
+            }
+        ],
+        "businessTestData": {},
+        "metadata": {"aspspName": "Example Bank"},
+    }
+    imported = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
+    assert imported.status_code == 302
+    draft_id = str(imported["Location"]).split("/")[2]
+    return f"/builder/{draft_id}/config/security/"
+
+
+def _read_write_signing_form_data(**overrides: object) -> dict[str, object]:
+    """Build read-write security-step form data with a complete FAPI signing group.
+
+    Args:
+        overrides: Credential and override fields to merge into the submission.
+
+    Returns:
+        Form data for the read-write security step.
+    """
+    data: dict[str, object] = {
+        "resource_server_base_url": "https://resource.example.com",
+        "signing_kid": "kid-1",
+        "signing_client_assertion_issuer": "client-1",
+        "signing_client_assertion_subject": "client-1",
+        "signing_token_endpoint_auth_method": "private_key_jwt",
+    }
+    data.update(overrides)
+    return data
+
+
+@pytest.mark.django_db
+@patch("conformance.api.ui_views._fetch_discovery_metadata")
+def test_pasting_over_an_imported_file_reference_replaces_it_on_revisit_and_export(
+    mock_fetch_discovery: Mock,
+    tmp_path: Path,
+) -> None:
+    """A credential pasted over an imported file reference is what the draft keeps."""
+    mock_fetch_discovery.return_value = {"token_endpoint_auth_methods_supported": ["private_key_jwt"]}
+    certificate_path, private_key_path = write_signing_pair(tmp_path, stem="imported")
+    private_key_pem = private_key_path.read_text(encoding="utf-8")
+    certificate_pem = certificate_path.read_text(encoding="utf-8")
+    client = Client()
+    security_url = _imported_read_write_security_url(
+        client,
+        {
+            "signingCertificatePath": str(certificate_path),
+            "signingPrivateKeyPath": str(private_key_path),
+            "signingKeyId": "kid-1",
+            "clientAuthMethod": "private_key_jwt",
+            "mtls": {
+                "enabled": True,
+                "certificatePath": str(certificate_path),
+                "privateKeyPath": str(private_key_path),
+            },
+        },
+    )
+
+    imported_page = client.get(security_url).content.decode("utf-8")
+    assert f'name="signing_certificate_path" type="text" value="{certificate_path}"' in imported_page
+
+    saved = client.post(
+        security_url,
+        data=_read_write_signing_form_data(
+            signing_certificate_path=str(certificate_path),
+            signing_private_key_source="inline",  # pragma: allowlist secret - source selector, not material
+            signing_private_key_pem=private_key_pem,
+            tls_client_certificate_path=str(certificate_path),
+            tls_client_private_key_source="inline",  # pragma: allowlist secret - source selector, not material
+            tls_client_private_key_pem=private_key_pem,
+        ),
+    )
+    assert saved.status_code == 302, saved.content.decode("utf-8")
+
+    revisited = client.get(security_url).content.decode("utf-8")
+    assert str(private_key_path) not in revisited
+    assert "BEGIN PRIVATE KEY" not in revisited  # pragma: allowlist secret - PEM armour marker
+    assert revisited.count("Pasted private key") == 2
+
+    draft_id = security_url.split("/")[2]
+    exported = client.post(f"/builder/{draft_id}/export.json", data={"include_secrets": "1"}).json()
+    security_environment = exported["securityEnvironment"]
+    assert security_environment["signingPrivateKeyPem"] == private_key_pem
+    assert "signingPrivateKeyPath" not in security_environment
+    assert security_environment["signingCertificatePath"] == str(certificate_path)
+    assert security_environment["mtls"]["privateKeyPem"] == private_key_pem
+    assert "privateKeyPath" not in security_environment["mtls"]
+    assert certificate_pem not in json.dumps(exported)
