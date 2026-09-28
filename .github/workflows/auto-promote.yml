@@ -135,7 +135,10 @@ jobs:
           tag="$(jq -r '.tag // empty' <<<"$decision")"
           notice="$(jq -r '.notice // empty' <<<"$decision")"
           if [[ -n "$notice" ]]; then
-            echo "::notice::$notice"
+            notice="${notice//%/%25}"
+            notice="${notice//$'\r'/%0D}"
+            notice="${notice//$'\n'/%0A}"
+            printf '::notice::%s\n' "$notice"
           fi
           {
             echo "should_promote=$should_promote"
