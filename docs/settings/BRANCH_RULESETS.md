@@ -24,7 +24,9 @@
 | Include | `~DEFAULT_BRANCH` (i.e. `main`) |
 | Exclude | _(none)_ |
 
-**Rationale**: The ruleset targets only the default branch (`main`). All protection rules apply exclusively to `main` to prevent direct pushes, force pushes, and deletions while enforcing pull request review requirements.
+**Rationale**: The ruleset targets only the default branch (`main`). `main` is
+the stable GA branch, so these protections prevent direct pushes, force pushes,
+and deletions while enforcing release review requirements.
 
 ---
 
@@ -47,7 +49,8 @@
 |---------|-------|
 | Enabled | ✅ |
 
-**Rationale**: Prevents deletion of the `main` branch. Only bypass actors can delete matching refs. Essential protection for the primary integration branch.
+**Rationale**: Prevents deletion of the `main` branch. Only bypass actors can
+delete matching refs. Essential protection for the stable release branch.
 
 ### Block force pushes
 
@@ -62,11 +65,11 @@
 | Setting | Value |
 |---------|-------|
 | Enabled | ✅ |
-| Required approvals | **1** |
+| Required approvals | **2** |
 | Dismiss stale reviews on push | ✅ Enabled |
 | Require approval of the most recent reviewable push | ✅ Enabled |
 | Require conversation resolution before merging | ✅ Enabled |
-| Require review from Code Owners | ❌ Disabled |
+| Require review from Code Owners | ✅ Enabled |
 | Allowed merge methods | **Squash only** |
 | Require review from specific teams | _(none configured)_ |
 | Restrict dismissals to authorised actors only | ❌ Disabled |
@@ -74,11 +77,12 @@
 
 **Rationale**:
 
-- **1 required approval**: Ensures every change to `main` is reviewed by at least one other developer. Balances review rigour with team velocity for a small team.
+- **2 required approvals**: Requires Copilot review plus human review before a
+  change reaches the stable release branch.
 - **Dismiss stale reviews on push**: If new commits are pushed after approval, the approval is invalidated. Prevents approved PRs from being silently modified before merge.
 - **Require last push approval**: The person who pushed the most recent commit cannot be the one who approves the PR. Enforces genuine peer review — no self-approving.
 - **Conversation resolution**: All review comments must be resolved before merge. Prevents unaddressed feedback from slipping through.
-- **Code Owners disabled**: Will be enabled after a `CODEOWNERS` file is committed to the repository (see TODO below).
+- **Code Owners enabled**: Ensures the Standards team reviews changes in owned paths.
 - **Squash only**: Enforces a clean, linear history on `main`. Each PR becomes a single commit, making `git log` readable and `git bisect` effective. Eliminates merge commits and messy rebase histories.
 
 ### Automatically request Copilot code review
@@ -105,7 +109,7 @@ The following rules are available but intentionally **not enabled**:
 | Require merge queue | Not needed at current team size; can be reconsidered as contributor count grows |
 | Require deployments to succeed | No deployment environments configured yet |
 | Require signed commits | Not enforced at this stage; may revisit based on organisation security policy |
-| Require status checks to pass | **Ready to enable** — the CI workflow now exists (`ci.yml`). Enable after the first successful run on `main` so GitHub recognises the check contexts (see TODO below) |
+| Require status checks to pass | Enabled for `Check`, candidate image quality gate where applicable, and Snyk status checks |
 | Require code scanning results | Deferred until CodeQL or equivalent is configured in CI |
 | Require code quality results | Not yet configured |
 | Restrict commit metadata | Not needed at this stage |
@@ -115,7 +119,6 @@ The following rules are available but intentionally **not enabled**:
 
 ## Post-setup TODOs
 
-- [ ] **Enable required status checks** — the CI workflow is now committed (`ci.yml` with jobs `Lint & Type Check`, `Unit & Component Tests`, `Docker Build`). After the first successful run on `main`, enable the "Require status checks to pass" rule and add these check contexts
-- [ ] **Enable Code Owners review** — After committing a `CODEOWNERS` file to the repository, enable `require_code_owner_review` in the pull request rule to enforce ownership-based approvals
-- [ ] **Add branch naming validation CI job** — Create a CI workflow job that checks the source branch name on PRs to `main` matches the allowed pattern (`feature/`, `bugfix/`, `release/`, `hotfix/`). GitHub rulesets cannot natively restrict which _source_ branches may merge into a target branch
+- [ ] **Verify required status check names** after the release workflows are created and add their exact GitHub check contexts to this ruleset
+- [ ] **Add branch/channel validation CI job** — Create a CI workflow job that checks `[project].version`, source branch, target branch, and intended image tag are compatible
 - [ ] **Investigate Copilot review status check** — Determine whether Copilot code review produces a check status that could be added as a required status check to strengthen the review gate

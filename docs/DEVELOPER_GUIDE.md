@@ -23,7 +23,7 @@ git config core.hooksPath .githooks
 | `make dev` | Django `runserver` on `0.0.0.0:8443` | Yes | Day-to-day browser development. |
 | `make dev-unmasked` | Django `runserver` on `0.0.0.0:8443` | Yes | Local engine debugging with unmasked logs. |
 | `make serve` | Uvicorn on `0.0.0.0:8443` | No | Local production-behaviour check. |
-| `make docker` | Uvicorn in Docker | No | Production-like container run. |
+| `make docker` | Uvicorn in Docker | No | Hardened, production-like container run (see [`docs/DOCKER_GUIDE.md`](DOCKER_GUIDE.md) for the full participant-facing guide). |
 
 All runtime entry points bind to port `8443` so callback registrations against
 the legacy FCS callback URI continue to reach the local application.
@@ -90,17 +90,21 @@ untracked local files, or deployment secret stores.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `DJANGO_SECRET_KEY` | Production only | Django signing key. |
+| `DJANGO_SECRET_KEY` | No | Django signing key. `docker/entrypoint.py` generates and persists one automatically inside the container when unset; local source runs fall back to `settings.py`'s safe `django-insecure-` default. |
 | `DJANGO_DEBUG` | No | Enables Django debug mode when `"true"`. |
-| `DJANGO_ALLOWED_HOSTS` | Production only | Comma-separated allowed hosts. |
+| `DJANGO_ALLOWED_HOSTS` | No | Comma-separated allowed hosts. The container entrypoint defaults to `127.0.0.1,localhost` when unset, matching the documented localhost-only publish profile. |
 | `DJANGO_SESSION_ENGINE` | No | Overrides the default server-side file session backend. |
-| `DJANGO_SESSION_FILE_PATH` | No | Optional directory for file-backed browser session drafts. |
+| `DJANGO_SESSION_FILE_PATH` | No | Optional directory for file-backed browser session drafts. The container entrypoint defaults this to `<data-dir>/sessions` when a writable `/data` mount is present. |
+| `CONFORMANCE_DATA_DIR` | No | Overrides the container's persistent data root (`/data` by default). Also redirects CLI `resultOutputPath`/`executionLogPath` defaults under `<data-dir>/results` and `<data-dir>/logs`. |
 | `CONFORMANCE_DEVELOPER_MODE` | No | Disables masking for local engine debugging only. |
 | `CONFORMANCE_TOOL_VERSION` | No | Overrides generated report `tool.version`. |
 
-`make docker` requires production-style configuration and fails fast when
-misconfigured. Local source runs fall back to the project version in
-`pyproject.toml`, then `0+unknown` if no version can be resolved.
+`make docker` runs the hardened profile (read-only root filesystem, all
+capabilities dropped, `no-new-privileges`) and needs no manually supplied
+Django secret or allowed-hosts configuration; see
+[`docs/DOCKER_GUIDE.md`](DOCKER_GUIDE.md) for the full command and the
+optional `/certs` mount contract. Local source runs fall back to the project
+version in `pyproject.toml`, then `0+unknown` if no version can be resolved.
 
 Browser wizard drafts use Django sessions. The default session backend is
 server-side file storage, so `make dev` and `make dev-unmasked` do not require
@@ -332,11 +336,19 @@ level unless an independently trustworthy attestation can be verified.
 
 ## CI pipeline
 
-GitHub Actions run two independent jobs in parallel. `Check` invokes the
-canonical `make check` gate with the local OpenAPI exclusion cleared, so it
+GitHub Actions run two independent baseline jobs in parallel. `Check` invokes
+the canonical `make check` gate with the local OpenAPI exclusion cleared, so it
 runs ruff, mypy, the complete offline `unit`/`component` suite with coverage,
 and a full tracked-file secret scan. `Docker Build` builds the image, starts a
 container, and probes `/health/`.
+
+Participant-facing preview, beta, RC, and GA images add a stricter release
+gate. The workflow builds an immutable candidate image, runs the full checks
+against that exact digest, scans the final runtime image with Snyk, generates
+SBOM/provenance, records a candidate manifest, and promotes the already-checked
+digest only after the appropriate GitHub Environment approval. The version/tag
+to publish is set in `[project].version` in `pyproject.toml` and reviewed in
+the PR; it is not typed into the workflow approval screen.
 
 There is no live-network or end-to-end workflow. Container startup and health
 checking validate packaging only; they are not an Ozone or conformance-system

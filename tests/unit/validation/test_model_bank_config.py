@@ -59,7 +59,76 @@ def test_discovery_only_model_bank_config_is_valid_json_config(monkeypatch: pyte
     assert config.result_output_path == tmp_path / "out" / "test-results.json"
 
 
-def test_parse_model_bank_config_defaults_result_output_to_out_dir(tmp_path: Path) -> None:
+def test_load_model_bank_config_defaults_under_data_dir_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """CONFORMANCE_DATA_DIR redirects default output paths for hardened-container CLI runs."""
+    config_path = tmp_path / "model-bank.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "followUp": {"mode": "discovery_only"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("CONFORMANCE_DATA_DIR", str(data_dir))
+    monkeypatch.chdir(tmp_path)
+
+    config = load_model_bank_config(config_path)
+
+    assert config.result_output_path == data_dir / "results" / "test-results.json"
+    assert config.execution_log_path == data_dir / "logs" / "execution-log.ndjson"
+
+
+def test_load_model_bank_config_explicit_relative_paths_still_resolve_under_data_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An explicit relative resultOutputPath/executionLogPath still resolves under CONFORMANCE_DATA_DIR."""
+    config_path = tmp_path / "model-bank.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "followUp": {"mode": "discovery_only"},
+                "resultOutputPath": "custom/result.json",
+                "executionLogPath": "custom/log.ndjson",
+            }
+        ),
+        encoding="utf-8",
+    )
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("CONFORMANCE_DATA_DIR", str(data_dir))
+    monkeypatch.chdir(tmp_path)
+
+    config = load_model_bank_config(config_path)
+
+    assert config.result_output_path == data_dir / "custom" / "result.json"
+    assert config.execution_log_path == data_dir / "custom" / "log.ndjson"
+
+
+def test_load_model_bank_config_ignores_empty_data_dir_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """An empty CONFORMANCE_DATA_DIR value is treated the same as unset."""
+    config_path = tmp_path / "model-bank.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "followUp": {"mode": "discovery_only"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CONFORMANCE_DATA_DIR", "")
+    monkeypatch.chdir(tmp_path)
+
+    config = load_model_bank_config(config_path)
+
+    assert config.result_output_path == tmp_path / "out" / "test-results.json"
+
     config = parse_model_bank_config(
         {
             "environment": "ozone-model-bank",

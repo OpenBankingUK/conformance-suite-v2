@@ -5,12 +5,14 @@ on:
     branches:
       - main
       - develop
+      - "preview/**"
       - "release/**"
       - "hotfix/**"
   push:
     branches:
       - main
       - develop
+      - "preview/**"
       - "release/**"
       - "hotfix/**"
 
@@ -45,8 +47,66 @@ jobs:
         # file is scanned for secrets.
         run: make check SECRET_SCAN_EXCLUDE_PATHSPEC=
 
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      # Candidate-bearing branches are exactly the branches release_metadata.py
+      # accepts a preview/beta/GA version from: preview/<feature>,
+      # release/X.Y.Z, and main. develop and hotfix/** never publish and stay
+      # on the fast, non-publishing docker-build smoke job only.
+      is_candidate: ${{ steps.classify.outputs.is_candidate }}
+      is_fork_pr: ${{ steps.classify.outputs.is_fork_pr }}
+      target_branch: ${{ steps.classify.outputs.target_branch }}
+
+    steps:
+      - name: Classify this run
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PUSH_REF_NAME: ${{ github.ref_name }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            target_branch="$BASE_REF"
+            if [[ "$PR_HEAD_REPO" != "$BASE_REPO" ]]; then
+              is_fork_pr=true
+            else
+              is_fork_pr=false
+            fi
+          else
+            target_branch="$PUSH_REF_NAME"
+            is_fork_pr=false
+          fi
+
+          is_candidate=false
+          if [[ "$target_branch" == "main" ]] || [[ "$target_branch" == preview/* ]] || [[ "$target_branch" == release/* ]]; then
+            is_candidate=true
+          fi
+
+          {
+            echo "target_branch=$target_branch"
+            echo "is_fork_pr=$is_fork_pr"
+            echo "is_candidate=$is_candidate"
+          } >> "$GITHUB_OUTPUT"
+
+  reject-fork-candidate:
+    name: Reject fork-originated candidate
+    needs: plan
+    if: needs.plan.outputs.is_candidate == 'true' && needs.plan.outputs.is_fork_pr == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail with an actionable message
+        run: |
+          echo "::error::Candidate images for ${{ needs.plan.outputs.target_branch }} can only be built from a branch pushed directly to OpenBankingUK/conformance-suite-v2, not from a fork." >&2
+          echo "::error::Ask a maintainer to push this change to an internal preview/<feature> or release/X.Y.Z branch instead of a fork-originated pull request." >&2
+          exit 1
+
   docker-build:
     name: Docker Build
+    needs: plan
     runs-on: ubuntu-latest
 
     permissions:
@@ -59,6 +119,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
+      - name: Log in to dhi.io
+        # Docker Hardened Images require registry authentication even to pull,
+        # using a read-only, organisation-owned credential (never a personal
+        # Docker account). See docs/CICD_STRATEGY.md.
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DOCKER_ORG_USERNAME }}
+          password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+
       - name: Build Docker image (no push)
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
@@ -66,31 +136,195 @@ jobs:
           push: false
           load: true
           tags: ob-conformance-tool:${{ github.sha }}
+          build-args: |
+            CONFORMANCE_TOOL_VERSION=0.0.0+ci.${{ github.sha }}
+            SOURCE_REVISION=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Run container smoke test
-        env:
-          DJANGO_SECRET_KEY: "ci-dummy-key-not-for-production"
-          DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,0.0.0.0"
-        run: |
-          docker run -d --name smoke \
-            -e DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY" \
-            -e DJANGO_ALLOWED_HOSTS="$DJANGO_ALLOWED_HOSTS" \
-            -p 8443:8443 \
-            ob-conformance-tool:${{ github.sha }}
-          # Wait for the server to be ready
-          for i in $(seq 1 10); do
-            if curl -sf http://localhost:8443/health/; then
-              echo "Health check passed"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "Container failed to become healthy"
-          docker logs smoke
-          exit 1
+      - name: Run hardened smoke test
+        run: ./scripts/docker_smoke_test.sh ob-conformance-tool:${{ github.sha }}
 
-      - name: Stop container
-        if: always()
-        run: docker rm -f smoke || true
+      - name: Validate Compose configuration
+        run: |
+          docker compose -f compose.yaml config >/dev/null
+          docker compose -f compose.yaml -f compose.certs.yaml config >/dev/null
+
+  candidate-image:
+    name: Candidate image (${{ matrix.platform }})
+    needs: [plan, check]
+    if: needs.plan.outputs.is_candidate == 'true' && needs.plan.outputs.is_fork_pr == 'false'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            slug: linux-amd64
+            runs-on: ubuntu-latest
+          - platform: linux/arm64
+            slug: linux-arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install release-tooling dependencies
+        run: uv sync --frozen --no-install-project
+
+      - name: Validate release metadata for this branch
+        id: metadata
+        run: |
+          set -euo pipefail
+          result="$(uv run python -m scripts.validate_release --branch "${{ needs.plan.outputs.target_branch }}")"
+          echo "$result"
+          {
+            echo "raw_version=$(jq -r '.raw_version' <<<"$result")"
+            echo "channel=$(jq -r '.channel' <<<"$result")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Log in to dhi.io
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DOCKER_ORG_USERNAME }}
+          password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+
+      - name: Build candidate image
+        # Exported as an OCI-loadable docker archive artifact rather than
+        # pushed anywhere. The plan requires candidate images are never
+        # published to GHCR before the matching approval gate; the promotion
+        # workflow downloads this exact artifact and pushes it byte-for-byte,
+        # it never rebuilds. containerimage.digest in the metadata file is
+        # the digest that image will have once pushed, so it can be recorded
+        # and later revalidated without touching a registry here.
+        run: |
+          mkdir -p artifacts
+          docker buildx build \
+            --platform "${{ matrix.platform }}" \
+            --build-arg CONFORMANCE_TOOL_VERSION="${{ steps.metadata.outputs.raw_version }}" \
+            --build-arg SOURCE_REVISION="${{ github.sha }}" \
+            --output type=docker,dest=artifacts/image-${{ matrix.slug }}.tar \
+            --metadata-file artifacts/metadata-${{ matrix.slug }}.json \
+            --cache-from type=gha,scope=candidate-${{ matrix.slug }} \
+            --cache-to type=gha,mode=max,scope=candidate-${{ matrix.slug }} \
+            .
+
+      - name: Load candidate image for local verification
+        id: load
+        run: |
+          set -euo pipefail
+          docker load --input artifacts/image-${{ matrix.slug }}.tar
+          # `docker load`'s reported Image ID for a single-platform
+          # type=docker export matches containerimage.digest in the buildx
+          # metadata file, so the freshly loaded (unnamed) image can be
+          # retagged deterministically without parsing `docker load`'s
+          # human-readable output.
+          digest="$(jq -r '."containerimage.digest"' artifacts/metadata-${{ matrix.slug }}.json)"
+          local_tag="ob-conformance-candidate:${{ matrix.slug }}-${{ github.sha }}"
+          docker tag "$digest" "$local_tag"
+          echo "local_tag=$local_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Run hardened smoke test
+        run: ./scripts/docker_smoke_test.sh "${{ steps.load.outputs.local_tag }}"
+
+      - name: Scan for vulnerabilities with Snyk
+        # Zero-exception gate: authentication failure, scanner failure, or any
+        # HIGH/CRITICAL finding blocks the candidate. No allowlist,
+        # suppression, or continue-on-error path.
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          npm install -g snyk
+          snyk container test "${{ steps.load.outputs.local_tag }}" \
+            --file=Dockerfile \
+            --severity-threshold=high
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ${{ steps.load.outputs.local_tag }}
+          format: spdx-json
+          output-file: artifacts/sbom-${{ matrix.slug }}.spdx.json
+
+      - name: Upload candidate artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-${{ matrix.slug }}
+          path: |
+            artifacts/image-${{ matrix.slug }}.tar
+            artifacts/metadata-${{ matrix.slug }}.json
+            artifacts/sbom-${{ matrix.slug }}.spdx.json
+          retention-days: 14
+
+  candidate-manifest:
+    name: Assemble promotion manifest
+    needs: [plan, candidate-image]
+    if: needs.plan.outputs.is_candidate == 'true' && needs.plan.outputs.is_fork_pr == 'false'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install release-tooling dependencies
+        run: uv sync --frozen --no-install-project
+
+      - name: Download amd64 candidate metadata
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: candidate-linux-amd64
+          path: artifacts/linux-amd64
+
+      - name: Download arm64 candidate metadata
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: candidate-linux-arm64
+          path: artifacts/linux-arm64
+
+      - name: Compute artifact checksums
+        run: |
+          sha256sum artifacts/linux-amd64/image-linux-amd64.tar artifacts/linux-arm64/image-linux-arm64.tar > artifacts/checksums.sha256
+
+      - name: Build promotion manifest
+        run: |
+          set -euo pipefail
+          amd64_digest="$(jq -r '."containerimage.digest"' artifacts/linux-amd64/metadata-linux-amd64.json)"
+          arm64_digest="$(jq -r '."containerimage.digest"' artifacts/linux-arm64/metadata-linux-arm64.json)"
+
+          uv run python -m scripts.build_promotion_manifest \
+            --branch "${{ needs.plan.outputs.target_branch }}" \
+            --source-sha "${{ github.sha }}" \
+            --platform-digest "linux/amd64=$amd64_digest" \
+            --platform-digest "linux/arm64=$arm64_digest" \
+            --oci-label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --output artifacts/promotion-manifest.json
+
+      - name: Upload promotion manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: promotion-manifest
+          path: |
+            artifacts/promotion-manifest.json
+            artifacts/checksums.sha256
+          retention-days: 90

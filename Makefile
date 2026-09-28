@@ -51,17 +51,12 @@ dev-unmasked: ## Run local dev server with unmasked execution logs
 serve: ## Run local prod server (uvicorn, no reload)
 	DJANGO_ALLOWED_HOSTS="localhost,127.0.0.1,0.0.0.0" uv run uvicorn config.asgi:application --host 0.0.0.0 --port 8443
 
-docker: ## Build and run Docker container (requires DJANGO_SECRET_KEY and DJANGO_ALLOWED_HOSTS)
-ifndef DJANGO_SECRET_KEY
-	$(error DJANGO_SECRET_KEY must be set to run Docker container)
-endif
-ifndef DJANGO_ALLOWED_HOSTS
-	$(error DJANGO_ALLOWED_HOSTS must be set to run Docker container)
-endif
+docker: ## Build and run the hardened container with a persistent volume (run `docker login dhi.io` first)
 	docker build -t conformance-suite .
-	docker run --rm -p 8443:8443 \
-		-e DJANGO_SECRET_KEY="$(DJANGO_SECRET_KEY)" \
-		-e DJANGO_ALLOWED_HOSTS="$(DJANGO_ALLOWED_HOSTS),0.0.0.0" \
+	docker run --rm -p 127.0.0.1:8443:8443 \
+		--read-only --cap-drop=ALL --security-opt=no-new-privileges \
+		--tmpfs /tmp:size=64m,mode=1777 \
+		-v conformance-suite-data:/data \
 		conformance-suite
 
 help: ## Show available targets

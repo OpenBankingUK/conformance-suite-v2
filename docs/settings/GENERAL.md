@@ -22,7 +22,11 @@
 |---------|-------|
 | Default branch | `main` |
 
-**Rationale**: `main` is the production-ready branch in our Git Flow model. All pull requests and commits target `main` by default. The `develop` branch is used for integration but is not the default because releases are cut from `main`.
+**Rationale**: `main` is the stable GA branch in the repository branching
+model (see [CICD_STRATEGY.md](../CICD_STRATEGY.md)). Normal development PRs
+target `develop`; participant-facing previews use `preview/**`; beta and
+GA candidates use `release/**`; and `main` records the approved supported
+release history.
 
 ---
 
@@ -30,9 +34,11 @@
 
 | Setting | Value |
 |---------|-------|
-| Release immutability | Off |
+| Release immutability | On |
 
-**Rationale**: Disabled to allow deleting and re-tagging releases during hotfix scenarios. Our release process involves manual tagging (`v*`) and publishing to Docker Hub on tag push — immutability would block the ability to correct a bad tag without involving GitHub Support.
+**Rationale**: Stable GitHub releases and Docker image version tags are
+intended to be immutable audit records. If a bad release is published, issue a
+new hotfix version rather than deleting or re-tagging the old one.
 
 ---
 
@@ -64,7 +70,9 @@ Enabled for lightweight documentation that doesn't belong in the main codebase (
 
 ### Issues — On
 
-Primary mechanism for tracking work. Used with labels and milestones aligned to our Git Flow branching strategy (`feature/`, `bugfix/`, `release/`, `hotfix/`).
+Primary mechanism for tracking work. Used with labels and milestones aligned to
+the repository branching strategy (`feature/`, `bugfix/`, `preview/`,
+`release/`, `hotfix/`).
 
 ### Sponsorships — Off
 
@@ -102,7 +110,7 @@ Project management is handled at the organisation level, not per-repository. Dis
 | Allow squash merging | On (Default message) |
 | Allow rebase merging | Off |
 
-**Rationale**: Both merge commits and squash merging are enabled at the repository level, but branch rulesets further restrict the allowed methods per branch. The `main` branch ruleset enforces **squash-only** merges (see [BRANCH_RULESETS.md](BRANCH_RULESETS.md)), giving a clean linear history where each commit represents one release or hotfix. Merge commits remain available for branches not covered by restrictive rulesets (e.g. `release/` or `hotfix/` merges back into `develop`). Rebase merging is disabled to avoid rewriting commit history, which can cause problems with our Git Flow model and signed commits.
+**Rationale**: Both merge commits and squash merging are enabled at the repository level, but branch rulesets further restrict the allowed methods per branch. The `main` branch ruleset enforces **squash-only** merges (see [BRANCH_RULESETS.md](BRANCH_RULESETS.md)), giving a clean linear history where each commit represents one release or hotfix. Merge commits remain available for branches not covered by restrictive rulesets (e.g. commits cherry-picked onto a `release/**` branch while it is being staged). Rebase merging is disabled to avoid rewriting commit history, which can cause problems with signed commits.
 
 ---
 
@@ -169,7 +177,10 @@ Left at default. Allows inline discussion on individual commits, which is useful
 |---------|-------|
 | Limit pushes | On — **5** branches/tags per push |
 
-**Rationale**: Safety net against accidental bulk operations (e.g. a misconfigured script deleting or force-pushing many branches). The limit of 5 is generous enough for normal Git Flow work (pushing a feature branch + tag) while blocking potentially destructive bulk pushes.
+**Rationale**: Safety net against accidental bulk operations (e.g. a
+misconfigured script deleting or force-pushing many branches). The limit of 5
+is generous enough for normal branch and tag pushes while blocking potentially
+destructive bulk pushes.
 
 ---
 
