@@ -11,6 +11,7 @@ from joserfc import jwk, jwt
 
 from conformance.api.auth_session_store import AuthSessionStore
 from conformance.context import ExecutionContext, RequestRecord, ResponseRecord, record_step
+from conformance.credentials import credential_bytes
 from conformance.execution_log import BufferedExecutionLogger
 from conformance.executor import _execute_v1_psu_step
 from conformance.manifest import (
@@ -118,7 +119,9 @@ def test_psu_headless_step_resolves_openbanking_intent_id_into_generated_request
         )
 
     request_params = dict(parse_qsl(urlsplit(observed_urls[0]).query))
-    public_key = jwk.import_key(signing_config.signing_certificate_path.read_bytes(), key_type="RSA")
+    public_key = jwk.import_key(
+        credential_bytes(signing_config.signing_certificate, label="FAPI signing certificate"), key_type="RSA"
+    )
     decoded_request_object = jwt.decode(request_params["request"], public_key, algorithms=["PS256"])
     claims = decoded_request_object.claims
 

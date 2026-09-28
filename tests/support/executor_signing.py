@@ -19,6 +19,7 @@ from joserfc import jwk, jws
 from joserfc.jws import JWSRegistry
 from joserfc.registry import HeaderParameter
 
+from conformance.credentials import credential_from_path
 from conformance.json_types import JsonObject
 from conformance.model_bank_config import FapiSigningConfig
 
@@ -72,8 +73,8 @@ def executor_signing_config(tmp_path: Path) -> FapiSigningConfig:
     certificate_root.mkdir()
     certificate_path, private_key_path = write_signing_pair(certificate_root, stem="executor-signing")
     return FapiSigningConfig(
-        signing_certificate_path=certificate_path,
-        signing_private_key_path=private_key_path,
+        signing_certificate=credential_from_path(certificate_path),
+        signing_private_key=credential_from_path(private_key_path),
         key_id="executor-signing-key",
         client_assertion_issuer="client-issuer",
         client_assertion_subject="client-subject",
@@ -97,8 +98,8 @@ def invalid_executor_signing_config(tmp_path: Path) -> FapiSigningConfig:
     certificate_path.write_bytes(b"invalid certificate data")
     private_key_path.write_bytes(b"invalid private key data")
     return FapiSigningConfig(
-        signing_certificate_path=certificate_path,
-        signing_private_key_path=private_key_path,
+        signing_certificate=credential_from_path(certificate_path),
+        signing_private_key=credential_from_path(private_key_path),
         key_id="invalid-executor-signing-key",
         client_assertion_issuer="client-issuer",
         client_assertion_subject="client-subject",

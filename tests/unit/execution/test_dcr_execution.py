@@ -16,6 +16,7 @@ from joserfc import jwk, jwt
 
 from conformance import dcr_execution
 from conformance.approved_releases import ApprovedReleasePolicy
+from conformance.credentials import credential_from_path
 from conformance.dcr_execution import (
     DcrExecutionError,
     build_dcr_mtls_client,
@@ -144,6 +145,15 @@ def _prepared_post_plan(service: DcrProtocolService, root: Path) -> PreparedTest
     config = _config(service, root)
     shared = config.shared
     dcr = config.dynamic_client_registration
+    assert shared.signing.private_key is not None
+    assert shared.signing.private_key.path is not None
+    assert shared.mtls.client_certificate is not None
+    assert shared.mtls.client_certificate.path is not None
+    assert shared.mtls.client_private_key is not None
+    assert shared.mtls.client_private_key.path is not None
+    assert shared.mtls.ca_bundle is not None
+    assert shared.mtls.ca_bundle.path is not None
+    assert dcr.software_statement_assertion.path is not None
     return prepare_test_plan_for_run(
         {
             "schemaVersion": "1.0",
@@ -157,13 +167,13 @@ def _prepared_post_plan(service: DcrProtocolService, root: Path) -> PreparedTest
             "securityEnvironment": {
                 "discoveryUrl": shared.discovery_url,
                 "clientAuthMethod": shared.client_auth_method,
-                "signingPrivateKeyPath": str(shared.signing.private_key_path),
+                "signingPrivateKeyPath": str(shared.signing.private_key.path),
                 "signingKeyId": shared.signing.key_id,
                 "mtls": {
                     "enabled": True,
-                    "certificatePath": str(shared.mtls.client_certificate_path),
-                    "privateKeyPath": str(shared.mtls.client_private_key_path),
-                    "caBundlePath": str(shared.mtls.ca_bundle_path),
+                    "certificatePath": str(shared.mtls.client_certificate.path),
+                    "privateKeyPath": str(shared.mtls.client_private_key.path),
+                    "caBundlePath": str(shared.mtls.ca_bundle.path),
                 },
             },
             "endpoints": [
@@ -176,7 +186,7 @@ def _prepared_post_plan(service: DcrProtocolService, root: Path) -> PreparedTest
                 }
             ],
             "dynamicClientRegistration": {
-                "softwareStatementAssertionPath": str(dcr.software_statement_assertion_path),
+                "softwareStatementAssertionPath": str(dcr.software_statement_assertion.path),
                 "registrationAudience": dcr.registration_audience,
                 "disableKeepAlive": False,
             },
@@ -194,9 +204,9 @@ def test_dcr_ca_bundle_augments_default_trust_store() -> None:
         SimpleNamespace(
             shared=SimpleNamespace(
                 mtls=SimpleNamespace(
-                    client_certificate_path=Path("/client.pem"),
-                    client_private_key_path=Path("/client.key"),
-                    ca_bundle_path=ca_bundle_path,
+                    client_certificate=credential_from_path(Path("/client.pem")),
+                    client_private_key=credential_from_path(Path("/client.key")),
+                    ca_bundle=credential_from_path(ca_bundle_path),
                 )
             ),
             dynamic_client_registration=SimpleNamespace(disable_keep_alive=False),
@@ -726,7 +736,7 @@ def test_certificate_dn_derivation_numeric_oid_override_and_512_boundary(
     dcr_fixture_materials: DcrFixtureMaterials,
 ) -> None:
     """Certificate subjects support named/numeric rendering and strict length."""
-    certificate = dcr_fixture_materials.tls.client_certificate_path
+    certificate = credential_from_path(dcr_fixture_materials.tls.client_certificate_path)
 
     assert certificate_subject_dn(certificate, override=None, numeric_oids=False) == "CN=DCR fixture client"
     assert certificate_subject_dn(certificate, override=None, numeric_oids=True) == "2.5.4.3=DCR fixture client"

@@ -518,9 +518,9 @@ def _execute_run(
         else:
             try:
                 http_client = build_json_http_client(
-                    ca_bundle_path=config.tls.ca_bundle_path,
-                    client_certificate_path=config.tls.client_certificate_path,
-                    client_private_key_path=config.tls.client_private_key_path,
+                    ca_bundle=config.tls.ca_bundle,
+                    client_certificate=config.tls.client_certificate,
+                    client_private_key=config.tls.client_private_key,
                 )
             except ValueError as error:
                 logger.error("HTTP client setup failed for run %s: %s", run_id, error)
@@ -543,7 +543,7 @@ def _execute_run(
                     ),
                 )
                 mtls_configured = (
-                    config.tls.client_certificate_path is not None and config.tls.client_private_key_path is not None
+                    config.tls.client_certificate is not None and config.tls.client_private_key is not None
                 )
                 if compiled_plan is not None:
                     if runtime_inputs is None or runtime_input_base_dir is None:

@@ -11,7 +11,9 @@ non-root, read-only root filesystem, no shell or package manager, and no
 manually supplied Django secret required. See
 [`docs/DOCKER_GUIDE.md`](docs/DOCKER_GUIDE.md) for GHCR pull instructions, the
 recommended hardened `docker run`/Compose commands, the `/data` persistence
-layout, and the optional read-only `/certs` mount contract.
+layout, and the optional read-only `/certs` mount contract. Credentials can
+also be pasted or uploaded directly in the browser wizard instead of being
+mounted, in which case no `/certs` mount is needed.
 
 ## Participant workflow
 

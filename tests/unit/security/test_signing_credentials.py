@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
+from conformance.credentials import credential_from_path
 from conformance.model_bank_config import FapiSigningConfig
 from conformance.signing_credentials import SigningCredentialError, load_signing_credentials
 
@@ -51,8 +52,8 @@ def _build_signing_config(
     private_key_path: Path,
 ) -> FapiSigningConfig:
     return FapiSigningConfig(
-        signing_certificate_path=certificate_path,
-        signing_private_key_path=private_key_path,
+        signing_certificate=credential_from_path(certificate_path),
+        signing_private_key=credential_from_path(private_key_path),
         key_id="signing-key-001",
         client_assertion_issuer="client-issuer",
         client_assertion_subject="client-subject",
@@ -81,7 +82,7 @@ def test_load_signing_credentials_rejects_missing_files(tmp_path: Path) -> None:
     certificate_root = tmp_path / "certs"
     certificate_root.mkdir()
 
-    with pytest.raises(SigningCredentialError, match="Unable to read fapiSigning.signingCertificatePath from disk"):
+    with pytest.raises(SigningCredentialError, match="Unable to read fapiSigning signing certificate from disk"):
         load_signing_credentials(
             _build_signing_config(
                 certificate_root,
@@ -137,7 +138,7 @@ def test_load_signing_credentials_rejects_invalid_certificate_pem_without_echoin
             )
         )
 
-    assert str(error_info.value) == "fapiSigning.signingCertificatePath must contain a valid PEM certificate"
+    assert str(error_info.value) == "fapiSigning signing certificate must contain a valid PEM certificate"
     assert certificate_marker not in str(error_info.value)
     assert key_marker not in str(error_info.value)
 
@@ -159,7 +160,7 @@ def test_load_signing_credentials_rejects_invalid_private_key_pem_without_echoin
             )
         )
 
-    assert str(error_info.value) == "fapiSigning.signingPrivateKeyPath must contain a valid PEM private key"
+    assert str(error_info.value) == "fapiSigning signing private key must contain a valid PEM private key"
     assert key_marker not in str(error_info.value)
 
 

@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Browser wizard and configuration support for supplying PEM credentials as
+  pasted text or an uploaded file, in addition to an absolute file path. Every
+  credential (FAPI signing certificate and private key, TLS CA bundle, mTLS
+  client certificate and private key, DCR software statement assertion, and DCR
+  signing certificate) now accepts an inline sibling key in canonical plans and
+  model-bank config (`signingCertificatePem`, `signingPrivateKeyPem`,
+  `caBundlePem`, `clientCertificatePem`, `clientPrivateKeyPem`, `certificatePem`,
+  `privateKeyPem`, and `softwareStatementAssertion`). A credential must be
+  supplied exactly once, as either a path or inline material. Inline material is
+  held in memory, is redacted from logs, results, and safe plan exports, and is
+  never re-rendered into the wizard once stored. The read-only `/certs` container
+  mount is therefore now optional for participants who paste credentials.
+
 - First-class Open Banking UK Read/Write v3.1.11 support for AIS, PIS, CBPII,
   and VRP, with dedicated v3.1 catalogue boundaries, pinned v3.1.11 OpenAPI
   schemas, explicit request-signing metadata, and a machine-checkable strict

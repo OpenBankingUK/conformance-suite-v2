@@ -417,7 +417,8 @@ def test_parse_model_bank_config_accepts_absolute_tls_ca_bundle_path(tmp_path: P
         base_dir=tmp_path,
     )
 
-    assert config.tls.ca_bundle_path == ca_bundle.resolve()
+    assert config.tls.ca_bundle is not None
+    assert config.tls.ca_bundle.path == ca_bundle.resolve()
 
 
 @pytest.mark.parametrize(

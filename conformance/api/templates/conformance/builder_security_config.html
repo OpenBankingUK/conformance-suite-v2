@@ -31,6 +31,13 @@
         input, select, textarea { width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }
         input[type="checkbox"] { width: auto; min-height: auto; margin-right: 8px; }
         textarea { min-height: 120px; resize: vertical; font: 0.9rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        .credential-field { border: 1px solid var(--border); border-radius: 6px; padding: 12px; background: #ffffff; }
+        .credential-field fieldset { border: 0; margin: 10px 0 0; padding: 0; }
+        .credential-field legend { padding: 0; font-size: 0.85rem; }
+        .credential-status { margin: 6px 0 0; }
+        .credential-badge { display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid #abefc6; background: #f6fef9; color: #067647; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; }
+        .inline-choice { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; margin-right: 14px; }
+        .inline-choice input[type="radio"] { width: auto; min-height: auto; }
         .message, .errorlist { border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; }
         .message.warning { border: 1px solid #fedf89; background: #fffcf5; color: var(--warning); }
         .errorlist { list-style: none; border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
@@ -74,7 +81,7 @@
         {% endif %}
         {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
 
-        <form method="post" action="{% url 'builder-security-config' draft.draft_id %}">
+        <form method="post" enctype="multipart/form-data" action="{% url 'builder-security-config' draft.draft_id %}">
             {% csrf_token %}
             {% if not dcr_mode %}
             <section class="config-card" aria-labelledby="oauth-heading">
@@ -162,16 +169,10 @@
                         <div class="helper">{{ security_requirements.signing_kid.description }} Type: {{ security_requirements.signing_kid.type_hint }}. {{ security_requirements.signing_kid.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.signing_certificate_path.id_for_label }}">Signing certificate absolute path {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_certificate_path.status label=security_requirements.signing_certificate_path.label only %}</label>
-                        {{ form.signing_certificate_path.errors }}
-                        <input id="{{ form.signing_certificate_path.id_for_label }}" name="signing_certificate_path" type="text" value="{{ form.signing_certificate_path.value|default_if_none:'' }}" autocomplete="off">
-                        <div class="helper">{{ security_requirements.signing_certificate_path.description }} Type: {{ security_requirements.signing_certificate_path.type_hint }}. {{ security_requirements.signing_certificate_path.requirement }}</div>
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.signing_certificate title="Signing certificate" only %}
                     </div>
                     <div>
-                        <label for="{{ form.signing_private_key_path.id_for_label }}">Signing private key absolute path {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_private_key_path.status label=security_requirements.signing_private_key_path.label only %}</label>
-                        {{ form.signing_private_key_path.errors }}
-                        <input id="{{ form.signing_private_key_path.id_for_label }}" name="signing_private_key_path" type="text" value="{{ form.signing_private_key_path.value|default_if_none:'' }}" autocomplete="off">
-                        <div class="helper">{{ security_requirements.signing_private_key_path.description }} Type: {{ security_requirements.signing_private_key_path.type_hint }}. {{ security_requirements.signing_private_key_path.requirement }}</div>
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.signing_private_key title="Signing private key" only %}
                     </div>
                     <div>
                         <label for="{{ form.signing_client_assertion_issuer.id_for_label }}">Client assertion issuer {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_client_assertion_issuer.status label=security_requirements.signing_client_assertion_issuer.label only %}</label>
@@ -208,9 +209,7 @@
                         <input id="{{ form.signing_kid.id_for_label }}" name="signing_kid" type="text" value="{{ form.signing_kid.value|default_if_none:'' }}" autocomplete="off">
                     </div>
                     <div>
-                        <label for="{{ form.signing_private_key_path.id_for_label }}">Signing private key absolute path <span class="requirement-badge required">Required</span></label>
-                        {{ form.signing_private_key_path.errors }}
-                        <input id="{{ form.signing_private_key_path.id_for_label }}" name="signing_private_key_path" type="text" value="{{ form.signing_private_key_path.value|default_if_none:'' }}" autocomplete="off">
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.signing_private_key title="Signing private key" only %}
                     </div>
                     <div>
                         <label for="{{ form.signing_token_endpoint_auth_method.id_for_label }}">Client authentication method <span class="requirement-badge required">Required</span></label>
@@ -227,9 +226,7 @@
                         <div class="helper">Prefer the algorithm advertised by discovery.</div>
                     </div>
                     <div>
-                        <label for="{{ form.dcr_software_statement_assertion_path.id_for_label }}">Software Statement Assertion absolute path <span class="requirement-badge required">Required</span></label>
-                        {{ form.dcr_software_statement_assertion_path.errors }}
-                        <input id="{{ form.dcr_software_statement_assertion_path.id_for_label }}" name="dcr_software_statement_assertion_path" type="text" value="{{ form.dcr_software_statement_assertion_path.value|default_if_none:'' }}" autocomplete="off">
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.dcr_software_statement_assertion title="Software Statement Assertion" only %}
                     </div>
                     <div>
                         <label for="{{ form.dcr_registration_audience.id_for_label }}">Registration audience <span class="requirement-badge required">Required</span></label>
@@ -249,9 +246,7 @@
                         <div class="helper">One HTTPS URI per line.</div>
                     </div>
                     <div>
-                        <label for="{{ form.dcr_signing_certificate_path.id_for_label }}">DCR signing certificate absolute path <span class="requirement-badge optional">Optional</span></label>
-                        {{ form.dcr_signing_certificate_path.errors }}
-                        <input id="{{ form.dcr_signing_certificate_path.id_for_label }}" name="dcr_signing_certificate_path" type="text" value="{{ form.dcr_signing_certificate_path.value|default_if_none:'' }}" autocomplete="off">
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.dcr_signing_certificate title="DCR signing certificate" only %}
                     </div>
                     <div>
                         <label for="{{ form.dcr_transport_subject_dn_override.id_for_label }}">Transport certificate subject-DN override <span class="requirement-badge optional">Optional</span></label>
@@ -286,22 +281,13 @@
                 <p class="helper">{% if dcr_mode %}mTLS client certificate and private key references are required for DCR. The CA bundle is optional.{% else %}mTLS client certificate and private key are conditional: provide both paths together, or leave both blank.{% endif %}</p>
                 <div class="grid field-row">
                     <div>
-                        <label for="{{ form.tls_ca_bundle_path.id_for_label }}">CA bundle absolute path {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.tls_ca_bundle_path.status label=security_requirements.tls_ca_bundle_path.label only %}</label>
-                        {{ form.tls_ca_bundle_path.errors }}
-                        <input id="{{ form.tls_ca_bundle_path.id_for_label }}" name="tls_ca_bundle_path" type="text" value="{{ form.tls_ca_bundle_path.value|default_if_none:'' }}" autocomplete="off">
-                        <div class="helper">{{ security_requirements.tls_ca_bundle_path.description }} Type: {{ security_requirements.tls_ca_bundle_path.type_hint }}. {{ security_requirements.tls_ca_bundle_path.requirement }}</div>
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.tls_ca_bundle title="CA bundle" only %}
                     </div>
                     <div>
-                        <label for="{{ form.tls_client_certificate_path.id_for_label }}">mTLS client certificate absolute path {% if dcr_mode %}<span class="requirement-badge required">Required</span>{% else %}{% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.tls_client_certificate_path.status label=security_requirements.tls_client_certificate_path.label only %}{% endif %}</label>
-                        {{ form.tls_client_certificate_path.errors }}
-                        <input id="{{ form.tls_client_certificate_path.id_for_label }}" name="tls_client_certificate_path" type="text" value="{{ form.tls_client_certificate_path.value|default_if_none:'' }}" autocomplete="off">
-                        <div class="helper">{{ security_requirements.tls_client_certificate_path.description }} Type: {{ security_requirements.tls_client_certificate_path.type_hint }}. {{ security_requirements.tls_client_certificate_path.requirement }}</div>
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.tls_client_certificate title="mTLS client certificate" only %}
                     </div>
                     <div>
-                        <label for="{{ form.tls_client_private_key_path.id_for_label }}">mTLS client private key absolute path {% if dcr_mode %}<span class="requirement-badge required">Required</span>{% else %}{% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.tls_client_private_key_path.status label=security_requirements.tls_client_private_key_path.label only %}{% endif %}</label>
-                        {{ form.tls_client_private_key_path.errors }}
-                        <input id="{{ form.tls_client_private_key_path.id_for_label }}" name="tls_client_private_key_path" type="text" value="{{ form.tls_client_private_key_path.value|default_if_none:'' }}" autocomplete="off">
-                        <div class="helper">{{ security_requirements.tls_client_private_key_path.description }} Type: {{ security_requirements.tls_client_private_key_path.type_hint }}. {{ security_requirements.tls_client_private_key_path.requirement }}</div>
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.tls_client_private_key title="mTLS client private key" only %}
                     </div>
                 </div>
             </section>

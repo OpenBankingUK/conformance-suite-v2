@@ -14,6 +14,7 @@ from joserfc import jwk, jws, jwt
 from joserfc.jws import JWSRegistry
 from joserfc.registry import HeaderParameter
 
+from conformance.credentials import credential_from_path
 from conformance.model_bank_config import FapiSigningConfig
 from conformance.signing_credentials import SigningCredentials, load_signing_credentials
 from conformance.signing_service import (
@@ -86,8 +87,8 @@ def _build_signing_config(
     private_key_path: Path,
 ) -> FapiSigningConfig:
     return FapiSigningConfig(
-        signing_certificate_path=certificate_path,
-        signing_private_key_path=private_key_path,
+        signing_certificate=credential_from_path(certificate_path),
+        signing_private_key=credential_from_path(private_key_path),
         key_id="signing-key-001",
         client_assertion_issuer="client-issuer",
         client_assertion_subject="client-subject",

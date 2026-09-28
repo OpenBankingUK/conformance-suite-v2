@@ -9,7 +9,6 @@ import ssl
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from types import MappingProxyType
 from typing import cast
 from urllib.parse import urlsplit
@@ -22,6 +21,14 @@ from joserfc.errors import InvalidKeyTypeError, JoseError
 
 from conformance.approved_releases import ApprovedReleasePolicy
 from conformance.catalogue import CatalogueExecutionStep, CatalogueTestCase, CompiledTestPlan
+from conformance.credentials import (
+    CredentialError,
+    CredentialMaterial,
+    apply_ca_bundle,
+    apply_client_certificate,
+    credential_bytes,
+    credential_text,
+)
 from conformance.execution_log import ExecutionLogger
 from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
@@ -216,7 +223,7 @@ class DcrCatalogueExecutionAdapter:
         }
         if auth_method == "tls_client_auth":
             claims["tls_client_auth_subject_dn"] = certificate_subject_dn(
-                self.config.shared.mtls.client_certificate_path,
+                self.config.shared.mtls.client_certificate,
                 override=self.config.dynamic_client_registration.transport_certificate_subject_dn_override,
                 numeric_oids=self.config.dynamic_client_registration.use_numeric_oid_subject_dn,
             )
@@ -1430,14 +1437,14 @@ class DcrCatalogueExecutionAdapter:
         """
         if self._signing_key is not None:
             return self._signing_key
-        path = self.config.shared.signing.private_key_path
-        if path is None:
-            raise DcrExecutionError("DCR signing private key path is required")
+        material = self.config.shared.signing.private_key
+        if material is None:
+            raise DcrExecutionError("DCR signing private key is required")
         try:
-            key_bytes = path.read_bytes()
+            key_bytes = credential_bytes(material, label="DCR signing private key")
             key = jwk.import_key(key_bytes, key_type="RSA")
             key.as_dict(private=True)
-        except (OSError, InvalidKeyTypeError, TypeError, ValueError) as error:
+        except (CredentialError, InvalidKeyTypeError, TypeError, ValueError) as error:
             raise DcrExecutionError("Unable to load configured DCR RSA private signing key") from error
         self._signing_key = key
         return key
@@ -1452,10 +1459,11 @@ class DcrCatalogueExecutionAdapter:
             DcrExecutionError: If the file cannot be read or is empty.
         """
         try:
-            value = self.config.dynamic_client_registration.software_statement_assertion_path.read_text(
-                encoding="utf-8"
-            ).strip()
-        except OSError as error:
+            value = credential_text(
+                self.config.dynamic_client_registration.software_statement_assertion,
+                label="software statement assertion",
+            )
+        except CredentialError as error:
             raise DcrExecutionError("Unable to read configured software statement assertion") from error
         if not value:
             raise DcrExecutionError("Configured software statement assertion must not be empty")
@@ -1540,16 +1548,16 @@ def build_dcr_mtls_client(config: DcrPlanConfiguration, *, timeout_seconds: floa
         DcrExecutionError: If TLS material cannot be loaded.
     """
     tls = config.shared.mtls
-    certificate_path = tls.client_certificate_path
-    private_key_path = tls.client_private_key_path
-    if certificate_path is None or private_key_path is None:
+    certificate = tls.client_certificate
+    private_key = tls.client_private_key
+    if certificate is None or private_key is None:
         raise DcrExecutionError("DCR mTLS certificate and private key are required")
     try:
         context = ssl.create_default_context()
-        if tls.ca_bundle_path is not None:
-            context.load_verify_locations(cafile=str(tls.ca_bundle_path))
-        context.load_cert_chain(certfile=str(certificate_path), keyfile=str(private_key_path))
-    except (OSError, ssl.SSLError) as error:
+        if tls.ca_bundle is not None:
+            apply_ca_bundle(context, tls.ca_bundle)
+        apply_client_certificate(context, certificate, private_key)
+    except CredentialError as error:
         raise DcrExecutionError("Unable to load configured DCR mTLS credentials or CA bundle") from error
     disable_keep_alive = config.dynamic_client_registration.disable_keep_alive
     limits = httpx.Limits(max_keepalive_connections=0) if disable_keep_alive else httpx.Limits()
@@ -1563,11 +1571,17 @@ def build_dcr_mtls_client(config: DcrPlanConfiguration, *, timeout_seconds: floa
     )
 
 
-def certificate_subject_dn(path: Path | None, *, override: str | None, numeric_oids: bool) -> str:
+def certificate_subject_dn(
+    material: CredentialMaterial | None,
+    *,
+    override: str | None,
+    numeric_oids: bool,
+) -> str:
     """Derive a DCR RFC 2253 subject DN from an mTLS certificate.
 
     Args:
-        path: Certificate path supplied by typed mTLS configuration.
+        material: Certificate supplied by typed mTLS configuration, as either a
+            path reference or inline PEM.
         override: Exact configured subject-DN override, when present.
         numeric_oids: Whether derived attribute names use dotted numeric OIDs.
 
@@ -1575,21 +1589,23 @@ def certificate_subject_dn(path: Path | None, *, override: str | None, numeric_o
         Validated RFC 2253-style subject DN.
 
     Raises:
-        DcrExecutionError: If the path, certificate, or DN is invalid.
+        DcrExecutionError: If the credential, certificate, or DN is invalid.
     """
     if override is not None:
         validate_dcr_subject_dn(override)
         return override
-    if path is None:
-        raise DcrExecutionError("DCR mTLS certificate path is required for subject-DN derivation")
+    if material is None:
+        raise DcrExecutionError("DCR mTLS certificate is required for subject-DN derivation")
     try:
-        certificate = x509.load_pem_x509_certificate(path.read_bytes())
-    except (OSError, ValueError) as error:
+        certificate = x509.load_pem_x509_certificate(
+            credential_bytes(material, label="DCR mTLS certificate"),
+        )
+    except (CredentialError, ValueError) as error:
         raise DcrExecutionError("Unable to parse configured DCR mTLS certificate") from error
     overrides = (
         {attribute.oid: attribute.oid.dotted_string for attribute in certificate.subject} if numeric_oids else None
     )
-    value = certificate.subject.rfc4514_string(attr_name_overrides=overrides)
+    value: str = certificate.subject.rfc4514_string(attr_name_overrides=overrides)
     validate_dcr_subject_dn(value)
     return value
 

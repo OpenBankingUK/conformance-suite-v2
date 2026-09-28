@@ -8,10 +8,23 @@ from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from django import forms
 
+if TYPE_CHECKING:
+    from django.core.files.uploadedfile import UploadedFile
+    from django.utils.datastructures import MultiValueDict
+
+from conformance.api.builder_credentials import (
+    SECURITY_CREDENTIAL_SPECS,
+    SECURITY_CREDENTIAL_SPECS_BY_NAME,
+    CredentialState,
+    add_credential_fields,
+    credential_state,
+    resolve_credential,
+    set_credential_keys,
+)
 from conformance.api.builder_draft_store import BuilderDraft
 from conformance.catalogue import (
     CatalogueError,
@@ -32,6 +45,7 @@ from conformance.catalogue import (
     supported_plan_document_boundaries,
 )
 from conformance.catalogue_registry import supported_catalogues
+from conformance.credentials import CredentialMaterial, credential_from_inline, credential_from_path
 from conformance.json_types import JsonObject, JsonValue
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
 from conformance.specification_registry import (
@@ -547,7 +561,7 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         name="signing_certificate_path",
         status="conditional",
         label="Conditional",
-        type_hint="Absolute file path",
+        type_hint="Absolute file path or pasted PEM",
         description="X.509 certificate used by runtime FAPI signing.",
         requirement="Required with the rest of the FAPI signing group when selected flows need runtime signing.",
     ),
@@ -555,7 +569,7 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         name="signing_private_key_path",
         status="conditional",
         label="Conditional",
-        type_hint="Absolute file path",
+        type_hint="Absolute file path or pasted PEM",
         description="Private key paired with the signing certificate.",
         requirement="Required with the rest of the FAPI signing group when selected flows need runtime signing.",
     ),
@@ -579,7 +593,7 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         name="tls_ca_bundle_path",
         status="optional",
         label="Optional",
-        type_hint="Absolute file path",
+        type_hint="Absolute file path or pasted PEM",
         description="Custom CA bundle used to verify the ASPSP TLS certificate.",
         requirement="Only needed for environments that use a private or non-standard issuing CA.",
     ),
@@ -587,7 +601,7 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         name="tls_client_certificate_path",
         status="conditional",
         label="Conditional",
-        type_hint="Absolute file path",
+        type_hint="Absolute file path or pasted PEM",
         description="Client certificate used by the HTTP client for mTLS.",
         requirement=(
             "Required with the private key when the selected environment or tls_client_auth flow requires mTLS."
@@ -597,7 +611,7 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         name="tls_client_private_key_path",
         status="conditional",
         label="Conditional",
-        type_hint="Absolute file path",
+        type_hint="Absolute file path or pasted PEM",
         description="Private key paired with the mTLS client certificate.",
         requirement=(
             "Required with the client certificate when the selected environment or tls_client_auth flow requires mTLS."
@@ -1526,22 +1540,32 @@ class SecurityConfigForm(forms.Form):
         self,
         data: Mapping[str, object] | None = None,
         *,
+        files: Mapping[str, object] | None = None,
         initial: Mapping[str, object] | None = None,
         dcr_mode: bool = False,
+        stored_credentials: Mapping[str, CredentialMaterial | None] | None = None,
     ) -> None:
         """Initialise the OAuth/FAPI/security config form.
 
         Args:
             data: Optional bound form data.
+            files: Optional uploaded credential files from ``request.FILES``.
             initial: Initial values decoded from draft config and discovery
                 helper metadata.
             dcr_mode: Whether to apply DCR-specific fields and requiredness.
+            stored_credentials: Credentials already held in the draft. They are
+                used to honour a "keep" action without ever re-rendering
+                stored material into the page.
         """
         self.dcr_mode = dcr_mode
+        self.stored_credentials: Mapping[str, CredentialMaterial | None] = stored_credentials or {}
+        self.credentials: dict[str, CredentialMaterial | None] = {}
         super().__init__(
             data=cast(MutableMapping[str, object] | None, data),
+            files=cast("MultiValueDict[str, UploadedFile] | None", files),
             initial=cast(MutableMapping[str, object] | None, initial),
         )
+        add_credential_fields(self.fields, SECURITY_CREDENTIAL_SPECS_BY_NAME)
         auth_choices = [
             ("", "Select auth method"),
             ("private_key_jwt", "private_key_jwt"),
@@ -1556,13 +1580,12 @@ class SecurityConfigForm(forms.Form):
             )
         cast(forms.ChoiceField, self.fields["signing_token_endpoint_auth_method"]).choices = auth_choices
         if dcr_mode:
+            # Credential fields are deliberately absent: each may be satisfied
+            # by a path, pasted text, an upload, or a previously stored value,
+            # so their presence is enforced on the resolved credential instead.
             for name in (
-                "signing_private_key_path",
                 "signing_kid",
                 "signing_token_endpoint_auth_method",
-                "tls_client_certificate_path",
-                "tls_client_private_key_path",
-                "dcr_software_statement_assertion_path",
                 "dcr_registration_audience",
                 "dcr_execution_mode",
             ):
@@ -1576,31 +1599,56 @@ class SecurityConfigForm(forms.Form):
         """
         base_cleaned_data = super().clean()
         cleaned_data: dict[str, object] = {} if base_cleaned_data is None else dict(base_cleaned_data)
-        if self.errors:
-            return cleaned_data
+        self.credentials = {
+            spec.name: resolve_credential(
+                self,
+                cleaned_data,
+                spec,
+                stored=self.stored_credentials.get(spec.name),
+            )
+            for spec in SECURITY_CREDENTIAL_SPECS
+        }
+
         signing_fields = (
-            "signing_certificate_path",
-            "signing_private_key_path",
             "signing_kid",
             "signing_client_assertion_issuer",
             "signing_client_assertion_subject",
             "signing_token_endpoint_auth_method",
         )
-        if not self.dcr_mode and any(
-            _cleaned_optional_string(cleaned_data.get(field_name)) is not None for field_name in signing_fields
+        signing_credentials = ("signing_certificate", "signing_private_key")
+        if not self.dcr_mode and (
+            any(_cleaned_optional_string(cleaned_data.get(field_name)) is not None for field_name in signing_fields)
+            or any(self.credentials.get(name) is not None for name in signing_credentials)
         ):
+            message = "Complete every FAPI signing field, or leave the whole group blank."
             for field_name in signing_fields:
                 if _cleaned_optional_string(cleaned_data.get(field_name)) is None:
-                    self.add_error(field_name, "Complete every FAPI signing field, or leave the whole group blank.")
+                    self.add_error(field_name, message)
+            for name in signing_credentials:
+                if self.credentials.get(name) is None:
+                    self.add_error(SECURITY_CREDENTIAL_SPECS_BY_NAME[name].path_field, message)
 
-        mtls_certificate = _cleaned_optional_string(cleaned_data.get("tls_client_certificate_path"))
-        mtls_private_key = _cleaned_optional_string(cleaned_data.get("tls_client_private_key_path"))
-        if (mtls_certificate is None) != (mtls_private_key is None):
+        if (self.credentials.get("tls_client_certificate") is None) != (
+            self.credentials.get("tls_client_private_key") is None
+        ):
             message = "mTLS client certificate and private key must be supplied together."
-            if mtls_certificate is None:
-                self.add_error("tls_client_certificate_path", message)
-            if mtls_private_key is None:
-                self.add_error("tls_client_private_key_path", message)
+            for name in ("tls_client_certificate", "tls_client_private_key"):
+                if self.credentials.get(name) is None:
+                    self.add_error(SECURITY_CREDENTIAL_SPECS_BY_NAME[name].path_field, message)
+
+        if self.dcr_mode:
+            for name in (
+                "signing_private_key",
+                "tls_client_certificate",
+                "tls_client_private_key",
+                "dcr_software_statement_assertion",
+            ):
+                if self.credentials.get(name) is None:
+                    spec = SECURITY_CREDENTIAL_SPECS_BY_NAME[name]
+                    self.add_error(
+                        spec.path_field,
+                        f"Supply the {spec.label} as a file path, pasted text, or an upload.",
+                    )
 
         if self.errors:
             return cleaned_data
@@ -1609,12 +1657,12 @@ class SecurityConfigForm(forms.Form):
             if self.errors:
                 return cleaned_data
             self.config = {}
-            self.security_environment = _dcr_security_environment_from_fields(cleaned_data)
-            self.dynamic_client_registration = _dcr_config_from_fields(cleaned_data)
+            self.security_environment = _dcr_security_environment_from_fields(cleaned_data, self.credentials)
+            self.dynamic_client_registration = _dcr_config_from_fields(cleaned_data, self.credentials)
             self.metadata = _dcr_metadata_from_fields(cleaned_data)
             self.execution_mode = cast(PlanExecutionMode, cleaned_data["dcr_execution_mode"])
         else:
-            self.config = _security_config_from_fields(cleaned_data)
+            self.config = _security_config_from_fields(cleaned_data, self.credentials)
         return cleaned_data
 
 
@@ -2236,6 +2284,160 @@ def security_config_form_initial(
         }
     )
     return initial
+
+
+_CREDENTIAL_SOURCE_KEYS: Mapping[str, tuple[tuple[str, str, str], ...]] = {
+    "signing_certificate": (("fapiSigning", "signingCertificatePath", "signingCertificatePem"),),
+    "signing_private_key": (
+        ("securityEnvironment", "signingPrivateKeyPath", "signingPrivateKeyPem"),
+        ("fapiSigning", "signingPrivateKeyPath", "signingPrivateKeyPem"),
+    ),
+    "tls_ca_bundle": (
+        ("securityEnvironment.mtls", "caBundlePath", "caBundlePem"),
+        ("tls", "caBundlePath", "caBundlePem"),
+    ),
+    "tls_client_certificate": (
+        ("securityEnvironment.mtls", "certificatePath", "certificatePem"),
+        ("tls", "clientCertificatePath", "clientCertificatePem"),
+    ),
+    "tls_client_private_key": (
+        ("securityEnvironment.mtls", "privateKeyPath", "privateKeyPem"),
+        ("tls", "clientPrivateKeyPath", "clientPrivateKeyPem"),
+    ),
+    "dcr_software_statement_assertion": (
+        ("dynamicClientRegistration", "softwareStatementAssertionPath", "softwareStatementAssertion"),
+    ),
+    "dcr_signing_certificate": (("dynamicClientRegistration", "signingCertificatePath", "signingCertificatePem"),),
+}
+
+
+def _credential_container(
+    container: str,
+    config: Mapping[str, JsonValue],
+    security_environment: Mapping[str, JsonValue],
+    dynamic_client_registration: Mapping[str, JsonValue],
+) -> Mapping[str, JsonValue]:
+    """Resolve one named credential container to its object.
+
+    Args:
+        container: Container name used by ``_CREDENTIAL_SOURCE_KEYS``.
+        config: Draft executable config object.
+        security_environment: Canonical shared security configuration.
+        dynamic_client_registration: Canonical DCR-only configuration.
+
+    Returns:
+        The container object, empty when absent.
+    """
+    if container == "securityEnvironment":
+        return security_environment
+    if container == "securityEnvironment.mtls":
+        return _object_config_value(security_environment, "mtls")
+    if container == "dynamicClientRegistration":
+        return dynamic_client_registration
+    return _object_config_value(config, container)
+
+
+def stored_security_credentials(
+    config: Mapping[str, JsonValue],
+    *,
+    security_environment: Mapping[str, JsonValue] | None = None,
+    dynamic_client_registration: Mapping[str, JsonValue] | None = None,
+) -> dict[str, CredentialMaterial | None]:
+    """Return credentials already held by a draft, keyed by field-name stem.
+
+    Args:
+        config: Draft executable config object.
+        security_environment: Optional canonical shared security configuration.
+        dynamic_client_registration: Optional canonical DCR-only configuration.
+
+    Returns:
+        Stored credential material per credential, ``None`` when unset.
+    """
+    canonical_security = security_environment or {}
+    dcr = dynamic_client_registration or {}
+    stored: dict[str, CredentialMaterial | None] = {}
+    for spec in SECURITY_CREDENTIAL_SPECS:
+        material: CredentialMaterial | None = None
+        for container, path_key, inline_key in _CREDENTIAL_SOURCE_KEYS[spec.name]:
+            source = _credential_container(container, config, canonical_security, dcr)
+            inline = _string_config_value(source, inline_key)
+            if inline:
+                material = credential_from_inline(inline)
+                break
+            path_value = _string_config_value(source, path_key)
+            if path_value:
+                material = credential_from_path(Path(path_value))
+                break
+        stored[spec.name] = material
+    return stored
+
+
+def security_credential_states(
+    stored: Mapping[str, CredentialMaterial | None],
+) -> list[CredentialState]:
+    """Return non-secret presentation state for every security credential.
+
+    Args:
+        stored: Stored credential material keyed by field-name stem.
+
+    Returns:
+        Presentation states in wizard display order, containing no material.
+    """
+    return [credential_state(spec, stored.get(spec.name)) for spec in SECURITY_CREDENTIAL_SPECS]
+
+
+@dataclass(frozen=True)
+class CredentialRow:
+    """Everything one credential needs to render, holding no secret material.
+
+    Attributes:
+        state: Non-secret presentation state for the stored credential.
+        metadata: Participant-facing requirement metadata for the credential.
+        path: Bound field for the absolute-path input.
+        pem: Bound field for the paste textarea.
+        file: Bound field for the upload input.
+        source: Bound field for the supply-method selector.
+        action: Bound field for the keep/replace/clear selector.
+    """
+
+    state: CredentialState
+    metadata: SecurityFieldMetadata | None
+    path: forms.BoundField
+    pem: forms.BoundField
+    file: forms.BoundField
+    source: forms.BoundField
+    action: forms.BoundField
+
+
+def security_credential_rows(
+    form: SecurityConfigForm,
+    stored: Mapping[str, CredentialMaterial | None],
+) -> dict[str, CredentialRow]:
+    """Return per-credential render rows keyed by field-name stem.
+
+    Stored credential material is reduced to a non-secret descriptor, so no
+    pasted PEM or private key can be re-rendered into the page.
+
+    Args:
+        form: Bound or unbound security config form.
+        stored: Stored credential material keyed by field-name stem.
+
+    Returns:
+        Render rows keyed by credential field-name stem.
+    """
+    metadata = security_field_metadata()
+    return {
+        spec.name: CredentialRow(
+            state=credential_state(spec, stored.get(spec.name)),
+            metadata=metadata.get(spec.path_field),
+            path=form[spec.path_field],
+            pem=form[spec.pem_field],
+            file=form[spec.file_field],
+            source=form[spec.source_field],
+            action=form[spec.action_field],
+        )
+        for spec in SECURITY_CREDENTIAL_SPECS
+    }
 
 
 def merge_config_sections(
@@ -3455,11 +3657,15 @@ def _discovery_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObj
     return config
 
 
-def _security_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
+def _security_config_from_fields(
+    cleaned_data: Mapping[str, object],
+    credentials: Mapping[str, CredentialMaterial | None],
+) -> JsonObject:
     """Build an OAuth/FAPI/security partial config from form fields.
 
     Args:
         cleaned_data: Cleaned form values.
+        credentials: Credentials resolved from path, paste, upload, or storage.
 
     Returns:
         Partial v2 plan config containing security and communication settings.
@@ -3495,41 +3701,65 @@ def _security_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObje
     signing = _nested_object_from_fields(
         cleaned_data,
         {
-            "signingCertificatePath": "signing_certificate_path",
-            "signingPrivateKeyPath": "signing_private_key_path",
             "kid": "signing_kid",
             "clientAssertionIssuer": "signing_client_assertion_issuer",
             "clientAssertionSubject": "signing_client_assertion_subject",
             "tokenEndpointAuthMethod": "signing_token_endpoint_auth_method",
         },
     )
+    set_credential_keys(
+        signing,
+        credentials.get("signing_certificate"),
+        path_key="signingCertificatePath",
+        inline_key="signingCertificatePem",
+    )
+    set_credential_keys(
+        signing,
+        credentials.get("signing_private_key"),
+        path_key="signingPrivateKeyPath",
+        inline_key="signingPrivateKeyPem",
+    )
     if signing:
         config["fapiSigning"] = signing
 
-    tls = _nested_object_from_fields(
-        cleaned_data,
-        {
-            "caBundlePath": "tls_ca_bundle_path",
-            "clientCertificatePath": "tls_client_certificate_path",
-            "clientPrivateKeyPath": "tls_client_private_key_path",
-        },
+    tls: JsonObject = {}
+    set_credential_keys(
+        tls,
+        credentials.get("tls_ca_bundle"),
+        path_key="caBundlePath",
+        inline_key="caBundlePem",
+    )
+    set_credential_keys(
+        tls,
+        credentials.get("tls_client_certificate"),
+        path_key="clientCertificatePath",
+        inline_key="clientCertificatePem",
+    )
+    set_credential_keys(
+        tls,
+        credentials.get("tls_client_private_key"),
+        path_key="clientPrivateKeyPath",
+        inline_key="clientPrivateKeyPem",
     )
     if tls:
         config["tls"] = tls
     return config
 
 
-def _dcr_security_environment_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
+def _dcr_security_environment_from_fields(
+    cleaned_data: Mapping[str, object],
+    credentials: Mapping[str, CredentialMaterial | None],
+) -> JsonObject:
     """Build canonical shared security fields entered for a DCR plan.
 
     Args:
         cleaned_data: Cleaned DCR security form values.
+        credentials: Credentials resolved from path, paste, upload, or storage.
 
     Returns:
         Canonical ``securityEnvironment`` values excluding discovery.
     """
     environment: JsonObject = {
-        "signingPrivateKeyPath": cast(str, cleaned_data["signing_private_key_path"]).strip(),
         "signingKeyId": cast(str, cleaned_data["signing_kid"]).strip(),
         "clientAuthMethod": cast(str, cleaned_data["signing_token_endpoint_auth_method"]).strip(),
         "signingAlgorithm": "PS256",
@@ -3539,30 +3769,49 @@ def _dcr_security_environment_from_fields(cleaned_data: Mapping[str, object]) ->
         "clientAuthSigningAlgorithm",
         cleaned_data.get("signing_client_auth_algorithm"),
     )
-    mtls: JsonObject = {
-        "enabled": True,
-        "certificatePath": cast(str, cleaned_data["tls_client_certificate_path"]).strip(),
-        "privateKeyPath": cast(str, cleaned_data["tls_client_private_key_path"]).strip(),
-    }
-    _set_optional_string(mtls, "caBundlePath", cleaned_data.get("tls_ca_bundle_path"))
+    set_credential_keys(
+        environment,
+        credentials.get("signing_private_key"),
+        path_key="signingPrivateKeyPath",
+        inline_key="signingPrivateKeyPem",
+    )
+    mtls: JsonObject = {"enabled": True}
+    set_credential_keys(
+        mtls,
+        credentials.get("tls_client_certificate"),
+        path_key="certificatePath",
+        inline_key="certificatePem",
+    )
+    set_credential_keys(
+        mtls,
+        credentials.get("tls_client_private_key"),
+        path_key="privateKeyPath",
+        inline_key="privateKeyPem",
+    )
+    set_credential_keys(
+        mtls,
+        credentials.get("tls_ca_bundle"),
+        path_key="caBundlePath",
+        inline_key="caBundlePem",
+    )
     environment["mtls"] = mtls
     return environment
 
 
-def _dcr_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
+def _dcr_config_from_fields(
+    cleaned_data: Mapping[str, object],
+    credentials: Mapping[str, CredentialMaterial | None],
+) -> JsonObject:
     """Build canonical DCR-only configuration from form fields.
 
     Args:
         cleaned_data: Cleaned DCR security form values.
+        credentials: Credentials resolved from path, paste, upload, or storage.
 
     Returns:
         Canonical ``dynamicClientRegistration`` object.
     """
     config: JsonObject = {
-        "softwareStatementAssertionPath": cast(
-            str,
-            cleaned_data["dcr_software_statement_assertion_path"],
-        ).strip(),
         "registrationAudience": cast(str, cleaned_data["dcr_registration_audience"]).strip(),
         "useNumericOidSubjectDn": cleaned_data.get("dcr_use_numeric_oid_subject_dn") is True,
         "disableKeepAlive": cleaned_data.get("dcr_disable_keep_alive") is True,
@@ -3575,7 +3824,18 @@ def _dcr_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
     redirects = _dcr_redirect_uri_lines(cleaned_data.get("dcr_redirect_uris_override"))
     if redirects:
         config["redirectUrisOverride"] = list(redirects)
-    _set_optional_string(config, "signingCertificatePath", cleaned_data.get("dcr_signing_certificate_path"))
+    set_credential_keys(
+        config,
+        credentials.get("dcr_software_statement_assertion"),
+        path_key="softwareStatementAssertionPath",
+        inline_key="softwareStatementAssertion",
+    )
+    set_credential_keys(
+        config,
+        credentials.get("dcr_signing_certificate"),
+        path_key="signingCertificatePath",
+        inline_key="signingCertificatePem",
+    )
     _set_optional_string(
         config,
         "transportCertificateSubjectDnOverride",
@@ -3601,23 +3861,15 @@ def _dcr_metadata_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
 
 
 def _validate_dcr_form_fields(form: SecurityConfigForm, cleaned_data: Mapping[str, object]) -> None:
-    """Add DCR URL, path, and subject-DN errors to a security form.
+    """Add DCR URL and subject-DN errors to a security form.
+
+    Credential fields are validated separately, because each may be satisfied
+    by a path, pasted text, an upload, or a previously stored value.
 
     Args:
         form: Bound DCR security form to update.
         cleaned_data: Cleaned form values to validate.
     """
-    for field_name in (
-        "signing_private_key_path",
-        "tls_ca_bundle_path",
-        "tls_client_certificate_path",
-        "tls_client_private_key_path",
-        "dcr_software_statement_assertion_path",
-        "dcr_signing_certificate_path",
-    ):
-        value = _cleaned_optional_string(cleaned_data.get(field_name))
-        if value is not None and not Path(value).is_absolute():
-            form.add_error(field_name, "Enter an absolute file path.")
     audience = _cleaned_optional_string(cleaned_data.get("dcr_registration_audience"))
     if audience is None or re.fullmatch(r"[0-9A-Za-z]{1,18}", audience) is None:
         form.add_error(

@@ -97,18 +97,29 @@ is read directly by the application at request time. Populate it with exactly
 the artifacts your test plan or model-bank config references by absolute
 path:
 
-| `/certs` artifact | Referenced by |
-| --- | --- |
-| CA bundle | `tls.caBundlePath` |
-| Transport/mTLS certificate | `tls.clientCertificatePath` |
-| Transport/mTLS private key | `tls.clientPrivateKeyPath` |
-| Signing certificate | `fapiSigning.signingCertificatePath` |
-| Signing private key | `fapiSigning.signingPrivateKeyPath` |
+| `/certs` artifact | Referenced by | Inline alternative |
+| --- | --- | --- |
+| CA bundle | `tls.caBundlePath` | `tls.caBundlePem` |
+| Transport/mTLS certificate | `tls.clientCertificatePath` | `tls.clientCertificatePem` |
+| Transport/mTLS private key | `tls.clientPrivateKeyPath` | `tls.clientPrivateKeyPem` |
+| Signing certificate | `fapiSigning.signingCertificatePath` | `fapiSigning.signingCertificatePem` |
+| Signing private key | `fapiSigning.signingPrivateKeyPath` | `fapiSigning.signingPrivateKeyPem` |
 
-Every one of these fields must be an absolute path (for example
+Every one of the path fields must be an absolute path (for example
 `/certs/transport.pem`); relative paths are rejected. Any subset may be
 omitted if your test plan does not require it — for example, discovery-only
 runs need none of them.
+
+The mount is optional. Each credential may instead be supplied as inline PEM
+text using the `*Pem` sibling key shown above, which the browser wizard writes
+when you paste a credential or upload a file. A credential must be supplied
+exactly once: giving both the path and the inline key for the same credential
+is rejected. Inline material is held in memory for the life of the run, is
+redacted from logs, results, and safe plan exports, and is written to a
+short-lived `0600` temporary file only where OpenSSL cannot accept in-memory
+client-certificate material. Mounting `/certs` remains the better option for
+unattended or repeated runs, because the material stays outside the browser
+session.
 
 ## Compose equivalent
 

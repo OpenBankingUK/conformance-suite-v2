@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Literal, cast
 
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import CertificationCoverage
+from conformance.masking import mask_free_text
 from conformance.version import REPORT_METADATA_VERSION, resolve_conformance_tool_version
 
 if TYPE_CHECKING:
@@ -67,7 +68,7 @@ class StepResult:
         result: JsonObject = {
             "name": self.name,
             "status": self.status,
-            "message": self.message,
+            "message": mask_free_text(self.message),
         }
         if self.url is not None:
             result["url"] = self.url

@@ -22,7 +22,19 @@ from collections.abc import Collection, Mapping
 from typing import Final
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from conformance.credentials import scrub_pem
 from conformance.json_types import JsonObject, JsonValue
+
+__all__ = [
+    "MASKED_VALUE",
+    "SENSITIVE_HEADER_NAMES",
+    "SENSITIVE_JSON_KEYS",
+    "mask_form_fields",
+    "mask_free_text",
+    "mask_headers",
+    "mask_json_value",
+    "mask_url_query",
+]
 
 MASKED_VALUE: Final[str] = "***"
 """Literal placeholder written in place of any masked value."""
@@ -52,6 +64,14 @@ SENSITIVE_JSON_KEYS: Final[frozenset[str]] = frozenset(
         "password",
         "private_key",
         "privatekeys",
+        # Inline PEM/JWS credential material pasted or uploaded in the wizard
+        "cabundlepem",
+        "certificatepem",
+        "clientcertificatepem",
+        "clientprivatekeypem",
+        "privatekeypem",
+        "signingcertificatepem",
+        "signingprivatekeypem",
     }
 )
 """JSON object keys whose values must be masked, compared case-insensitively."""
@@ -93,7 +113,26 @@ def mask_json_value(value: JsonValue) -> JsonValue:
         return _mask_object(value)
     if isinstance(value, list):
         return [mask_json_value(item) for item in value]
+    if isinstance(value, str):
+        return mask_free_text(value)
     return value
+
+
+def mask_free_text(text: str) -> str:
+    """Remove inline credential material from an arbitrary free-text value.
+
+    Inline PEM credentials pasted in the browser wizard are not bound to a
+    known field name once they reach an error message or a log line, so key
+    matching alone cannot protect them. This strips any PEM block from the text
+    as defence in depth before it is persisted or displayed.
+
+    Args:
+        text: Free text that may embed inline credential material.
+
+    Returns:
+        The text with each PEM block replaced by a redaction placeholder.
+    """
+    return scrub_pem(text)
 
 
 def _mask_object(obj: Mapping[str, JsonValue]) -> JsonObject:

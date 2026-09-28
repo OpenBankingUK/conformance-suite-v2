@@ -105,20 +105,34 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
                     "properties": {
                         "enabled": {"type": "boolean"},
                         "certificatePath": {"type": "string", "minLength": 1},
+                        "certificatePem": {"type": "string", "minLength": 1},
                         "privateKeyPath": {"type": "string", "minLength": 1},
+                        "privateKeyPem": {"type": "string", "minLength": 1},
                         "caBundlePath": {"type": "string", "minLength": 1},
+                        "caBundlePem": {"type": "string", "minLength": 1},
                     },
+                    "allOf": [
+                        {"not": {"required": ["certificatePath", "certificatePem"]}},
+                        {"not": {"required": ["privateKeyPath", "privateKeyPem"]}},
+                        {"not": {"required": ["caBundlePath", "caBundlePem"]}},
+                    ],
                 },
                 "clientId": {"type": "string", "minLength": 1},
                 "redirectUri": {"type": "string", "minLength": 1},
                 "resourceBaseUrl": {"type": "string", "minLength": 1},
                 "responseType": {"type": "string", "minLength": 1},
                 "signingCertificatePath": {"type": "string", "minLength": 1},
+                "signingCertificatePem": {"type": "string", "minLength": 1},
                 "signingPrivateKeyPath": {"type": "string", "minLength": 1},
+                "signingPrivateKeyPem": {"type": "string", "minLength": 1},
                 "signingKeyId": {"type": "string", "minLength": 1},
                 "clientAssertionIssuer": {"type": "string", "minLength": 1},
                 "clientAssertionSubject": {"type": "string", "minLength": 1},
             },
+            "allOf": [
+                {"not": {"required": ["signingCertificatePath", "signingCertificatePem"]}},
+                {"not": {"required": ["signingPrivateKeyPath", "signingPrivateKeyPem"]}},
+            ],
         },
         "resourceGroups": {
             "type": "array",
@@ -203,10 +217,11 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
         "businessTestData": {"type": "object"},
         "dynamicClientRegistration": {
             "type": "object",
-            "required": ["softwareStatementAssertionPath", "registrationAudience"],
+            "required": ["registrationAudience"],
             "additionalProperties": False,
             "properties": {
                 "softwareStatementAssertionPath": {"type": "string", "minLength": 1},
+                "softwareStatementAssertion": {"type": "string", "minLength": 1},
                 "registrationAudience": {
                     "type": "string",
                     "minLength": 1,
@@ -219,6 +234,7 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
                     "items": {"type": "string", "minLength": 1},
                 },
                 "signingCertificatePath": {"type": "string", "minLength": 1},
+                "signingCertificatePem": {"type": "string", "minLength": 1},
                 "transportCertificateSubjectDnOverride": {
                     "type": "string",
                     "minLength": 1,
@@ -227,6 +243,16 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
                 "useNumericOidSubjectDn": {"type": "boolean"},
                 "disableKeepAlive": {"type": "boolean"},
             },
+            "allOf": [
+                {
+                    "anyOf": [
+                        {"required": ["softwareStatementAssertionPath"]},
+                        {"required": ["softwareStatementAssertion"]},
+                    ]
+                },
+                {"not": {"required": ["softwareStatementAssertionPath", "softwareStatementAssertion"]}},
+                {"not": {"required": ["signingCertificatePath", "signingCertificatePem"]}},
+            ],
         },
         "metadata": {
             "type": "object",
@@ -626,6 +652,10 @@ def _restore_ais_business_account_ids(snapshot: JsonObject, document: PlanDocume
 def _restore_dcr_file_references(snapshot: JsonObject, document: PlanDocumentV2) -> None:
     """Restore DCR file references that contain no inline credential material.
 
+    Only ``*Path`` keys are restored: a path is a reference an operator already
+    controls, whereas a ``*Pem`` key carries the credential itself and must stay
+    stripped from the safe export.
+
     Args:
         snapshot: Mutable safe-export snapshot.
         document: Source plan document containing canonical file references.
@@ -917,6 +947,9 @@ def _is_sensitive_key(key: str) -> bool:
     normalized = key.replace("-", "").replace("_", "").lower()
     return (
         normalized.endswith("token")
+        # Inline credential material pasted in the wizard is always carried on a
+        # ``*Pem`` key, so the whole family is stripped from safe exports.
+        or normalized.endswith("pem")
         or "secret" in normalized
         or "password" in normalized
         or "privatekey" in normalized
@@ -925,6 +958,7 @@ def _is_sensitive_key(key: str) -> bool:
             "accountid",
             "accountids",
             "identification",
+            "softwarestatementassertion",
             "xfapicustomeripaddress",
             "xfapifinancialid",
         }

@@ -69,8 +69,10 @@ def test_typed_dcr_config_reuses_shared_security_and_metadata(tmp_path: Path) ->
     )
 
     assert parsed.shared.discovery_url == "https://aspsp.example.com/.well-known/openid-configuration"
-    assert parsed.shared.mtls.client_certificate_path == tmp_path / "transport.crt"
-    assert parsed.shared.signing.private_key_path == tmp_path / "signing.key"
+    assert parsed.shared.mtls.client_certificate is not None
+    assert parsed.shared.signing.private_key is not None
+    assert parsed.shared.mtls.client_certificate.path == tmp_path / "transport.crt"
+    assert parsed.shared.signing.private_key.path == tmp_path / "signing.key"
     assert parsed.shared.metadata.brand_name == "Retail"
     assert parsed.dynamic_client_registration.redirect_uris_override == ("https://tpp.example.com/callback",)
     assert parsed.dynamic_client_registration.use_numeric_oid_subject_dn is True
@@ -80,10 +82,10 @@ def test_typed_dcr_config_reuses_shared_security_and_metadata(tmp_path: Path) ->
     ("section", "key", "message"),
     [
         ("security", "discoveryUrl", "discoveryUrl is required"),
-        ("security", "signingPrivateKeyPath", "signingPrivateKeyPath is required"),
+        ("security", "signingPrivateKeyPath", "securityEnvironment signing private key is required for DCR"),
         ("security", "signingKeyId", "signingKeyId is required"),
-        ("mtls", "certificatePath", "certificatePath and privateKeyPath must be supplied together"),
-        ("dcr", "softwareStatementAssertionPath", "softwareStatementAssertionPath is required"),
+        ("mtls", "certificatePath", "securityEnvironment.mtls certificate and private key must be supplied together"),
+        ("dcr", "softwareStatementAssertionPath", "dynamicClientRegistration software statement assertion is required"),
         ("dcr", "registrationAudience", "registrationAudience must be"),
     ],
 )
