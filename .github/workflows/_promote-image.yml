@@ -66,6 +66,7 @@ jobs:
       packages: write
       attestations: write
       id-token: write
+      pull-requests: read
 
     steps:
       - name: Require a trusted main-branch dispatch

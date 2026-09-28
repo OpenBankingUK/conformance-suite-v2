@@ -187,6 +187,7 @@ jobs:
       packages: write
       attestations: write
       id-token: write
+      pull-requests: read
 
   finalize-ga:
     name: Tag release and open develop merge-back
