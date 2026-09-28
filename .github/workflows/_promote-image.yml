@@ -99,24 +99,11 @@ jobs:
         id: locate
         env:
           GH_TOKEN: ${{ github.token }}
+          TRUSTED_CI_WORKFLOW_ID: "268848247"
+          TRUSTED_CI_WORKFLOW_PATH: ".github/workflows/ci.yml"
         run: |
           set -euo pipefail
           if [[ -n "$INPUT_CI_RUN_ID" ]]; then
-            run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$INPUT_CI_RUN_ID")"
-            if ! jq -e \
-              --arg sha "$INPUT_SOURCE_SHA" \
-              --arg branch "$INPUT_BRANCH" \
-              --arg repository "$GITHUB_REPOSITORY" \
-              '.name == "CI"
-               and .head_sha == $sha
-               and .head_branch == $branch
-               and .event == "push"
-               and .conclusion == "success"
-               and .head_repository.full_name == $repository' \
-              <<<"$run_json" >/dev/null; then
-              echo "::error::CI run $INPUT_CI_RUN_ID is not the successful push CI run for $INPUT_SOURCE_SHA on $INPUT_BRANCH." >&2
-              exit 1
-            fi
             run_id="$INPUT_CI_RUN_ID"
           else
             run_id="$(
@@ -129,6 +116,25 @@ jobs:
           fi
           if [[ -z "$run_id" ]]; then
             echo "::error::No successful push CI run found for $INPUT_SOURCE_SHA on $INPUT_BRANCH." >&2
+            exit 1
+          fi
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")"
+          if ! jq -e \
+            --arg sha "$INPUT_SOURCE_SHA" \
+            --arg branch "$INPUT_BRANCH" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg path "$TRUSTED_CI_WORKFLOW_PATH" \
+            --argjson workflow_id "$TRUSTED_CI_WORKFLOW_ID" \
+            '.name == "CI"
+             and .workflow_id == $workflow_id
+             and .path == $path
+             and .head_sha == $sha
+             and .head_branch == $branch
+             and .event == "push"
+             and .conclusion == "success"
+             and .head_repository.full_name == $repository' \
+            <<<"$run_json" >/dev/null; then
+            echo "::error::CI run $run_id is not the trusted successful push CI run for $INPUT_SOURCE_SHA on $INPUT_BRANCH." >&2
             exit 1
           fi
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"

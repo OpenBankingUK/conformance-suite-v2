@@ -9,10 +9,6 @@ on:
       - "release/**"
       - "preview/**"
 
-concurrency:
-  group: auto-promote-${{ github.event.workflow_run.head_branch }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
 
@@ -24,6 +20,15 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
+    # Only cancel redundant *resolution* attempts for the same branch: once a
+    # run has decided should_promote=true and handed off to `promote`, a GA
+    # image publish can already be underway/complete, so the workflow must
+    # not be cancellable past this point or a published GA image could be
+    # left without its vX.Y.Z tag and merge-back PR (see _finalize-ga-release
+    # for the idempotent recovery this relies on).
+    concurrency:
+      group: auto-promote-resolve-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: true
     outputs:
       should_promote: ${{ steps.resolve.outputs.should_promote }}
       channel: ${{ steps.resolve.outputs.channel }}
@@ -45,6 +50,23 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.event.repository.default_branch }}
+
+      - name: Verify the triggering workflow identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_CI_WORKFLOW_ID: "268848247"
+          TRUSTED_CI_WORKFLOW_PATH: ".github/workflows/ci.yml"
+        run: |
+          set -euo pipefail
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID")"
+          if ! jq -e \
+            --arg path "$TRUSTED_CI_WORKFLOW_PATH" \
+            --argjson workflow_id "$TRUSTED_CI_WORKFLOW_ID" \
+            '.workflow_id == $workflow_id and .path == $path' \
+            <<<"$run_json" >/dev/null; then
+            echo "::error::Workflow run $CI_RUN_ID is not the trusted CI workflow." >&2
+            exit 1
+          fi
 
       - name: Check for the CI promotion manifest
         id: artifact
