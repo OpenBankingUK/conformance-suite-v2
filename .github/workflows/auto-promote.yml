@@ -1,0 +1,202 @@
+name: Auto-promote image
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches:
+      - main
+      - "release/**"
+      - "preview/**"
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve candidate promotion
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Only cancel redundant *resolution* attempts for the same branch: once a
+    # run has decided should_promote=true and handed off to `promote`, a GA
+    # image publish can already be underway/complete, so the workflow must
+    # not be cancellable past this point or a published GA image could be
+    # left without its vX.Y.Z tag and merge-back PR (see _finalize-ga-release
+    # for the idempotent recovery this relies on).
+    concurrency:
+      group: auto-promote-resolve-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: true
+    outputs:
+      should_promote: ${{ steps.resolve.outputs.should_promote }}
+      channel: ${{ steps.resolve.outputs.channel }}
+      environment_name: ${{ steps.resolve.outputs.environment_name }}
+      tag: ${{ steps.resolve.outputs.tag }}
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    env:
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+      SOURCE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      CI_RUN_ID: ${{ github.event.workflow_run.id }}
+      IMAGE_OWNER: openbankinguk
+      IMAGE_PACKAGE: conformance-suite-v2
+
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Verify the triggering workflow identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_CI_WORKFLOW_ID: "268848247"
+          TRUSTED_CI_WORKFLOW_PATH: ".github/workflows/ci.yml"
+        run: |
+          set -euo pipefail
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID")"
+          if ! jq -e \
+            --arg path "$TRUSTED_CI_WORKFLOW_PATH" \
+            --argjson workflow_id "$TRUSTED_CI_WORKFLOW_ID" \
+            '.workflow_id == $workflow_id and .path == $path' \
+            <<<"$run_json" >/dev/null; then
+            echo "::error::Workflow run $CI_RUN_ID is not the trusted CI workflow." >&2
+            exit 1
+          fi
+
+      - name: Check for the CI promotion manifest
+        id: artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.name == "promotion-manifest" and .expired == false) | .id' \
+            > promotion-manifest-artifact-ids.txt
+          if [[ ! -s promotion-manifest-artifact-ids.txt ]]; then
+            echo "::notice::CI run $CI_RUN_ID did not produce a promotion-manifest artifact; no promotion is needed."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Read candidate pyproject.toml without executing candidate code
+        if: steps.artifact.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$SOURCE_SHA"
+          git show "$SOURCE_SHA:pyproject.toml" > candidate-pyproject.toml
+
+      - name: Set up uv
+        if: steps.artifact.outputs.available == 'true'
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install trusted release-tooling dependencies
+        if: steps.artifact.outputs.available == 'true'
+        run: uv sync --frozen --no-install-project
+
+      - name: List published GHCR version tags
+        if: steps.artifact.outputs.available == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! error="$(
+            gh api "orgs/${IMAGE_OWNER}/packages/container/${IMAGE_PACKAGE}/versions" --paginate \
+              --jq '.[].metadata.container.tags[]?' 2>&1 > published-versions.txt
+          )"; then
+            if [[ "$error" == *"(HTTP 404)"* ]]; then
+              : > published-versions.txt
+            else
+              echo "$error" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Resolve promotion policy
+        id: resolve
+        if: steps.artifact.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          args=(
+            --pyproject candidate-pyproject.toml
+            --branch "$SOURCE_BRANCH"
+            --source-sha "$SOURCE_SHA"
+            --manifest-available
+            --published-versions-file published-versions.txt
+          )
+          decision="$(uv run python -m scripts.resolve_auto_promotion "${args[@]}")"
+          tag="$(jq -r '.tag // empty' <<<"$decision")"
+
+          if [[ -n "$tag" ]]; then
+            tag_refs="$(git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}")"
+            tag_target_sha="$(
+              awk -v ref="refs/tags/$tag" \
+                '$2 == ref "^{}" { peeled = $1 } $2 == ref { direct = $1 }
+                 END { if (peeled != "") print peeled; else if (direct != "") print direct }' \
+                <<<"$tag_refs"
+            )"
+            if [[ -n "$tag_target_sha" ]]; then
+              decision="$(
+                uv run python -m scripts.resolve_auto_promotion \
+                  "${args[@]}" --tag-target-sha "$tag_target_sha"
+              )"
+            fi
+          fi
+
+          should_promote="$(jq -r '.should_promote' <<<"$decision")"
+          channel="$(jq -r '.channel // empty' <<<"$decision")"
+          environment_name="$(jq -r '.environment_name // empty' <<<"$decision")"
+          tag="$(jq -r '.tag // empty' <<<"$decision")"
+          notice="$(jq -r '.notice // empty' <<<"$decision")"
+          if [[ -n "$notice" ]]; then
+            notice="${notice//%/%25}"
+            notice="${notice//$'\r'/%0D}"
+            notice="${notice//$'\n'/%0A}"
+            printf '::notice::%s\n' "$notice"
+          fi
+          {
+            echo "should_promote=$should_promote"
+            echo "channel=$channel"
+            echo "environment_name=$environment_name"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+
+  promote:
+    name: Promote (${{ needs.resolve.outputs.channel }})
+    needs: resolve
+    if: needs.resolve.outputs.should_promote == 'true'
+    uses: ./.github/workflows/_promote-image.yml
+    with:
+      channel: ${{ needs.resolve.outputs.channel }}
+      source_sha: ${{ github.event.workflow_run.head_sha }}
+      branch: ${{ github.event.workflow_run.head_branch }}
+      tag: ${{ needs.resolve.outputs.tag }}
+      environment_name: ${{ needs.resolve.outputs.environment_name }}
+      ci_run_id: ${{ github.event.workflow_run.id }}
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      attestations: write
+      id-token: write
+      pull-requests: read
+
+  finalize-ga:
+    name: Tag release and open develop merge-back
+    needs: [resolve, promote]
+    if: needs.resolve.outputs.should_promote == 'true' && needs.resolve.outputs.channel == 'ga'
+    uses: ./.github/workflows/_finalize-ga-release.yml
+    with:
+      source_sha: ${{ github.event.workflow_run.head_sha }}
+      tag: ${{ needs.resolve.outputs.tag }}
+    permissions:
+      contents: write
+      pull-requests: write

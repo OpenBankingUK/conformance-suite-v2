@@ -1,7 +1,7 @@
 name: Promote candidate image
 
-# Reusable workflow shared by promote-preview.yml, promote-beta.yml, and
-# promote-ga.yml. Never runs branch-supplied code: it checks out the trusted
+# Reusable workflow shared by the automatic and manual promotion workflows.
+# Never runs branch-supplied code: it checks out the trusted
 # ref that owns this workflow file (the branch a human dispatched it from,
 # always main), and only reads a single file (pyproject.toml) out of the
 # candidate commit via `git show`, never executing anything from it. It
@@ -31,6 +31,11 @@ on:
       environment_name:
         required: true
         type: string
+      ci_run_id:
+        required: false
+        type: string
+        default: ""
+        description: "Exact successful CI run to promote; omitted for manual recovery dispatches."
 
 permissions:
   contents: read
@@ -47,6 +52,7 @@ env:
   INPUT_CHANNEL: ${{ inputs.channel }}
   INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
   INPUT_TAG: ${{ inputs.tag }}
+  INPUT_CI_RUN_ID: ${{ inputs.ci_run_id }}
 
 jobs:
   promote:
@@ -56,9 +62,11 @@ jobs:
 
     permissions:
       contents: read
+      actions: read
       packages: write
       attestations: write
       id-token: write
+      pull-requests: read
 
     steps:
       - name: Require a trusted main-branch dispatch
@@ -88,21 +96,46 @@ jobs:
       - name: Install release-tooling dependencies
         run: uv sync --frozen --no-install-project
 
-      - name: Locate the successful candidate-image run for this source SHA
+      - name: Locate and verify the successful candidate-image run
         id: locate
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_CI_WORKFLOW_ID: "268848247"
+          TRUSTED_CI_WORKFLOW_PATH: ".github/workflows/ci.yml"
         run: |
           set -euo pipefail
-          run_id="$(
-            gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
-              --json databaseId,headSha,headBranch,conclusion,event -L 100 \
-              | jq -r --arg sha "$INPUT_SOURCE_SHA" --arg branch "$INPUT_BRANCH" \
-                'map(select(.headSha == $sha and .headBranch == $branch and .event == "push" and .conclusion == "success"))
-                 | sort_by(.databaseId) | last | .databaseId // empty'
-          )"
+          if [[ -n "$INPUT_CI_RUN_ID" ]]; then
+            run_id="$INPUT_CI_RUN_ID"
+          else
+            run_id="$(
+              gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+                --json databaseId,headSha,headBranch,conclusion,event -L 100 \
+                | jq -r --arg sha "$INPUT_SOURCE_SHA" --arg branch "$INPUT_BRANCH" \
+                  'map(select(.headSha == $sha and .headBranch == $branch and .event == "push" and .conclusion == "success"))
+                   | sort_by(.databaseId) | last | .databaseId // empty'
+            )"
+          fi
           if [[ -z "$run_id" ]]; then
             echo "::error::No successful push CI run found for $INPUT_SOURCE_SHA on $INPUT_BRANCH." >&2
+            exit 1
+          fi
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")"
+          if ! jq -e \
+            --arg sha "$INPUT_SOURCE_SHA" \
+            --arg branch "$INPUT_BRANCH" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg path "$TRUSTED_CI_WORKFLOW_PATH" \
+            --argjson workflow_id "$TRUSTED_CI_WORKFLOW_ID" \
+            '.name == "CI"
+             and .workflow_id == $workflow_id
+             and .path == $path
+             and .head_sha == $sha
+             and .head_branch == $branch
+             and .event == "push"
+             and .conclusion == "success"
+             and .head_repository.full_name == $repository' \
+            <<<"$run_json" >/dev/null; then
+            echo "::error::CI run $run_id is not the trusted successful push CI run for $INPUT_SOURCE_SHA on $INPUT_BRANCH." >&2
             exit 1
           fi
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
@@ -110,7 +143,7 @@ jobs:
       - name: Download candidate artifacts from that run
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.token }}
           run-id: ${{ steps.locate.outputs.run_id }}
           path: artifacts
           pattern: "candidate-linux-*"
@@ -119,7 +152,7 @@ jobs:
       - name: Download the promotion manifest from that run
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.token }}
           run-id: ${{ steps.locate.outputs.run_id }}
           name: promotion-manifest
           path: artifacts/manifest
@@ -145,6 +178,19 @@ jobs:
             echo "::error::$INPUT_SOURCE_SHA does not belong to $INPUT_BRANCH." >&2
             exit 1
           fi
+          if [[ -n "$INPUT_TAG" ]]; then
+            tag_refs="$(git ls-remote --tags origin "refs/tags/$INPUT_TAG" "refs/tags/$INPUT_TAG^{}")"
+            tag_target_sha="$(
+              awk -v ref="refs/tags/$INPUT_TAG" \
+                '$2 == ref "^{}" { peeled = $1 } $2 == ref { direct = $1 }
+                 END { if (peeled != "") print peeled; else if (direct != "") print direct }' \
+                <<<"$tag_refs"
+            )"
+            if [[ -n "$tag_target_sha" && "$tag_target_sha" != "$INPUT_SOURCE_SHA" ]]; then
+              echo "::error::Git tag $INPUT_TAG already points to $tag_target_sha, not $INPUT_SOURCE_SHA." >&2
+              exit 1
+            fi
+          fi
           if ! git diff --quiet "$INPUT_SOURCE_SHA" HEAD -- \
             .github/workflows/ci.yml \
             scripts/build_promotion_manifest.py \
@@ -163,7 +209,7 @@ jobs:
 
       - name: Confirm the source commit belongs to a reviewed, approved pull request
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           pr_number="$(gh api "repos/$GITHUB_REPOSITORY/commits/$INPUT_SOURCE_SHA/pulls" --jq 'map(select(.merged_at != null)) | first | .number // empty')"
@@ -179,7 +225,7 @@ jobs:
 
       - name: List already-published version tags
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if ! error="$(
@@ -222,7 +268,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ github.token }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0

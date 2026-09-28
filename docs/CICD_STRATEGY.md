@@ -258,23 +258,37 @@ are produced there too.
 | File | Triggers | Purpose |
 |---|---|---|
 | `.github/workflows/ci.yml` | PR + push to protected branches | Canonical checks, unchanged baseline Docker smoke test, and gated multi-architecture candidate artifacts |
-| `.github/workflows/promote-preview.yml` | Manual dispatch from `main` | Promote an approved `preview/*` candidate |
-| `.github/workflows/promote-beta.yml` | Manual dispatch from `main` | Promote an approved `release/X.Y.Z` beta candidate |
-| `.github/workflows/promote-ga.yml` | Manual dispatch from `main` | Promote an approved, tagged `main` candidate and open the develop merge-back PR |
-| `.github/workflows/_promote-image.yml` | Called by the three promotion workflows | Trusted validation and exact-artifact GHCR publication implementation |
+| `.github/workflows/auto-promote.yml` | Successful push CI completion on `main`, `release/**`, or `preview/**` | Resolve eligible candidates and automatically start their gated promotion |
+| `.github/workflows/promote-preview.yml` | Manual dispatch from `main` | Recovery/backfill path for a `preview/*` candidate |
+| `.github/workflows/promote-beta.yml` | Manual dispatch from `main` | Recovery/backfill path for a `release/X.Y.Z` beta candidate |
+| `.github/workflows/promote-ga.yml` | Manual dispatch from `main` | Recovery/backfill path for a tagged `main` candidate |
+| `.github/workflows/_promote-image.yml` | Called by automatic and manual promotion workflows | Trusted validation and exact-artifact GHCR publication implementation |
+| `.github/workflows/_finalize-ga-release.yml` | Called after successful GA publication | Create the GA Git tag at the source SHA and open the develop merge-back PR |
 
 Promotion locates the successful push CI run for the exact source SHA and
 branch, downloads its immutable artifacts, verifies archive checksums,
 revalidates release metadata using scripts checked out from `main`, and
 confirms the source SHA belongs to the requested branch and a merged,
-approved pull request. Candidate CI and release-script files must exactly
-match the trusted copies on `main`; pipeline changes therefore land on
+approved pull request. Automatic promotion uses the exact CI run that triggered
+it; manual recovery dispatches locate the matching run. Candidate CI and
+release-script files must exactly match the trusted copies on `main`; pipeline changes therefore land on
 `main` before release branches consume them. Only then does the
 Environment-gated job receive `packages: write`; it stages the platform
 images under SHA-specific internal tags and assembles the already-tested
 images without rebuilding. Promotion is serialized to prevent tag races,
 rejects an existing immutable version tag, and attests the published
 multi-architecture manifest with provenance and both platform SBOMs.
+
+For each successful eligible push, `auto-promote.yml` confirms the CI run
+uploaded a promotion manifest, reads only `pyproject.toml` from its source
+commit, and checks branch/channel compatibility and existing GHCR tags. Runs
+without a candidate artifact, with a mismatched channel, or for an already
+published version are skipped with a notice and never create a pending
+Environment approval. An eligible run starts the matching promotion
+automatically and pauses only at its required Environment reviewer gate. After
+a successful GA publication, the shared finalizer creates `vX.Y.Z` at the
+promoted source SHA if needed and opens the main-to-develop PR; it never merges
+that PR automatically.
 
 ### 4.3 Concurrency Control
 
@@ -292,11 +306,11 @@ concurrency:
 
 ### 5.1 Tagging and Release Strategy
 
-Publication is a manual promotion of a successful CI candidate, never a
-registry-triggered rebuild. In the Actions UI, select the promotion workflow
-on the `main` branch and provide the exact candidate source SHA and source
-branch. Environment approval is required before GHCR write permission is
-used.
+Publication starts automatically after successful CI for eligible `main`,
+`release/**`, and `preview/**` pushes; it never rebuilds from the registry.
+The only routine human action is approving the matching GitHub Environment
+deployment, which is required before GHCR write permission is used. Manual
+dispatch of the `promote-*` workflows is reserved for recovery or backfill.
 
 **Tag formats:**
 
@@ -325,20 +339,20 @@ git push origin v1.2.0
    - Full CI gates enforced (`make check`, Docker build and health check)
    - Requires 2 approvals (Copilot + human)
 
-4. Merge into main (squash or merge commit). The successful `main` push CI
-   run creates the GA candidate without publishing it.
+4. Merge into main (squash or merge commit). Successful `main` push CI
+   produces the GA candidate, then automatic promotion starts and waits for
+   approval of the `ga-release` Environment deployment.
 
-5. An admin tags the merge commit on main and pushes the tag:
-   git tag -a v1.2.0 -m "Release 1.2.0"
-   git push origin v1.2.0
+5. Approve the `ga-release` Environment deployment. The workflow validates and
+   publishes the exact candidate artifacts to GHCR as `X.Y.Z` and `latest`,
+   with provenance and SBOM attestations.
 
-6. From `main`, manually dispatch **Promote GA image** with the exact merge
-   commit SHA and tag. Approve the `ga-release` Environment deployment.
+6. After publication, the workflow creates `vX.Y.Z` at the promoted source
+   commit if it is missing and opens the main-to-develop PR. Review and merge
+   that PR; it is never merged automatically.
 
-7. The workflow validates and publishes the exact candidate artifacts to GHCR
-   as `X.Y.Z` and `latest`, with provenance and SBOM attestations.
-
-8. Review and merge the main-to-develop PR opened by the GA workflow.
+Manual **Promote GA image** dispatch is available from `main` only for
+recovery/backfill.
 ```
 
 ### 5.3 Beta Releases
@@ -349,12 +363,15 @@ Beta releases allow pre-release images to be distributed before a final stable t
 1. Set `[project].version` to `X.Y.Z-beta.N` on the matching
    `release/X.Y.Z` branch and merge the change through an approved PR.
 2. Wait for that exact branch SHA's push CI run to produce both candidate
-   artifacts and the promotion manifest.
-3. From `main`, manually dispatch **Promote beta image** with the exact source
-   SHA and `release/X.Y.Z` branch, then approve the `beta-release` Environment.
-4. The workflow publishes the exact artifacts as immutable
+   artifacts and the promotion manifest. Automatic promotion then starts and
+   waits for approval of the `beta-release` Environment deployment.
+3. Approve the Environment deployment. The workflow publishes the exact
+   artifacts as immutable
    `X.Y.Z-beta.N`; it does not create or move `latest`.
-5. Increment `N` in a new approved change for each subsequent beta.
+4. Increment `N` in a new approved change for each subsequent beta.
+
+Manual **Promote beta image** dispatch is available from `main` only for
+recovery/backfill.
 ```
 
 ### 5.4 Release Exception Process
