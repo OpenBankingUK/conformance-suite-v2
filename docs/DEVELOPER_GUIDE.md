@@ -112,6 +112,15 @@ running Django migrations before creating a builder draft. Do not switch to
 signed-cookie sessions for the builder because imported plan documents may carry
 participant-supplied secret values until launch or explicit export.
 
+Credentials pasted or uploaded in the wizard are stored inline in the draft, so
+private keys and software statement assertions live in that server-side session
+store for the life of the draft. Each inline credential is capped at 64 KiB, is
+never rendered back into the page once stored (the wizard shows only a
+non-secret descriptor plus Keep/Replace/Clear controls), and is removed from the
+draft by Clear. Inline material is redacted from logs, results, and safe plan
+exports. Participants who prefer credentials never to reach the web tier should
+continue to use absolute file paths with the read-only `/certs` mount.
+
 ## Catalogue architecture
 
 The participant-facing source of truth is now a canonical JSON-first test plan,

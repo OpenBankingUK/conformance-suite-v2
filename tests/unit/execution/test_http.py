@@ -1,12 +1,12 @@
 """Tests for conformance.http module."""
 
-import ssl
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import httpx
 import pytest
 
+from conformance.credentials import credential_from_path
 from conformance.http import JsonHttpClientError, JsonHttpResponse, build_json_http_client, send_json
 
 pytestmark = pytest.mark.unit
@@ -16,41 +16,57 @@ class TestBuildJsonHttpClientMtlsValidation:
     """Verify that build_json_http_client rejects partial mTLS configuration."""
 
     def test_rejects_certificate_without_key(self, tmp_path: Path) -> None:
-        """Supplying only client_certificate_path raises ValueError."""
+        """Supplying only client_certificate raises ValueError."""
         cert = tmp_path / "client.pem"
         cert.touch()
 
-        with pytest.raises(ValueError, match="must be supplied together"):
+        with pytest.raises(ValueError, match="client_certificate and client_private_key must be supplied together"):
             build_json_http_client(
                 timeout_seconds=10.0,
-                client_certificate_path=cert,
+                client_certificate=credential_from_path(cert),
             )
 
     def test_rejects_key_without_certificate(self, tmp_path: Path) -> None:
-        """Supplying only client_private_key_path raises ValueError."""
+        """Supplying only client_private_key raises ValueError."""
         key = tmp_path / "client.key"
         key.touch()
 
-        with pytest.raises(ValueError, match="must be supplied together"):
+        with pytest.raises(ValueError, match="client_certificate and client_private_key must be supplied together"):
             build_json_http_client(
                 timeout_seconds=10.0,
-                client_private_key_path=key,
+                client_private_key=credential_from_path(key),
             )
 
+    @patch("conformance.http.apply_client_certificate")
+    @patch("conformance.http.ssl.create_default_context")
     @patch("conformance.http.httpx.Client")
-    def test_accepts_both_certificate_and_key(self, mock_client: object, tmp_path: Path) -> None:
+    def test_accepts_both_certificate_and_key(
+        self,
+        mock_client: Mock,
+        mock_create_context: Mock,
+        mock_apply_client_certificate: Mock,
+        tmp_path: Path,
+    ) -> None:
         """Supplying both mTLS paths does not raise ValueError."""
         cert = tmp_path / "client.pem"
         key = tmp_path / "client.key"
         cert.touch()
         key.touch()
+        ssl_context = Mock()
+        mock_create_context.return_value = ssl_context
 
         # Should not raise — validation passes when both are supplied.
         build_json_http_client(
             timeout_seconds=10.0,
-            client_certificate_path=cert,
-            client_private_key_path=key,
+            client_certificate=credential_from_path(cert),
+            client_private_key=credential_from_path(key),
         )
+        mock_apply_client_certificate.assert_called_once_with(
+            ssl_context,
+            credential_from_path(cert),
+            credential_from_path(key),
+        )
+        assert mock_client.call_args.kwargs["verify"] is ssl_context
 
     def test_accepts_neither_certificate_nor_key(self) -> None:
         """Omitting both mTLS paths does not raise."""
@@ -71,7 +87,7 @@ class TestBuildJsonHttpClientMtlsValidation:
         ssl_context = Mock()
         mock_create_context.return_value = ssl_context
 
-        build_json_http_client(timeout_seconds=10.0, ca_bundle_path=ca_bundle)
+        build_json_http_client(timeout_seconds=10.0, ca_bundle=credential_from_path(ca_bundle))
 
         ssl_context.load_verify_locations.assert_called_once_with(cafile=str(ca_bundle))
         assert mock_client.call_args.kwargs["verify"] is ssl_context
@@ -84,13 +100,12 @@ class TestBuildJsonHttpClientMtlsValidation:
         key.touch()
 
         with (
-            patch("conformance.http.httpx.Client", side_effect=ssl.SSLError("PEM lib")),
-            pytest.raises(ValueError, match="Unable to load TLS client certificate/private key"),
+            pytest.raises(ValueError, match="Unable to load the configured TLS client certificate and private key"),
         ):
             build_json_http_client(
                 timeout_seconds=10.0,
-                client_certificate_path=cert,
-                client_private_key_path=key,
+                client_certificate=credential_from_path(cert),
+                client_private_key=credential_from_path(key),
             )
 
 

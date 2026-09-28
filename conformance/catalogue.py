@@ -2304,7 +2304,9 @@ def _parse_canonical_security_environment(raw_environment: Mapping[str, JsonValu
             "resourceBaseUrl",
             "responseType",
             "signingCertificatePath",
+            "signingCertificatePem",
             "signingPrivateKeyPath",
+            "signingPrivateKeyPem",
             "signingKeyId",
             "clientAssertionIssuer",
             "clientAssertionSubject",
@@ -2339,13 +2341,28 @@ def _parse_canonical_mtls(raw_mtls: Mapping[str, JsonValue]) -> None:
     """
     _reject_unknown_keys(
         raw_mtls,
-        allowed_keys={"enabled", "certificatePath", "privateKeyPath", "caBundlePath"},
+        allowed_keys={
+            "enabled",
+            "certificatePath",
+            "certificatePem",
+            "privateKeyPath",
+            "privateKeyPem",
+            "caBundlePath",
+            "caBundlePem",
+        },
         location="testPlan.securityEnvironment.mtls",
     )
     enabled = raw_mtls.get("enabled")
     if enabled is not None and not isinstance(enabled, bool):
         raise CatalogueError("testPlan.securityEnvironment.mtls.enabled must be a JSON boolean")
-    for key in ("certificatePath", "privateKeyPath", "caBundlePath"):
+    for key in (
+        "certificatePath",
+        "certificatePem",
+        "privateKeyPath",
+        "privateKeyPem",
+        "caBundlePath",
+        "caBundlePem",
+    ):
         value = raw_mtls.get(key)
         if value is not None and (not isinstance(value, str) or not value.strip()):
             raise CatalogueError(f"testPlan.securityEnvironment.mtls.{key} must be a non-empty string when present")
@@ -2724,18 +2741,13 @@ def _fapi_signing_config_from_security_environment(security_environment: Mapping
         fields are supplied.
     """
     signing: JsonObject = {}
-    _copy_optional_top_level_value(
-        signing,
-        security_environment,
-        source_key="signingCertificatePath",
-        target_key="signingCertificatePath",
-    )
-    _copy_optional_top_level_value(
-        signing,
-        security_environment,
-        source_key="signingPrivateKeyPath",
-        target_key="signingPrivateKeyPath",
-    )
+    for key in (
+        "signingCertificatePath",
+        "signingCertificatePem",
+        "signingPrivateKeyPath",
+        "signingPrivateKeyPem",
+    ):
+        _copy_optional_top_level_value(signing, security_environment, source_key=key, target_key=key)
     _copy_optional_top_level_value(signing, security_environment, source_key="signingKeyId", target_key="kid")
     _copy_optional_top_level_value(
         signing,
@@ -2756,14 +2768,19 @@ def _fapi_signing_config_from_security_environment(security_environment: Mapping
         target_key="tokenEndpointAuthMethod",
     )
     required_fields = {
-        "signingCertificatePath",
-        "signingPrivateKeyPath",
         "kid",
         "clientAssertionIssuer",
         "clientAssertionSubject",
         "tokenEndpointAuthMethod",
     }
-    return signing if required_fields.issubset(signing) else {}
+    credential_pairs = (
+        ("signingCertificatePath", "signingCertificatePem"),
+        ("signingPrivateKeyPath", "signingPrivateKeyPem"),
+    )
+    complete = required_fields.issubset(signing) and all(
+        path_key in signing or inline_key in signing for path_key, inline_key in credential_pairs
+    )
+    return signing if complete else {}
 
 
 def _tls_config_from_security_environment(security_environment: Mapping[str, JsonValue]) -> JsonObject:
@@ -2778,9 +2795,15 @@ def _tls_config_from_security_environment(security_environment: Mapping[str, Jso
     raw_mtls = security_environment.get("mtls")
     mtls = raw_mtls if isinstance(raw_mtls, dict) else {}
     tls: JsonObject = {}
-    _copy_optional_top_level_value(tls, mtls, source_key="caBundlePath", target_key="caBundlePath")
-    _copy_optional_top_level_value(tls, mtls, source_key="certificatePath", target_key="clientCertificatePath")
-    _copy_optional_top_level_value(tls, mtls, source_key="privateKeyPath", target_key="clientPrivateKeyPath")
+    for source_key, target_key in (
+        ("caBundlePath", "caBundlePath"),
+        ("caBundlePem", "caBundlePem"),
+        ("certificatePath", "clientCertificatePath"),
+        ("certificatePem", "clientCertificatePem"),
+        ("privateKeyPath", "clientPrivateKeyPath"),
+        ("privateKeyPem", "clientPrivateKeyPem"),
+    ):
+        _copy_optional_top_level_value(tls, mtls, source_key=source_key, target_key=target_key)
     return tls
 
 
@@ -3225,18 +3248,13 @@ def _security_environment_from_plan_config(config: Mapping[str, JsonValue]) -> J
             source_key="tokenEndpointAuthMethod",
             target_key="clientAuthMethod",
         )
-        _copy_optional_top_level_value(
-            security_environment,
-            fapi_signing,
-            source_key="signingCertificatePath",
-            target_key="signingCertificatePath",
-        )
-        _copy_optional_top_level_value(
-            security_environment,
-            fapi_signing,
-            source_key="signingPrivateKeyPath",
-            target_key="signingPrivateKeyPath",
-        )
+        for key in (
+            "signingCertificatePath",
+            "signingCertificatePem",
+            "signingPrivateKeyPath",
+            "signingPrivateKeyPem",
+        ):
+            _copy_optional_top_level_value(security_environment, fapi_signing, source_key=key, target_key=key)
         _copy_optional_top_level_value(security_environment, fapi_signing, source_key="kid", target_key="signingKeyId")
         _copy_optional_top_level_value(
             security_environment,
@@ -3301,11 +3319,19 @@ def _merge_mtls_export(security_environment: JsonObject, config: Mapping[str, Js
     if not isinstance(tls, dict):
         return
     mtls: JsonObject = {}
-    _copy_optional_top_level_value(mtls, tls, source_key="caBundlePath", target_key="caBundlePath")
-    _copy_optional_top_level_value(mtls, tls, source_key="clientCertificatePath", target_key="certificatePath")
-    _copy_optional_top_level_value(mtls, tls, source_key="clientPrivateKeyPath", target_key="privateKeyPath")
+    for source_key, target_key in (
+        ("caBundlePath", "caBundlePath"),
+        ("caBundlePem", "caBundlePem"),
+        ("clientCertificatePath", "certificatePath"),
+        ("clientCertificatePem", "certificatePem"),
+        ("clientPrivateKeyPath", "privateKeyPath"),
+        ("clientPrivateKeyPem", "privateKeyPem"),
+    ):
+        _copy_optional_top_level_value(mtls, tls, source_key=source_key, target_key=target_key)
     if mtls:
-        mtls["enabled"] = "certificatePath" in mtls and "privateKeyPath" in mtls
+        mtls["enabled"] = ("certificatePath" in mtls or "certificatePem" in mtls) and (
+            "privateKeyPath" in mtls or "privateKeyPem" in mtls
+        )
         security_environment["mtls"] = mtls
 
 

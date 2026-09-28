@@ -1,21 +1,22 @@
 """Runtime loading for FAPI signing key and certificate material.
 
-This module keeps signing secrets on disk until execution time. Config parsing
-stores only validated paths and non-secret JOSE metadata; this loader performs
-the actual file reads, PEM parsing, and RSA key-pair validation immediately
-before signing work begins.
+Config parsing stores either a validated path reference or inline PEM material
+supplied through the browser wizard, alongside non-secret JOSE metadata. This
+loader performs the actual read, PEM parsing, and RSA key-pair validation
+immediately before signing work begins, so path-referenced secrets stay on disk
+until execution time.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Protocol
 
 from joserfc import jwk
 from joserfc.errors import InvalidKeyTypeError
 
+from conformance.credentials import CredentialError, CredentialMaterial, credential_bytes
 from conformance.model_bank_config import FapiSigningConfig
 
 
@@ -61,24 +62,24 @@ def load_signing_credentials(signing_config: FapiSigningConfig) -> SigningCreden
     """Load and validate signing credential files for runtime JOSE use.
 
     Args:
-        signing_config: Non-secret FAPI signing config containing resolved
-            certificate and private-key paths.
+        signing_config: Non-secret FAPI signing config containing the resolved
+            certificate and private-key credentials.
 
     Returns:
         In-memory PEM bytes for the signing certificate and private key.
 
     Raises:
-        SigningCredentialError: If a file cannot be read, the PEM content is
-            malformed, or the certificate/public key does not match the
+        SigningCredentialError: If a credential cannot be read, the PEM content
+            is malformed, or the certificate/public key does not match the
             configured private key.
     """
     certificate_pem = _read_pem_bytes(
-        signing_config.signing_certificate_path,
-        label="fapiSigning.signingCertificatePath",
+        signing_config.signing_certificate,
+        label="fapiSigning signing certificate",
     )
     private_key_pem = _read_pem_bytes(
-        signing_config.signing_private_key_path,
-        label="fapiSigning.signingPrivateKeyPath",
+        signing_config.signing_private_key,
+        label="fapiSigning signing private key",
     )
 
     certificate_public_key = _load_certificate_public_key(certificate_pem)
@@ -95,23 +96,23 @@ def load_signing_credentials(signing_config: FapiSigningConfig) -> SigningCreden
     )
 
 
-def _read_pem_bytes(path: Path, *, label: str) -> bytes:
-    """Read one PEM file from disk without exposing its contents in errors.
+def _read_pem_bytes(material: CredentialMaterial, *, label: str) -> bytes:
+    """Read one credential without exposing its contents in errors.
 
     Args:
-        path: Credential file to read.
+        material: Credential supplied as a path reference or inline PEM.
         label: Human-readable config field name for error reporting.
 
     Returns:
-        Raw file bytes.
+        Raw credential bytes.
 
     Raises:
-        SigningCredentialError: If the file cannot be read from disk.
+        SigningCredentialError: If a path-referenced credential cannot be read.
     """
     try:
-        return path.read_bytes()
-    except OSError as error:
-        raise SigningCredentialError(f"Unable to read {label} from disk") from error
+        return credential_bytes(material, label=label)
+    except CredentialError as error:
+        raise SigningCredentialError(str(error)) from error
 
 
 def _load_certificate_public_key(certificate_pem: bytes) -> _ComparableJwk:
@@ -127,13 +128,11 @@ def _load_certificate_public_key(certificate_pem: bytes) -> _ComparableJwk:
         SigningCredentialError: If the bytes are not a valid PEM certificate.
     """
     if b"CERTIFICATE" not in certificate_pem:
-        raise SigningCredentialError("fapiSigning.signingCertificatePath must contain a valid PEM certificate")
+        raise SigningCredentialError("fapiSigning signing certificate must contain a valid PEM certificate")
     try:
         return jwk.import_key(certificate_pem, key_type="RSA")
     except (InvalidKeyTypeError, TypeError, ValueError) as error:
-        raise SigningCredentialError(
-            "fapiSigning.signingCertificatePath must contain a valid PEM certificate"
-        ) from error
+        raise SigningCredentialError("fapiSigning signing certificate must contain a valid PEM certificate") from error
 
 
 def _load_private_key(private_key_pem: bytes) -> _ComparableJwk:
@@ -152,7 +151,5 @@ def _load_private_key(private_key_pem: bytes) -> _ComparableJwk:
         private_key = jwk.import_key(private_key_pem, key_type="RSA")
         private_key.as_dict(private=True)
     except (InvalidKeyTypeError, TypeError, ValueError) as error:
-        raise SigningCredentialError(
-            "fapiSigning.signingPrivateKeyPath must contain a valid PEM private key"
-        ) from error
+        raise SigningCredentialError("fapiSigning signing private key must contain a valid PEM private key") from error
     return private_key

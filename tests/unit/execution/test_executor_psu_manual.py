@@ -293,7 +293,7 @@ def test_psu_manual_step_invalid_signing_credentials_fail_the_step(tmp_path: Pat
 
     assert result.status == "failed"
     assert result.message == (
-        "Unable to build PSU request object: fapiSigning.signingCertificatePath must contain a valid PEM certificate"
+        "Unable to build PSU request object: fapiSigning signing certificate must contain a valid PEM certificate"
     )
     assert context.steps["psu"].response is None
 

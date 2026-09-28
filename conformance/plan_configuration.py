@@ -5,9 +5,9 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal, cast
 
+from conformance.credentials import CredentialError, CredentialMaterial, parse_credential_material
 from conformance.json_types import JsonValue
 from conformance.model_bank_config import ConfigError, TlsConfig
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
@@ -29,12 +29,12 @@ class SharedSigningConfig:
     """Signing references shared by Read/Write and DCR plans.
 
     Attributes:
-        private_key_path: Absolute private-key file reference.
+        private_key: Private key supplied as a file reference or inline PEM.
         key_id: JOSE key identifier.
         algorithm: Optional discovery-selected client-auth signing algorithm.
     """
 
-    private_key_path: Path | None
+    private_key: CredentialMaterial | None
     key_id: str | None
     algorithm: str | None
 
@@ -78,21 +78,22 @@ class DynamicClientRegistrationConfig:
     """Typed configuration owned only by Open Banking DCR 3.4.
 
     Attributes:
-        software_statement_assertion_path: Absolute SSA file reference.
+        software_statement_assertion: SSA supplied as a file reference or
+            inline compact JWS.
         registration_audience: Required Base62 ASPSP audience identifier.
         registration_issuer_override: Optional registration JWT issuer override.
         redirect_uris_override: Optional HTTPS redirect URI overrides.
-        signing_certificate_path: Optional certificate used to derive signing claims.
+        signing_certificate: Optional certificate used to derive signing claims.
         transport_certificate_subject_dn_override: Optional RFC 2253-style subject DN.
         use_numeric_oid_subject_dn: Whether derived subject DNs use numeric OIDs.
         disable_keep_alive: Explicit transport interoperability override.
     """
 
-    software_statement_assertion_path: Path
+    software_statement_assertion: CredentialMaterial
     registration_audience: str
     registration_issuer_override: str | None
     redirect_uris_override: tuple[str, ...]
-    signing_certificate_path: Path | None
+    signing_certificate: CredentialMaterial | None
     transport_certificate_subject_dn_override: str | None
     use_numeric_oid_subject_dn: bool
     disable_keep_alive: bool
@@ -124,21 +125,50 @@ def dcr_execution_runtime_inputs(config: DcrPlanConfiguration) -> dict[str, Json
     dcr = config.dynamic_client_registration
     values: dict[str, JsonValue] = {
         "securityEnvironment.discoveryUrl": shared.discovery_url,
-        "securityEnvironment.mtls.certificatePath": str(shared.mtls.client_certificate_path),
-        "securityEnvironment.mtls.privateKeyPath": str(shared.mtls.client_private_key_path),
-        "securityEnvironment.signingPrivateKeyPath": str(shared.signing.private_key_path),
         "securityEnvironment.signingKeyId": shared.signing.key_id,
         "securityEnvironment.clientAuthMethod": shared.client_auth_method,
-        "dynamicClientRegistration.softwareStatementAssertionPath": str(dcr.software_statement_assertion_path),
         "dynamicClientRegistration.registrationAudience": dcr.registration_audience,
         "dynamicClientRegistration.useNumericOidSubjectDn": dcr.use_numeric_oid_subject_dn,
         "dynamicClientRegistration.disableKeepAlive": dcr.disable_keep_alive,
     }
-    optional_values: tuple[tuple[str, JsonValue | Path | None], ...] = (
-        ("securityEnvironment.mtls.caBundlePath", shared.mtls.ca_bundle_path),
+    credentials: tuple[tuple[str, str, CredentialMaterial | None], ...] = (
+        (
+            "securityEnvironment.mtls.certificatePath",
+            "securityEnvironment.mtls.certificatePem",
+            shared.mtls.client_certificate,
+        ),
+        (
+            "securityEnvironment.mtls.privateKeyPath",
+            "securityEnvironment.mtls.privateKeyPem",
+            shared.mtls.client_private_key,
+        ),
+        ("securityEnvironment.mtls.caBundlePath", "securityEnvironment.mtls.caBundlePem", shared.mtls.ca_bundle),
+        (
+            "securityEnvironment.signingPrivateKeyPath",
+            "securityEnvironment.signingPrivateKeyPem",
+            shared.signing.private_key,
+        ),
+        (
+            "dynamicClientRegistration.softwareStatementAssertionPath",
+            "dynamicClientRegistration.softwareStatementAssertion",
+            dcr.software_statement_assertion,
+        ),
+        (
+            "dynamicClientRegistration.signingCertificatePath",
+            "dynamicClientRegistration.signingCertificatePem",
+            dcr.signing_certificate,
+        ),
+    )
+    for path_key, inline_key, material in credentials:
+        if material is None:
+            continue
+        if material.inline is not None:
+            values[inline_key] = material.inline
+        else:
+            values[path_key] = str(material.path)
+    optional_values: tuple[tuple[str, JsonValue], ...] = (
         ("securityEnvironment.clientAuthSigningAlgorithm", shared.signing.algorithm),
         ("dynamicClientRegistration.registrationIssuerOverride", dcr.registration_issuer_override),
-        ("dynamicClientRegistration.signingCertificatePath", dcr.signing_certificate_path),
         (
             "dynamicClientRegistration.transportCertificateSubjectDnOverride",
             dcr.transport_certificate_subject_dn_override,
@@ -146,7 +176,7 @@ def dcr_execution_runtime_inputs(config: DcrPlanConfiguration) -> dict[str, Json
     )
     for key, value in optional_values:
         if value is not None:
-            values[key] = str(value) if isinstance(value, Path) else value
+            values[key] = value
     if dcr.redirect_uris_override:
         values["dynamicClientRegistration.redirectUrisOverride"] = list(dcr.redirect_uris_override)
     return values
@@ -180,28 +210,31 @@ def parse_dcr_execution_runtime_inputs(runtime_inputs: Mapping[str, JsonValue]) 
 
 
 def validate_dcr_file_references(config: DcrPlanConfiguration) -> None:
-    """Validate every configured DCR credential reference against the filesystem.
+    """Validate every path-referenced DCR credential against the filesystem.
+
+    Inline credentials carry their own material and are deliberately not
+    filesystem-checked.
 
     Args:
         config: Parsed DCR configuration to validate before execution.
 
     Raises:
-        ConfigError: If a required or configured reference is not an existing file.
+        ConfigError: If a configured path reference is not an existing file.
     """
-    paths = {
-        "securityEnvironment.mtls.certificatePath": config.shared.mtls.client_certificate_path,
-        "securityEnvironment.mtls.privateKeyPath": config.shared.mtls.client_private_key_path,
-        "securityEnvironment.mtls.caBundlePath": config.shared.mtls.ca_bundle_path,
-        "securityEnvironment.signingPrivateKeyPath": config.shared.signing.private_key_path,
+    references: dict[str, CredentialMaterial | None] = {
+        "securityEnvironment.mtls.certificatePath": config.shared.mtls.client_certificate,
+        "securityEnvironment.mtls.privateKeyPath": config.shared.mtls.client_private_key,
+        "securityEnvironment.mtls.caBundlePath": config.shared.mtls.ca_bundle,
+        "securityEnvironment.signingPrivateKeyPath": config.shared.signing.private_key,
         "dynamicClientRegistration.softwareStatementAssertionPath": (
-            config.dynamic_client_registration.software_statement_assertion_path
+            config.dynamic_client_registration.software_statement_assertion
         ),
-        "dynamicClientRegistration.signingCertificatePath": (
-            config.dynamic_client_registration.signing_certificate_path
-        ),
+        "dynamicClientRegistration.signingCertificatePath": (config.dynamic_client_registration.signing_certificate),
     }
-    for location, path in paths.items():
-        if path is not None and not path.is_file():
+    for location, material in references.items():
+        if material is None or material.path is None:
+            continue
+        if not material.path.is_file():
             raise ConfigError(f"{location} must reference an existing file")
 
 
@@ -226,10 +259,20 @@ def parse_shared_plan_configuration(
     if mtls_value is not None and not isinstance(mtls_value, dict):
         raise ConfigError("securityEnvironment.mtls must be a JSON object")
     mtls = cast(Mapping[str, JsonValue], mtls_value) if isinstance(mtls_value, dict) else {}
-    certificate_path = _optional_absolute_path(mtls, "certificatePath", "securityEnvironment.mtls")
-    private_key_path = _optional_absolute_path(mtls, "privateKeyPath", "securityEnvironment.mtls")
-    if (certificate_path is None) != (private_key_path is None):
-        raise ConfigError("securityEnvironment.mtls.certificatePath and privateKeyPath must be supplied together")
+    certificate = _parse_credential(
+        mtls,
+        path_key="certificatePath",
+        inline_key="certificatePem",
+        location="securityEnvironment.mtls",
+    )
+    private_key = _parse_credential(
+        mtls,
+        path_key="privateKeyPath",
+        inline_key="privateKeyPem",
+        location="securityEnvironment.mtls",
+    )
+    if (certificate is None) != (private_key is None):
+        raise ConfigError("securityEnvironment.mtls certificate and private key must be supplied together")
 
     method_value = _optional_string(security_environment, "clientAuthMethod", "securityEnvironment")
     if method_value is not None and method_value not in _CLIENT_AUTH_METHODS:
@@ -238,15 +281,21 @@ def parse_shared_plan_configuration(
     return SharedPlanConfiguration(
         discovery_url=discovery_url,
         mtls=TlsConfig(
-            ca_bundle_path=_optional_absolute_path(mtls, "caBundlePath", "securityEnvironment.mtls"),
-            client_certificate_path=certificate_path,
-            client_private_key_path=private_key_path,
+            ca_bundle=_parse_credential(
+                mtls,
+                path_key="caBundlePath",
+                inline_key="caBundlePem",
+                location="securityEnvironment.mtls",
+            ),
+            client_certificate=certificate,
+            client_private_key=private_key,
         ),
         signing=SharedSigningConfig(
-            private_key_path=_optional_absolute_path(
+            private_key=_parse_credential(
                 security_environment,
-                "signingPrivateKeyPath",
-                "securityEnvironment",
+                path_key="signingPrivateKeyPath",
+                inline_key="signingPrivateKeyPem",
+                location="securityEnvironment",
             ),
             key_id=_optional_string(security_environment, "signingKeyId", "securityEnvironment"),
             algorithm=_optional_string(
@@ -285,20 +334,23 @@ def parse_dcr_plan_configuration(
     shared = parse_shared_plan_configuration(security_environment, metadata)
     if shared.discovery_url is None:
         raise ConfigError("securityEnvironment.discoveryUrl is required for DCR")
-    if shared.mtls.client_certificate_path is None or shared.mtls.client_private_key_path is None:
-        raise ConfigError("securityEnvironment.mtls certificatePath and privateKeyPath are required for DCR")
-    if shared.signing.private_key_path is None:
-        raise ConfigError("securityEnvironment.signingPrivateKeyPath is required for DCR")
+    if shared.mtls.client_certificate is None or shared.mtls.client_private_key is None:
+        raise ConfigError("securityEnvironment.mtls certificate and private key are required for DCR")
+    if shared.signing.private_key is None:
+        raise ConfigError("securityEnvironment signing private key is required for DCR")
     if shared.signing.key_id is None:
         raise ConfigError("securityEnvironment.signingKeyId is required for DCR")
     if shared.client_auth_method is None:
         raise ConfigError("securityEnvironment.clientAuthMethod is required for DCR")
 
-    ssa_path = _required_absolute_path(
+    software_statement_assertion = _parse_credential(
         dynamic_client_registration,
-        "softwareStatementAssertionPath",
-        "dynamicClientRegistration",
+        path_key="softwareStatementAssertionPath",
+        inline_key="softwareStatementAssertion",
+        location="dynamicClientRegistration",
     )
+    if software_statement_assertion is None:
+        raise ConfigError("dynamicClientRegistration software statement assertion is required")
     audience = _optional_string(
         dynamic_client_registration,
         "registrationAudience",
@@ -329,14 +381,15 @@ def parse_dcr_plan_configuration(
     return DcrPlanConfiguration(
         shared=shared,
         dynamic_client_registration=DynamicClientRegistrationConfig(
-            software_statement_assertion_path=ssa_path,
+            software_statement_assertion=software_statement_assertion,
             registration_audience=audience,
             registration_issuer_override=issuer,
             redirect_uris_override=redirect_uris,
-            signing_certificate_path=_optional_absolute_path(
+            signing_certificate=_parse_credential(
                 dynamic_client_registration,
-                "signingCertificatePath",
-                "dynamicClientRegistration",
+                path_key="signingCertificatePath",
+                inline_key="signingCertificatePem",
+                location="dynamicClientRegistration",
             ),
             transport_certificate_subject_dn_override=subject_dn,
             use_numeric_oid_subject_dn=_optional_boolean(
@@ -353,6 +406,38 @@ def parse_dcr_plan_configuration(
             ),
         ),
     )
+
+
+def _parse_credential(
+    config: Mapping[str, JsonValue],
+    *,
+    path_key: str,
+    inline_key: str,
+    location: str,
+) -> CredentialMaterial | None:
+    """Parse one canonical credential supplied as a path or inline material.
+
+    Args:
+        config: Canonical configuration object containing the credential keys.
+        path_key: Key carrying an absolute path reference.
+        inline_key: Key carrying inline PEM or compact-JWS material.
+        location: Parent configuration location used in error messages.
+
+    Returns:
+        Parsed credential material, or ``None`` when neither key is present.
+
+    Raises:
+        ConfigError: If the credential is malformed or supplied in both forms.
+    """
+    try:
+        return parse_credential_material(
+            config,
+            path_key=path_key,
+            inline_key=inline_key,
+            location=location,
+        )
+    except CredentialError as error:
+        raise ConfigError(str(error)) from error
 
 
 def _optional_string(config: Mapping[str, JsonValue], key: str, location: str) -> str | None:
@@ -375,49 +460,6 @@ def _optional_string(config: Mapping[str, JsonValue], key: str, location: str) -
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{location}.{key} must be a non-empty string when present")
     return value.strip()
-
-
-def _optional_absolute_path(config: Mapping[str, JsonValue], key: str, location: str) -> Path | None:
-    """Read an optional absolute filesystem path.
-
-    Args:
-        config: JSON object containing the path.
-        key: Field key to read.
-        location: Parent location used in errors.
-
-    Returns:
-        Absolute path, or ``None`` when omitted.
-
-    Raises:
-        ConfigError: If the value is not an absolute path string.
-    """
-    value = _optional_string(config, key, location)
-    if value is None:
-        return None
-    path = Path(value)
-    if not path.is_absolute():
-        raise ConfigError(f"{location}.{key} must be an absolute path")
-    return path
-
-
-def _required_absolute_path(config: Mapping[str, JsonValue], key: str, location: str) -> Path:
-    """Read a required absolute filesystem path.
-
-    Args:
-        config: JSON object containing the path.
-        key: Required field key.
-        location: Parent location used in errors.
-
-    Returns:
-        Validated absolute path.
-
-    Raises:
-        ConfigError: If the field is missing or is not an absolute path.
-    """
-    value = _optional_absolute_path(config, key, location)
-    if value is None:
-        raise ConfigError(f"{location}.{key} is required")
-    return value
 
 
 def _optional_https_url(config: Mapping[str, JsonValue], key: str, location: str) -> str | None:

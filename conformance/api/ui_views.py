@@ -40,10 +40,13 @@ from conformance.api.builder_wizard import (
     plan_document_from_draft,
     plan_document_to_export_json,
     plan_document_with_runtime_placeholders,
+    refresh_security_environment,
     runtime_input_prompts_for_plan_document,
     security_config_form_initial,
+    security_credential_rows,
     security_field_metadata,
     specification_options,
+    stored_security_credentials,
     version_options,
 )
 from conformance.api.plan_review import PlanTestCaseRow, compiled_plan_rows
@@ -59,6 +62,7 @@ from conformance.catalogue import (
     plan_document_to_json_object,
 )
 from conformance.catalogue_registry import supported_catalogues
+from conformance.credentials import CredentialMaterial
 from conformance.execution_log import ExecutionEvent
 from conformance.http import build_json_http_client
 from conformance.json_types import JsonObject, JsonValue
@@ -431,9 +435,15 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
         return HttpResponseNotFound("Builder draft not found")
     if _draft_boundary(draft) is None:
         return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
+    stored_credentials = stored_security_credentials(
+        draft.config,
+        security_environment=draft.security_environment,
+        dynamic_client_registration=draft.dynamic_client_registration,
+    )
     if request.method == "POST":
         form = SecurityConfigForm(
             data=request.POST,
+            files=request.FILES,
             initial=security_config_form_initial(
                 draft.config,
                 draft.discovery_metadata,
@@ -443,6 +453,7 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
                 execution_mode=draft.execution_mode,
             ),
             dcr_mode=_is_dcr_draft(draft),
+            stored_credentials=stored_credentials,
         )
         if form.is_valid() and form.config is not None:
             updated_config = merge_security_config(draft.config, form.config)
@@ -457,6 +468,13 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
                         execution_mode=form.execution_mode or draft.execution_mode,
                         dynamic_client_registration=form.dynamic_client_registration or {},
                     )
+                else:
+                    updated_draft = updated_draft.with_plan_context(
+                        security_environment=refresh_security_environment(draft.security_environment, updated_config),
+                        business_test_data=draft.business_test_data,
+                        metadata=draft.metadata,
+                        execution_mode=draft.execution_mode,
+                    )
                 draft_store.save(updated_draft)
                 destination = "builder-review" if _is_dcr_draft(draft) else "builder-scope"
                 return redirect(destination, draft_id=draft.draft_id)
@@ -464,7 +482,7 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
         return render(
             request,
             "conformance/builder_security_config.html",
-            _builder_security_config_context(draft=draft, form=form),
+            _builder_security_config_context(draft=draft, form=form, stored_credentials=stored_credentials),
             status=400,
         )
 
@@ -478,11 +496,12 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
             execution_mode=draft.execution_mode,
         ),
         dcr_mode=_is_dcr_draft(draft),
+        stored_credentials=stored_credentials,
     )
     return render(
         request,
         "conformance/builder_security_config.html",
-        _builder_security_config_context(draft=draft, form=form),
+        _builder_security_config_context(draft=draft, form=form, stored_credentials=stored_credentials),
     )
 
 
@@ -1036,12 +1055,15 @@ def _builder_security_config_context(
     *,
     draft: BuilderDraft,
     form: SecurityConfigForm,
+    stored_credentials: Mapping[str, CredentialMaterial | None],
 ) -> dict[str, object]:
     """Build template context for OAuth/FAPI/security config.
 
     Args:
         draft: Current browser wizard draft.
         form: Security config form.
+        stored_credentials: Credentials already held by the draft. Only
+            non-secret presentation state derived from them reaches the page.
 
     Returns:
         Template context for the security config wizard page.
@@ -1052,6 +1074,7 @@ def _builder_security_config_context(
         "discovery_metadata": _discovery_metadata_context(draft.discovery_metadata),
         "security_requirements": security_field_metadata(),
         "dcr_mode": _is_dcr_draft(draft),
+        "credentials": security_credential_rows(form, stored_credentials),
     }
 
 

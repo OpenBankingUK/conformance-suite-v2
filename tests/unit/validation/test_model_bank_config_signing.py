@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from conformance.credentials import credential_from_path
 from conformance.json_types import JsonValue
 from conformance.model_bank_config import (
     ConfigError,
@@ -52,8 +53,8 @@ def test_parse_model_bank_config_accepts_fapi_signing_section(tmp_path: Path) ->
         base_dir=tmp_path,
     )
     assert config.fapi_signing == FapiSigningConfig(
-        signing_certificate_path=certificate_path,
-        signing_private_key_path=private_key_path,
+        signing_certificate=credential_from_path(certificate_path),
+        signing_private_key=credential_from_path(private_key_path),
         key_id="signing-key-001",
         client_assertion_issuer="client-issuer",
         client_assertion_subject="client-subject",
@@ -96,8 +97,8 @@ def test_parse_model_bank_config_accepts_missing_signing_files_until_runtime(tmp
     )
     assert config.fapi_signing is not None
     assert config.fapi_signing is not None
-    assert config.fapi_signing.signing_certificate_path == certificate_root / "missing.crt"
-    assert config.fapi_signing.signing_private_key_path == certificate_root / "missing.key"
+    assert config.fapi_signing.signing_certificate.path == certificate_root / "missing.crt"
+    assert config.fapi_signing.signing_private_key.path == certificate_root / "missing.key"
 
 
 def test_parse_model_bank_config_rejects_non_object_fapi_signing(tmp_path: Path) -> None:
@@ -140,7 +141,7 @@ def test_parse_model_bank_config_requires_signing_cert_and_key_together(tmp_path
 
     with pytest.raises(
         ConfigError,
-        match="fapiSigning.signingCertificatePath and fapiSigning.signingPrivateKeyPath must be supplied together",
+        match="fapiSigning signing certificate and private key must be supplied together, each as either a path or inline PEM",
     ):
         parse_model_bank_config(
             {

@@ -14,6 +14,7 @@ from conformance.approved_releases import (
     ApprovedReleasePolicyError,
     load_approved_release_policy,
 )
+from conformance.credentials import CredentialError, CredentialMaterial, parse_credential_material
 from conformance.json_types import JsonObject, JsonValue
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
 
@@ -103,41 +104,39 @@ class ResourceServerConfig:
 
 @dataclass(frozen=True)
 class TlsConfig:
-    """Transport TLS file paths for outbound model-bank requests.
+    """Transport TLS credentials for outbound model-bank requests.
 
-    In the hardened container these are supplied as absolute paths under the
-    optional read-only ``/certs`` mount (see ``docs/DOCKER_GUIDE.md`` for
-    the full mount contract): ``ca_bundle_path`` maps to the CA bundle
-    artifact, and ``client_certificate_path``/``client_private_key_path`` map
-    to the transport/mTLS certificate and key artifacts. Certificate material
-    is never copied into the image or into ``/data``; it is only ever read
-    from the operator-supplied mount.
+    Each credential is either a path reference or inline PEM material supplied
+    through the browser wizard. Path references are typically absolute paths
+    under the optional read-only ``/certs`` mount (see ``docs/DOCKER_GUIDE.md``
+    for the full mount contract). Certificate material is never copied into the
+    image or into ``/data``; it is either read from the operator-supplied mount
+    or held in memory for the life of the process.
 
     Attributes:
-        ca_bundle_path: Optional CA bundle used to verify the model bank.
-        client_certificate_path: Optional client certificate for mTLS.
-        client_private_key_path: Optional private key paired with the client certificate.
+        ca_bundle: Optional CA bundle used to verify the model bank.
+        client_certificate: Optional client certificate for mTLS.
+        client_private_key: Optional private key paired with the client certificate.
     """
 
-    ca_bundle_path: Path | None = None
-    client_certificate_path: Path | None = None
-    client_private_key_path: Path | None = None
+    ca_bundle: CredentialMaterial | None = None
+    client_certificate: CredentialMaterial | None = None
+    client_private_key: CredentialMaterial | None = None
 
 
 @dataclass(frozen=True)
 class FapiSigningConfig:
     """FAPI signing and token client-auth configuration kept out of placeholders.
 
-    ``signing_certificate_path``/``signing_private_key_path`` map to the
-    signing certificate and key artifacts under the same optional read-only
-    ``/certs`` mount described on :class:`TlsConfig`.
+    ``signing_certificate``/``signing_private_key`` are either path references
+    under the same optional read-only ``/certs`` mount described on
+    :class:`TlsConfig`, or inline PEM material supplied through the wizard.
 
     Attributes:
-        signing_certificate_path: X.509 certificate path used for PS256 JOSE
-            signing operations such as request objects and private-key JWT
-            client assertions.
-        signing_private_key_path: Private key path paired with
-            ``signing_certificate_path``.
+        signing_certificate: X.509 certificate used for PS256 JOSE signing
+            operations such as request objects and private-key JWT client
+            assertions.
+        signing_private_key: Private key paired with ``signing_certificate``.
         key_id: JOSE ``kid`` header value associated with the signing key.
         client_assertion_issuer: ``iss`` claim value for token-endpoint
             client assertions.
@@ -147,8 +146,8 @@ class FapiSigningConfig:
             the token endpoint.
     """
 
-    signing_certificate_path: Path
-    signing_private_key_path: Path
+    signing_certificate: CredentialMaterial
+    signing_private_key: CredentialMaterial
     key_id: str
     client_assertion_issuer: str
     client_assertion_subject: str
@@ -554,7 +553,9 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue]) -> FapiSigningC
         raw_fapi_signing,
         allowed_keys={
             "signingCertificatePath",
+            "signingCertificatePem",
             "signingPrivateKeyPath",
+            "signingPrivateKeyPem",
             "kid",
             "clientAssertionIssuer",
             "clientAssertionSubject",
@@ -563,11 +564,22 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue]) -> FapiSigningC
         location="fapiSigning",
     )
 
-    signing_certificate_path = _optional_absolute_path(raw_fapi_signing, "signingCertificatePath")
-    signing_private_key_path = _optional_absolute_path(raw_fapi_signing, "signingPrivateKeyPath")
-    if signing_certificate_path is None or signing_private_key_path is None:
+    signing_certificate = _parse_credential(
+        raw_fapi_signing,
+        path_key="signingCertificatePath",
+        inline_key="signingCertificatePem",
+        location="fapiSigning",
+    )
+    signing_private_key = _parse_credential(
+        raw_fapi_signing,
+        path_key="signingPrivateKeyPath",
+        inline_key="signingPrivateKeyPem",
+        location="fapiSigning",
+    )
+    if signing_certificate is None or signing_private_key is None:
         raise ConfigError(
-            "fapiSigning.signingCertificatePath and fapiSigning.signingPrivateKeyPath must be supplied together"
+            "fapiSigning signing certificate and private key must be supplied together, "
+            "each as either a path or inline PEM"
         )
 
     key_id = _required_string_at(raw_fapi_signing, "kid", location="fapiSigning")
@@ -581,8 +593,8 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue]) -> FapiSigningC
     if token_endpoint_auth_method not in {"private_key_jwt", "tls_client_auth"}:
         raise ConfigError("fapiSigning.tokenEndpointAuthMethod must be one of: private_key_jwt, tls_client_auth")
     return FapiSigningConfig(
-        signing_certificate_path=signing_certificate_path,
-        signing_private_key_path=signing_private_key_path,
+        signing_certificate=signing_certificate,
+        signing_private_key=signing_private_key,
         key_id=key_id,
         client_assertion_issuer=client_assertion_issuer,
         client_assertion_subject=client_assertion_subject,
@@ -626,8 +638,10 @@ def _parse_tls_config(raw_config: dict[str, JsonValue]) -> TlsConfig:
     """Parse the optional ``tls`` section of a model bank config dict.
 
     If the key is absent a zero-value ``TlsConfig`` (no custom TLS) is
-    returned. ``clientCertificatePath`` and ``clientPrivateKeyPath`` must be
-    supplied together or not at all. All supplied paths must be absolute.
+    returned. Each credential is supplied either as an absolute path or as
+    inline PEM material, never both. The client certificate and private key
+    must be supplied together or not at all, though the two may use different
+    forms (for example a path certificate with an inline key).
 
     Args:
         raw_config: Top-level raw configuration dictionary.
@@ -637,6 +651,7 @@ def _parse_tls_config(raw_config: dict[str, JsonValue]) -> TlsConfig:
 
     Raises:
         ConfigError: If ``tls`` is not a JSON object, contains unknown keys,
+            supplies both the path and inline form of one credential,
             specifies non-absolute paths, specifies paths that do not exist, or
             supplies only one of the client certificate / private key pair.
     """
@@ -648,22 +663,82 @@ def _parse_tls_config(raw_config: dict[str, JsonValue]) -> TlsConfig:
 
     _reject_unknown_keys(
         raw_tls,
-        allowed_keys={"caBundlePath", "clientCertificatePath", "clientPrivateKeyPath"},
+        allowed_keys={
+            "caBundlePath",
+            "caBundlePem",
+            "clientCertificatePath",
+            "clientCertificatePem",
+            "clientPrivateKeyPath",
+            "clientPrivateKeyPem",
+        },
         location="tls",
     )
 
-    ca_bundle_path = _optional_existing_absolute_path(raw_tls, "caBundlePath")
-    client_certificate_path = _optional_existing_absolute_path(raw_tls, "clientCertificatePath")
-    client_private_key_path = _optional_existing_absolute_path(raw_tls, "clientPrivateKeyPath")
+    ca_bundle = _parse_credential(
+        raw_tls,
+        path_key="caBundlePath",
+        inline_key="caBundlePem",
+        location="tls",
+        require_existing=True,
+    )
+    client_certificate = _parse_credential(
+        raw_tls,
+        path_key="clientCertificatePath",
+        inline_key="clientCertificatePem",
+        location="tls",
+        require_existing=True,
+    )
+    client_private_key = _parse_credential(
+        raw_tls,
+        path_key="clientPrivateKeyPath",
+        inline_key="clientPrivateKeyPem",
+        location="tls",
+        require_existing=True,
+    )
 
-    if (client_certificate_path is None) != (client_private_key_path is None):
-        raise ConfigError("clientCertificatePath and clientPrivateKeyPath must be supplied together")
+    if (client_certificate is None) != (client_private_key is None):
+        raise ConfigError("tls client certificate and private key must be supplied together")
 
     return TlsConfig(
-        ca_bundle_path=ca_bundle_path,
-        client_certificate_path=client_certificate_path,
-        client_private_key_path=client_private_key_path,
+        ca_bundle=ca_bundle,
+        client_certificate=client_certificate,
+        client_private_key=client_private_key,
     )
+
+
+def _parse_credential(
+    raw_config: dict[str, JsonValue],
+    *,
+    path_key: str,
+    inline_key: str,
+    location: str,
+    require_existing: bool = False,
+) -> CredentialMaterial | None:
+    """Parse one credential supplied as either a path or inline PEM material.
+
+    Args:
+        raw_config: Raw configuration section containing the credential keys.
+        path_key: Key carrying an absolute path reference.
+        inline_key: Key carrying inline PEM material.
+        location: Parent configuration location used in error messages.
+        require_existing: Whether a path reference must already exist on disk.
+
+    Returns:
+        Parsed credential material, or ``None`` when neither key is present.
+
+    Raises:
+        ConfigError: If the credential is malformed or supplied in both forms.
+    """
+    try:
+        return parse_credential_material(
+            raw_config,
+            path_key=path_key,
+            inline_key=inline_key,
+            location=location,
+            require_existing=require_existing,
+        )
+    except CredentialError as error:
+        raise ConfigError(str(error)) from error
 
 
 def _required_string(raw_config: dict[str, JsonValue], key: str) -> str:

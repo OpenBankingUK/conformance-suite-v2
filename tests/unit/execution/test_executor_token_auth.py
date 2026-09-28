@@ -423,7 +423,7 @@ def test_run_manifest_v1_detached_jws_invalid_signing_credentials_fail_the_step(
     assert result.status == "failed"
     assert request_seen is False
     assert result.steps[0].message == (
-        "Unable to apply request signing: fapiSigning.signingCertificatePath must contain a valid PEM certificate"
+        "Unable to apply request signing: fapiSigning signing certificate must contain a valid PEM certificate"
     )
 
 
@@ -485,7 +485,7 @@ def test_run_manifest_v1_private_key_jwt_invalid_signing_credentials_fail_the_st
     assert request_seen is False
     assert result.steps[0].message == (
         "Unable to apply token endpoint client authentication: "
-        "fapiSigning.signingCertificatePath must contain a valid PEM certificate"
+        "fapiSigning signing certificate must contain a valid PEM certificate"
     )
 
 

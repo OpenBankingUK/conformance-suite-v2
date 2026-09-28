@@ -5,11 +5,16 @@ from __future__ import annotations
 import ssl
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import cast
 
 import httpx
 
+from conformance.credentials import (
+    CredentialError,
+    CredentialMaterial,
+    apply_ca_bundle,
+    apply_client_certificate,
+)
 from conformance.headers import FrozenHeaders, freeze_headers
 from conformance.json_types import JsonObject, JsonValue
 
@@ -287,46 +292,46 @@ def send_json(
 def build_json_http_client(
     *,
     timeout_seconds: float = _DEFAULT_JSON_HTTP_TIMEOUT_SECONDS,
-    ca_bundle_path: Path | None = None,
-    client_certificate_path: Path | None = None,
-    client_private_key_path: Path | None = None,
+    ca_bundle: CredentialMaterial | None = None,
+    client_certificate: CredentialMaterial | None = None,
+    client_private_key: CredentialMaterial | None = None,
 ) -> httpx.Client:
     """Build an `httpx` client for JSON conformance requests.
 
+    Each credential is either a path reference or inline PEM material. Inline
+    client certificates are loaded through
+    :func:`conformance.credentials.apply_client_certificate`, which materialises
+    them only for the duration of the ``load_cert_chain`` call.
+
     Args:
         timeout_seconds: Internal per-request timeout in seconds.
-        ca_bundle_path: Optional CA bundle used for TLS verification.
-        client_certificate_path: Optional client certificate for mTLS.
-        client_private_key_path: Optional client private key for mTLS.
+        ca_bundle: Optional CA bundle used for TLS verification.
+        client_certificate: Optional client certificate for mTLS.
+        client_private_key: Optional client private key for mTLS.
 
     Returns:
         Configured synchronous HTTP client.
 
     Raises:
-        ValueError: If only one of ``client_certificate_path`` /
-            ``client_private_key_path`` is provided.
+        ValueError: If only one of ``client_certificate`` /
+            ``client_private_key`` is provided, or TLS material cannot be loaded.
     """
-    if (client_certificate_path is None) != (client_private_key_path is None):
-        raise ValueError("client_certificate_path and client_private_key_path must be supplied together")
+    if (client_certificate is None) != (client_private_key is None):
+        raise ValueError("client_certificate and client_private_key must be supplied together")
 
     verify: bool | ssl.SSLContext = True
-    if ca_bundle_path is not None:
-        verify = ssl.create_default_context()
+    if ca_bundle is not None or client_certificate is not None:
+        context = ssl.create_default_context()
         try:
-            verify.load_verify_locations(cafile=str(ca_bundle_path))
-        except ssl.SSLError as error:
-            raise ValueError(f"Unable to load TLS CA bundle from {ca_bundle_path}: {error}") from error
-
-    cert: tuple[str, str] | None = None
-    if client_certificate_path is not None and client_private_key_path is not None:
-        cert = (str(client_certificate_path), str(client_private_key_path))
+            if ca_bundle is not None:
+                apply_ca_bundle(context, ca_bundle)
+            if client_certificate is not None and client_private_key is not None:
+                apply_client_certificate(context, client_certificate, client_private_key)
+        except CredentialError as error:
+            raise ValueError(str(error)) from error
+        verify = context
 
     try:
-        return httpx.Client(timeout=timeout_seconds, verify=verify, cert=cert)
+        return httpx.Client(timeout=timeout_seconds, verify=verify, cert=None)
     except ssl.SSLError as error:
-        if cert is not None:
-            raise ValueError(
-                "Unable to load TLS client certificate/private key from "
-                f"{client_certificate_path} and {client_private_key_path}: {error}"
-            ) from error
         raise ValueError(f"Unable to initialise TLS configuration: {error}") from error

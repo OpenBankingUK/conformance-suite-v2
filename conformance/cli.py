@@ -171,9 +171,9 @@ def _run_cli_compiled_plan(
         Smoke-check result returned by the executor.
     """
     http_client = build_json_http_client(
-        ca_bundle_path=config.tls.ca_bundle_path,
-        client_certificate_path=config.tls.client_certificate_path,
-        client_private_key_path=config.tls.client_private_key_path,
+        ca_bundle=config.tls.ca_bundle,
+        client_certificate=config.tls.client_certificate,
+        client_private_key=config.tls.client_private_key,
     )
     try:
         return run_compiled_test_plan(
@@ -201,7 +201,7 @@ def _run_cli_compiled_plan(
             ),
             fapi_signing_config=config.fapi_signing,
             mtls_client_configured=(
-                config.tls.client_certificate_path is not None and config.tls.client_private_key_path is not None
+                config.tls.client_certificate is not None and config.tls.client_private_key is not None
             ),
             approved_release_policy=config.approved_release_policy,
         )
