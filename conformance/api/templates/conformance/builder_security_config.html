@@ -175,16 +175,16 @@
                         <div class="helper">{{ security_requirements.signing_kid.description }} Type: {{ security_requirements.signing_kid.type_hint }}. {{ security_requirements.signing_kid.requirement }}</div>
                     </div>
                     <div>
-                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.signing_certificate title="Signing certificate" only %}
-                    </div>
-                    <div>
-                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.signing_private_key title="Signing private key" only %}
-                    </div>
-                    <div>
                         <label for="{{ form.signing_client_assertion_issuer.id_for_label }}">Client assertion issuer {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_client_assertion_issuer.status label=security_requirements.signing_client_assertion_issuer.label only %}</label>
                         {{ form.signing_client_assertion_issuer.errors }}
                         <input id="{{ form.signing_client_assertion_issuer.id_for_label }}" name="signing_client_assertion_issuer" type="text" value="{{ form.signing_client_assertion_issuer.value|default_if_none:'' }}" autocomplete="off">
                         <div class="helper">{{ security_requirements.signing_client_assertion_issuer.description }} Type: {{ security_requirements.signing_client_assertion_issuer.type_hint }}. {{ security_requirements.signing_client_assertion_issuer.requirement }}</div>
+                    </div>
+                    <div>
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.signing_certificate title="Signing certificate" only %}
+                    </div>
+                    <div>
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.signing_private_key title="Signing private key" only %}
                     </div>
                     <div>
                         <label for="{{ form.signing_client_assertion_subject.id_for_label }}">Client assertion subject {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_client_assertion_subject.status label=security_requirements.signing_client_assertion_subject.label only %}</label>
