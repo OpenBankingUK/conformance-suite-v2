@@ -186,13 +186,13 @@
                         {{ form.signing_client_assertion_subject.errors }}
                         <input id="{{ form.signing_client_assertion_subject.id_for_label }}" name="signing_client_assertion_subject" type="text" value="{{ form.signing_client_assertion_subject.value|default_if_none:'' }}" autocomplete="off">
                         <div class="helper">{{ security_requirements.signing_client_assertion_subject.description }} Type: {{ security_requirements.signing_client_assertion_subject.type_hint }}. {{ security_requirements.signing_client_assertion_subject.requirement }}</div>
-                        <div>
+                    </div>
+                    <div>
                         {% include "conformance/partials/builder_credential_field.html" with credential=credentials.signing_certificate title="Signing certificate" only %}
                     </div>
                     <div>
                         {% include "conformance/partials/builder_credential_field.html" with credential=credentials.signing_private_key title="Signing private key" only %}
                     </div>
-                </div>
                 </div>
             </section>
             {% else %}
