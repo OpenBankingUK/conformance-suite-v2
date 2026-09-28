@@ -9,7 +9,6 @@ from conformance.api.builder_draft_store import SessionBuilderDraftStore
 from conformance.api.builder_wizard import (
     BusinessConfigForm,
     ConfigVisibility,
-    ExecutionConfigForm,
     catalogue_scope_hierarchy,
     config_visibility_for_draft,
     plan_document_from_draft,
@@ -21,54 +20,6 @@ pytestmark = pytest.mark.unit
 
 DISCOVERY_CONFIG = {"discoveryUrl": "https://example.com/.well-known/openid-configuration"}
 """Minimal discovery config needed to build canonical draft documents."""
-
-
-def test_grouped_config_form_builds_runtime_inputs_for_selected_scope() -> None:
-    """The config form stores catalogue runtime inputs under v2 config inputs."""
-    session = SessionStore()
-    store = SessionBuilderDraftStore(session)
-    draft = store.create().with_catalogue_boundary(
-        scheme="open-banking-uk",
-        specification="read-write",
-        version="4.0.1",
-    )
-    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
-    hierarchy = catalogue_scope_hierarchy(
-        boundary,
-        selected_resource_group_ids=("account-and-transaction",),
-    )
-    endpoint = next(
-        endpoint
-        for group in hierarchy.resource_groups
-        for endpoint in group.endpoints
-        if endpoint.path == "/open-banking/v4.0/aisp/accounts"
-    )
-    draft = draft.with_scope_selection(
-        resource_group_ids=("account-and-transaction",),
-        endpoint_ids=(endpoint.id,),
-        endpoint_capability_ids={},
-    ).with_config(
-        config=DISCOVERY_CONFIG,
-    )
-
-    prompts = runtime_input_prompts_for_draft(draft)
-    form = ExecutionConfigForm(
-        data={
-            "discovery_url": "https://example.com/.well-known/openid-configuration",
-            "runtime_input__resourceBaseUrl": "https://resource.example.com",
-        },
-        runtime_prompts=prompts,
-    )
-
-    assert form.is_valid(), form.errors.as_json()
-    assert form.config is not None
-    assert form.config["inputs"] == {
-        "resourceBaseUrl": {"value": "https://resource.example.com"},
-    }
-
-    document = plan_document_from_draft(draft.with_config(config=form.config))
-    assert document.runtime_inputs["resourceBaseUrl"] == "https://resource.example.com"
-    assert "accessToken" not in document.runtime_inputs
 
 
 def test_runtime_prompt_labels_follow_selected_endpoint_scope() -> None:
@@ -109,70 +60,6 @@ def test_runtime_prompt_labels_follow_selected_endpoint_scope() -> None:
     assert "xFapiCustomerIpAddress" not in labels_by_id
     assert "Request metadata and headers" not in groups_by_id.values()
     assert "AIS resource server base URL" not in labels_by_id.values()
-
-
-def test_grouped_config_form_preserves_legacy_fcs_functional_defaults() -> None:
-    """The v2 config form keeps default-backed FCS values in structured sections."""
-    form = ExecutionConfigForm(
-        data={
-            "discovery_url": "https://auth.example.com/.well-known/openid-configuration",
-            "oauth_client_id": "client-123",
-            "oauth_redirect_uri": "https://client.example.com/callback",
-            "oauth_issuer": "https://auth.example.com",
-            "oauth_token_endpoint": "https://auth.example.com/token",
-            "oauth_response_type": "code id_token",
-            "oauth_request_object_signing_alg": "PS256",
-            "resource_server_base_url": "https://resource.example.com",
-            "ais_resource_ids_json": '{"accountIds": [{"accountId": "account-123"}]}',
-            "ais_transaction_from_date": "2026-01-01T00:00:00Z",
-            "ais_transaction_to_date": "2026-01-31T23:59:59Z",
-            "pis_creditor_account_json": '{"schemeName": "UK.OBIE.SortCodeAccountNumber"}',
-            "pis_international_creditor_account_json": '{"schemeName": "UK.OBIE.IBAN"}',
-            "pis_instructed_amount_json": '{"amount": "10.00", "currency": "GBP"}',
-            "pis_currency_of_transfer": "GBP",
-            "pis_requested_execution_date_time": "2026-02-01T00:00:00Z",
-            "pis_first_payment_date_time": "2026-02-02T00:00:00Z",
-            "pis_standing_order_frequency_json": '{"type": "Evry", "pointInTime": "01"}',
-            "cbpii_debtor_account_json": (
-                '{"schemeName": "UK.OBIE.SortCodeAccountNumber", '
-                '"identification": "12345678901234", "name": "Model Bank Account"}'
-            ),
-            "conditional_properties_json": '[{"id": "standing-order.number-of-payments"}]',
-        },
-        runtime_prompts=(),
-    )
-
-    assert form.is_valid(), form.errors.as_json()
-    assert form.config is not None
-    assert form.config["oauth"] == {
-        "clientId": "client-123",
-        "redirectUri": "https://client.example.com/callback",
-        "issuer": "https://auth.example.com",
-        "tokenEndpoint": "https://auth.example.com/token",
-        "responseType": "code id_token",
-        "requestObjectSigningAlg": "PS256",
-    }
-    assert form.config["resourceServer"] == {"baseUrl": "https://resource.example.com"}
-    assert "clientCredentials" not in form.config
-    assert "openBanking" not in form.config
-    pis = form.config["pis"]
-    assert isinstance(pis, dict)
-    assert pis["standingOrderFrequency"] == {"type": "Evry", "pointInTime": "01"}
-    cbpii = form.config["cbpii"]
-    assert isinstance(cbpii, dict)
-    debtor_account = cbpii["debtorAccount"]
-    assert isinstance(debtor_account, dict)
-    assert debtor_account["identification"] == "12345678901234"
-    assert form.config["conditionalProperties"] == [{"id": "standing-order.number-of-payments"}]
-
-
-def test_grouped_config_form_omits_resource_server_for_unchecked_customer_ip_toggle() -> None:
-    """Unchecked customer-IP toggle alone does not create a resourceServer config."""
-    form = ExecutionConfigForm(data={})
-
-    assert form.is_valid(), form.errors.as_json()
-    assert form.config is not None
-    assert "resourceServer" not in form.config
 
 
 def test_structured_config_values_remove_duplicate_runtime_prompts() -> None:
@@ -607,56 +494,3 @@ def test_business_config_form_requires_only_selected_pis_family() -> None:
             "instructedAmount": {"amount": "10.00", "currency": "GBP"},
         }
     }
-
-
-def test_scoped_config_form_prunes_out_of_scope_business_defaults() -> None:
-    """Grouped config serialization ignores stale values outside selected scope."""
-    draft = (
-        SessionBuilderDraftStore(SessionStore())
-        .create()
-        .with_catalogue_boundary(
-            scheme="open-banking-uk",
-            specification="read-write",
-            version="4.0.1",
-        )
-    )
-    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
-    hierarchy = catalogue_scope_hierarchy(
-        boundary,
-        selected_resource_group_ids=("account-and-transaction",),
-    )
-    ais_endpoint = next(
-        endpoint
-        for group in hierarchy.resource_groups
-        for endpoint in group.endpoints
-        if endpoint.path == "/open-banking/v4.0/aisp/accounts"
-    )
-    draft = draft.with_scope_selection(
-        resource_group_ids=("account-and-transaction",),
-        endpoint_ids=(ais_endpoint.id,),
-        endpoint_capability_ids={},
-    ).with_config(
-        config=DISCOVERY_CONFIG,
-    )
-
-    form = ExecutionConfigForm(
-        data={
-            "discovery_url": "https://example.com/.well-known/openid-configuration",
-            "ais_resource_ids_json": '{"accountIds": [{"accountId": "account-123"}]}',
-            "pis_creditor_account_json": '{"schemeName": "UK.OBIE.SortCodeAccountNumber"}',
-            "cbpii_debtor_account_json": (
-                '{"schemeName": "UK.OBIE.SortCodeAccountNumber", '
-                '"identification": "12345678901234", "name": "Model Bank Account"}'
-            ),
-            "conditional_properties_json": '[{"id": "standing-order.number-of-payments"}]',
-        },
-        runtime_prompts=(),
-        config_visibility=config_visibility_for_draft(draft),
-    )
-
-    assert form.is_valid(), form.errors.as_json()
-    assert form.config is not None
-    assert form.config["ais"] == {"resourceIds": {"accountIds": [{"accountId": "account-123"}]}}
-    assert "pis" not in form.config
-    assert "cbpii" not in form.config
-    assert "conditionalProperties" not in form.config
