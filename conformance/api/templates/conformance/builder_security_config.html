@@ -31,12 +31,19 @@
         input, select, textarea { width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }
         input[type="checkbox"] { width: auto; min-height: auto; margin-right: 8px; }
         textarea { min-height: 120px; resize: vertical; font: 0.9rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-        .credential-field { border: 1px solid var(--border); border-radius: 6px; padding: 12px; background: #ffffff; }
-        .credential-field fieldset { border: 0; margin: 10px 0 0; padding: 0; }
-        .credential-field legend { padding: 0; font-size: 0.85rem; }
-        .credential-status { margin: 6px 0 0; }
-        .credential-badge { display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid #abefc6; background: #f6fef9; color: #067647; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; }
-        .inline-choice { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; margin-right: 14px; }
+        .grid { align-items: start; }
+        .grid > * { min-width: 0; }
+        .grid > .credential-cell { grid-column: 1 / -1; }
+        .credential-field { min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px 16px; background: #ffffff; overflow-wrap: anywhere; }
+        .credential-field > label { margin-bottom: 4px; }
+        .credential-field fieldset { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; border: 0; margin: 12px 0 0; padding: 0; min-width: 0; }
+        .credential-field legend { padding: 0; margin-bottom: 2px; font-size: 0.85rem; }
+        .credential-field .field-row > label { margin-bottom: 4px; }
+        .credential-field > .helper:last-child { margin-top: 10px; }
+        .credential-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 6px 0 0; }
+        .credential-status .helper { flex: 1 1 16rem; min-width: 0; }
+        .credential-badge { flex: none; display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid #abefc6; background: #f6fef9; color: #067647; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; }
+        .inline-choice { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; margin: 0; }
         .inline-choice input[type="radio"] { width: auto; min-height: auto; }
         .message, .errorlist { border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; }
         .message.warning { border: 1px solid #fedf89; background: #fffcf5; color: var(--warning); }
@@ -168,10 +175,10 @@
                         <input id="{{ form.signing_kid.id_for_label }}" name="signing_kid" type="text" value="{{ form.signing_kid.value|default_if_none:'' }}" autocomplete="off">
                         <div class="helper">{{ security_requirements.signing_kid.description }} Type: {{ security_requirements.signing_kid.type_hint }}. {{ security_requirements.signing_kid.requirement }}</div>
                     </div>
-                    <div>
+                    <div class="credential-cell">
                         {% include "conformance/partials/builder_credential_field.html" with credential=credentials.signing_certificate title="Signing certificate" only %}
                     </div>
-                    <div>
+                    <div class="credential-cell">
                         {% include "conformance/partials/builder_credential_field.html" with credential=credentials.signing_private_key title="Signing private key" only %}
                     </div>
                     <div>
@@ -208,7 +215,7 @@
                         {{ form.signing_kid.errors }}
                         <input id="{{ form.signing_kid.id_for_label }}" name="signing_kid" type="text" value="{{ form.signing_kid.value|default_if_none:'' }}" autocomplete="off">
                     </div>
-                    <div>
+                    <div class="credential-cell">
                         {% include "conformance/partials/builder_credential_field.html" with credential=credentials.signing_private_key title="Signing private key" only %}
                     </div>
                     <div>
@@ -225,7 +232,7 @@
                         <input id="{{ form.signing_client_auth_algorithm.id_for_label }}" name="signing_client_auth_algorithm" type="text" value="{{ form.signing_client_auth_algorithm.value|default_if_none:'' }}" autocomplete="off">
                         <div class="helper">Prefer the algorithm advertised by discovery.</div>
                     </div>
-                    <div>
+                    <div class="credential-cell">
                         {% include "conformance/partials/builder_credential_field.html" with credential=credentials.dcr_software_statement_assertion title="Software Statement Assertion" only %}
                     </div>
                     <div>
@@ -245,7 +252,7 @@
                         <textarea id="{{ form.dcr_redirect_uris_override.id_for_label }}" name="dcr_redirect_uris_override">{{ form.dcr_redirect_uris_override.value|default_if_none:'' }}</textarea>
                         <div class="helper">One HTTPS URI per line.</div>
                     </div>
-                    <div>
+                    <div class="credential-cell">
                         {% include "conformance/partials/builder_credential_field.html" with credential=credentials.dcr_signing_certificate title="DCR signing certificate" only %}
                     </div>
                     <div>
@@ -280,13 +287,13 @@
                 <h3 id="tls-heading">TLS/certificates</h3>
                 <p class="helper">{% if dcr_mode %}mTLS client certificate and private key references are required for DCR. The CA bundle is optional.{% else %}mTLS client certificate and private key are conditional: provide both paths together, or leave both blank.{% endif %}</p>
                 <div class="grid field-row">
-                    <div>
+                    <div class="credential-cell">
                         {% include "conformance/partials/builder_credential_field.html" with credential=credentials.tls_ca_bundle title="CA bundle" only %}
                     </div>
-                    <div>
+                    <div class="credential-cell">
                         {% include "conformance/partials/builder_credential_field.html" with credential=credentials.tls_client_certificate title="mTLS client certificate" only %}
                     </div>
-                    <div>
+                    <div class="credential-cell">
                         {% include "conformance/partials/builder_credential_field.html" with credential=credentials.tls_client_private_key title="mTLS client private key" only %}
                     </div>
                 </div>
