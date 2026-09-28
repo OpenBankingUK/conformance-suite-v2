@@ -209,13 +209,20 @@ jobs:
         # workflow downloads this exact artifact and pushes it byte-for-byte,
         # it never rebuilds. containerimage.digest in the metadata file is
         # the digest that image will have once pushed, so it can be recorded
-        # and later revalidated without touching a registry here.
+        # and later revalidated without touching a registry here. The image
+        # is tagged at build time so `docker load` registers it under a
+        # known, stable name; a `type=docker` export's image ID is not
+        # guaranteed to equal containerimage.digest, so retagging by digest
+        # after the fact is not reliable.
+        env:
+          LOCAL_TAG: ob-conformance-candidate:${{ matrix.slug }}-${{ github.sha }}
         run: |
           mkdir -p artifacts
           docker buildx build \
             --platform "${{ matrix.platform }}" \
             --build-arg CONFORMANCE_TOOL_VERSION="${{ steps.metadata.outputs.raw_version }}" \
             --build-arg SOURCE_REVISION="${{ github.sha }}" \
+            --tag "$LOCAL_TAG" \
             --output type=docker,dest=artifacts/image-${{ matrix.slug }}.tar \
             --metadata-file artifacts/metadata-${{ matrix.slug }}.json \
             --cache-from type=gha,scope=candidate-${{ matrix.slug }} \
@@ -224,18 +231,12 @@ jobs:
 
       - name: Load candidate image for local verification
         id: load
+        env:
+          LOCAL_TAG: ob-conformance-candidate:${{ matrix.slug }}-${{ github.sha }}
         run: |
           set -euo pipefail
           docker load --input artifacts/image-${{ matrix.slug }}.tar
-          # `docker load`'s reported Image ID for a single-platform
-          # type=docker export matches containerimage.digest in the buildx
-          # metadata file, so the freshly loaded (unnamed) image can be
-          # retagged deterministically without parsing `docker load`'s
-          # human-readable output.
-          digest="$(jq -r '."containerimage.digest"' artifacts/metadata-${{ matrix.slug }}.json)"
-          local_tag="ob-conformance-candidate:${{ matrix.slug }}-${{ github.sha }}"
-          docker tag "$digest" "$local_tag"
-          echo "local_tag=$local_tag" >> "$GITHUB_OUTPUT"
+          echo "local_tag=$LOCAL_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Run hardened smoke test
         run: ./scripts/docker_smoke_test.sh "${{ steps.load.outputs.local_tag }}"
