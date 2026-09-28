@@ -114,6 +114,11 @@ docker rm -f "$CONTAINER_NAME" >/dev/null
 
 echo "==> Checking the optional /certs mount is readable but not writable"
 echo "dummy-ca-bundle" >"$CERTS_DIR/ca-bundle.pem"
+# The container runs as the hardened non-root UID/GID 65532, which is
+# neither the CI runner's own UID nor root, so the bind-mounted directory
+# and file must be world-readable for the in-container read to succeed.
+chmod 755 "$CERTS_DIR"
+chmod 644 "$CERTS_DIR/ca-bundle.pem"
 docker run --rm \
   --read-only --cap-drop=ALL --security-opt=no-new-privileges \
   --tmpfs /tmp:size=64m,mode=1777 \
