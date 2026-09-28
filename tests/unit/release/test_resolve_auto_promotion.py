@@ -81,7 +81,7 @@ def test_skips_channel_or_branch_mismatch(branch: str, raw_version: str) -> None
 
 
 def test_skips_version_already_published() -> None:
-    """An immutable GHCR version tag already published is not promoted again."""
+    """An immutable Docker Hub version tag already published is not promoted again."""
     result = resolve_auto_promotion(
         branch="release/2.0.0",
         raw_version="2.0.0-beta.1",

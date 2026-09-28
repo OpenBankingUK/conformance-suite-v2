@@ -14,11 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic, Environment-gated preview, beta, and GA image promotions after
   successful candidate CI runs, with manual promotion dispatch retained for
   recovery and backfill.
-- Trusted Docker candidate and GHCR promotion infrastructure for preview,
+- Trusted Docker candidate and Docker Hub promotion infrastructure for preview,
   beta, and GA channels, including exact-SHA multi-architecture artifacts,
-  blocking Snyk container scans, immutable version tags, Environment approval
-  gates, and SBOM/provenance attestations without importing MVP application
-  behaviour.
+  blocking Snyk and VEX-aware Docker Scout scans, immutable version tags,
+  Environment approval gates, and SBOM/provenance attestations without
+  importing MVP application behaviour.
+- Docker Scout v1.24.0 candidate scanning with verified architecture-specific
+  checksums, Docker-signed OpenVEX handling for the pinned DHI base, and a
+  narrowly scoped Snyk policy expiring 2026-12-28 for the two assessed base
+  image CVEs.
+- Docker Hub publication to `openbanking/conformance-suite-v2`, with Docker
+  Hub tag discovery and Docker Hub write credentials passed only to the gated
+  promotion workflow.
 - First-class Open Banking UK Read/Write v3.1.11 support for AIS, PIS, CBPII,
   and VRP, with dedicated v3.1 catalogue boundaries, pinned v3.1.11 OpenAPI
   schemas, explicit request-signing metadata, and a machine-checkable strict

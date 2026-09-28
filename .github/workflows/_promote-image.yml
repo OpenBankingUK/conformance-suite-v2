@@ -36,6 +36,11 @@ on:
         type: string
         default: ""
         description: "Exact successful CI run to promote; omitted for manual recovery dispatches."
+    secrets:
+      DOCKER_ORG_USERNAME:
+        required: true
+      DOCKER_ORG_ACCESS_TOKEN:
+        required: true
 
 permissions:
   contents: read
@@ -45,9 +50,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE_NAME: ghcr.io/openbankinguk/conformance-suite-v2
-  PACKAGE_OWNER: openbankinguk
-  PACKAGE_NAME: conformance-suite-v2
+  IMAGE_NAME: docker.io/openbanking/conformance-suite-v2
+  OCI_SUBJECT_NAME: index.docker.io/openbanking/conformance-suite-v2
   INPUT_BRANCH: ${{ inputs.branch }}
   INPUT_CHANNEL: ${{ inputs.channel }}
   INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
@@ -63,7 +67,6 @@ jobs:
     permissions:
       contents: read
       actions: read
-      packages: write
       attestations: write
       id-token: write
       pull-requests: read
@@ -196,7 +199,8 @@ jobs:
             scripts/build_promotion_manifest.py \
             scripts/docker_smoke_test.sh \
             scripts/release_metadata.py \
-            scripts/validate_release.py; then
+            scripts/validate_release.py \
+            .snyk; then
             echo "::error::Candidate pipeline files differ from trusted main. Merge main into $INPUT_BRANCH and rebuild." >&2
             exit 1
           fi
@@ -224,21 +228,9 @@ jobs:
           fi
 
       - name: List already-published version tags
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if ! error="$(
-            gh api "orgs/${PACKAGE_OWNER}/packages/container/${PACKAGE_NAME}/versions" --paginate \
-              --jq '.[].metadata.container.tags[]?' 2>&1 > published-versions.txt
-          )"; then
-            if [[ "$error" == *"(HTTP 404)"* ]]; then
-              : > published-versions.txt
-            else
-              echo "$error" >&2
-              exit 1
-            fi
-          fi
+          uv run python -m scripts.list_docker_hub_tags > published-versions.txt
 
       - name: Revalidate the candidate manifest
         id: validate
@@ -263,12 +255,11 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           jq -c '.expected_tags' <<<"$result" > expected-tags.json
 
-      - name: Log in to GHCR
+      - name: Log in to Docker Hub
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+          username: ${{ secrets.DOCKER_ORG_USERNAME }}
+          password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
@@ -312,14 +303,14 @@ jobs:
       - name: Attest build provenance for the published manifest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: ${{ env.IMAGE_NAME }}
+          subject-name: ${{ env.OCI_SUBJECT_NAME }}
           subject-digest: ${{ steps.publish.outputs.published_digest }}
           push-to-registry: true
 
       - name: Attest amd64 SBOM for the published manifest
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-name: ${{ env.IMAGE_NAME }}
+          subject-name: ${{ env.OCI_SUBJECT_NAME }}
           subject-digest: ${{ steps.publish.outputs.published_digest }}
           sbom-path: artifacts/candidate-linux-amd64/sbom-linux-amd64.spdx.json
           push-to-registry: true
@@ -327,7 +318,7 @@ jobs:
       - name: Attest arm64 SBOM for the published manifest
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-name: ${{ env.IMAGE_NAME }}
+          subject-name: ${{ env.OCI_SUBJECT_NAME }}
           subject-digest: ${{ steps.publish.outputs.published_digest }}
           sbom-path: artifacts/candidate-linux-arm64/sbom-linux-arm64.spdx.json
           push-to-registry: true

@@ -67,7 +67,7 @@ def resolve_auto_promotion(
         raw_version: Exact ``[project].version`` from that run's source commit.
         source_sha: Full commit SHA the candidate was built from.
         manifest_available: Whether that CI run uploaded ``promotion-manifest``.
-        published_versions: Immutable version tags already present in GHCR.
+        published_versions: Immutable version tags already present in Docker Hub.
         tag_target_sha: Commit targeted by the existing GA Git tag, if any.
 
     Returns:
@@ -143,7 +143,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--published-versions-file",
         type=Path,
         required=True,
-        help="Newline-delimited GHCR version tags.",
+        help="Newline-delimited Docker Hub version tags.",
     )
     parser.add_argument("--tag-target-sha", default=None, help="Resolved commit SHA of an existing GA Git tag.")
     return parser.parse_args(argv)
