@@ -223,14 +223,16 @@ The following secrets must be configured in **Repository Settings → Secrets an
 |---|---|
 | `GITHUB_TOKEN` | Automatically provided by GitHub Actions; no manual setup |
 | `DOCKER_ORG_USERNAME` | Organisation Docker account used to pull Docker Hardened Images and publish the approved image |
-| `DOCKER_ORG_ACCESS_TOKEN` | Docker Hub access token; it must have push/write permission on `openbanking/conformance-suite-v2` and DHI pull permission |
+| `DOCKER_DHI_PULL_TOKEN` | Read-only Docker Hub/DHI token used by candidate-image jobs to pull Docker Hardened Images |
+| `DOCKER_ORG_ACCESS_TOKEN` | Docker Hub access token used only by gated promotion; it must have push/write permission on `openbanking/conformance-suite-v2` |
 | `SNYK_TOKEN` | Token used by candidate-image jobs for the blocking container scan |
 
 Before enabling promotion, a repository administrator must create the Docker
 Hub repository `openbanking/conformance-suite-v2` and create/configure
-`DOCKER_ORG_ACCESS_TOKEN` with push/write access to that repository. The token
-is passed only to the gated reusable promotion workflow; candidate builds do
-not publish images.
+`DOCKER_ORG_ACCESS_TOKEN` with push/write access to that repository. Also
+create `DOCKER_DHI_PULL_TOKEN` with read-only DHI access for candidate builds.
+The write-capable token is passed only to the gated reusable promotion
+workflow; candidate builds do not publish images.
 
 There are currently no repository-level variables required by CI: the
 supported pytest suite is fully offline and does not target a live model bank

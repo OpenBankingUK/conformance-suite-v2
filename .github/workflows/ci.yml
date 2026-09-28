@@ -185,7 +185,7 @@ jobs:
         with:
           registry: dhi.io
           username: ${{ secrets.DOCKER_ORG_USERNAME }}
-          password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+          password: ${{ secrets.DOCKER_DHI_PULL_TOKEN }}
 
       - name: Build candidate image
         # Exported as an OCI-loadable docker archive artifact rather than

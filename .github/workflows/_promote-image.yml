@@ -274,11 +274,15 @@ jobs:
           staging_suffix="promote-$INPUT_SOURCE_SHA"
 
           docker load --input "artifacts/candidate-linux-amd64/image-linux-amd64.tar"
-          docker tag "${{ steps.validate.outputs.amd64_digest }}" "${IMAGE_NAME}:${staging_suffix}-amd64"
+          docker tag \
+            "ob-conformance-candidate:linux-amd64-${INPUT_SOURCE_SHA}" \
+            "${IMAGE_NAME}:${staging_suffix}-amd64"
           docker push "${IMAGE_NAME}:${staging_suffix}-amd64"
 
           docker load --input "artifacts/candidate-linux-arm64/image-linux-arm64.tar"
-          docker tag "${{ steps.validate.outputs.arm64_digest }}" "${IMAGE_NAME}:${staging_suffix}-arm64"
+          docker tag \
+            "ob-conformance-candidate:linux-arm64-${INPUT_SOURCE_SHA}" \
+            "${IMAGE_NAME}:${staging_suffix}-arm64"
           docker push "${IMAGE_NAME}:${staging_suffix}-arm64"
 
       - name: Assemble and publish the multi-arch manifest list
