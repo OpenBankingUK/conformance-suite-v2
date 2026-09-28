@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Candidate-image CI now scans the hardened Docker image with the Docker
+  Scout CLI instead of Snyk, fetching Docker's signed VEX (Vulnerability
+  Exploitability eXchange) attestation for the pinned `dhi.io` runtime base
+  image and applying it before gating. Snyk has no VEX support, so it was
+  incorrectly blocking on two base-image CVEs (`zlib1g`, `libexpat1`) that
+  Docker has already assessed as `not_affected` via inline mitigations in the
+  Docker Hardened Image build; genuine HIGH/CRITICAL findings, including in
+  application dependencies layered on top of the base image, still block the
+  candidate with no allowlist or suppression path. The Scout CLI is installed
+  from a pinned release with a verified SHA-256 checksum.
+
 ## [2.0.0-beta.1] - 2026-09-28
 
 First public beta of the MVP: the Open Banking UK Read/Write v3.1.11 and v4.0.x

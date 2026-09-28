@@ -31,6 +31,7 @@
   - [3. Repository Security Controls](#3-repository-security-controls)
     - [3.1 GitHub Security Features](#31-github-security-features)
     - [3.2 Snyk Integration](#32-snyk-integration)
+      - [3.2.1 Container image scanning: Docker Scout + VEX](#321-container-image-scanning-docker-scout--vex)
     - [3.3 Required Repository Secrets](#33-required-repository-secrets)
   - [4. CI/CD Pipeline Design](#4-cicd-pipeline-design)
     - [4.1 Workflow Overview](#41-workflow-overview)
@@ -199,7 +200,7 @@ These rules **must** be configured in **GitHub → Repository Settings → Branc
 | Dismiss stale pull request approvals when new commits are pushed | **Enabled** |
 | Require review from Code Owners | **Enabled** |
 | Require status checks to pass before merging | Not currently configured |
-| Recommended required status checks | `Check`, candidate image quality gate, and Snyk status checks |
+| Recommended required status checks | `Check`, candidate image quality gate (Docker Scout), and Snyk status checks |
 | Require branches to be up to date before merging | **Enabled** |
 | Require conversation resolution before merging | **Enabled** |
 | Require linear history | **Enabled** (merge squash or rebase only) |
@@ -214,7 +215,7 @@ These rules **must** be configured in **GitHub → Repository Settings → Branc
 | Required approving reviews | **2** (1 Copilot + 1 human) |
 | Require review from Code Owners | **Enabled** |
 | CI runs automatically on push | **Enabled** |
-| Required status checks | `Check`, candidate image quality gate, and Snyk status checks |
+| Required status checks | `Check`, candidate image quality gate (Docker Scout), and Snyk status checks |
 | Require branches to be up to date before merging | **Enabled** |
 | Require conversation resolution before merging | **Enabled** |
 | Require linear history | **Enabled** |
@@ -275,16 +276,17 @@ The following GitHub security features **must** be enabled at the organisation a
 
 ### 3.2 Snyk Integration
 
-Snyk is the primary security scanning platform. Repository dependency and code
-checks run through the Snyk GitHub integration. Candidate container images used
-for preview, beta, and GA publication must also be scanned as part of the
-GitHub Actions quality gate.
+Snyk is the primary security scanning platform for dependencies and code.
+Repository dependency and code checks run through the Snyk GitHub integration.
+Candidate container images used for preview, beta, and GA publication are
+scanned with Docker Scout instead, as part of the GitHub Actions quality gate
+(see [Section 3.2.1](#321-container-image-scanning-docker-scout--vex) below).
 
 | Scan Type | Trigger | Blocks Merge |
 |---|---|---|
 | Snyk Open Source (dependencies) | Every PR | `high` + `critical` severity |
 | Snyk Code (SAST) | Every PR | `high` + `critical` severity |
-| Snyk Container (candidate image) | Publishable preview/release candidate workflows | `high` + `critical` severity |
+| Docker Scout (candidate image) | Publishable preview/release candidate workflows | `high` + `critical` severity |
 
 The status check posted by Snyk's GitHub integration is separate from the
 candidate image workflow. PRs must not be merged when either reports a high or
@@ -295,6 +297,33 @@ If the team encounters a security issue they are uncertain how to resolve, the S
 
 > **Developer tooling**: All developers should install the **Snyk IDE extension** (VS Code or JetBrains) to catch security issues locally before raising a PR. See [Section 10](#10-onboarding-checklist-for-new-developers).
 
+#### 3.2.1 Container image scanning: Docker Scout + VEX
+
+The candidate-image job scans with the Docker Scout CLI rather than Snyk,
+because Snyk does not support VEX (Vulnerability Exploitability eXchange).
+Docker Hardened Images publish signed OpenVEX attestations documenting
+Docker's own exploitability assessment for CVEs found in the packages they
+ship — for example `not_affected` with justification
+`inline_mitigations_already_exist` when Docker has already backported or
+rebuilt around a vulnerable code path, even though the upstream Debian
+package version string is unchanged. A scanner with no VEX support reports
+every such CVE as an unresolved `high`/`critical` finding, which is a false
+positive against a zero-exception gate.
+
+The `candidate-image` job:
+
+1. Installs the Docker Scout CLI from a pinned release tarball, verified
+   against its published SHA-256 checksum (no unpinned install script).
+2. Fetches the signed VEX attestation for the exact pinned `dhi.io` runtime
+   base image digest referenced by the `Dockerfile`'s `AS runtime` stage via
+   `docker scout vex get`.
+3. Runs `docker scout cves --vex-location <vex.json> --only-severity
+   critical,high --exit-code` against the candidate image. VEX-covered
+   base-image CVEs are excluded; any other `high`/`critical` finding —
+   including in application dependencies layered on top of the base image —
+   still fails the job. There is no allowlist or suppression path beyond
+   Docker's own signed VEX statement.
+
 ### 3.3 Required Repository Secrets
 
 The following secrets must be configured in **Repository Settings → Secrets and variables → Actions**:
@@ -302,7 +331,7 @@ The following secrets must be configured in **Repository Settings → Secrets an
 | Secret | Description |
 |---|---|
 | `GITHUB_TOKEN` | Automatically provided by GitHub Actions; no manual setup |
-| `SNYK_TOKEN` | Required for authenticated candidate image scans in GitHub Actions. Configure as an organisation-managed service credential before enabling participant-facing preview or release publication. |
+| `SNYK_TOKEN` | Required for the Snyk Open Source/Code GitHub integration. Not required by the candidate-image job, which scans with Docker Scout instead. |
 | `DOCKER_ORG_USERNAME` | Read-only, organisation-owned Docker account username used to authenticate to the `dhi.io` registry (see [Section 11](#11-docker-hardened-images)). Never a personal Docker account. |
 | `DOCKER_ORG_ACCESS_TOKEN` | Access token for the same read-only, organisation-owned Docker account, used alongside `DOCKER_ORG_USERNAME` to pull Docker Hardened Images. |
 
@@ -334,7 +363,7 @@ or Ozone environment.
 Publishable preview/release candidate:
   build candidate image by commit SHA
   run full checks against that exact image digest
-  scan final runtime image with Snyk
+  scan final runtime image with Docker Scout (VEX-aware)
   generate SBOM/provenance
   write candidate manifest
   wait for Environment approval
@@ -347,7 +376,7 @@ The external Snyk integration reports dependency/code PR status independently.
 
 | File | Triggers | Purpose |
 |---|---|---|
-| `.github/workflows/ci.yml` | PR + push to protected branches | Canonical `make check` gate, a fast single-platform Docker build/smoke job, and (for `main`/`release/**`/`preview/**`) the `candidate-image` matrix that builds, smoke-tests, and Snyk-scans native `linux/amd64`/`linux/arm64` images and stages a checksummed promotion manifest as a workflow artifact — without publishing anywhere |
+| `.github/workflows/ci.yml` | PR + push to protected branches | Canonical `make check` gate, a fast single-platform Docker build/smoke job, and (for `main`/`release/**`/`preview/**`) the `candidate-image` matrix that builds, smoke-tests, and Docker Scout-scans native `linux/amd64`/`linux/arm64` images and stages a checksummed promotion manifest as a workflow artifact — without publishing anywhere |
 | `.github/workflows/_promote-image.yml` | Called only by the three workflows below (`workflow_call`) | Locates the successful `candidate-image` run for a given commit, revalidates its manifest, and republishes the exact already-scanned digests as a multi-arch manifest list; never rebuilds |
 | `.github/workflows/promote-preview.yml` | Manual `workflow_dispatch`, gated by the `preview-release` Environment | Promotes a `preview/**` candidate to its `-dev.N` tag |
 | `.github/workflows/promote-beta.yml` | Manual `workflow_dispatch`, gated by the `beta-release` Environment | Promotes a `release/**` candidate to its `-beta.N` tag |
@@ -369,8 +398,9 @@ The candidate gate includes:
 4. Run the hardened runtime smoke test using the documented security profile:
    read-only root filesystem, no Linux capabilities, no privilege escalation,
    writable `/data`, tmpfs `/tmp`, and optional read-only `/certs`.
-5. Run Snyk container scanning against the final runtime image and fail on any
-   `high` or `critical` finding. There is no beta/preview allowlist.
+5. Run Docker Scout container scanning (VEX-aware) against the final runtime
+   image and fail on any `high` or `critical` finding not covered by Docker's
+   signed VEX attestation. There is no beta/preview allowlist.
 6. Generate SBOM and provenance attestations.
 7. Validate the branch, channel, source-controlled image tag, project version
    compatibility, changelog requirements, and tag immutability.
@@ -460,7 +490,7 @@ repeatability, and immutability.
 | Set intended participant-facing image tag | Manual via PR | Author edits `[project].version` in `pyproject.toml`; formal release PRs also update the changelog |
 | Review intended tag and scope | Manual via PR | Reviewers inspect the diff and approve or request changes |
 | Build candidate image | Automated | None |
-| Run tests, smoke tests, hardening checks, Snyk scan, SBOM, and provenance | Automated | None unless a failure must be fixed |
+| Run tests, smoke tests, hardening checks, Docker Scout scan, SBOM, and provenance | Automated | None unless a failure must be fixed |
 | Record candidate digest and manifest | Automated | None |
 | Decide whether to publish | Manual Environment gate | Approver reviews the candidate manifest and clicks **Approve** |
 | Promote checked digest to participant-facing tag | Automated after approval | None |
@@ -629,7 +659,7 @@ Given the regulatory context of Open Banking UK:
 - All merges to protected branches require at least one human sign-off, providing a human accountability chain for every production or trial change
 - Pull request and review history is immutable on GitHub
 - Any admin bypass of branch protection rules must be documented in the PR (see [Section 5.5](#55-release-exception-process))
-- Candidate manifests, SBOMs, provenance attestations, Snyk scan summaries, and Environment approvals form the release audit trail for participant-facing images
+- Candidate manifests, SBOMs, provenance attestations, Docker Scout scan summaries, and Environment approvals form the release audit trail for participant-facing images
 
 ---
 
@@ -701,8 +731,8 @@ the policy in this document:
    - `main` receives GA release history only.
 5. Enforce immutable version tags. Fail rather than overwrite an existing
    preview, beta, or stable image tag.
-6. Require `SNYK_TOKEN` for candidate image scans and fail on scan/auth
-   failures. There is no high/critical allowlist for preview or beta images.
+6. Fail promotion on Docker Scout candidate-image scan/auth failures. There is
+   no high/critical allowlist for preview or beta images.
 7. Attach or preserve SBOM and provenance for the promoted digest.
 8. Require the matching GitHub Environment approval before participant-facing
    promotion:

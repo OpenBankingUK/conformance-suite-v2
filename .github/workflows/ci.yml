@@ -241,17 +241,62 @@ jobs:
       - name: Run hardened smoke test
         run: ./scripts/docker_smoke_test.sh "${{ steps.load.outputs.local_tag }}"
 
-      - name: Scan for vulnerabilities with Snyk
-        # Zero-exception gate: authentication failure, scanner failure, or any
-        # HIGH/CRITICAL finding blocks the candidate. No allowlist,
-        # suppression, or continue-on-error path.
+      - name: Install Docker Scout CLI
+        # Pinned to an exact release and checksum-verified, matching this
+        # workflow's sha_pinning_required posture. Scout (not Snyk) is used
+        # for the base-image layer because it is one of the scanners that
+        # understands the signed OpenVEX attestations Docker Hardened Images
+        # publish (see docs.docker.com/dhi/explore/scanner-integrations/);
+        # Snyk has no VEX support and cannot distinguish a CVE Docker has
+        # already assessed and patched from one that is genuinely exploitable.
         env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          SCOUT_CLI_VERSION: "1.24.0"
+          SCOUT_CLI_SHA256_AMD64: f4e2814bd61040365153d5b964b144cb2dc6ee536a68b5bac4cadf00fc0ec34b # pragma: allowlist secret
+          SCOUT_CLI_SHA256_ARM64: 8b21594c72d4d9403a82a49e9dbdfc04c27c6a21933906f1eefbb0beabe22d58 # pragma: allowlist secret
         run: |
-          npm install -g snyk
-          snyk container test "${{ steps.load.outputs.local_tag }}" \
-            --file=Dockerfile \
-            --severity-threshold=high
+          set -euo pipefail
+          case "${{ matrix.slug }}" in
+            linux-amd64) goarch=amd64; checksum="$SCOUT_CLI_SHA256_AMD64" ;;
+            linux-arm64) goarch=arm64; checksum="$SCOUT_CLI_SHA256_ARM64" ;;
+            *) echo "::error::Unhandled matrix slug ${{ matrix.slug }} for Docker Scout CLI install." >&2; exit 1 ;;
+          esac
+          archive="docker-scout_${SCOUT_CLI_VERSION}_linux_${goarch}.tar.gz"
+          curl -fsSLO "https://github.com/docker/scout-cli/releases/download/v${SCOUT_CLI_VERSION}/${archive}"
+          echo "${checksum}  ${archive}" | sha256sum --check --status
+          mkdir -p ~/.docker/cli-plugins
+          tar -xzf "$archive" -C ~/.docker/cli-plugins docker-scout
+          chmod +x ~/.docker/cli-plugins/docker-scout
+          rm -f "$archive"
+          docker scout version
+
+      - name: Fetch signed VEX statement for the DHI runtime base image
+        # Queries Docker's VEX attestation for the exact pinned runtime base
+        # digest in the Dockerfile, independent of this candidate image, so
+        # the CVE gate below can correctly apply Docker's own not_affected
+        # assessments (see docs.docker.com/dhi/explore/security-concepts/vex/).
+        id: vex
+        run: |
+          set -euo pipefail
+          base_ref="$(grep -oE '^FROM (dhi\.io/[^ ]+) AS runtime$' Dockerfile | awk '{print $2}')"
+          if [[ -z "$base_ref" ]]; then
+            echo "::error::Could not find the 'FROM dhi.io/... AS runtime' line in Dockerfile." >&2
+            exit 1
+          fi
+          docker scout vex get "$base_ref" --platform "${{ matrix.platform }}" --output artifacts/base-image.vex.json
+
+      - name: Scan for vulnerabilities with Docker Scout (VEX-aware)
+        # Zero-exception gate: authentication failure, scanner failure, or any
+        # HIGH/CRITICAL finding blocks the candidate. Base-image CVEs that
+        # Docker's signed VEX statement marks not_affected are correctly
+        # excluded; anything else - including real findings in application
+        # dependencies layered on top of the base image - still blocks. No
+        # allowlist, suppression, or continue-on-error path beyond that VEX
+        # statement.
+        run: |
+          docker scout cves "${{ steps.load.outputs.local_tag }}" \
+            --vex-location artifacts/base-image.vex.json \
+            --only-severity critical,high \
+            --exit-code
 
       - name: Generate SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
