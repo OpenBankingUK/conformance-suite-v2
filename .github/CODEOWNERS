@@ -1,2 +1,16 @@
 # CODEOWNERS
 *   @OpenBankingUK/ob-sps-developers
+
+# Security-sensitive paths: the vulnerability gate trusts these files, so a
+# code-owner review is required for any change (enforced once "Require review
+# from Code Owners" is enabled on the branch rulesets; see
+# docs/settings/BRANCH_RULESETS.md).
+/security/                                      @OpenBankingUK/ob-sps-developers
+/.github/workflows/                             @OpenBankingUK/ob-sps-developers
+/.github/actions/                               @OpenBankingUK/ob-sps-developers
+/.github/dependabot.yml                         @OpenBankingUK/ob-sps-developers
+/.github/CODEOWNERS                             @OpenBankingUK/ob-sps-developers
+/scripts/                                       @OpenBankingUK/ob-sps-developers
+/Dockerfile                                     @OpenBankingUK/ob-sps-developers
+/pyproject.toml                                 @OpenBankingUK/ob-sps-developers
+/uv.lock                                        @OpenBankingUK/ob-sps-developers
