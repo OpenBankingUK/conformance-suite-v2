@@ -11,13 +11,23 @@ mentions certification or appears eligible in the UI.
 With Docker installed and running, start the beta on your own computer:
 
 ```bash
-docker run --rm -p 127.0.0.1:8443:8443 docker.io/openbanking/conformance-suite-v2:2.0.0-beta.1
+docker run --rm -p 127.0.0.1:8443:8443 openbanking/conformance-suite-v2:2.0.0-beta.1
 ```
 
-Open `https://127.0.0.1:8443/` in your browser. The container generates a
-self-signed HTTPS certificate, so you will need to accept the browser's
-certificate warning for this **local** connection. The port is published to
-loopback only. Do not expose this beta UI on a public network.
+Open `https://127.0.0.1:8443/` in your browser, including `https://` and
+`:8443`. The container generates a self-signed HTTPS certificate, so you will
+need to accept the browser's certificate warning for this **local**
+connection. `https://localhost:8443/` may also work, but `127.0.0.1` matches
+the Docker port binding even when `localhost` resolves to IPv6. The port is
+published to loopback only. Do not expose this beta UI on a public network.
+
+The UI address is separate from the **Redirect URI** registered for your test
+client with the ASPSP. Enter the exact registered callback URL in the builder;
+opening the UI at `127.0.0.1` does not change that registration. If your
+client still uses the legacy FCS callback
+`https://0.0.0.0:8443/conformancesuite/callback`, see the
+[legacy callback guidance](docs/DOCKER_GUIDE.md#legacy-psu-callback) before a
+PSU authorisation flow. Do not change the Docker port binding to `0.0.0.0`.
 
 Choose **Create new test plan with builder**, follow the prompts, and paste
 the credentials required by your chosen test plan into the browser's

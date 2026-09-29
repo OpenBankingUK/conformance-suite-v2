@@ -16,14 +16,17 @@ reference rather than prerequisites for the beta UI.
 Install and start Docker, then run:
 
 ```bash
-docker run --rm -p 127.0.0.1:8443:8443 docker.io/openbanking/conformance-suite-v2:2.0.0-beta.1
+docker run --rm -p 127.0.0.1:8443:8443 openbanking/conformance-suite-v2:2.0.0-beta.1
 ```
 
-Docker pulls the image if it is not already available locally. Open
-`https://127.0.0.1:8443/` on the same computer and accept the browser's
-warning for the locally generated self-signed HTTPS certificate. The
-`127.0.0.1` port binding makes the UI accessible only from this host; do not
-publish this beta UI to a network.
+Docker pulls the image from Docker Hub if it is not already available locally;
+`docker.io/` is optional in the image name. Open `https://127.0.0.1:8443/`
+on the same computer (including `https://` and `:8443`) and accept the
+browser's warning for the locally generated self-signed HTTPS certificate.
+`https://localhost:8443/` may also work, but `127.0.0.1` matches the Docker
+port binding even if `localhost` resolves to IPv6. Keep the explicit
+`127.0.0.1` binding: omitting `-p` makes the UI unavailable from the host,
+while `-p 8443:8443` can expose it to your network.
 
 1. Select **Create new test plan with builder** on the main menu. Choose the
    scheme, specification, and version, then provide your OpenID discovery URL
@@ -39,7 +42,9 @@ publish this beta UI to a network.
    requested business data and runtime inputs, and review the generated plan.
    The builder indicates required fields and any launch blockers. Choose
    **Launch run** when ready; a PSU authorisation handoff may still be needed
-   during execution.
+   during execution. For tests requiring PSU authorisation, enter the exact
+   callback URI registered for your test client with the ASPSP in the
+   builder's **Redirect URI** field; it is independent of the UI address.
 4. Inspect the run details and open the **JSON** masked report if you want to
    keep it. **Export safe JSON** at plan review removes secret values and
    requires you to re-enter them after import. **Export with secrets** includes
@@ -69,10 +74,20 @@ versioning and promotion model. Never rely on `latest` for anything other than
 the current GA release, and never use a mutable channel-named tag — none is
 published.
 
-For an ASPSP registration that still uses the legacy FCS redirect URI, open
-`https://0.0.0.0:8443/` and accept its certificate warning before starting the
-PSU flow. On supported local hosts this reaches the same loopback-published
-container; Docker does not expose a second port or bind the service to the LAN.
+### Legacy PSU callback
+
+Some existing FCS/Ozone test clients have
+`https://0.0.0.0:8443/conformancesuite/callback` registered as their OAuth
+redirect URI. This is a narrow compatibility exception, **not** the address
+we recommend for opening the UI or for new client registrations. If your
+client has that exact redirect registered, use it in the builder's
+**Redirect URI** field. Before starting a PSU flow, visit
+`https://0.0.0.0:8443/` and accept its separate certificate warning. On
+supported local hosts it reaches the same loopback-published container; the
+browser must be able to reach that address for the ASPSP's redirect to
+complete. If it cannot, use a different callback URI registered with the
+ASPSP and routed to the suite instead. Do **not** change Docker's port
+binding to `0.0.0.0`: that would expose the beta UI to the network.
 
 ## Advanced: persistent local run
 
