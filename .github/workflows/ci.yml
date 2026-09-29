@@ -288,6 +288,8 @@ jobs:
           echo "local_tag=$LOCAL_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Verify image OCI identity labels
+        # Part of the hardened Docker contract; the legacy image has no labels.
+        if: needs.plan.outputs.is_hardened == 'true'
         env:
           EXPECTED_REVISION: ${{ github.sha }}
           EXPECTED_VERSION: ${{ steps.metadata.outputs.raw_version }}
