@@ -37,13 +37,10 @@ jobs:
     permissions:
       contents: read
       actions: read
-      packages: read
     env:
       SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
       SOURCE_BRANCH: ${{ github.event.workflow_run.head_branch }}
       CI_RUN_ID: ${{ github.event.workflow_run.id }}
-      IMAGE_OWNER: openbankinguk
-      IMAGE_PACKAGE: conformance-suite-v2
 
     steps:
       - name: Checkout trusted default branch
@@ -102,23 +99,11 @@ jobs:
         if: steps.artifact.outputs.available == 'true'
         run: uv sync --frozen --no-install-project
 
-      - name: List published GHCR version tags
+      - name: List published Docker Hub version tags
         if: steps.artifact.outputs.available == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if ! error="$(
-            gh api "orgs/${IMAGE_OWNER}/packages/container/${IMAGE_PACKAGE}/versions" --paginate \
-              --jq '.[].metadata.container.tags[]?' 2>&1 > published-versions.txt
-          )"; then
-            if [[ "$error" == *"(HTTP 404)"* ]]; then
-              : > published-versions.txt
-            else
-              echo "$error" >&2
-              exit 1
-            fi
-          fi
+          uv run python -m scripts.list_docker_hub_tags > published-versions.txt
 
       - name: Resolve promotion policy
         id: resolve
@@ -184,10 +169,12 @@ jobs:
     permissions:
       contents: read
       actions: read
-      packages: write
       attestations: write
       id-token: write
       pull-requests: read
+    secrets:
+      DOCKER_ORG_USERNAME: ${{ secrets.DOCKER_ORG_USERNAME }}
+      DOCKER_ORG_ACCESS_TOKEN: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
 
   finalize-ga:
     name: Tag release and open develop merge-back

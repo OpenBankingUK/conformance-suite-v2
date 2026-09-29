@@ -9,7 +9,7 @@
 #
 # Usage: scripts/docker_smoke_test.sh <image-ref>
 #   image-ref: a pullable image reference, e.g.
-#              ghcr.io/openbankinguk/conformance-suite-v2-candidates@sha256:...
+#              docker.io/openbanking/conformance-suite-v2-candidates@sha256:...
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
@@ -114,6 +114,9 @@ docker rm -f "$CONTAINER_NAME" >/dev/null
 
 echo "==> Checking the optional /certs mount is readable but not writable"
 echo "dummy-ca-bundle" >"$CERTS_DIR/ca-bundle.pem"
+# The container's non-root UID/GID 65532 needs read access to the bind mount.
+chmod 755 "$CERTS_DIR"
+chmod 644 "$CERTS_DIR/ca-bundle.pem"
 docker run --rm \
   --read-only --cap-drop=ALL --security-opt=no-new-privileges \
   --tmpfs /tmp:size=64m,mode=1777 \

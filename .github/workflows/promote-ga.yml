@@ -26,10 +26,12 @@ jobs:
     permissions:
       contents: read
       actions: read
-      packages: write
       attestations: write
       id-token: write
       pull-requests: read
+    secrets:
+      DOCKER_ORG_USERNAME: ${{ secrets.DOCKER_ORG_USERNAME }}
+      DOCKER_ORG_ACCESS_TOKEN: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
 
   finalize-ga:
     name: Tag release and open develop merge-back

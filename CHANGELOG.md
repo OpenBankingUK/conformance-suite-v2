@@ -14,11 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic, Environment-gated preview, beta, and GA image promotions after
   successful candidate CI runs, with manual promotion dispatch retained for
   recovery and backfill.
-- Trusted Docker candidate and GHCR promotion infrastructure for preview,
+- Trusted Docker candidate and Docker Hub promotion infrastructure for preview,
   beta, and GA channels, including exact-SHA multi-architecture artifacts,
-  blocking Snyk container scans, immutable version tags, Environment approval
-  gates, and SBOM/provenance attestations without importing MVP application
-  behaviour.
+  blocking Snyk and VEX-aware Docker Scout scans, immutable version tags,
+  Environment approval gates, and SBOM/provenance attestations without
+  importing MVP application behaviour.
+- Docker Scout v1.24.0 candidate scanning with verified architecture-specific
+  checksums, Docker-signed OpenVEX handling for the pinned DHI base, and a
+  narrowly scoped Snyk policy expiring 2026-12-28 for the two assessed base
+  image CVEs.
+- Docker Hub publication to `openbanking/conformance-suite-v2`, with Docker
+  Hub tag discovery and Docker Hub write credentials passed only to the gated
+  promotion workflow.
 - First-class Open Banking UK Read/Write v3.1.11 support for AIS, PIS, CBPII,
   and VRP, with dedicated v3.1 catalogue boundaries, pinned v3.1.11 OpenAPI
   schemas, explicit request-signing metadata, and a machine-checkable strict
@@ -72,6 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Docker Hub tag discovery now fails closed on 404 responses, which can indicate
+  a private or inaccessible repository rather than a repository that has not
+  been created.
 - PIS v4 strict parity now executes all 29 legacy FCS v1.10.0 rows as
   independent cases with exact `asserts`/`asserts_one_of` error-code checks,
   response schemas and signature flags, including separate domestic consent
@@ -119,6 +129,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Candidate image scans and trusted promotion now require the runtime base to
+  match the exact DHI digest covered by the Snyk exceptions and signed VEX
+  assessment.
 - Exported plan documents and result traceability avoid inline secret material; sensitive runtime inputs are recorded as provided without serializing their values.
 - Browser safe exports for v2 plan documents preserve reusable structure while emptying secret-bearing runtime/config strings by default.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.

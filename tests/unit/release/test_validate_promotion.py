@@ -26,7 +26,7 @@ def _write_manifest(tmp_path: Path, **overrides: object) -> Path:
         "raw_version": "2.0.0-dev.1",
         "comparison_version": "2.0.0.dev1",
         "channel": "preview",
-        "image_name": "ghcr.io/openbankinguk/conformance-suite-v2",
+        "image_name": "docker.io/openbanking/conformance-suite-v2",
         "source_sha": "a" * 40,
         "platform_digests": {
             "linux/amd64": "sha256:" + "1" * 64,
@@ -232,7 +232,7 @@ class TestMain:
 
     def test_rejects_unexpected_image_name(self, tmp_path: Path) -> None:
         """A manifest cannot redirect publication to another registry package."""
-        manifest_path = _write_manifest(tmp_path, image_name="ghcr.io/example/other")
+        manifest_path = _write_manifest(tmp_path, image_name="docker.io/example/other")
 
         exit_code = main(
             [

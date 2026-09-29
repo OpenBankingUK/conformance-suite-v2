@@ -72,7 +72,7 @@ jobs:
           # (DHI base, distroless UID, and entrypoint) is present.
           if [[ "$EVENT_NAME" == "push" ]] \
             && { [[ "$target_branch" == "main" ]] || [[ "$target_branch" == preview/* ]] || [[ "$target_branch" == release/* ]]; } \
-            && grep -q '^FROM dhi\.io/' Dockerfile \
+            && python3 -m scripts.validate_docker_base --dockerfile Dockerfile \
             && grep -q '^USER 65532:65532$' Dockerfile \
             && [[ -f docker/entrypoint.py ]]; then
               is_candidate=true
@@ -164,6 +164,11 @@ jobs:
       - name: Install release-tooling dependencies
         run: uv sync --frozen --no-install-project
 
+      - name: Verify the assessed DHI runtime base
+        # This must pass before building or either scanner can consume the
+        # Snyk policy / Docker-signed VEX assessment for the exact base digest.
+        run: uv run python -m scripts.validate_docker_base --dockerfile Dockerfile
+
       - name: Validate release metadata for this branch
         id: metadata
         env:
@@ -185,22 +190,24 @@ jobs:
         with:
           registry: dhi.io
           username: ${{ secrets.DOCKER_ORG_USERNAME }}
-          password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+          password: ${{ secrets.DOCKER_DHI_PULL_TOKEN }}
 
       - name: Build candidate image
         # Exported as an OCI-loadable docker archive artifact rather than
         # pushed anywhere. The plan requires candidate images are never
-        # published to GHCR before the matching approval gate; the promotion
+        # published to Docker Hub before the matching approval gate; the promotion
         # workflow downloads this exact artifact and pushes it byte-for-byte,
-        # it never rebuilds. containerimage.digest in the metadata file is
-        # the digest that image will have once pushed, so it can be recorded
-        # and later revalidated without touching a registry here.
+        # it never rebuilds. Tagging during export gives docker load a stable
+        # local name; the buildx digest is not guaranteed to be a Docker image ID.
+        env:
+          LOCAL_TAG: ob-conformance-candidate:${{ matrix.slug }}-${{ github.sha }}
         run: |
           mkdir -p artifacts
           docker buildx build \
             --platform "${{ matrix.platform }}" \
             --build-arg CONFORMANCE_TOOL_VERSION="${{ steps.metadata.outputs.raw_version }}" \
             --build-arg SOURCE_REVISION="${{ github.sha }}" \
+            --tag "$LOCAL_TAG" \
             --output type=docker,dest=artifacts/image-${{ matrix.slug }}.tar \
             --metadata-file artifacts/metadata-${{ matrix.slug }}.json \
             --cache-from type=gha,scope=candidate-${{ matrix.slug }} \
@@ -209,18 +216,12 @@ jobs:
 
       - name: Load candidate image for local verification
         id: load
+        env:
+          LOCAL_TAG: ob-conformance-candidate:${{ matrix.slug }}-${{ github.sha }}
         run: |
           set -euo pipefail
           docker load --input artifacts/image-${{ matrix.slug }}.tar
-          # `docker load`'s reported Image ID for a single-platform
-          # type=docker export matches containerimage.digest in the buildx
-          # metadata file, so the freshly loaded (unnamed) image can be
-          # retagged deterministically without parsing `docker load`'s
-          # human-readable output.
-          digest="$(jq -r '."containerimage.digest"' artifacts/metadata-${{ matrix.slug }}.json)"
-          local_tag="ob-conformance-candidate:${{ matrix.slug }}-${{ github.sha }}"
-          docker tag "$digest" "$local_tag"
-          echo "local_tag=$local_tag" >> "$GITHUB_OUTPUT"
+          echo "local_tag=$LOCAL_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Verify candidate OCI identity labels
         env:
@@ -238,16 +239,57 @@ jobs:
         run: ./scripts/docker_smoke_test.sh "${{ steps.load.outputs.local_tag }}"
 
       - name: Scan for vulnerabilities with Snyk
-        # Zero-exception gate: authentication failure, scanner failure, or any
-        # HIGH/CRITICAL finding blocks the candidate. No allowlist,
-        # suppression, or continue-on-error path.
+        # Snyk remains the primary company scanner. Its narrowly scoped
+        # expiring policy covers only the two Docker OpenVEX-assessed base CVEs.
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
-          npm install -g snyk
+          npm install --global snyk@1.1298.2
           snyk container test "${{ steps.load.outputs.local_tag }}" \
             --file=Dockerfile \
-            --severity-threshold=high
+            --severity-threshold=high \
+            --policy-path=.snyk
+
+      - name: Install Docker Scout CLI
+        # Pin the release and verify its architecture-specific archive before
+        # installing the Docker CLI plugin.
+        env:
+          SCOUT_CLI_VERSION: "1.24.0"
+          SCOUT_CLI_SHA256_AMD64: f4e2814bd61040365153d5b964b144cb2dc6ee536a68b5bac4cadf00fc0ec34b # pragma: allowlist secret
+          SCOUT_CLI_SHA256_ARM64: 8b21594c72d4d9403a82a49e9dbdfc04c27c6a21933906f1eefbb0beabe22d58 # pragma: allowlist secret
+        run: |
+          set -euo pipefail
+          case "${{ matrix.slug }}" in
+            linux-amd64) goarch=amd64; checksum="$SCOUT_CLI_SHA256_AMD64" ;;
+            linux-arm64) goarch=arm64; checksum="$SCOUT_CLI_SHA256_ARM64" ;;
+            *) echo "::error::Unhandled matrix slug ${{ matrix.slug }} for Docker Scout CLI install." >&2; exit 1 ;;
+          esac
+          archive="docker-scout_${SCOUT_CLI_VERSION}_linux_${goarch}.tar.gz"
+          curl -fsSLO "https://github.com/docker/scout-cli/releases/download/v${SCOUT_CLI_VERSION}/${archive}"
+          echo "${checksum}  ${archive}" | sha256sum --check --status
+          mkdir -p ~/.docker/cli-plugins
+          tar -xzf "$archive" -C ~/.docker/cli-plugins docker-scout
+          chmod +x ~/.docker/cli-plugins/docker-scout
+          rm -f "$archive"
+          docker scout version
+
+      - name: Fetch signed VEX statement for the DHI runtime base image
+        run: |
+          set -euo pipefail
+          base_ref="$(uv run python -m scripts.validate_docker_base --print-runtime-base)"
+          docker scout vex get "$base_ref" \
+            --platform "${{ matrix.platform }}" \
+            --output artifacts/base-image.vex.json
+
+      - name: Scan for vulnerabilities with Docker Scout (VEX-aware)
+        # Signed Docker OpenVEX assessments suppress only base-image CVEs that
+        # Docker marks not_affected; real application dependency findings still
+        # block promotion.
+        run: |
+          docker scout cves "${{ steps.load.outputs.local_tag }}" \
+            --vex-location artifacts/base-image.vex.json \
+            --only-severity critical,high \
+            --exit-code
 
       - name: Generate SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2

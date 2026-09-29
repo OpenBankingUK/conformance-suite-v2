@@ -176,13 +176,39 @@ The following GitHub security features **must** be enabled at the organisation a
 
 ### 3.2 Snyk Integration
 
-Snyk is the primary security scanning platform. The repository is linked directly via the **Snyk portal** — no `SNYK_TOKEN` is required in GitHub Actions. Snyk runs checks automatically when a PR is opened or updated and posts the result as a GitHub status check.
+Snyk is the company's primary security scanning platform. The repository is
+linked directly via the **Snyk portal** for dependency and code checks. The
+candidate-image workflow also runs the blocking Snyk container scan and a
+blocking Docker Scout scan:
 
 | Scan Type | Trigger | Blocks Merge |
 |---|---|---|
 | Snyk Open Source (dependencies) | Every PR | `high` + `critical` severity |
 | Snyk Code (SAST) | Every PR | `high` + `critical` severity |
-| Snyk Container (Docker image) | Every PR | `high` + `critical` severity |
+| Snyk Container (candidate image) | Eligible candidate build | `high` + `critical` severity, subject only to the two `.snyk` policy entries below |
+| Docker Scout (candidate image) | Eligible candidate build | `high` + `critical` severity after applying Docker's signed OpenVEX statement |
+
+Snyk remains required for application and image coverage. Docker Scout is
+required because it consumes Docker Hardened Images' signed OpenVEX statement,
+allowing the gate to distinguish assessed, mitigated base-image findings from
+genuine vulnerabilities. Both steps fail closed on scanner/authentication
+errors and findings outside their documented exception/VEX scope.
+
+The root `.snyk` policy ignores only `SNYK-DEBIAN13-ZLIB-19520500`
+(CVE-2026-85091, `zlib1g`) and `SNYK-DEBIAN13-EXPAT-19964593`
+(CVE-2026-93990, `libexpat1`). Each reason cites Docker's signed OpenVEX
+statement for `dhi.io/python:3.14-debian13@sha256:e1a5bd571d9585d7eb80c8278b54b69a0e0bf5a9bb2b1424b9e4576374df6659`,
+with status `not_affected` and justification
+`inline_mitigations_already_exist`. The entries are scoped to `'*'` and expire
+at `2026-12-28T00:00:00.000Z`; do not add broader IDs, packages, or paths.
+Before expiry, Security must recheck the signed VEX status and current base
+image, then remove or renew only through a reviewed PR with supporting
+evidence. Candidate CI validates the Dockerfile's runtime stage against that
+exact DHI digest before building or running either image scanner. Trusted
+promotion repeats the check against `Dockerfile` read directly from the source
+commit and rejects any mismatch; it also compares the validation script and
+`.snyk` against `main`, so a candidate cannot bypass the guard or widen the
+policy.
 
 The status check posted by Snyk's GitHub integration is separate from
 `.github/workflows/ci.yml`. PRs must not be merged when it reports a high or
@@ -200,9 +226,17 @@ The following secrets must be configured in **Repository Settings → Secrets an
 | Secret | Description |
 |---|---|
 | `GITHUB_TOKEN` | Automatically provided by GitHub Actions; no manual setup |
-| `DOCKER_ORG_USERNAME` | Read-only organisation Docker account used to pull Docker Hardened Images |
-| `DOCKER_ORG_ACCESS_TOKEN` | Access token for the read-only Docker organisation account |
+| `DOCKER_ORG_USERNAME` | Organisation Docker account used to pull Docker Hardened Images and publish the approved image |
+| `DOCKER_DHI_PULL_TOKEN` | Read-only Docker Hub/DHI token used by candidate-image jobs to pull Docker Hardened Images |
+| `DOCKER_ORG_ACCESS_TOKEN` | Docker Hub access token used only by gated promotion; it must have push/write permission on `openbanking/conformance-suite-v2` |
 | `SNYK_TOKEN` | Token used by candidate-image jobs for the blocking container scan |
+
+Before enabling promotion, a repository administrator must create the Docker
+Hub repository `openbanking/conformance-suite-v2` and create/configure
+`DOCKER_ORG_ACCESS_TOKEN` with push/write access to that repository. Also
+create `DOCKER_DHI_PULL_TOKEN` with read-only DHI access for candidate builds.
+The write-capable token is passed only to the gated reusable promotion
+workflow; candidate builds do not publish images.
 
 There are currently no repository-level variables required by CI: the
 supported pytest suite is fully offline and does not target a live model bank
@@ -241,9 +275,9 @@ Pushes to `preview/*`, `release/*`, and `main` additionally build candidate
 artifacts when the source tree contains the hardened Docker contract (a DHI
 base, explicit UID/GID `65532:65532`, and `docker/entrypoint.py`). Each
 `linux/amd64` and `linux/arm64` image is built once, smoke-tested, blocked on
-Snyk `high`/`critical` findings, accompanied by an SPDX SBOM, and uploaded as
-a GitHub Actions artifact. Candidate jobs have read-only repository
-permissions and never push an image.
+Snyk and Docker Scout `high`/`critical` findings, accompanied by an SPDX SBOM,
+and uploaded as a GitHub Actions artifact. Candidate jobs have read-only
+repository permissions and never push an image.
 
 This Docker-contract check is a deliberate bootstrap compatibility gate:
 today's `main` Docker build and smoke test remain unchanged, so installing the
@@ -262,7 +296,7 @@ are produced there too.
 | `.github/workflows/promote-preview.yml` | Manual dispatch from `main` | Recovery/backfill path for a `preview/*` candidate |
 | `.github/workflows/promote-beta.yml` | Manual dispatch from `main` | Recovery/backfill path for a `release/X.Y.Z` beta candidate |
 | `.github/workflows/promote-ga.yml` | Manual dispatch from `main` | Recovery/backfill path for a tagged `main` candidate |
-| `.github/workflows/_promote-image.yml` | Called by automatic and manual promotion workflows | Trusted validation and exact-artifact GHCR publication implementation |
+| `.github/workflows/_promote-image.yml` | Called by automatic and manual promotion workflows | Trusted validation and exact-artifact Docker Hub publication implementation |
 | `.github/workflows/_finalize-ga-release.yml` | Called after successful GA publication | Create the GA Git tag at the source SHA and open the develop merge-back PR |
 
 Promotion locates the successful push CI run for the exact source SHA and
@@ -271,17 +305,18 @@ revalidates release metadata using scripts checked out from `main`, and
 confirms the source SHA belongs to the requested branch and a merged,
 approved pull request. Automatic promotion uses the exact CI run that triggered
 it; manual recovery dispatches locate the matching run. Candidate CI and
-release-script files must exactly match the trusted copies on `main`; pipeline changes therefore land on
-`main` before release branches consume them. Only then does the
-Environment-gated job receive `packages: write`; it stages the platform
-images under SHA-specific internal tags and assembles the already-tested
-images without rebuilding. Promotion is serialized to prevent tag races,
-rejects an existing immutable version tag, and attests the published
+release-script files must exactly match the trusted copies on `main`; pipeline
+changes therefore land on `main` before release branches consume them. Only
+then does the Environment-gated job receive Docker Hub credentials; it stages
+the platform images under SHA-specific internal tags and assembles the
+already-tested images without rebuilding. Promotion is serialized to prevent
+tag races, rejects an existing immutable version tag discovered through the
+Docker Hub tags API, and attests the published
 multi-architecture manifest with provenance and both platform SBOMs.
 
 For each successful eligible push, `auto-promote.yml` confirms the CI run
 uploaded a promotion manifest, reads only `pyproject.toml` from its source
-commit, and checks branch/channel compatibility and existing GHCR tags. Runs
+commit, and checks branch/channel compatibility and existing Docker Hub tags. Runs
 without a candidate artifact, with a mismatched channel, or for an already
 published version are skipped with a notice and never create a pending
 Environment approval. An eligible run starts the matching promotion
@@ -309,7 +344,7 @@ concurrency:
 Publication starts automatically after successful CI for eligible `main`,
 `release/**`, and `preview/**` pushes; it never rebuilds from the registry.
 The only routine human action is approving the matching GitHub Environment
-deployment, which is required before GHCR write permission is used. Manual
+deployment, which is required before Docker Hub credentials are used. Manual
 dispatch of the `promote-*` workflows is reserved for recovery or backfill.
 
 **Tag formats:**
@@ -344,7 +379,7 @@ git push origin v1.2.0
    approval of the `ga-release` Environment deployment.
 
 5. Approve the `ga-release` Environment deployment. The workflow validates and
-   publishes the exact candidate artifacts to GHCR as `X.Y.Z` and `latest`,
+   publishes the exact candidate artifacts to Docker Hub as `X.Y.Z` and `latest`,
    with provenance and SBOM attestations.
 
 6. After publication, the workflow creates `vX.Y.Z` at the promoted source
@@ -401,13 +436,11 @@ repository administrator may merge despite failing status checks.
 2. Fix, commit, push
    - PR against main: requires CI pass + 2 approvals
 
-3. An admin tags on merge:
-   git tag -a v1.1.1 -m "Hotfix 1.1.1"
-   git push origin v1.1.1
+3. After merge, successful `main` candidate CI and approval of the
+   `ga-release` Environment publish the exact image to Docker Hub. The
+   finalizer creates the `vX.Y.Z` tag at the promoted source commit.
 
-4. Docker Hub detects the tag and publishes automatically.
-
-5. Also merge/cherry-pick into develop:
+4. Also merge/cherry-pick into develop:
    git checkout develop && git merge hotfix/107-fix-auth-header
 ```
 
