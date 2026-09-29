@@ -304,16 +304,26 @@ jobs:
           rm -f "$archive"
           docker scout version
 
+      - name: Resolve the DHI runtime base reference
+        # Runs repository Python without any Docker credential in its env.
+        id: runtime_base
+        run: |
+          set -euo pipefail
+          base_ref="$(uv run python -m scripts.validate_docker_base --print-runtime-base)"
+          echo "ref=$base_ref" >> "$GITHUB_OUTPUT"
+
       - name: Fetch signed VEX statement for the DHI runtime base image
         # The Scout CLI authenticates via DOCKER_SCOUT_HUB_* rather than the
-        # dhi.io registry login above; the read-only org token is sufficient.
+        # dhi.io registry login above. Only the pinned Scout binary sees the
+        # repository-level read-only org token; the write-capable token is an
+        # Environment secret available solely to approved promotion jobs.
         env:
+          BASE_REF: ${{ steps.runtime_base.outputs.ref }}
           DOCKER_SCOUT_HUB_USER: ${{ secrets.DOCKER_ORG_USERNAME }}
           DOCKER_SCOUT_HUB_PASSWORD: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
-          base_ref="$(uv run python -m scripts.validate_docker_base --print-runtime-base)"
-          docker scout vex get "$base_ref" \
+          docker scout vex get "$BASE_REF" \
             --platform "${{ matrix.platform }}" \
             --output artifacts/base-image.vex.json
 

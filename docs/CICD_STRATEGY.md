@@ -236,8 +236,8 @@ Hub repository `openbanking/conformance-suite-v2` (public) and configure two
 organisation access tokens under the same secret name:
 
 1. A **read-only** token as the repository-level `DOCKER_ORG_ACCESS_TOKEN`,
-   used by every CI run (PRs included) to pull DHI base images and run
-   Docker Scout.
+   used by CI runs from this repository to pull DHI base images and run
+   Docker Scout (see the Dependabot note below).
 2. A **write-capable** token (image push on `openbanking/conformance-suite-v2`
    only) as an **environment secret** named `DOCKER_ORG_ACCESS_TOKEN` on each
    of `preview-release`, `beta-release`, and `ga-release`.
@@ -247,6 +247,13 @@ environment secret in preference to the repository secret passed by the
 caller. Push credentials are therefore only released after a required
 reviewer approves the Environment gate; candidate builds never publish
 images.
+
+**Dependabot pull requests** cannot read repository Actions secrets; they only
+receive secrets configured under **Settings → Secrets and variables →
+Dependabot**. Because hardened `Docker Build` runs log in to `dhi.io`, also add
+`DOCKER_ORG_USERNAME` and the **read-only** `DOCKER_ORG_ACCESS_TOKEN` as
+Dependabot secrets. Never store the write-capable token there. Without them,
+hardened Dependabot PRs fail closed at the `dhi.io` login.
 
 There are currently no repository-level variables required by CI: the
 supported pytest suite is fully offline and does not target a live model bank

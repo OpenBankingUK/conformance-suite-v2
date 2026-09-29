@@ -91,6 +91,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   present, logs in to `dhi.io` and runs `scripts/docker_smoke_test.sh` plus
   Compose validation instead of the legacy plain-HTTP health probe, which
   cannot reach the HTTPS-only hardened image.
+- Docker Scout credentials are now scoped to the pinned Scout CLI steps only;
+  the runtime-base lookup runs repository Python without Docker credentials.
+  Documented the read-only Dependabot secrets needed for hardened Dependabot
+  PRs to pass `dhi.io` authentication.
 - Docker Hub tag discovery now fails closed on 404 responses, which can indicate
   a private or inaccessible repository rather than a repository that has not
   been created.
