@@ -79,6 +79,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Docker Scout VEX fetch and candidate scan steps now authenticate via
+  `DOCKER_SCOUT_HUB_USER`/`DOCKER_SCOUT_HUB_PASSWORD` using the existing
+  read-only org credentials; the `dhi.io` registry login alone does not
+  authenticate the Scout CLI.
 - Docker Hub tag discovery now fails closed on 404 responses, which can indicate
   a private or inaccessible repository rather than a repository that has not
   been created.

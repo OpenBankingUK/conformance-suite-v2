@@ -274,6 +274,11 @@ jobs:
           docker scout version
 
       - name: Fetch signed VEX statement for the DHI runtime base image
+        # The Scout CLI authenticates via DOCKER_SCOUT_HUB_* rather than the
+        # dhi.io registry login above; the read-only org token is sufficient.
+        env:
+          DOCKER_SCOUT_HUB_USER: ${{ secrets.DOCKER_ORG_USERNAME }}
+          DOCKER_SCOUT_HUB_PASSWORD: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           base_ref="$(uv run python -m scripts.validate_docker_base --print-runtime-base)"
@@ -285,6 +290,9 @@ jobs:
         # Signed Docker OpenVEX assessments suppress only base-image CVEs that
         # Docker marks not_affected; real application dependency findings still
         # block promotion.
+        env:
+          DOCKER_SCOUT_HUB_USER: ${{ secrets.DOCKER_ORG_USERNAME }}
+          DOCKER_SCOUT_HUB_PASSWORD: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
         run: |
           docker scout cves "${{ steps.load.outputs.local_tag }}" \
             --vex-location artifacts/base-image.vex.json \
