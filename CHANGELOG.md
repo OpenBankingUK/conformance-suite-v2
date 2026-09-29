@@ -37,6 +37,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-authenticates only around the pinned Docker Scout steps, so
   branch-controlled scripts never run while the organisation token is stored
   in the runner's Docker config.
+- Docker Hub tag discovery now fails closed on 404 responses, which can indicate
+  a private or inaccessible repository rather than a repository that has not
+  been created.
+- Image promotion no longer fails when the source pull request was merged by
+  an administrator without a recorded approval; a merged pull request is still
+  mandatory, and an unapproved (bypassed) merge is recorded as a workflow
+  warning and job-summary audit entry. The Environment reviewer gate remains
+  blocking.
+- Image promotion now pushes the candidate OCI archives to Docker Hub by
+  digest with `skopeo copy --preserve-digests` instead of `docker load`/`docker
+  push`, which re-serialised manifests and published different digests from the
+  scanned ones, and no longer leaves `promote-*` staging tags behind.
+- Image attestations now use `actions/attest` instead of the deprecated
+  `actions/attest-build-provenance`/`actions/attest-sbom` wrappers, use the
+  documented `docker.io` subject name, and grant `artifact-metadata: write` so
+  the provenance attestation can create its Artifact Metadata storage record.
 
 ### Security
 
