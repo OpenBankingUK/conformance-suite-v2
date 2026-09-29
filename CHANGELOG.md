@@ -95,6 +95,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the runtime-base lookup runs repository Python without Docker credentials.
   Documented the read-only Dependabot secrets needed for hardened Dependabot
   PRs to pass `dhi.io` authentication.
+- CI now runs `docker logout dhi.io` immediately after each image build and
+  re-authenticates only around the pinned Docker Scout steps, so
+  branch-controlled scripts never run while the organisation token is stored
+  in the runner's Docker config.
 - Docker Hub tag discovery now fails closed on 404 responses, which can indicate
   a private or inaccessible repository rather than a repository that has not
   been created.
