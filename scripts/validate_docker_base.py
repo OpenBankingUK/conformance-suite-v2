@@ -32,13 +32,15 @@ def validate_runtime_base(dockerfile: str) -> None:
         DockerBaseError: If the runtime stage is missing, ambiguous, or uses
             a different image reference.
     """
-    runtime_bases: list[str] = []
+    runtime_bases: list[tuple[str, int]] = []
+    from_count = 0
     for line in dockerfile.splitlines():
         if line.lstrip().startswith("#"):
             continue
         match = _FROM_PATTERN.match(line)
         if match is None:
             continue
+        from_count += 1
 
         tokens = match.group(1).split()
         if tokens and tokens[0].startswith("--platform="):
@@ -48,12 +50,15 @@ def validate_runtime_base(dockerfile: str) -> None:
             for index in range(len(tokens) - 1)
         )
         if len(tokens) >= 3 and has_runtime_alias:
-            runtime_bases.append(tokens[0])
+            runtime_bases.append((tokens[0], from_count))
 
     if len(runtime_bases) != 1:
         raise DockerBaseError(f"Dockerfile must define exactly one runtime stage; found {len(runtime_bases)}.")
-    if runtime_bases[0] != EXPECTED_RUNTIME_BASE:
-        raise DockerBaseError(f"Runtime base must be exactly {EXPECTED_RUNTIME_BASE!r}; found {runtime_bases[0]!r}.")
+    runtime_base, runtime_stage_number = runtime_bases[0]
+    if runtime_base != EXPECTED_RUNTIME_BASE:
+        raise DockerBaseError(f"Runtime base must be exactly {EXPECTED_RUNTIME_BASE!r}; found {runtime_base!r}.")
+    if runtime_stage_number != from_count:
+        raise DockerBaseError("The assessed runtime stage must be the final Dockerfile stage.")
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:

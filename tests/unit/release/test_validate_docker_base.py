@@ -46,6 +46,14 @@ def test_rejects_missing_or_ambiguous_runtime_stage() -> None:
         validate_runtime_base(f"FROM {EXPECTED_RUNTIME_BASE} AS runtime\nFROM {EXPECTED_RUNTIME_BASE} AS runtime\n")
 
 
+def test_rejects_unassessed_final_stage_after_runtime() -> None:
+    """A later stage cannot replace the assessed runtime as the built image."""
+    dockerfile = f"FROM {EXPECTED_RUNTIME_BASE} AS runtime\nFROM ubuntu:latest AS final\n"
+
+    with pytest.raises(DockerBaseError, match="must be the final"):
+        validate_runtime_base(dockerfile)
+
+
 def test_cli_reads_dockerfile_from_stdin(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     """Trusted promotion can validate the source commit's Dockerfile via git-show stdin."""
     from io import StringIO
