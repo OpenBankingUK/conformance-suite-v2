@@ -35,7 +35,7 @@ warning for the locally generated self-signed HTTPS certificate. Keep the
    `/certs` mount is needed for pasted credentials. Supply each credential by
    only one method.
 3. Select implemented endpoints and optional capabilities, fill in the
-   requested business data and runtime inputs, and review the generated plan.
+   requested business data, and review the generated plan.
    The builder indicates required fields and any launch blockers. Choose
    **Launch run** when ready; a PSU authorisation handoff may still be needed
    during execution. For tests requiring PSU authorisation, enter the exact

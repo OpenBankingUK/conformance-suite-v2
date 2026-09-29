@@ -99,7 +99,7 @@
     <header>
         <div>
             <h1>Review generated test plan</h1>
-            <div class="muted">Step 8: review/export. Generated tests are read-only; edit scope or config to change them.</div>
+            <div class="muted">Step 7: review/export. Generated tests are read-only; edit scope or config to change them.</div>
         </div>
         <a class="button secondary" href="{% url 'home' %}">Main menu</a>
     </header>
@@ -146,7 +146,6 @@
             <a class="button secondary" href="{% url 'builder-scope' draft.draft_id %}">Edit scope</a>
             {% if draft.specification != "dynamic-client-registration" %}
                 <a class="button secondary" href="{% url 'builder-config' draft.draft_id %}">Edit business data</a>
-                <a class="button secondary" href="{% url 'builder-runtime-config' draft.draft_id %}">Edit runtime inputs</a>
             {% endif %}
             <a class="button secondary" href="{% url 'builder-export' draft.draft_id %}">Export safe JSON</a>
             <form method="post" action="{% url 'builder-export' draft.draft_id %}">

@@ -53,8 +53,8 @@ The supported workflow is:
 7. Review the endpoint capabilities shown inline on each selected endpoint card.
    Required capabilities are checked and locked; optional capabilities are
    unchecked until the participant declares that behaviour as implemented.
-8. Provide resource-group-specific business data and generated runtime artifacts.
-   Domain-specific fields appear only for the selected endpoint scope.
+8. Provide resource-group-specific business data. Domain-specific fields appear
+   only for the selected endpoint scope.
 9. Review the generated schemaVersion `1.0` test plan and launch the run.
    **Export safe JSON** omits secret values, so you will need to enter them
    again when importing it. **Export with secrets** contains sensitive
