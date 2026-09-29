@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   present, logs in to `dhi.io` and runs `scripts/docker_smoke_test.sh` plus
   Compose validation instead of the legacy plain-HTTP health probe, which
   cannot reach the HTTPS-only hardened image.
+- Docker Scout credentials are now scoped to the pinned Scout CLI steps only;
+  the runtime-base lookup runs repository Python without Docker credentials.
+  Documented the read-only Dependabot secrets needed for hardened Dependabot
+  PRs to pass `dhi.io` authentication.
 - CI now logs out of `dhi.io` immediately after each image build and
   re-authenticates only around the pinned Docker Scout steps, so
   branch-controlled scripts never run while the organisation token is stored
