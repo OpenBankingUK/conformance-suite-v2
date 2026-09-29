@@ -19,14 +19,10 @@ Install and start Docker, then run:
 docker run --rm -p 127.0.0.1:8443:8443 openbanking/conformance-suite-v2:2.0.0-beta.1
 ```
 
-Docker pulls the image from Docker Hub if it is not already available locally;
-`docker.io/` is optional in the image name. Open `https://127.0.0.1:8443/`
-on the same computer (including `https://` and `:8443`) and accept the
-browser's warning for the locally generated self-signed HTTPS certificate.
-`https://localhost:8443/` may also work, but `127.0.0.1` matches the Docker
-port binding even if `localhost` resolves to IPv6. Keep the explicit
-`127.0.0.1` binding: omitting `-p` makes the UI unavailable from the host,
-while `-p 8443:8443` can expose it to your network.
+Docker pulls the image from Docker Hub if it is not already available locally.
+Open `https://127.0.0.1:8443/` on the same computer and accept the browser's
+warning for the locally generated self-signed HTTPS certificate. Keep the
+`127.0.0.1` Docker port binding so the UI stays local.
 
 1. Select **Create new test plan with builder** on the main menu. Choose the
    scheme, specification, and version, then provide your OpenID discovery URL
@@ -73,21 +69,6 @@ See [`CICD_STRATEGY.md`](CICD_STRATEGY.md) for the full preview/beta/GA
 versioning and promotion model. Never rely on `latest` for anything other than
 the current GA release, and never use a mutable channel-named tag — none is
 published.
-
-### Legacy PSU callback
-
-Some existing FCS/Ozone test clients have
-`https://0.0.0.0:8443/conformancesuite/callback` registered as their OAuth
-redirect URI. This is a narrow compatibility exception, **not** the address
-we recommend for opening the UI or for new client registrations. If your
-client has that exact redirect registered, use it in the builder's
-**Redirect URI** field. Before starting a PSU flow, visit
-`https://0.0.0.0:8443/` and accept its separate certificate warning. On
-supported local hosts it reaches the same loopback-published container; the
-browser must be able to reach that address for the ASPSP's redirect to
-complete. If it cannot, use a different callback URI registered with the
-ASPSP and routed to the suite instead. Do **not** change Docker's port
-binding to `0.0.0.0`: that would expose the beta UI to the network.
 
 ## Advanced: persistent local run
 
@@ -194,13 +175,16 @@ local development certificates) if unset.
 ## Transport
 
 The container serves HTTPS on port 8443 using a generated self-signed
-certificate whose subject alternative names cover `localhost`, `127.0.0.1`,
-`::1`, and the legacy FCS callback host `0.0.0.0`. With a named `/data` volume,
-the certificate and private key persist across restarts; without one they are
-ephemeral. This preserves compatibility with the legacy registered callback
-`https://0.0.0.0:8443/conformancesuite/callback` while Docker publishes the
-port only on host loopback. UI TLS/LAN exposure beyond localhost remains out
-of scope.
+certificate covering `localhost`, `127.0.0.1`, `::1`, and the legacy FCS
+callback host `0.0.0.0`. With a named `/data` volume, the certificate and
+private key persist across restarts; without one they are ephemeral.
+
+If your existing ASPSP client is registered for the legacy redirect URI
+`https://0.0.0.0:8443/conformancesuite/callback`, enter that exact URI in
+the builder and visit `https://0.0.0.0:8443/` to accept its browser
+certificate warning before PSU authorisation. On supported local hosts
+it reaches the same container; keep the Docker port bound to `127.0.0.1`.
+UI TLS/LAN exposure beyond localhost remains out of scope.
 
 ## Health check
 
