@@ -115,8 +115,8 @@ These rules **must** be configured in **GitHub → Repository Settings → Branc
 | Required approving reviews | **2** (1 Copilot + 1 human) |
 | Dismiss stale pull request approvals when new commits are pushed | **Enabled** |
 | Require review from Code Owners | **Enabled** |
-| Require status checks to pass before merging | Not currently configured |
-| Recommended required status checks | `Check`, `Docker Build`, `Vulnerability Scan`, and `code/snyk (Standards)` |
+| Require status checks to pass before merging | Pending enablement after the `release/2.0.0` merge-back; see [branch rulesets](settings/BRANCH_RULESETS.md) |
+| Required status checks to enable | `Check`, `Docker Build`, `Vulnerability Scan`, and `code/snyk (Standards)` |
 | Require branches to be up to date before merging | **Enabled** |
 | Require conversation resolution before merging | **Enabled** |
 | Require linear history | **Enabled** (merge squash or rebase only) |
@@ -131,8 +131,8 @@ These rules **must** be configured in **GitHub → Repository Settings → Branc
 | Required approving reviews | **1** (human) |
 | Dismiss stale pull request approvals when new commits are pushed | **Enabled** |
 | Require review from Code Owners | **Enabled** |
-| Require status checks to pass before merging | Not currently configured |
-| Recommended required status checks | `Check`, `Docker Build`, `Vulnerability Scan`, and `code/snyk (Standards)` |
+| Require status checks to pass before merging | Pending enablement after the `release/2.0.0` merge-back; see [branch rulesets](settings/BRANCH_RULESETS.md) |
+| Required status checks to enable | `Check`, `Docker Build`, `Vulnerability Scan`, and `code/snyk (Standards)` |
 | Require branches to be up to date before merging | **Enabled** |
 | Require conversation resolution before merging | **Enabled** |
 | Allow administrators to bypass | **Enabled** — repository admins may override in exceptional circumstances; see [Section 5.4](#54-release-exception-process) |
@@ -201,20 +201,25 @@ consolidated container vulnerability gate on **every pull request and push**:
 - Scanner, authentication or parsing errors fail closed. Snyk runs from an
   empty directory, so a `.snyk` file cannot silently ignore findings.
 
-The job summary lists **every** finding — blocking, VEX-assessed, accepted by
-exception, and informational — with GitHub annotations and code-scanning
-(SARIF) results. The required check is the aggregate `Vulnerability Scan` job.
+The job summary, GitHub annotations and SARIF all report **every** finding:
+blocking findings as errors, informational open findings as warnings, and
+VEX-assessed or accepted findings as notices/suppressed SARIF results. The
+required check is the aggregate `Vulnerability Scan` job.
 
-**Trust model**: on pull requests, the scan action and gate script are taken
-from the PR's **base** commit, so a PR cannot weaken the gate that judges it.
-If the base commit predates the gate, `main`'s copy is used; only the PR that
-introduces the gate uses its own copy (bootstrap warning). The exceptions file
-is read from the PR head. Because `ci.yml` itself runs from the PR head,
-CODEOWNERS review of `.github/`, `scripts/` and `security/` remains the
-control that prevents the workflow or policy from being weakened. Docker's
-VEX is fetched with `--verify` against Docker's DHI signing key.
-PRs from forks have no secrets and fail closed; re-push them to a branch in
-this repository.
+**Trust model**: PR image builds run in an untrusted job that checks out
+the PR head, builds the Docker archive, and performs only non-secret local
+verification; it does not receive `SNYK_TOKEN` or run the vulnerability gate.
+The secret-bearing scan runs later in a clean dependent job. That job checks
+out the PR base commit as the workspace root, falls back to `main` if the base
+predates the gate, and uses the PR head's Dockerfile, lock file, pyproject and
+exception file only as data under `.scan-input/`. Only the one-time PR that
+introduces the gate may bootstrap from its own copy, and it emits an explicit
+warning. Because the workflow definition for `pull_request` events is still
+read from the PR head, CODEOWNERS review of `.github/` remains the control for
+workflow changes; CODEOWNERS review of `scripts/` and `security/` protects the
+policy code and exception data. Docker's VEX is fetched with `--verify` against
+Docker's DHI signing key. PRs from forks have no secrets and fail closed;
+re-push them to a branch in this repository.
 
 #### Exceptions
 

@@ -172,9 +172,9 @@ jobs:
         run: docker rm -f smoke || true
 
   image:
-    # Builds the exact image for each platform on every PR and push, then
-    # runs the consolidated vulnerability gate. On candidate branches the
-    # same scanned archive becomes the promotion artifact (never rebuilt).
+    # Builds the exact image for each platform on every PR and push. This job
+    # intentionally runs the PR head checkout and therefore never receives the
+    # Snyk token or executes the vulnerability gate.
     name: Image (${{ matrix.platform }})
     needs: plan
     strategy:
@@ -191,22 +191,10 @@ jobs:
 
     permissions:
       contents: read
-      security-events: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Checkout trusted vulnerability gate
-        # The scan action and policy script run from the PR's *base* commit,
-        # so a PR cannot weaken the gate that judges it. Pushes use the pushed
-        # (already reviewed) commit. The exceptions file is read from the PR
-        # head and is protected by CODEOWNERS review instead.
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
-          path: trusted
-          persist-credentials: false
 
       - name: Set up uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -217,7 +205,7 @@ jobs:
         run: uv sync --frozen --no-install-project
 
       - name: Verify the assessed DHI runtime base
-        # Must pass before the scan can consume Docker's signed VEX
+        # Must pass before promotion can consume Docker's signed VEX
         # assessment, which is bound to this exact base digest.
         if: needs.plan.outputs.is_hardened == 'true'
         run: uv run python -m scripts.validate_docker_base --dockerfile Dockerfile
@@ -305,79 +293,6 @@ jobs:
         if: needs.plan.outputs.is_hardened == 'true'
         run: ./scripts/docker_smoke_test.sh "${{ steps.load.outputs.local_tag }}"
 
-      - name: Resolve the DHI runtime base reference
-        # Runs repository Python without any Docker credential in its env.
-        id: runtime_base
-        if: needs.plan.outputs.is_hardened == 'true'
-        run: |
-          set -euo pipefail
-          base_ref="$(uv run python -m scripts.validate_docker_base --print-runtime-base)"
-          echo "ref=$base_ref" >> "$GITHUB_OUTPUT"
-
-      - name: Detect trusted vulnerability gate
-        id: gate_source
-        run: |
-          set -euo pipefail
-          has_gate() { [[ -f "$1/.github/actions/vulnerability-scan/action.yml" && -f "$1/scripts/vulnerability_gate.py" ]]; }
-          if has_gate trusted; then
-            echo "trusted=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # Base branches that predate the gate (for example a release branch
-          # not yet synced with main) are judged by main's gate instead of the
-          # PR's own copy.
-          rm -rf trusted
-          git clone --quiet --depth 1 --branch main --no-tags \
-            "https://github.com/$GITHUB_REPOSITORY.git" trusted
-          if has_gate trusted; then
-            echo "::warning title=Vulnerability gate from main::The base commit has no vulnerability gate; using main's."
-            echo "trusted=true" >> "$GITHUB_OUTPUT"
-          else
-            # One-time bootstrap: only the PR introducing the gate reaches this.
-            echo "::warning title=Vulnerability gate bootstrap::Neither the base commit nor main has a vulnerability gate; using this PR's copy."
-            echo "trusted=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Scan for vulnerabilities (trusted gate)
-        if: steps.gate_source.outputs.trusted == 'true'
-        uses: ./trusted/.github/actions/vulnerability-scan
-        with:
-          image: ${{ steps.load.outputs.local_tag }}
-          image-source: local
-          platform: ${{ matrix.platform }}
-          target: "${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }} (${{ matrix.platform }})"
-          vex-image: ${{ steps.runtime_base.outputs.ref }}
-          vex-requires-dhi-login: "true"
-          lock-directory: .
-          dockerfile: Dockerfile
-          gate-directory: trusted
-          exceptions-file: security/vulnerability-exceptions.toml
-          report-name: vulnerability-report-${{ matrix.slug }}
-          sarif-category: container-image-${{ matrix.slug }}
-          snyk-token: ${{ secrets.SNYK_TOKEN }}
-          docker-username: ${{ secrets.DOCKER_ORG_USERNAME }}
-          docker-password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
-
-      - name: Scan for vulnerabilities (bootstrap gate)
-        if: steps.gate_source.outputs.trusted != 'true'
-        uses: ./.github/actions/vulnerability-scan
-        with:
-          image: ${{ steps.load.outputs.local_tag }}
-          image-source: local
-          platform: ${{ matrix.platform }}
-          target: "${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }} (${{ matrix.platform }})"
-          vex-image: ${{ steps.runtime_base.outputs.ref }}
-          vex-requires-dhi-login: "true"
-          lock-directory: .
-          dockerfile: Dockerfile
-          gate-directory: .
-          exceptions-file: security/vulnerability-exceptions.toml
-          report-name: vulnerability-report-${{ matrix.slug }}
-          sarif-category: container-image-${{ matrix.slug }}
-          snyk-token: ${{ secrets.SNYK_TOKEN }}
-          docker-username: ${{ secrets.DOCKER_ORG_USERNAME }}
-          docker-password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
-
       - name: Generate SBOM
         if: needs.plan.outputs.is_candidate == 'true'
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
@@ -385,6 +300,16 @@ jobs:
           image: ${{ steps.load.outputs.local_tag }}
           format: spdx-json
           output-file: artifacts/sbom-${{ matrix.slug }}.spdx.json
+
+      - name: Upload image artifacts
+        if: needs.plan.outputs.is_candidate != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-${{ matrix.slug }}
+          path: |
+            artifacts/image-${{ matrix.slug }}.tar
+            artifacts/metadata-${{ matrix.slug }}.json
+          retention-days: 14
 
       - name: Upload candidate artifacts
         if: needs.plan.outputs.is_candidate == 'true'
@@ -397,10 +322,136 @@ jobs:
             artifacts/sbom-${{ matrix.slug }}.spdx.json
           retention-days: 14
 
+  scan:
+    # Runs the secret-bearing scanner in a clean job. It checks out only the
+    # trusted gate implementation and treats PR-head files as inert data.
+    name: Scan (${{ matrix.platform }})
+    needs: [plan, image]
+    if: needs.image.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            slug: linux-amd64
+            runs-on: ubuntu-latest
+          - platform: linux/arm64
+            slug: linux-arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    steps:
+      - name: Checkout trusted vulnerability gate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Select vulnerability gate source
+        run: |
+          set -euo pipefail
+          has_gate() { [[ -f .github/actions/vulnerability-scan/action.yml && -f scripts/vulnerability_gate.py ]]; }
+          if has_gate; then
+            exit 0
+          fi
+          # Base branches that predate the gate (for example a release branch
+          # not yet synced with main) are judged by main's gate instead of the
+          # PR's own copy.
+          git fetch --no-tags --depth=1 origin main
+          git checkout --force FETCH_HEAD
+          if has_gate; then
+            echo "::warning title=Vulnerability gate from main::The base commit has no vulnerability gate; using main's."
+          else
+            # One-time bootstrap: only the PR introducing the gate reaches this.
+            echo "::warning title=Vulnerability gate bootstrap::Neither the base commit nor main has a vulnerability gate; using this PR's copy for this initial introduction only."
+            git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+            git checkout --force "$HEAD_SHA"
+            has_gate
+          fi
+        env:
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install trusted gate dependencies
+        run: uv sync --frozen --no-install-project
+
+      - name: Download image archive
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: candidate-${{ matrix.slug }}
+          path: artifacts
+
+      - name: Load image for scanning
+        id: load
+        env:
+          LOCAL_TAG: ob-conformance-candidate:${{ matrix.slug }}-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker load --input artifacts/image-${{ matrix.slug }}.tar
+          echo "local_tag=$LOCAL_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch head scan inputs as data
+        env:
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+          rm -rf .scan-input
+          mkdir -p .scan-input/security
+          for path in Dockerfile pyproject.toml uv.lock; do
+            git show "$HEAD_SHA:$path" > ".scan-input/$path"
+          done
+          if git cat-file -e "$HEAD_SHA:security/vulnerability-exceptions.toml"; then
+            git show "$HEAD_SHA:security/vulnerability-exceptions.toml" > .scan-input/security/vulnerability-exceptions.toml
+          else
+            : > .scan-input/security/vulnerability-exceptions.toml
+          fi
+
+      - name: Resolve the DHI runtime base reference
+        id: runtime_base
+        env:
+          IS_HARDENED: ${{ needs.plan.outputs.is_hardened }}
+        run: |
+          set -euo pipefail
+          if [[ "$IS_HARDENED" != "true" ]]; then
+            echo "ref=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base_ref="$(uv run python -m scripts.validate_docker_base --stdin --print-runtime-base < .scan-input/Dockerfile)"
+          echo "ref=$base_ref" >> "$GITHUB_OUTPUT"
+
+      - name: Scan for vulnerabilities
+        uses: ./.github/actions/vulnerability-scan
+        with:
+          image: ${{ steps.load.outputs.local_tag }}
+          image-source: local
+          platform: ${{ matrix.platform }}
+          target: "${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }} (${{ matrix.platform }})"
+          vex-image: ${{ steps.runtime_base.outputs.ref }}
+          vex-requires-dhi-login: ${{ needs.plan.outputs.is_hardened }}
+          lock-directory: .scan-input
+          dockerfile: .scan-input/Dockerfile
+          gate-directory: .
+          exceptions-file: .scan-input/security/vulnerability-exceptions.toml
+          report-name: vulnerability-report-${{ matrix.slug }}
+          sarif-category: container-image-${{ matrix.slug }}
+          snyk-token: ${{ secrets.SNYK_TOKEN }}
+          docker-username: ${{ secrets.DOCKER_ORG_USERNAME }}
+          docker-password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+
   vulnerability-scan:
     # Stable, matrix-independent name for the required status check.
     name: Vulnerability Scan
-    needs: image
+    needs: [image, scan]
     if: always()
     runs-on: ubuntu-latest
     permissions: {}
@@ -408,9 +459,10 @@ jobs:
       - name: Require every platform scan to pass
         env:
           IMAGE_RESULT: ${{ needs.image.result }}
+          SCAN_RESULT: ${{ needs.scan.result }}
         run: |
-          if [[ "$IMAGE_RESULT" != "success" ]]; then
-            echo "::error title=Vulnerability Scan failed::Image build/scan result was '$IMAGE_RESULT'. Open the 'Image (...)' job summaries for the vulnerability report."
+          if [[ "$IMAGE_RESULT" != "success" || "$SCAN_RESULT" != "success" ]]; then
+            echo "::error title=Vulnerability Scan failed::Image result was '$IMAGE_RESULT' and scan result was '$SCAN_RESULT'. Open the 'Image (...)' and 'Scan (...)' job summaries for details."
             exit 1
           fi
           echo "All platform images passed the vulnerability gate."
