@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Bumped vulnerable Python dependencies so the candidate container image carries
+  no known HIGH or CRITICAL advisories:
+  - `anyio` 4.13.0 → 4.15.1 (CVE-2026-63374, CRITICAL) — transitive via `httpx`
+    and `uvicorn[standard]`'s `watchfiles`.
+  - `cryptography` 48.0.0 → 50.0.1 (three HIGH advisories) — direct dependency;
+    the `pyproject.toml` floor is raised to `>=50.0.0` so the fixed version
+    cannot be resolved away. Used for FAPI signing, JWS/JWKS, and mTLS
+    certificate handling; no API breakage across the major bump.
+  - `sqlparse` 0.5.5 → 0.6.0 (three HIGH advisories) — transitive via `django`.
+
 ## [2.0.0-beta.1] - 2026-09-28
 
 First public beta of the MVP: the Open Banking UK Read/Write v3.1.11 and v4.0.x
