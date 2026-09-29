@@ -1,21 +1,38 @@
-# Functional Conformance Suite V2 (WIP)
+# Functional Conformance Suite v2 beta.1
 
-This repository is used to develop the next Open Banking UK Functional
-Conformance Suite before it is ready to merge back into the official
-conformance-suite repository. It is not the official released suite.
+**Beta only — not for certification.** FCS v2 `2.0.0-beta.1` is an MVP for
+evaluating the new Open Banking UK Functional Conformance Suite and providing
+feedback. It is **not approved for certification**; runs and reports from this
+beta must not be submitted as certification evidence, even if a plan or result
+mentions certification or appears eligible in the UI.
 
-## Docker deployment
+## Get started: local browser UI
 
-The hardened Docker image is the primary, supported way to run the suite —
-non-root, read-only root filesystem, no shell or package manager, and no
-manually supplied Django secret required. See
-[`docs/DOCKER_GUIDE.md`](docs/DOCKER_GUIDE.md) for Docker Hub pull instructions, the
-recommended hardened `docker run`/Compose commands, the `/data` persistence
-layout, and the optional read-only `/certs` mount contract. Credentials can
-also be pasted or uploaded directly in the browser wizard instead of being
-mounted, in which case no `/certs` mount is needed.
+With Docker installed and running, start the beta on your own computer:
 
-## Participant workflow
+```bash
+docker run --rm -p 127.0.0.1:8443:8443 openbanking/conformance-suite-v2:2.0.0-beta.1
+```
+
+Open `https://127.0.0.1:8443/` in your browser. Accept the warning for the
+container's locally generated self-signed HTTPS certificate. The Docker
+command makes the UI accessible only from your computer.
+
+Choose **Create new test plan with builder**, follow the prompts, and paste
+the credentials required by your chosen test plan into the browser's
+**Paste PEM text** fields (select **Paste or upload** as the credential
+source). You do not need to mount a certificate directory or create a JSON
+test plan to try the UI. Review the generated plan and choose **Launch run**;
+some tests also need runtime inputs or a PSU authorisation step. Save any
+results you need before stopping the container with Ctrl+C: this command
+does not persist browser sessions, results, or logs across runs.
+
+For the complete beta UI walkthrough and optional persistence or certificate
+mounts, see the [Docker deployment guide](docs/DOCKER_GUIDE.md). CLI, REST,
+Compose, and file-based credential configuration below are advanced reference,
+not the primary beta.1 participant workflow.
+
+## Browser builder workflow
 
 Participants no longer select checked-in suites, manifests, or config examples.
 The supported workflow is:
@@ -25,7 +42,9 @@ The supported workflow is:
 3. For a new plan, select the scheme, specification, and version.
 4. Enter the single security environment for the plan, starting with the OpenID
    discovery URL and then confirming OAuth/FAPI, mTLS, and resource-server
-   values.
+   values. For required credentials, select **Paste or upload** and use
+   **Paste PEM text**; do not put host file paths in the container's
+   **Absolute file path** field.
 5. For Read/Write, select compatible resource groups and implemented endpoints.
    For Dynamic Client Registration 3.4, select direct endpoints: POST is always
    selected and locked; GET, PUT, and DELETE are optional.
@@ -36,17 +55,21 @@ The supported workflow is:
    unchecked until the participant declares that behaviour as implemented.
 8. Provide resource-group-specific business data and generated runtime artifacts.
    Domain-specific fields appear only for the selected endpoint scope.
-9. Review the generated schemaVersion `1.0` test plan, export reusable JSON, or launch the
-   run.
+9. Review the generated schemaVersion `1.0` test plan and launch the run.
+   **Export safe JSON** omits secret values, so you will need to enter them
+   again when importing it. **Export with secrets** contains sensitive
+   material; use only if necessary and store it securely.
 
 The UI shows generated tests, counts, source traceability, runtime/auth
-requirements, launch blockers, and certification status after preview. Generated
-tests are read-only: participants cannot select exact generated tests. Lower-level
-request and assertion details stay collapsed under audit details.
+requirements, launch blockers, and internal certification-status labels after
+preview. **Those labels do not make beta.1 runs valid for certification.**
+Generated tests are read-only: participants cannot select exact generated
+tests. Lower-level request and assertion details stay collapsed under audit
+details.
 
-## CLI plan execution
+## Advanced reference: CLI plan execution
 
-The preferred CLI path accepts a canonical JSON-first test plan that contains
+For advanced CLI use, the runner accepts a canonical JSON-first test plan that contains
 the specification, security environment, specification-owned scope/config, and
 reporting metadata in one portable document:
 
@@ -147,8 +170,9 @@ test plan preserves resource-group, endpoint, capability, business-data, and
 non-sensitive runtime references, but writes secret-bearing strings as empty strings. A separate
 export-with-secrets action is available for local power-user workflows. Launch
 still uses Read/Write runtime values retained in the same browser session or
-supplied by direct CLI/API submission. DCR accepts credential file references
-only, never inline SSA, PEM, assertion, secret, or token material.
+supplied by direct CLI/API submission. DCR plans can use inline credentials in
+the builder for a local run; safe exports omit their sensitive values. Handle
+any export containing secrets as confidential.
 
 Run detail, result downloads, and NDJSON execution logs keep the existing
 masking and evidence behaviour. Result JSON includes the safe test-plan snapshot,
@@ -212,7 +236,7 @@ CLI exit codes are:
 Set `CONFORMANCE_DEVELOPER_MODE=true` only for local debugging. It disables
 masking in developer-visible logs and must never be enabled in release builds.
 
-## Certification report validation
+## Internal certification report validation (not for beta submissions)
 
 The OBL-side certification validator remains an internal reviewer tool. It
 validates a submitted result report against the manifest representation used for
