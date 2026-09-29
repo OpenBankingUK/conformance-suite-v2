@@ -328,14 +328,17 @@ Environment reviewer is then the only blocking human gate. Automatic promotion u
 it; manual recovery dispatches locate the matching run. Candidate CI and
 release-script files must exactly match the trusted copies on `main`; pipeline
 changes therefore land on `main` before release branches consume them. Only
-then does the Environment-gated job receive Docker Hub credentials; it stages
-the platform images under SHA-specific internal tags with `skopeo copy
---preserve-digests` (so the registry digests equal the scanned digests; a plain
-`docker push` would re-serialise the manifest) and assembles the
-already-tested images without rebuilding. Promotion is serialized to prevent
+then does the Environment-gated job receive Docker Hub credentials; it pushes
+each platform image by digest with `skopeo copy --preserve-digests` (so the
+registry digests equal the scanned digests; a plain `docker push` would
+re-serialise the manifest, and pushing by digest leaves no internal staging
+tags) and assembles the already-tested images without rebuilding. Promotion is serialized to prevent
 tag races, rejects an existing immutable version tag discovered through the
 Docker Hub tags API, and attests the published
-multi-architecture manifest with provenance and both platform SBOMs.
+multi-architecture manifest with provenance and both platform SBOMs using
+`actions/attest`. The provenance attestation also records an Artifact Metadata
+storage record (`artifact-metadata: write`), so each published image appears on
+the organisation's Linked Artifacts page.
 
 For each successful eligible push, `auto-promote.yml` confirms the CI run
 uploaded a promotion manifest, reads only `pyproject.toml` from its source

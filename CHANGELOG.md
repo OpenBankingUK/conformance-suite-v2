@@ -79,6 +79,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Image promotion now pushes each scanned platform image to Docker Hub by
+  digest, so it no longer leaves `promote-*` staging tags on the repository.
+- Image attestations now use `actions/attest` instead of the deprecated
+  `actions/attest-build-provenance`/`actions/attest-sbom` wrappers, use the
+  documented `docker.io` subject name, and grant `artifact-metadata: write` so
+  the provenance attestation can create its Artifact Metadata storage record.
 - Image promotion now stages the candidate OCI archives with
   `skopeo copy --preserve-digests` instead of `docker load`/`docker push`,
   which re-serialised manifests and published different digests from the
