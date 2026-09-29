@@ -79,6 +79,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Image promotion now stages the candidate OCI archives with
+  `skopeo copy --preserve-digests` instead of `docker load`/`docker push`,
+  which re-serialised manifests and published different digests from the
+  scanned ones, causing the multi-architecture manifest step to fail with
+  `not found`.
 - Image promotion no longer fails when the source pull request was merged by
   an administrator without a recorded approval; a merged pull request is still
   mandatory, and an unapproved (bypassed) merge is recorded as a workflow
