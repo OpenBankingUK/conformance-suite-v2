@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   present, logs in to `dhi.io` and runs `scripts/docker_smoke_test.sh` plus
   Compose validation instead of the legacy plain-HTTP health probe, which
   cannot reach the HTTPS-only hardened image.
+- CI now logs out of `dhi.io` immediately after each image build and
+  re-authenticates only around the pinned Docker Scout steps, so
+  branch-controlled scripts never run while the organisation token is stored
+  in the runner's Docker config.
 
 ## [2.0.0-beta.1] - 2026-09-28
 
