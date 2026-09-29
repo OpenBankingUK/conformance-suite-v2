@@ -396,6 +396,7 @@ jobs:
             scripts/validate_docker_base.py \
             scripts/vulnerability_gate.py \
             .github/actions/vulnerability-scan/action.yml \
+            .github/actions/vulnerability-scan/dhi-signing-key.pub \
             security/vulnerability-exceptions.toml; then
             echo "::error::Candidate pipeline files differ from trusted main. Merge main into $INPUT_BRANCH and rebuild." >&2
             exit 1
