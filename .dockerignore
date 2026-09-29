@@ -39,3 +39,8 @@ db.sqlite3
 docs/
 CHANGELOG.md
 scripts/
+
+# ─── CI-only scan inputs and policy ────────────────────────────────────────
+trusted/
+.scan-input/
+security/

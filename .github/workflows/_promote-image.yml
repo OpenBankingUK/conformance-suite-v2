@@ -6,7 +6,9 @@ name: Promote candidate image
 # always main), and only reads a single file (pyproject.toml) out of the
 # candidate commit via `git show`, never executing anything from it. It
 # republishes the exact platform images a successful candidate-image CI run
-# already built, scanned, and smoke-tested; it never rebuilds.
+# already built, scanned, and smoke-tested; it never rebuilds. Before the
+# Environment approval gate it re-scans those exact archives against current
+# vulnerability data and main's policy (see docs/CICD_STRATEGY.md 3.2).
 
 on:
   workflow_call:
@@ -41,6 +43,8 @@ on:
         required: true
       DOCKER_ORG_ACCESS_TOKEN:
         required: true
+      SNYK_TOKEN:
+        required: true
 
 permissions:
   contents: read
@@ -58,8 +62,193 @@ env:
   INPUT_CI_RUN_ID: ${{ inputs.ci_run_id }}
 
 jobs:
+  locate:
+    name: Locate candidate run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      run_id: ${{ steps.locate.outputs.run_id }}
+
+    steps:
+      - name: Require a trusted main-branch dispatch
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Promotion workflows must be dispatched from main, not $GITHUB_REF." >&2
+            exit 1
+          fi
+          if ! [[ "$INPUT_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::source_sha must be a full lowercase 40-character Git SHA." >&2
+            exit 1
+          fi
+          git check-ref-format --branch "$INPUT_BRANCH" >/dev/null
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install release-tooling dependencies
+        run: uv sync --frozen --no-install-project
+
+      - name: Locate and verify the successful candidate-image run
+        id: locate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_CI_WORKFLOW_ID: "268848247"
+          TRUSTED_CI_WORKFLOW_PATH: ".github/workflows/ci.yml"
+        run: |
+          set -euo pipefail
+          if [[ -n "$INPUT_CI_RUN_ID" ]]; then
+            run_id="$INPUT_CI_RUN_ID"
+          else
+            run_id="$(
+              gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+                --json databaseId,headSha,headBranch,conclusion,event -L 100 \
+                | jq -r --arg sha "$INPUT_SOURCE_SHA" --arg branch "$INPUT_BRANCH" \
+                  'map(select(.headSha == $sha and .headBranch == $branch and .event == "push" and .conclusion == "success"))
+                   | sort_by(.databaseId) | last | .databaseId // empty'
+            )"
+          fi
+          if [[ -z "$run_id" ]]; then
+            echo "::error::No successful push CI run found for $INPUT_SOURCE_SHA on $INPUT_BRANCH." >&2
+            exit 1
+          fi
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")"
+          if ! jq -e \
+            --arg sha "$INPUT_SOURCE_SHA" \
+            --arg branch "$INPUT_BRANCH" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg path "$TRUSTED_CI_WORKFLOW_PATH" \
+            --argjson workflow_id "$TRUSTED_CI_WORKFLOW_ID" \
+            '.name == "CI"
+             and .workflow_id == $workflow_id
+             and .path == $path
+             and .head_sha == $sha
+             and .head_branch == $branch
+             and .event == "push"
+             and .conclusion == "success"
+             and .head_repository.full_name == $repository' \
+            <<<"$run_json" >/dev/null; then
+            echo "::error::CI run $run_id is not the trusted successful push CI run for $INPUT_SOURCE_SHA on $INPUT_BRANCH." >&2
+            exit 1
+          fi
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+  rescan:
+    # Re-scans the exact candidate archives with today's vulnerability data
+    # and main's policy *before* the Environment approval gate, so a
+    # vulnerability disclosed after the candidate was built blocks promotion
+    # rather than being published. No Environment, so no write credentials.
+    name: Vulnerability re-scan (${{ matrix.platform }})
+    needs: locate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            slug: linux-amd64
+            runs-on: ubuntu-latest
+          - platform: linux/arm64
+            slug: linux-arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install release-tooling dependencies
+        run: uv sync --frozen --no-install-project
+
+      - name: Download the candidate archive
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.locate.outputs.run_id }}
+          name: candidate-${{ matrix.slug }}
+          path: ${{ runner.temp }}/candidate
+
+      - name: Download the promotion manifest
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.locate.outputs.run_id }}
+          name: promotion-manifest
+          path: ${{ runner.temp }}/manifest
+
+      - name: Verify and load the candidate archive
+        id: load
+        env:
+          SLUG: ${{ matrix.slug }}
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/candidate/image-$SLUG.tar"
+          actual="$(sha256sum "$archive" | awk '{print $1}')"
+          if ! awk '{print $1}' "$RUNNER_TEMP/manifest/checksums.sha256" | grep -qx "$actual"; then
+            echo "::error::Candidate archive checksum is not recorded in the promotion manifest." >&2
+            exit 1
+          fi
+          docker load --input "$archive"
+          echo "local_tag=ob-conformance-candidate:$SLUG-$INPUT_SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Extract candidate dependency manifests (read-only)
+        # Only reads files from the candidate commit; never executes them.
+        id: source
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$INPUT_SOURCE_SHA"
+          src="$RUNNER_TEMP/candidate-source"
+          mkdir -p "$src"
+          for file in Dockerfile pyproject.toml uv.lock; do
+            git show "$INPUT_SOURCE_SHA:$file" > "$src/$file"
+          done
+          base_ref="$(uv run python -m scripts.validate_docker_base --stdin --print-runtime-base < "$src/Dockerfile")"
+          {
+            echo "dir=$src"
+            echo "runtime_base=$base_ref"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Re-scan with main's vulnerability gate
+        uses: ./.github/actions/vulnerability-scan
+        with:
+          image: ${{ steps.load.outputs.local_tag }}
+          image-source: local
+          platform: ${{ matrix.platform }}
+          target: "${{ inputs.channel }} promotion of ${{ inputs.branch }}@${{ inputs.source_sha }} (${{ matrix.platform }})"
+          vex-image: ${{ steps.source.outputs.runtime_base }}
+          vex-requires-dhi-login: "true"
+          lock-directory: ${{ steps.source.outputs.dir }}
+          dockerfile: ${{ steps.source.outputs.dir }}/Dockerfile
+          gate-directory: .
+          exceptions-file: security/vulnerability-exceptions.toml
+          report-name: promotion-vulnerability-report-${{ inputs.channel }}-${{ matrix.slug }}
+          snyk-token: ${{ secrets.SNYK_TOKEN }}
+          docker-username: ${{ secrets.DOCKER_ORG_USERNAME }}
+          docker-password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+
   promote:
     name: Promote (${{ inputs.channel }})
+    needs: [locate, rescan]
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment_name }}
 
@@ -103,6 +292,8 @@ jobs:
         id: locate
         env:
           GH_TOKEN: ${{ github.token }}
+          # Re-verify exactly the run the vulnerability re-scan inspected.
+          INPUT_CI_RUN_ID: ${{ needs.locate.outputs.run_id }}
           TRUSTED_CI_WORKFLOW_ID: "268848247"
           TRUSTED_CI_WORKFLOW_PATH: ".github/workflows/ci.yml"
         run: |
@@ -203,7 +394,9 @@ jobs:
             scripts/release_metadata.py \
             scripts/validate_release.py \
             scripts/validate_docker_base.py \
-            .snyk; then
+            scripts/vulnerability_gate.py \
+            .github/actions/vulnerability-scan/action.yml \
+            security/vulnerability-exceptions.toml; then
             echo "::error::Candidate pipeline files differ from trusted main. Merge main into $INPUT_BRANCH and rebuild." >&2
             exit 1
           fi
