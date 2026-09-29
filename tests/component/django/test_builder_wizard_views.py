@@ -233,11 +233,10 @@ class TestBuilderWizardUi:
         assert "Advanced AIS resource IDs JSON" in business_content
 
         saved_business_response = client.post(saved_scope_response["Location"], data={})
-        runtime_response = client.get(saved_business_response["Location"])
-        assert runtime_response.status_code == 200
-        runtime_content = runtime_response.content.decode("utf-8")
-        _assert_requirement_badge(runtime_content, "Resource server base URL", "Required")
-        assert "accessToken" not in runtime_content
+        assert saved_business_response.status_code == 302
+        assert saved_business_response["Location"].endswith("/review/")
+        draft_id = _draft_id_from_builder_redirect(saved_business_response["Location"])
+        assert client.get(f"/builder/{draft_id}/config/runtime/").status_code == 404
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
     def test_builder_business_page_marks_ais_account_id_required_for_account_scope(
@@ -493,8 +492,7 @@ class TestBuilderWizardUi:
                 "cbpii_debtor_account_name": "Model Bank Account",
             },
         )
-        runtime_response = client.post(saved_response["Location"], data={})
-        draft_id = _draft_id_from_builder_redirect(runtime_response["Location"])
+        draft_id = _draft_id_from_builder_redirect(saved_response["Location"])
         export_response = client.get(f"/builder/{draft_id}/export.json")
 
         assert export_response.status_code == 200
@@ -563,18 +561,17 @@ class TestBuilderWizardUi:
             data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]},
         )
         business_response = client.post(scope_response["Location"], data={})
-        runtime_response = client.post(business_response["Location"], data={})
 
-        assert runtime_response.status_code == 302
-        assert runtime_response["Location"].endswith("/review/")
-        review_response = client.get(runtime_response["Location"])
+        assert business_response.status_code == 302
+        assert business_response["Location"].endswith("/review/")
+        review_response = client.get(business_response["Location"])
         assert review_response.status_code == 200
         content = review_response.content.decode("utf-8")
         assert "Review generated test plan" in content
         assert "Safe export preview" in content
         assert "accessToken" not in content
         assert "fixture-account-id" not in content
-        draft_id = _draft_id_from_builder_redirect(runtime_response["Location"])
+        draft_id = _draft_id_from_builder_redirect(business_response["Location"])
 
         safe_export = client.get(f"/builder/{draft_id}/export.json")
 
@@ -653,8 +650,7 @@ class TestBuilderWizardUi:
             data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]},
         )
         business_response = client.post(scope_response["Location"], data={"ais_consented_account_id": "account-123"})
-        runtime_response = client.post(business_response["Location"], data={})
-        draft_id = _draft_id_from_builder_redirect(runtime_response["Location"])
+        draft_id = _draft_id_from_builder_redirect(business_response["Location"])
 
         exported = client.get(f"/builder/{draft_id}/export.json").json()["securityEnvironment"]
 
@@ -891,13 +887,12 @@ class TestBuilderWizardUi:
                 "ais_transaction_to_date": "2026-01-31T23:59:59Z",
             },
         )
-        runtime_response = client.post(business_response["Location"], data={})
         exported = client.get(f"/builder/{draft_id}/export.json").json()
         launch_response = client.post(f"/builder/{draft_id}/launch/")
 
         assert business_page.status_code == 200
         assert "Consented account identifier" in business_page.content.decode("utf-8")
-        assert runtime_response.status_code == 302
+        assert business_response.status_code == 302
         assert exported["resourceGroups"][0]["id"] == "AIS"
         assert "cbpii" not in exported["businessTestData"]
         assert exported["businessTestData"]["ais"] == {

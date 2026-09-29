@@ -20,10 +20,8 @@ from conformance.api.builder_wizard import (
     BusinessConfigForm,
     CatalogueBoundaryForm,
     DiscoveryConfigForm,
-    RuntimeInputsConfigForm,
     ScopeSelectionForm,
     SecurityConfigForm,
-    WizardRuntimeInputPrompt,
     boundary_requires_resource_groups,
     business_config_form_initial,
     catalogue_boundary_continue_blocker,
@@ -33,15 +31,11 @@ from conformance.api.builder_wizard import (
     endpoint_capability_values_from_mapping,
     merge_business_config,
     merge_discovery_config,
-    merge_runtime_input_config,
     merge_security_config,
-    missing_required_runtime_inputs,
     model_bank_config_from_plan_config,
     plan_document_from_draft,
     plan_document_to_export_json,
-    plan_document_with_runtime_placeholders,
     refresh_security_environment,
-    runtime_input_prompts_for_plan_document,
     security_config_form_initial,
     security_credential_rows,
     security_field_metadata,
@@ -86,11 +80,8 @@ class _BuilderReviewState:
     Attributes:
         document: Parsed canonical test-plan document built from the draft, when
             available.
-        compiled_plan: Preview-compiled plan, using placeholders only for
-            missing runtime inputs so generated-test rows remain inspectable.
+        compiled_plan: Compiled plan used to generate the read-only review.
         rows: Read-only generated test rows.
-        runtime_prompts: Runtime input prompts derived from selected scope.
-        missing_runtime_prompts: Required runtime prompts absent from the draft.
         blockers: Human-readable launch blockers.
         error: Non-recoverable review error, if the draft cannot be interpreted.
         safe_export_json: Secret-safe export text.
@@ -100,8 +91,6 @@ class _BuilderReviewState:
     document: PlanDocumentV2 | None
     compiled_plan: CompiledTestPlan | None
     rows: tuple[PlanTestCaseRow, ...]
-    runtime_prompts: tuple[WizardRuntimeInputPrompt, ...]
-    missing_runtime_prompts: tuple[WizardRuntimeInputPrompt, ...]
     blockers: tuple[str, ...]
     error: str | None
     safe_export_json: str
@@ -346,7 +335,7 @@ def builder_config(request: HttpRequest, draft_id: str) -> HttpResponse:
         )
         if form.is_valid() and form.config is not None:
             draft_store.save(draft.with_config(config=merge_business_config(draft.config, form.config)))
-            return redirect("builder-runtime-config", draft_id=draft.draft_id)
+            return redirect("builder-review", draft_id=draft.draft_id)
         return render(
             request,
             "conformance/builder_business_config.html",
@@ -506,59 +495,6 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
 
 
 @require_http_methods(["GET", "POST"])
-def builder_runtime_config(request: HttpRequest, draft_id: str) -> HttpResponse:
-    """Render or save catalogue-generated runtime inputs for a draft.
-
-    Args:
-        request: The incoming browser request.
-        draft_id: Session-scoped draft id from the route.
-
-    Returns:
-        HTML response for the runtime input step, a redirect to review after
-        save, or ``404`` when the draft is not known.
-    """
-    draft_store = SessionBuilderDraftStore(request.session)
-    draft = draft_store.get(draft_id)
-    if draft is None:
-        return HttpResponseNotFound("Builder draft not found")
-    if _draft_boundary(draft) is None:
-        return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
-
-    try:
-        runtime_prompts = runtime_input_prompts_for_plan_document(plan_document_from_draft(draft))
-    except CatalogueError as error:
-        return render(
-            request,
-            "conformance/builder_runtime_config.html",
-            _builder_runtime_config_context(
-                draft=draft,
-                form=RuntimeInputsConfigForm(runtime_prompts=()),
-                review_error=f"Scope validation failed: {error}",
-            ),
-            status=400,
-        )
-
-    if request.method == "POST":
-        form = RuntimeInputsConfigForm(data=request.POST, runtime_prompts=runtime_prompts)
-        if form.is_valid() and form.config is not None:
-            draft_store.save(draft.with_config(config=merge_runtime_input_config(draft.config, form.config)))
-            return redirect("builder-review", draft_id=draft.draft_id)
-        return render(
-            request,
-            "conformance/builder_runtime_config.html",
-            _builder_runtime_config_context(draft=draft, form=form),
-            status=400,
-        )
-
-    form = RuntimeInputsConfigForm(runtime_prompts=runtime_prompts)
-    return render(
-        request,
-        "conformance/builder_runtime_config.html",
-        _builder_runtime_config_context(draft=draft, form=form),
-    )
-
-
-@require_http_methods(["GET", "POST"])
 def builder_import(request: HttpRequest) -> HttpResponse:
     """Render or process the browser v2 test-plan import flow.
 
@@ -589,7 +525,6 @@ def builder_import(request: HttpRequest) -> HttpResponse:
         parsed_document = parse_test_plan_document(raw_document)
         if not isinstance(parsed_document, PlanDocumentV2) or parsed_document.schema_version != "1.0":
             raise CatalogueError("Browser import accepts schemaVersion 1.0 test plans only")
-        runtime_input_prompts_for_plan_document(parsed_document)
     except CatalogueError as error:
         return render(
             request,
@@ -1078,52 +1013,6 @@ def _builder_security_config_context(
     }
 
 
-def _builder_runtime_config_context(
-    *,
-    draft: BuilderDraft,
-    form: RuntimeInputsConfigForm,
-    review_error: str | None = None,
-) -> dict[str, object]:
-    """Build template context for runtime input config.
-
-    Args:
-        draft: Current browser wizard draft.
-        form: Runtime inputs form.
-        review_error: Optional scope/config validation error to render.
-
-    Returns:
-        Template context for the runtime input config wizard page.
-    """
-    context: dict[str, object] = {
-        "draft": draft,
-        "form": form,
-        "runtime_prompt_groups": _runtime_prompt_group_context(form),
-    }
-    if review_error is not None:
-        context["review_error"] = review_error
-    return context
-
-
-def _runtime_prompt_group_context(form: RuntimeInputsConfigForm) -> list[dict[str, object]]:
-    """Return template-ready runtime prompt groups.
-
-    Args:
-        form: Runtime inputs form containing dynamic runtime input fields.
-
-    Returns:
-        List of group dictionaries with bound fields for rendering.
-    """
-    groups: list[dict[str, object]] = []
-    for group in form.runtime_prompt_groups:
-        groups.append(
-            {
-                "label": group.label,
-                "prompts": [{"prompt": prompt, "field": form[prompt.name]} for prompt in group.prompts],
-            }
-        )
-    return groups
-
-
 def _discovery_metadata_context(discovery_metadata: Mapping[str, JsonValue]) -> dict[str, object]:
     """Return template-ready discovery metadata values.
 
@@ -1314,15 +1203,12 @@ def _builder_review_state(draft: BuilderDraft) -> _BuilderReviewState:
     )
     try:
         document = plan_document_from_draft(draft)
-        runtime_prompts = runtime_input_prompts_for_plan_document(document)
-        missing_prompts = missing_required_runtime_inputs(document, runtime_prompts)
         blockers = list(_model_config_blockers(document))
         boundary_blocker = catalogue_boundary_continue_blocker(
             PlanDocumentBoundary(document.scheme, document.specification, document.version)
         )
         if boundary_blocker is not None:
             blockers.append(boundary_blocker)
-        blockers.extend(f"Required runtime input '{prompt.input_id}' is missing." for prompt in missing_prompts)
         has_selected_scope = bool(document.endpoints) or any(
             resource_group.endpoints or resource_group.select_all for resource_group in document.resource_groups
         )
@@ -1338,15 +1224,12 @@ def _builder_review_state(draft: BuilderDraft) -> _BuilderReviewState:
                 document=document,
                 compiled_plan=None,
                 rows=(),
-                runtime_prompts=runtime_prompts,
-                missing_runtime_prompts=missing_prompts,
                 blockers=tuple(blockers),
                 error=None,
                 safe_export_json=json.dumps(safe_export, indent=2, sort_keys=True),
                 sensitive_export_warning=sensitive_export_warning,
             )
-        preview_document = plan_document_with_runtime_placeholders(document, runtime_prompts)
-        compiled_plan = compile_test_plan_document(preview_document, supported_catalogues())
+        compiled_plan = compile_test_plan_document(document, supported_catalogues())
         rows = compiled_plan_rows(compiled_plan)
         blockers.extend(_selected_security_blockers(document, compiled_plan))
         safe_export = plan_document_to_export_json(
@@ -1358,8 +1241,6 @@ def _builder_review_state(draft: BuilderDraft) -> _BuilderReviewState:
             document=document,
             compiled_plan=compiled_plan,
             rows=rows,
-            runtime_prompts=runtime_prompts,
-            missing_runtime_prompts=missing_prompts,
             blockers=tuple(blockers),
             error=None,
             safe_export_json=json.dumps(safe_export, indent=2, sort_keys=True),
@@ -1370,8 +1251,6 @@ def _builder_review_state(draft: BuilderDraft) -> _BuilderReviewState:
             document=None,
             compiled_plan=None,
             rows=(),
-            runtime_prompts=(),
-            missing_runtime_prompts=(),
             blockers=(str(error),),
             error=str(error),
             safe_export_json="",
@@ -1454,8 +1333,9 @@ def _builder_review_counts(state: _BuilderReviewState) -> dict[str, int]:
         "resource_groups": resource_group_count,
         "endpoints": endpoint_count,
         "capabilities": capability_count,
-        "runtime_inputs": len(state.runtime_prompts),
-        "missing_runtime_inputs": len(state.missing_runtime_prompts),
+        "runtime_inputs": (
+            len(state.compiled_plan.traceability.runtime_input_snapshot) if state.compiled_plan is not None else 0
+        ),
         "consents": consent_count,
         "psu_authorisations": psu_authorisation_count,
         "blockers": len(state.blockers),

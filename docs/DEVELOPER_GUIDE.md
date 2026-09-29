@@ -205,13 +205,13 @@ is configured separately as part of the security environment.
 Canonical sections such as `securityEnvironment`, `businessTestData`, and
 runtime `inputs` derive exact runtime inputs like `resourceBaseUrl`,
 `consentedAccountId`, and debtor account fields so the browser does not duplicate
-them as endpoint runtime prompts. The browser collects values in PRD order:
+them as a separate runtime-input step. The browser collects values in PRD order:
 specification, discovery URL, OAuth/FAPI/security details, resource
-groups, endpoints/capabilities, business test data, and generated runtime
-artifacts. Discovery metadata can prefill security fields, but only values
-accepted on the security page become part of the exported plan JSON. Sensitive
-runtime values may still be supplied to browser launch, REST, or CLI execution,
-but the compiler's traceability snapshot records only that they were provided.
+groups, endpoints/capabilities, and business test data. Discovery metadata can
+prefill security fields, but only values accepted on the security page become
+part of the exported plan JSON. Runtime inputs remain supported by canonical
+plans submitted through import, REST, and CLI execution; the compiler's
+traceability snapshot records only that sensitive values were provided.
 
 Keep capability IDs stable and domain-oriented, for example
 `ais.transactions.date-range-filtering`, rather than generated test-case IDs.
@@ -230,7 +230,7 @@ explicit export-with-secrets action.
 The CLI accepts canonical test plans through `--test-plan path/to/test-plan.json`.
 The REST API accepts the same document as the request body or under `testPlan`.
 The browser builder generates the same canonical document from selected
-specification, security environment, scope, business data, and runtime prompts.
+specification, security environment, scope, and business data.
 
 ## Removed public surfaces
 
@@ -280,14 +280,10 @@ The wizard follows the PRD order:
    CBPII, and VRP fields render only when selected endpoints need that domain.
    Known account, amount, date, and frequency shapes use friendly fields with
    advanced JSON fallbacks.
-7. Enter generated runtime artifacts such as tokens, token file references,
-   consent ids, payment ids, and idempotency keys at
-   `/builder/<draft>/config/runtime/`. DCR skips this page because token and
-   client state are generated during each scenario.
-8. Review the generated plan at `/builder/<draft>/review/`, including summary
+7. Review the generated plan at `/builder/<draft>/review/`, including summary
    counts, masked config, launch blockers, safe export preview, and collapsed
    generated-test rows.
-9. Download safe JSON from `/builder/<draft>/export.json`, explicitly request
+8. Download safe JSON from `/builder/<draft>/export.json`, explicitly request
    local secret-bearing JSON with a POST `include_secrets=1`, or launch through
    `/builder/<draft>/launch/`.
 

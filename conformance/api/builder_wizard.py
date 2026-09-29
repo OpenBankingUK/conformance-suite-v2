@@ -86,9 +86,6 @@ _VRP_RESOURCE_PATH_SEGMENTS = frozenset({"domestic-vrp-consents", "domestic-vrps
 _CAPABILITY_VALUE_SEPARATOR = "::"
 """Separator used in endpoint-scoped capability checkbox values."""
 
-_RUNTIME_INPUT_PREFIX = "runtime_input__"
-"""Prefix used for grouped-config runtime input form fields."""
-
 _MODEL_CONFIG_KEYS = {
     "discoveryUrl",
     "followUp",
@@ -106,24 +103,6 @@ _MODEL_CONFIG_KEYS = {
     "conditionalProperties",
 }
 """Top-level v2 config keys that also belong to the executable model-bank config."""
-
-_STRUCTURED_CONFIG_RUNTIME_INPUT_IDS = {
-    "resourceBaseUrl",
-    "consentedAccountId",
-    "fromBookingDateTime",
-    "toBookingDateTime",
-    "debtorAccountSchemeName",
-    "debtorAccountIdentification",
-    "debtorAccountName",
-    "vrpCreditorAccountSchemeName",
-    "vrpCreditorAccountIdentification",
-    "vrpCreditorAccountName",
-    "vrpInstructedAmountAmount",
-    "vrpInstructedAmountCurrency",
-    "vrpValidFromDateTime",
-    "vrpValidToDateTime",
-}
-"""Plan-authored runtime inputs that have first-class grouped-config equivalents."""
 
 _BUSINESS_CONFIG_KEYS = frozenset({"ais", "pis", "cbpii", "vrp", "conditionalProperties"})
 """Config keys owned by the business/request defaults step."""
@@ -143,9 +122,6 @@ _SECURITY_CONFIG_KEYS = frozenset(
 
 SecurityRequirementStatus = Literal["required", "conditional", "optional"]
 """User-facing field requirement status values for builder security fields."""
-
-_RUNTIME_CONFIG_KEYS = frozenset({"inputs"})
-"""Config keys owned by the runtime-artifact step."""
 
 
 @dataclass(frozen=True)
@@ -347,46 +323,6 @@ class CatalogueScopeHierarchy:
 
 
 @dataclass(frozen=True)
-class WizardRuntimeInputPrompt:
-    """One grouped-config runtime input prompt derived from selected scope.
-
-    Attributes:
-        input_id: Stable catalogue runtime input id.
-        name: Form field name used by the grouped config step.
-        label: Participant-facing prompt label.
-        input_type: Runtime input type expected by the catalogue compiler.
-        required: Whether the compiled plan requires this value before launch.
-        sensitive: Whether the value is secret-bearing and must be masked.
-        value: Current draft value as a display string.
-        group: Participant-facing config group for this prompt.
-        description: Optional participant-facing guidance for this prompt.
-    """
-
-    input_id: str
-    name: str
-    label: str
-    input_type: str
-    required: bool
-    sensitive: bool
-    value: str
-    group: str
-    description: str | None = None
-
-
-@dataclass(frozen=True)
-class RuntimeInputGroup:
-    """Runtime input prompts grouped for the configuration template.
-
-    Attributes:
-        label: Participant-facing group label.
-        prompts: Runtime input prompts in compiler order.
-    """
-
-    label: str
-    prompts: tuple[WizardRuntimeInputPrompt, ...]
-
-
-@dataclass(frozen=True)
 class ConfigVisibility:
     """Scope-derived visibility flags for grouped execution config.
 
@@ -396,7 +332,7 @@ class ConfigVisibility:
         show_ais: Whether AIS/account-and-transaction config fields apply.
         show_pis: Whether payment-initiation config fields apply.
         show_cbpii: Whether confirmation-of-funds config fields apply.
-        show_vrp: Whether variable-recurring-payment runtime prompts apply.
+        show_vrp: Whether variable-recurring-payment business defaults apply.
         show_business_defaults: Whether any domain-specific business/request
             defaults section should be rendered.
         ais_account_id_required: Whether the selected AIS scope needs a
@@ -1450,73 +1386,6 @@ class SecurityConfigForm(forms.Form):
         return cleaned_data
 
 
-class RuntimeInputsConfigForm(forms.Form):
-    """Form for catalogue-generated runtime execution artifacts.
-
-    Attributes:
-        config: Parsed partial v2 config owned by this step.
-    """
-
-    config: JsonObject | None = None
-
-    def __init__(
-        self,
-        data: Mapping[str, object] | None = None,
-        *,
-        initial: Mapping[str, object] | None = None,
-        runtime_prompts: Iterable[WizardRuntimeInputPrompt] = (),
-    ) -> None:
-        """Initialise the runtime-input form.
-
-        Args:
-            data: Optional bound form data.
-            initial: Initial values decoded from the draft config.
-            runtime_prompts: Runtime prompts derived from selected endpoints and
-                current structured config.
-        """
-        self.runtime_prompts = tuple(runtime_prompts)
-        super().__init__(
-            data=cast(MutableMapping[str, object] | None, data),
-            initial=cast(MutableMapping[str, object] | None, initial),
-        )
-        for prompt in self.runtime_prompts:
-            self.fields[prompt.name] = forms.CharField(
-                label=prompt.label,
-                required=False,
-                initial=prompt.value,
-            )
-
-    @property
-    def runtime_prompt_groups(self) -> tuple[RuntimeInputGroup, ...]:
-        """Return runtime prompts grouped for rendering.
-
-        Returns:
-            Runtime prompt groups in a stable participant-facing order.
-        """
-        groups: dict[str, list[WizardRuntimeInputPrompt]] = {}
-        for prompt in self.runtime_prompts:
-            groups.setdefault(prompt.group, []).append(prompt)
-        return tuple(RuntimeInputGroup(label=label, prompts=tuple(prompts)) for label, prompts in groups.items())
-
-    def clean(self) -> dict[str, object]:
-        """Build and validate the runtime-input partial config.
-
-        Returns:
-            Cleaned form data.
-        """
-        base_cleaned_data = super().clean()
-        cleaned_data: dict[str, object] = {} if base_cleaned_data is None else dict(base_cleaned_data)
-        if self.errors:
-            return cleaned_data
-        inputs: JsonObject = {}
-        for prompt in self.runtime_prompts:
-            value = _runtime_input_value_from_form(prompt, cleaned_data.get(prompt.name))
-            if value is not None:
-                inputs[prompt.input_id] = {"value": value}
-        self.config = {"inputs": inputs} if inputs else {}
-        return cleaned_data
-
-
 def catalogue_boundary_options() -> tuple[PlanDocumentBoundary, ...]:
     """Return canonical plan boundaries shown by the wizard.
 
@@ -1849,8 +1718,6 @@ def config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, object]:
     cbpii = _object_config_value(config, "cbpii")
     initial["cbpii_debtor_account_json"] = _json_config_value(cbpii, "debtorAccount")
     initial["conditional_properties_json"] = _display_json_value(config.get("conditionalProperties"))
-    for input_id, value in _runtime_input_values_from_config(config).items():
-        initial[f"{_RUNTIME_INPUT_PREFIX}{input_id}"] = _display_json_value(value)
     return initial
 
 
@@ -2347,19 +2214,6 @@ def refresh_security_environment(
     return refreshed
 
 
-def merge_runtime_input_config(config: Mapping[str, JsonValue], section_config: Mapping[str, JsonValue]) -> JsonObject:
-    """Return ``config`` with runtime input fields replaced.
-
-    Args:
-        config: Existing draft config.
-        section_config: Runtime-input partial config emitted by the form.
-
-    Returns:
-        Updated config with runtime-input keys replaced.
-    """
-    return merge_config_sections(config, section_config, section_keys=_RUNTIME_CONFIG_KEYS)
-
-
 def model_bank_config_from_plan_config(config: Mapping[str, JsonValue]) -> JsonObject:
     """Extract executable model-bank config fields from editable plan config.
 
@@ -2630,72 +2484,6 @@ def draft_scope_from_plan_document(
     return tuple(resource_group_ids), tuple(endpoint_ids), capability_ids_by_endpoint
 
 
-def runtime_input_prompts_for_draft(draft: BuilderDraft) -> tuple[WizardRuntimeInputPrompt, ...]:
-    """Return runtime prompts derived from a draft's selected endpoints.
-
-    Args:
-        draft: Current wizard draft.
-
-    Returns:
-        Runtime prompts in compiler trace order.
-
-    Raises:
-        CatalogueError: If the draft scope cannot be resolved against bundled
-            catalogues.
-    """
-    return runtime_input_prompts_for_plan_document(plan_document_from_draft(draft))
-
-
-def runtime_input_prompts_for_plan_document(document: PlanDocumentV2) -> tuple[WizardRuntimeInputPrompt, ...]:
-    """Return runtime prompts derived from a canonical test-plan document.
-
-    Args:
-        document: Parsed canonical test-plan document.
-
-    Returns:
-        Runtime prompts in compiler trace order.
-
-    Raises:
-        CatalogueError: If endpoint scope cannot be compiled.
-    """
-    if not document.endpoints and not any(
-        resource_group.endpoints or resource_group.select_all for resource_group in document.resource_groups
-    ):
-        return ()
-    boundary_requirements = _runtime_requirements_for_boundary(
-        PlanDocumentBoundary(document.scheme, document.specification, document.version)
-    )
-    preview_document = plan_document_with_runtime_placeholders(document, boundary_requirements.values())
-    compiled_plan = compile_test_plan_document(preview_document, supported_catalogues())
-    requirements = _runtime_requirements_for_test_cases(compiled_plan.test_cases)
-    actual_values = document.runtime_inputs
-    prompts: list[WizardRuntimeInputPrompt] = []
-    for trace in compiled_plan.traceability.runtime_input_snapshot:
-        if trace.input_id in _STRUCTURED_CONFIG_RUNTIME_INPUT_IDS and _runtime_input_is_present(
-            actual_values.get(trace.input_id)
-        ):
-            continue
-        requirement = requirements.get(trace.input_id)
-        if requirement is not None and requirement.source != "plan":
-            continue
-        label = requirement.label if requirement is not None else trace.input_id
-        description = requirement.description if requirement is not None else None
-        prompts.append(
-            WizardRuntimeInputPrompt(
-                input_id=trace.input_id,
-                name=f"{_RUNTIME_INPUT_PREFIX}{trace.input_id}",
-                label=label,
-                input_type=trace.input_type,
-                required=trace.required,
-                sensitive=trace.sensitive,
-                value=_display_json_value(actual_values.get(trace.input_id)),
-                group=_runtime_prompt_group(trace.input_id, trace.input_type),
-                description=description,
-            )
-        )
-    return tuple(prompts)
-
-
 def config_visibility_for_draft(draft: BuilderDraft) -> ConfigVisibility:
     """Return grouped-config field visibility for a draft's selected scope.
 
@@ -2876,6 +2664,18 @@ def _selected_scope_requires_runtime_input(document: PlanDocumentV2, input_id: s
     return requirement is not None and requirement.required and requirement.source == "plan"
 
 
+def plan_document_with_runtime_placeholders(
+    document: PlanDocumentV2,
+    requirements: Iterable[RuntimeInputRequirement],
+) -> PlanDocumentV2:
+    """Return a preview document with missing required runtime inputs filled.
+
+    This enables scope-derived business-field requiredness before the
+    participant has supplied those business values.
+    """
+    return _plan_document_with_config(document, _config_with_runtime_placeholders(document.config, requirements))
+
+
 def security_field_metadata() -> dict[str, SecurityFieldMetadata]:
     """Return security field metadata keyed by form field name.
 
@@ -2883,43 +2683,6 @@ def security_field_metadata() -> dict[str, SecurityFieldMetadata]:
         Mapping of security form field names to participant-facing metadata.
     """
     return dict(_SECURITY_FIELD_METADATA_BY_NAME)
-
-
-def plan_document_with_runtime_placeholders(
-    document: PlanDocumentV2,
-    requirements: Iterable[RuntimeInputRequirement | WizardRuntimeInputPrompt],
-) -> PlanDocumentV2:
-    """Return a copy of ``document`` with missing required runtime inputs filled.
-
-    Args:
-        document: Parsed canonical test-plan document to copy.
-        requirements: Runtime requirements or prompts whose required missing
-            values should be substituted for preview compilation only.
-
-    Returns:
-        Parsed canonical test-plan document with placeholder runtime values.
-    """
-    return _plan_document_with_config(document, _config_with_runtime_placeholders(document.config, requirements))
-
-
-def missing_required_runtime_inputs(
-    document: PlanDocumentV2,
-    prompts: Iterable[WizardRuntimeInputPrompt],
-) -> tuple[WizardRuntimeInputPrompt, ...]:
-    """Return required runtime prompts absent from a plan document.
-
-    Args:
-        document: Parsed canonical test-plan document with actual participant config.
-        prompts: Runtime prompts derived from selected scope.
-
-    Returns:
-        Required prompts whose value is absent or blank.
-    """
-    return tuple(
-        prompt
-        for prompt in prompts
-        if prompt.required and not _runtime_input_is_present(document.runtime_inputs.get(prompt.input_id))
-    )
 
 
 def plan_document_to_export_json(
@@ -3779,31 +3542,6 @@ def _set_object_from_fields_or_json(
         target[key] = nested
 
 
-def _runtime_input_value_from_form(prompt: WizardRuntimeInputPrompt, raw_value: object) -> JsonValue | None:
-    """Parse one runtime input from the grouped config form.
-
-    Args:
-        prompt: Runtime prompt carrying the expected input type.
-        raw_value: Submitted form value.
-
-    Returns:
-        Parsed JSON value, or ``None`` when the field is blank.
-
-    Raises:
-        ValidationError: If the value cannot be parsed as the prompt type.
-    """
-    if not isinstance(raw_value, str) or not raw_value.strip():
-        return None
-    value = raw_value.strip()
-    if prompt.input_type == "json":
-        return _load_json_value(value, label=prompt.label)
-    if prompt.input_type == "number":
-        return _load_json_number(value, label=prompt.label)
-    if prompt.input_type == "boolean":
-        return _load_json_boolean(value, label=prompt.label)
-    return value
-
-
 def _nested_object_from_fields(
     cleaned_data: Mapping[str, object],
     field_mapping: Mapping[str, str],
@@ -4033,7 +3771,7 @@ def _scoped_business_plan_context(
 
 def _config_with_runtime_placeholders(
     config: Mapping[str, JsonValue],
-    requirements: Iterable[RuntimeInputRequirement | WizardRuntimeInputPrompt],
+    requirements: Iterable[RuntimeInputRequirement],
 ) -> JsonObject:
     """Return config with required missing runtime inputs set to placeholders.
 
@@ -4047,7 +3785,7 @@ def _config_with_runtime_placeholders(
     updated = _copy_json_mapping(config)
     current_values = _runtime_input_values_from_config(updated)
     for requirement in requirements:
-        if isinstance(requirement, RuntimeInputRequirement) and requirement.source != "plan":
+        if requirement.source != "plan":
             continue
         if not requirement.required:
             continue
@@ -4093,24 +3831,6 @@ def _runtime_placeholder(input_type: str) -> JsonValue:
     if input_type == "json":
         return {}
     return "placeholder"
-
-
-def _runtime_prompt_group(input_id: str, input_type: str) -> str:
-    """Return the grouped-config section for a runtime prompt.
-
-    Args:
-        input_id: Runtime input id.
-        input_type: Runtime input type.
-
-    Returns:
-        Participant-facing config group label.
-    """
-    normalized = input_id.lower()
-    if normalized.startswith("xfapi") or normalized.startswith("xcustomer") or normalized == "idempotencykey":
-        return "Request metadata and headers"
-    if input_type == "url" or "baseurl" in normalized or normalized.endswith("url"):
-        return "Resource server targets"
-    return "PSU authorisation/runtime inputs"
 
 
 def _runtime_input_values_from_config(config: Mapping[str, JsonValue]) -> JsonObject:

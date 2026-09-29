@@ -55,7 +55,7 @@
 
     <section class="panel" aria-labelledby="business-heading">
         <h2 id="business-heading">Business and request defaults</h2>
-        <p class="helper">These fields are generated from the selected resource groups and endpoints. Security settings have already been collected; remaining runtime artifacts come next.</p>
+        <p class="helper">These fields are generated from the selected resource groups and endpoints. Security settings have already been collected.</p>
         <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         {% if review_error %}<div class="message warning">{{ review_error }}</div>{% endif %}
@@ -392,7 +392,7 @@
 
             <div class="actions">
                 <a class="button secondary" href="{% url 'builder-scope' draft.draft_id %}">Back to scope</a>
-                <button type="submit">Continue to runtime inputs</button>
+                <button type="submit">Review generated plan</button>
             </div>
         </form>
     </section>

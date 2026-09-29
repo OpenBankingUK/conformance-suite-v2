@@ -11,8 +11,6 @@ from conformance.api.builder_wizard import (
     ConfigVisibility,
     catalogue_scope_hierarchy,
     config_visibility_for_draft,
-    plan_document_from_draft,
-    runtime_input_prompts_for_draft,
 )
 from conformance.catalogue import PlanDocumentBoundary
 
@@ -20,90 +18,6 @@ pytestmark = pytest.mark.unit
 
 DISCOVERY_CONFIG = {"discoveryUrl": "https://example.com/.well-known/openid-configuration"}
 """Minimal discovery config needed to build canonical draft documents."""
-
-
-def test_runtime_prompt_labels_follow_selected_endpoint_scope() -> None:
-    """PIS-only runtime prompts do not inherit AIS-specific labels."""
-    draft = (
-        SessionBuilderDraftStore(SessionStore())
-        .create()
-        .with_catalogue_boundary(
-            scheme="open-banking-uk",
-            specification="read-write",
-            version="4.0.1",
-        )
-    )
-    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
-    hierarchy = catalogue_scope_hierarchy(
-        boundary,
-        selected_resource_group_ids=("payment-initiation",),
-    )
-    endpoint = next(
-        endpoint
-        for group in hierarchy.resource_groups
-        for endpoint in group.endpoints
-        if endpoint.path == "/open-banking/v4.0/pisp/domestic-payments"
-    )
-    draft = draft.with_scope_selection(
-        resource_group_ids=("payment-initiation",),
-        endpoint_ids=(endpoint.id,),
-        endpoint_capability_ids={},
-    ).with_config(
-        config=DISCOVERY_CONFIG,
-    )
-
-    prompts = runtime_input_prompts_for_draft(draft)
-    labels_by_id = {prompt.input_id: prompt.label for prompt in prompts}
-    groups_by_id = {prompt.input_id: prompt.group for prompt in prompts}
-
-    assert labels_by_id["resourceBaseUrl"] == "Resource server base URL"
-    assert "xFapiCustomerIpAddress" not in labels_by_id
-    assert "Request metadata and headers" not in groups_by_id.values()
-    assert "AIS resource server base URL" not in labels_by_id.values()
-
-
-def test_structured_config_values_remove_duplicate_runtime_prompts() -> None:
-    """Runtime prompts do not duplicate values already supplied by grouped config."""
-    draft = (
-        SessionBuilderDraftStore(SessionStore())
-        .create()
-        .with_catalogue_boundary(
-            scheme="open-banking-uk",
-            specification="read-write",
-            version="4.0.1",
-        )
-    )
-    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
-    hierarchy = catalogue_scope_hierarchy(
-        boundary,
-        selected_resource_group_ids=("account-and-transaction",),
-    )
-    endpoint = next(
-        endpoint
-        for group in hierarchy.resource_groups
-        for endpoint in group.endpoints
-        if endpoint.path == "/open-banking/v4.0/aisp/accounts/{AccountId}"
-    )
-    draft = draft.with_scope_selection(
-        resource_group_ids=("account-and-transaction",),
-        endpoint_ids=(endpoint.id,),
-        endpoint_capability_ids={},
-    ).with_config(
-        config={
-            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-            "resourceServer": {"baseUrl": "https://resource.example.com"},
-            "ais": {"resourceIds": {"accountIds": [{"accountId": "account-123"}]}},
-        }
-    )
-
-    document = plan_document_from_draft(draft)
-    prompts = runtime_input_prompts_for_draft(draft)
-
-    assert document.runtime_inputs["resourceBaseUrl"] == "https://resource.example.com"
-    assert document.runtime_inputs["consentedAccountId"] == "account-123"
-    assert "resourceBaseUrl" not in {prompt.input_id for prompt in prompts}
-    assert "consentedAccountId" not in {prompt.input_id for prompt in prompts}
-    assert "accessToken" not in {prompt.input_id for prompt in prompts}
 
 
 def test_config_visibility_uses_selected_endpoint_apis() -> None:

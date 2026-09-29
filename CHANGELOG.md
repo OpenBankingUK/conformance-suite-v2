@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Removed the standalone runtime-input page from the browser plan builder.
+  Security and business configuration now continue directly to the generated
+  plan review; canonical plan, REST, and CLI runtime-input support is unchanged.
 - Synced the trusted release pipeline with `main`: candidate image scanning
   now gates on Snyk and Docker Scout VEX assessments, and approved promotion
   publishes to Docker Hub instead of GHCR.
