@@ -89,4 +89,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # and safe defaults, then execs into CMD (or an operator-supplied override,
 # e.g. the existing headless CLI) so signals and exit codes reach it directly.
 ENTRYPOINT ["python3", "/app/docker/entrypoint.py"]
-CMD ["uvicorn", "config.asgi:application", "--host", "0.0.0.0", "--port", "8443", "--ssl-keyfile", "/tmp/conformance-suite-tls/localhost-private-key.pem", "--ssl-certfile", "/tmp/conformance-suite-tls/localhost-certificate.pem"]
+CMD ["uvicorn", "config.asgi:application", "--host", "0.0.0.0", "--port", "8443", "--ssl-keyfile", "/tmp/conformance-suite-tls/localhost-private-key.pem", "--ssl-certfile", "/tmp/conformance-suite-tls/localhost-certificate.pem", "--log-config", "/app/docker/uvicorn_logging.json"]
