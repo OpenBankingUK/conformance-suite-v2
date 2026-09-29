@@ -61,7 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Docker-signed OpenVEX is verified against Docker's pinned DHI signing key
+- Docker-signed OpenVEX is verified against Docker's DHI signing key, now
+  checked into the repository and pinned by SHA-256 rather than downloaded,
   without a Rekor transparency-log lookup, which DHI VEX attestations do not
   have; previously every hardened-image scan failed at VEX verification.
 - Removed unused system pip and its vendored packages from the hardened

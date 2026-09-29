@@ -218,8 +218,12 @@ warning. Because the workflow definition for `pull_request` events is still
 read from the PR head, CODEOWNERS review of `.github/` remains the control for
 workflow changes; CODEOWNERS review of `scripts/` and `security/` protects the
 policy code and exception data. Docker's VEX is fetched with `--verify` against
-Docker's pinned DHI signing key (`--skip-tlog`, because Docker does not
-publish DHI VEX attestations to the public Rekor log). PRs from forks have no secrets and fail closed;
+Docker's DHI signing key, checked in as
+`.github/actions/vulnerability-scan/dhi-signing-key.pub` and pinned by
+SHA-256 (rotate via a reviewed PR against
+[docker-hardened-images/keyring](https://github.com/docker-hardened-images/keyring)).
+`--skip-tlog` is used because Docker does not publish DHI VEX attestations to
+the public Rekor log; the signature itself is still verified. PRs from forks have no secrets and fail closed;
 re-push them to a branch in this repository.
 
 #### Exceptions
