@@ -129,6 +129,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Candidate image scans and trusted promotion now require the runtime base to
+  match the exact DHI digest covered by the Snyk exceptions and signed VEX
+  assessment.
 - Exported plan documents and result traceability avoid inline secret material; sensitive runtime inputs are recorded as provided without serializing their values.
 - Browser safe exports for v2 plan documents preserve reusable structure while emptying secret-bearing runtime/config strings by default.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.

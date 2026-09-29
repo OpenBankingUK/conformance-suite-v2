@@ -203,8 +203,12 @@ with status `not_affected` and justification
 at `2026-12-28T00:00:00.000Z`; do not add broader IDs, packages, or paths.
 Before expiry, Security must recheck the signed VEX status and current base
 image, then remove or renew only through a reviewed PR with supporting
-evidence. The trusted promotion workflow compares `.snyk` against `main`, so
-candidate branches cannot widen this policy.
+evidence. Candidate CI validates the Dockerfile's runtime stage against that
+exact DHI digest before building or running either image scanner. Trusted
+promotion repeats the check against `Dockerfile` read directly from the source
+commit and rejects any mismatch; it also compares the validation script and
+`.snyk` against `main`, so a candidate cannot bypass the guard or widen the
+policy.
 
 The status check posted by Snyk's GitHub integration is separate from
 `.github/workflows/ci.yml`. PRs must not be merged when it reports a high or

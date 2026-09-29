@@ -164,6 +164,11 @@ jobs:
       - name: Install release-tooling dependencies
         run: uv sync --frozen --no-install-project
 
+      - name: Verify the assessed DHI runtime base
+        # This must pass before building or either scanner can consume the
+        # Snyk policy / Docker-signed VEX assessment for the exact base digest.
+        run: uv run python -m scripts.validate_docker_base --dockerfile Dockerfile
+
       - name: Validate release metadata for this branch
         id: metadata
         env:

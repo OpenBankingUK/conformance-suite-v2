@@ -181,6 +181,8 @@ jobs:
             echo "::error::$INPUT_SOURCE_SHA does not belong to $INPUT_BRANCH." >&2
             exit 1
           fi
+          git show "$INPUT_SOURCE_SHA:Dockerfile" \
+            | uv run python -m scripts.validate_docker_base --stdin
           if [[ -n "$INPUT_TAG" ]]; then
             tag_refs="$(git ls-remote --tags origin "refs/tags/$INPUT_TAG" "refs/tags/$INPUT_TAG^{}")"
             tag_target_sha="$(
@@ -200,6 +202,7 @@ jobs:
             scripts/docker_smoke_test.sh \
             scripts/release_metadata.py \
             scripts/validate_release.py \
+            scripts/validate_docker_base.py \
             .snyk; then
             echo "::error::Candidate pipeline files differ from trusted main. Merge main into $INPUT_BRANCH and rebuild." >&2
             exit 1
