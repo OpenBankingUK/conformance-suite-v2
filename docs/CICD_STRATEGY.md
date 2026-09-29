@@ -319,17 +319,26 @@ are produced there too.
 Promotion locates the successful push CI run for the exact source SHA and
 branch, downloads its immutable artifacts, verifies archive checksums,
 revalidates release metadata using scripts checked out from `main`, and
-confirms the source SHA belongs to the requested branch and a merged,
-approved pull request. Automatic promotion uses the exact CI run that triggered
+confirms the source SHA belongs to the requested branch and a merged pull
+request (direct pushes are rejected). If that pull request has no recorded
+approval — for example, an administrator merged it by bypassing branch
+protection — promotion continues but emits a workflow warning and a job-summary
+entry naming who merged it, so the bypass is auditable; the required
+Environment reviewer is then the only blocking human gate. Automatic promotion uses the exact CI run that triggered
 it; manual recovery dispatches locate the matching run. Candidate CI and
 release-script files must exactly match the trusted copies on `main`; pipeline
 changes therefore land on `main` before release branches consume them. Only
-then does the Environment-gated job receive Docker Hub credentials; it stages
-the platform images under SHA-specific internal tags and assembles the
-already-tested images without rebuilding. Promotion is serialized to prevent
+then does the Environment-gated job receive Docker Hub credentials; it pushes
+each platform image by digest with `skopeo copy --preserve-digests` (so the
+registry digests equal the scanned digests; a plain `docker push` would
+re-serialise the manifest, and pushing by digest leaves no internal staging
+tags) and assembles the already-tested images without rebuilding. Promotion is serialized to prevent
 tag races, rejects an existing immutable version tag discovered through the
 Docker Hub tags API, and attests the published
-multi-architecture manifest with provenance and both platform SBOMs.
+multi-architecture manifest with provenance and both platform SBOMs using
+`actions/attest`. The provenance attestation also records an Artifact Metadata
+storage record (`artifact-metadata: write`), so each published image appears on
+the organisation's Linked Artifacts page.
 
 For each successful eligible push, `auto-promote.yml` confirms the CI run
 uploaded a promotion manifest, reads only `pyproject.toml` from its source
