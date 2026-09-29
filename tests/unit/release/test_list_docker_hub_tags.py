@@ -44,15 +44,16 @@ def test_lists_tags_across_all_pages(monkeypatch: pytest.MonkeyPatch) -> None:
     assert requested_urls[1].endswith("page=2")
 
 
-def test_returns_empty_when_repository_does_not_exist(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A missing Docker Hub repository is an empty tag list, not a failure."""
+def test_fails_closed_when_repository_returns_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A Docker Hub 404 may mean the repository is private or inaccessible."""
     monkeypatch.setattr(
         httpx,
         "get",
         lambda url, **kwargs: httpx.Response(404, request=httpx.Request("GET", url)),
     )
 
-    assert list_tags() == []
+    with pytest.raises(httpx.HTTPStatusError):
+        list_tags()
 
 
 def test_rejects_unexpected_pagination_host(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -17,20 +17,18 @@ def list_tags() -> list[str]:
 
     Returns:
         All tag names across the endpoint's pagination pages. A 404 on the
-        first request means the repository has not been created yet.
+        endpoint is treated as an error because Docker Hub also uses 404 for
+        repositories that are private or inaccessible.
 
     Raises:
-        httpx.HTTPError: If Docker Hub cannot be reached or returns a non-404 error.
+        httpx.HTTPError: If Docker Hub cannot be reached or returns an HTTP error.
         ValueError: If Docker Hub returns an unexpected response or pagination URL.
     """
     tags: list[str] = []
     next_url: str | None = _TAGS_URL
-    first_page = True
 
     while next_url is not None:
         response = httpx.get(next_url, headers={"Accept": "application/json"}, timeout=30)
-        if first_page and response.status_code == 404:
-            return []
         response.raise_for_status()
         payload: object = response.json()
 
@@ -57,7 +55,6 @@ def list_tags() -> list[str]:
             next_url = candidate_next
         else:
             next_url = None
-        first_page = False
 
     return tags
 

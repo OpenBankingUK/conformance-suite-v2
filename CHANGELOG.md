@@ -79,6 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Docker Hub tag discovery now fails closed on 404 responses, which can indicate
+  a private or inaccessible repository rather than a repository that has not
+  been created.
 - PIS v4 strict parity now executes all 29 legacy FCS v1.10.0 rows as
   independent cases with exact `asserts`/`asserts_one_of` error-code checks,
   response schemas and signature flags, including separate domestic consent
