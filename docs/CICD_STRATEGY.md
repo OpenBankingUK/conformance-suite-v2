@@ -319,8 +319,12 @@ are produced there too.
 Promotion locates the successful push CI run for the exact source SHA and
 branch, downloads its immutable artifacts, verifies archive checksums,
 revalidates release metadata using scripts checked out from `main`, and
-confirms the source SHA belongs to the requested branch and a merged,
-approved pull request. Automatic promotion uses the exact CI run that triggered
+confirms the source SHA belongs to the requested branch and a merged pull
+request (direct pushes are rejected). If that pull request has no recorded
+approval — for example, an administrator merged it by bypassing branch
+protection — promotion continues but emits a workflow warning and a job-summary
+entry naming who merged it, so the bypass is auditable; the required
+Environment reviewer is then the only blocking human gate. Automatic promotion uses the exact CI run that triggered
 it; manual recovery dispatches locate the matching run. Candidate CI and
 release-script files must exactly match the trusted copies on `main`; pipeline
 changes therefore land on `main` before release branches consume them. Only

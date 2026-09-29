@@ -214,21 +214,31 @@ jobs:
             exit 1
           fi
 
-      - name: Confirm the source commit belongs to a reviewed, approved pull request
+      - name: Confirm the source commit belongs to a merged pull request
+        # A merged PR is mandatory (direct pushes are rejected). A recorded
+        # PR approval is not: admins may merge release PRs by bypassing branch
+        # protection, so an unapproved merge is recorded as an audit warning
+        # and the required Environment reviewer remains the blocking human gate.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          pr_number="$(gh api "repos/$GITHUB_REPOSITORY/commits/$INPUT_SOURCE_SHA/pulls" --jq 'map(select(.merged_at != null)) | first | .number // empty')"
+          pr_json="$(gh api "repos/$GITHUB_REPOSITORY/commits/$INPUT_SOURCE_SHA/pulls" --jq 'map(select(.merged_at != null)) | first // empty')"
+          pr_number="$(jq -r '.number // empty' <<<"$pr_json")"
           if [[ -z "$pr_number" ]]; then
             echo "::error::No merged pull request found for commit $INPUT_SOURCE_SHA." >&2
             exit 1
           fi
-          approved="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number/reviews" --jq 'map(select(.state == "APPROVED")) | length')"
-          if [[ "$approved" -lt 1 ]]; then
-            echo "::error::Pull request #$pr_number for commit ${{ inputs.source_sha }} has no recorded approval." >&2
-            exit 1
+          merged_by="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number" --jq '.merged_by.login // "unknown"')"
+          approvers="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number/reviews" --paginate --jq '.[] | select(.state == "APPROVED") | .user.login' | sort -u | paste -sd, -)"
+          if [[ -n "$approvers" ]]; then
+            echo "Pull request #$pr_number approved by: $approvers (merged by $merged_by)."
+            summary="Source PR #$pr_number approved by \`$approvers\`, merged by \`$merged_by\`."
+          else
+            echo "::warning::Pull request #$pr_number for commit $INPUT_SOURCE_SHA was merged by $merged_by without a recorded approval (admin bypass). Promotion relies on the Environment reviewer gate."
+            summary="⚠️ Source PR #$pr_number was merged by \`$merged_by\` **without a recorded approval** (admin bypass); the Environment reviewer approval is the only human gate for this promotion."
           fi
+          echo "$summary" >> "$GITHUB_STEP_SUMMARY"
 
       - name: List already-published version tags
         run: |

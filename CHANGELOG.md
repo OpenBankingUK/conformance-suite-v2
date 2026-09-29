@@ -79,6 +79,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Image promotion no longer fails when the source pull request was merged by
+  an administrator without a recorded approval; a merged pull request is still
+  mandatory, and an unapproved (bypassed) merge is recorded as a workflow
+  warning and job-summary audit entry. The Environment reviewer gate remains
+  blocking.
 - Docker Scout VEX fetch and candidate scan steps now authenticate via
   `DOCKER_SCOUT_HUB_USER`/`DOCKER_SCOUT_HUB_PASSWORD` using the existing
   read-only org credentials; the `dhi.io` registry login alone does not
