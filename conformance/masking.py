@@ -37,11 +37,21 @@ SENSITIVE_JSON_KEYS: Final[frozenset[str]] = frozenset(
         "code",
         "client_assertion",
         "assertion",
+        "authorization",
         "request",
         "request_object",
+        "software_statement",
+        "softwarestatementassertion",
+        "signedregistrationjose",
+        "registration_access_token",
+        "registrationaccesstoken",
+        "clientcredentialsaccesstoken",
+        "clientassertions",
+        "tokenresponse",
         # Generic credential fields that may appear in form/JSON payloads
         "password",
         "private_key",
+        "privatekeys",
     }
 )
 """JSON object keys whose values must be masked, compared case-insensitively."""
@@ -53,6 +63,7 @@ SENSITIVE_HEADER_NAMES: Final[frozenset[str]] = frozenset(
         "cookie",
         "set-cookie",
         "x-api-key",
+        "x-fapi-customer-ip-address",
         "x-fapi-financial-id",
         "x-jws-signature",
     }

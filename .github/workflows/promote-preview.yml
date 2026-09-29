@@ -1,0 +1,52 @@
+name: Promote preview image
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        required: true
+        description: "Exact commit SHA on a preview/<feature> branch to promote."
+      branch:
+        required: true
+        description: "The exact preview/<feature> branch the commit is on."
+
+permissions:
+  contents: read
+
+jobs:
+  validate-branch:
+    name: Validate branch pattern
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject non-preview branches
+        env:
+          INPUT_BRANCH: ${{ inputs.branch }}
+        run: |
+          case "$INPUT_BRANCH" in
+            preview/*) exit 0 ;;
+            *)
+              echo "::error::Preview promotion requires a 'preview/<feature>' branch, got '$INPUT_BRANCH'." >&2
+              exit 1
+              ;;
+          esac
+
+  promote:
+    name: Promote
+    needs: validate-branch
+    uses: ./.github/workflows/_promote-image.yml
+    with:
+      channel: preview
+      source_sha: ${{ inputs.source_sha }}
+      branch: ${{ inputs.branch }}
+      environment_name: preview-release
+    permissions:
+      contents: read
+      actions: read
+      attestations: write
+      artifact-metadata: write
+      id-token: write
+      pull-requests: read
+    secrets:
+      DOCKER_ORG_USERNAME: ${{ secrets.DOCKER_ORG_USERNAME }}
+      DOCKER_ORG_ACCESS_TOKEN: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

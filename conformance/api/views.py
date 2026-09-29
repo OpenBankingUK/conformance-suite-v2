@@ -16,7 +16,7 @@ import functools
 import ipaddress
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -34,11 +34,9 @@ from conformance.api.auth_session_store import (
 )
 from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, run_store
-from conformance.json_types import JsonObject
-from conformance.manifest import ManifestError, load_manifest_from_object
-from conformance.model_bank_config import ConfigError, parse_model_bank_config
-from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
-from conformance.test_plan import TestPlan
+from conformance.catalogue import CompiledTestPlan
+from conformance.json_types import JsonObject, JsonValue
+from conformance.test_plan_validation import TestPlanValidationError, prepare_test_plan_for_run
 
 logger = logging.getLogger(__name__)
 
@@ -221,15 +219,11 @@ def _require_loopback[**P](
 def create_run(request: HttpRequest) -> JsonResponse:
     """Start a new conformance run from a JSON request body.
 
-    The request body must be a JSON object with a required ``config`` key
-    (model-bank config object) and an optional ``manifest`` key (v0/v1
-    manifest object). When ``manifest`` is omitted and ``config.testSuite``
-    is present, the selected bundled suite manifest is resolved instead;
-    otherwise the request runs the legacy smoke check. An optional
-    ``deselectStepIds`` array of step ids may be supplied for inline or
-    config-resolved manifests; each id is validated against the manifest at
-    request time and any unknown id returns HTTP 400. ``deselectStepIds``
-    without either manifest source is rejected.
+    The request body must be a canonical ``schemaVersion: "1.0"`` test plan, or
+    a JSON object with a canonical test plan under the ``testPlan`` key. The plan
+    is compiled against the bundled catalogues before the asynchronous run
+    starts, so participants receive immediate feedback for unsupported
+    combinations, unknown endpoints, missing runtime inputs, or invalid setup.
     The run executes asynchronously in a background thread; the response
     returns immediately with the run ID and status.
 
@@ -259,66 +253,83 @@ def create_run(request: HttpRequest) -> JsonResponse:
     if not isinstance(body, dict):
         return JsonResponse({"error": "Request body must be a JSON object"}, status=400)
 
-    raw_config = body.get("config")
-    if raw_config is None or not isinstance(raw_config, dict):
-        return JsonResponse({"error": '"config" key is required and must be a JSON object'}, status=400)
+    canonical_response = _create_run_from_canonical_test_plan(body)
+    if canonical_response is not None:
+        return canonical_response
 
-    raw_manifest = body.get("manifest")
-    if raw_manifest is not None and not isinstance(raw_manifest, dict):
-        return JsonResponse({"error": '"manifest" must be a JSON object if provided'}, status=400)
-
-    raw_deselect = body.get("deselectStepIds")
-    if raw_deselect is not None and (
-        not isinstance(raw_deselect, list) or not all(isinstance(step_id, str) for step_id in raw_deselect)
-    ):
+    legacy_fields = sorted(set(body) & {"config", "planSpec", "manifest", "deselectStepIds"})
+    if legacy_fields:
         return JsonResponse(
-            {"error": '"deselectStepIds" must be an array of strings'},
+            {
+                "error": (
+                    "Legacy run request field(s) are no longer supported: "
+                    f"{', '.join(legacy_fields)}. Submit a canonical schemaVersion 1.0 test plan as the "
+                    'request body or under "testPlan".'
+                )
+            },
+            status=400,
+        )
+    return JsonResponse(
+        {"error": 'Request body must be a schemaVersion 1.0 test plan or contain a "testPlan" object'},
+        status=400,
+    )
+
+
+def _create_run_from_canonical_test_plan(body: dict[str, JsonValue]) -> JsonResponse | None:
+    """Create a run from a canonical JSON-first test-plan request body.
+
+    Args:
+        body: Decoded JSON request body.
+
+    Returns:
+        JSON response when the body is a canonical test plan request, otherwise
+        ``None`` when the body is not a canonical test-plan request.
+    """
+    raw_test_plan = body.get("testPlan")
+    if raw_test_plan is not None:
+        unknown_keys = sorted(set(body) - {"testPlan"})
+        if unknown_keys:
+            return JsonResponse({"error": f"Unknown request field(s): {', '.join(unknown_keys)}"}, status=400)
+        if not isinstance(raw_test_plan, dict):
+            return JsonResponse({"error": '"testPlan" key must be a JSON object'}, status=400)
+        return _start_canonical_test_plan(raw_test_plan)
+    if body.get("schemaVersion") == "1.0":
+        return _start_canonical_test_plan(body)
+    return None
+
+
+def _start_canonical_test_plan(raw_test_plan: dict[str, JsonValue]) -> JsonResponse:
+    """Validate and launch a canonical JSON-first test plan.
+
+    Args:
+        raw_test_plan: Decoded canonical test-plan JSON object.
+
+    Returns:
+        Run status JSON on success or a validation/conflict error response.
+    """
+    try:
+        prepared = prepare_test_plan_for_run(raw_test_plan, base_dir=Path.cwd())
+        api_file_reference_error = _api_file_reference_error(prepared.compiled_plan, prepared.runtime_inputs)
+        if api_file_reference_error is not None:
+            return api_file_reference_error
+    except TestPlanValidationError as error:
+        return JsonResponse(
+            {
+                "error": f"Test plan validation failed: {error}",
+                "validation": error.result.to_json_object(),
+            },
             status=400,
         )
 
-    # Validate config eagerly so the caller gets immediate feedback.
-    # base_dir anchors relative TLS certificate paths in the request body to
-    # the Django process CWD (set by the Docker entrypoint). Path traversal
-    # is rejected by parse_model_bank_config itself.
     try:
-        config = parse_model_bank_config(raw_config, base_dir=Path.cwd())
-    except ConfigError as error:
-        return JsonResponse({"error": f"Config validation failed: {error}"}, status=400)
-
-    # Validate manifest eagerly if provided.
-    manifest = None
-    plan: TestPlan | None = None
-    suite_metadata: SuiteMetadata | None = None
-    if raw_manifest is not None:
-        try:
-            manifest = load_manifest_from_object(raw_manifest)
-        except ManifestError as error:
-            return JsonResponse({"error": f"Manifest validation failed: {error}"}, status=400)
-    elif config.test_suite is not None:
-        try:
-            resolved_suite = resolve_suite(config.test_suite)
-        except SuiteCatalogError as error:
-            return JsonResponse({"error": f"Suite resolution failed: {error}"}, status=400)
-        manifest = resolved_suite.manifest
-        suite_metadata = resolved_suite.metadata
-    elif raw_deselect is not None:
-        return JsonResponse(
-            {"error": '"deselectStepIds" is only valid with an inline "manifest" or config.testSuite'},
-            status=400,
+        response_body = start_run(
+            config=prepared.config,
+            compiled_plan=prepared.compiled_plan,
+            runtime_inputs=prepared.runtime_inputs,
+            runtime_input_base_dir=Path.cwd(),
+            plan_snapshot=prepared.snapshot,
+            validation_result=prepared.validation.to_json_object(),
         )
-
-    if manifest is not None:
-        # Build the default plan, then narrow via deselection. ValueError
-        # from with_deselection means the caller named an unknown step —
-        # surface as 400 so the participant can correct the request rather
-        # than discover the typo after the run starts.
-        try:
-            plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(raw_deselect or [])
-        except ValueError as error:
-            return JsonResponse({"error": f"Plan validation failed: {error}"}, status=400)
-
-    try:
-        response_body = start_run(config=config, manifest=manifest, plan=plan, suite_metadata=suite_metadata)
     except RunConflictError as error:
         return JsonResponse(
             {"error": "A run is already active", "activeRunId": error.active_run_id},
@@ -326,6 +337,49 @@ def create_run(request: HttpRequest) -> JsonResponse:
         )
 
     return JsonResponse(response_body, status=201)
+
+
+def _api_file_reference_error(
+    compiled_plan: CompiledTestPlan,
+    runtime_inputs: Mapping[str, JsonValue],
+) -> JsonResponse | None:
+    """Return a 400 response for unsupported API server-local file references.
+
+    DCR plans necessarily use operator-provisioned SSA, mTLS, and signing files.
+    Those canonical references are accepted after shared preparation has verified
+    that they are absolute existing files. Other catalogue runtime file inputs
+    remain rejected at this REST boundary.
+
+    Args:
+        compiled_plan: Compiled catalogue plan used to identify selected runtime
+            input types.
+        runtime_inputs: Participant-supplied runtime inputs keyed by input id.
+
+    Returns:
+        Error response when any selected ``file_reference`` input is supplied,
+        otherwise ``None``.
+    """
+    if compiled_plan.catalogue_key.api in {"dcr", "dynamic-client-registration"}:
+        return None
+    file_reference_input_ids = sorted(
+        trace.input_id
+        for trace in compiled_plan.traceability.runtime_input_snapshot
+        if trace.input_type == "file_reference"
+        and trace.input_id in runtime_inputs
+        and runtime_inputs[trace.input_id] is not None
+    )
+    if not file_reference_input_ids:
+        return None
+    joined_input_ids = ", ".join(file_reference_input_ids)
+    return JsonResponse(
+        {
+            "error": (
+                "Test plan validation failed: file_reference runtime inputs are not accepted by the REST API: "
+                f"{joined_input_ids}"
+            )
+        },
+        status=400,
+    )
 
 
 @_require_loopback

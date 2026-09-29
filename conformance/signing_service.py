@@ -10,16 +10,45 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 from uuid import uuid4
 
 from joserfc import jwk, jws, jwt
 from joserfc.errors import InvalidKeyTypeError, JoseError
+from joserfc.jws import JWSRegistry
+from joserfc.registry import HeaderParameter
 
 from conformance.model_bank_config import FapiSigningConfig
 from conformance.signing_credentials import SigningCredentials
 
+OpenBankingDetachedJwsProfile = Literal["legacy-b64-false", "ob-v3.1.4+"]
+"""Supported Open Banking detached-JWS request-signature profiles."""
+
 _DEFAULT_JWT_LIFETIME = timedelta(minutes=5)
 """Default lifetime for signed FAPI JWTs emitted by the tool."""
+
+_OPEN_BANKING_IAT = "http://openbanking.org.uk/iat"
+"""Open Banking detached JWS issued-at protected header name."""
+
+_OPEN_BANKING_ISS = "http://openbanking.org.uk/iss"
+"""Open Banking detached JWS issuer protected header name."""
+
+_OPEN_BANKING_TAN = "http://openbanking.org.uk/tan"
+"""Open Banking detached JWS trust-anchor protected header name."""
+
+_OPEN_BANKING_TRUST_ANCHOR = "openbanking.org.uk"
+"""Default OB trust-anchor value used by legacy FCS request signatures."""
+
+_OPEN_BANKING_SIGNATURE_REGISTRY = JWSRegistry(
+    header_registry={
+        **JWSRegistry.default_header_registry,
+        _OPEN_BANKING_IAT: HeaderParameter("Open Banking issued-at header", "int"),
+        _OPEN_BANKING_ISS: HeaderParameter("Open Banking issuer header", "str"),
+        _OPEN_BANKING_TAN: HeaderParameter("Open Banking trust-anchor header", "str"),
+    },
+    algorithms=["PS256"],
+)
+"""JWS registry accepting Open Banking critical protected headers."""
 
 
 class JwtSigningError(ValueError):
@@ -245,11 +274,20 @@ class FapiSigningService:
             jwt_id=jwt_id,
         )
 
-    def sign_detached_json_payload(self, payload: bytes) -> str:
+    def sign_detached_json_payload(
+        self,
+        payload: bytes,
+        *,
+        profile: OpenBankingDetachedJwsProfile = "legacy-b64-false",
+        omit_protected_headers: tuple[str, ...] = (),
+    ) -> str:
         """Sign JSON request bytes as a detached Open Banking JWS.
 
         Args:
             payload: Exact JSON bytes that will be transmitted on the wire.
+            profile: Open Banking request-signature profile to use.
+            omit_protected_headers: Open Banking protected-header aliases to
+                omit from the signature for negative conformance tests.
 
         Returns:
             Detached compact JWS suitable for the ``x-jws-signature`` header.
@@ -258,10 +296,16 @@ class FapiSigningService:
             JwtSigningError: If the payload bytes cannot be signed with the
                 configured RSA private key.
         """
+        issued_at = _issued_at_seconds(self.clock) if profile == "ob-v3.1.4+" else 0
+        issuer = self.signing_config.client_assertion_issuer if profile == "ob-v3.1.4+" else ""
         return _sign_ps256_detached_jws(
             self.signing_credentials.signing_private_key_pem,
             key_id=self.signing_config.key_id,
             payload=payload,
+            profile=profile,
+            issuer=issuer,
+            issued_at=issued_at,
+            omit_protected_headers=omit_protected_headers,
         )
 
 
@@ -356,13 +400,45 @@ def _sign_ps256_jwt(private_key_pem: bytes, *, key_id: str, claims: dict[str, ob
         raise JwtSigningError("Unable to sign PS256 JWT with configured FAPI signing key") from error
 
 
-def _sign_ps256_detached_jws(private_key_pem: bytes, *, key_id: str, payload: bytes) -> str:
+def _issued_at_seconds(clock: Callable[[], datetime]) -> int:
+    """Return the current signing time as a UTC epoch timestamp.
+
+    Args:
+        clock: Callable returning the current time.
+
+    Returns:
+        Integer seconds since the Unix epoch.
+
+    Raises:
+        JwtSigningError: If the clock returns a naive timestamp.
+    """
+    issued_at = clock()
+    if issued_at.tzinfo is None or issued_at.utcoffset() is None:
+        raise JwtSigningError("Signing clock must return a timezone-aware datetime")
+    return int(issued_at.astimezone(UTC).timestamp())
+
+
+def _sign_ps256_detached_jws(
+    private_key_pem: bytes,
+    *,
+    key_id: str,
+    payload: bytes,
+    profile: OpenBankingDetachedJwsProfile,
+    issuer: str,
+    issued_at: int,
+    omit_protected_headers: tuple[str, ...],
+) -> str:
     """Sign one detached PS256 JWS over exact request-body bytes.
 
     Args:
         private_key_pem: PEM-encoded RSA private key bytes.
         key_id: JOSE ``kid`` header value to emit.
         payload: Exact bytes that must be covered by the detached signature.
+        profile: Open Banking request-signature profile to use.
+        issuer: Open Banking issuer protected-header value.
+        issued_at: Open Banking issued-at protected-header value.
+        omit_protected_headers: Open Banking protected-header aliases to omit
+            from the protected header.
 
     Returns:
         Detached compact JWS with an empty payload segment.
@@ -374,11 +450,94 @@ def _sign_ps256_detached_jws(private_key_pem: bytes, *, key_id: str, payload: by
     try:
         signing_key = jwk.import_key(private_key_pem, key_type="RSA")
         compact_jws = jws.serialize_compact(
-            {"alg": "PS256", "kid": key_id, "b64": False, "crit": ["b64"]},
+            _detached_jws_protected_header(
+                key_id=key_id,
+                profile=profile,
+                issuer=issuer,
+                issued_at=issued_at,
+                omit_protected_headers=omit_protected_headers,
+            ),
             payload,
             signing_key,
             algorithms=["PS256"],
+            registry=_OPEN_BANKING_SIGNATURE_REGISTRY,
         )
         return jws.detach_content(compact_jws)
     except (InvalidKeyTypeError, JoseError, TypeError, ValueError) as error:
         raise JwtSigningError("Unable to sign PS256 detached JWS with configured FAPI signing key") from error
+
+
+def _detached_jws_protected_header(
+    *,
+    key_id: str,
+    profile: OpenBankingDetachedJwsProfile,
+    issuer: str,
+    issued_at: int,
+    omit_protected_headers: tuple[str, ...],
+) -> dict[str, object]:
+    """Build the protected header for one Open Banking request signature.
+
+    Args:
+        key_id: JOSE ``kid`` header value to emit.
+        profile: Open Banking request-signature profile to use.
+        issuer: Open Banking issuer protected-header value.
+        issued_at: Open Banking issued-at protected-header value.
+        omit_protected_headers: Open Banking protected-header aliases to omit
+            from the protected header.
+
+    Returns:
+        Protected-header dictionary for the requested signature profile.
+
+    Raises:
+        JwtSigningError: If an omitted Open Banking protected-header alias is
+            unsupported for the selected profile.
+    """
+    if omit_protected_headers and profile != "ob-v3.1.4+":
+        raise JwtSigningError("Protected-header omission is only supported for the OB v3.1.4+ detached-JWS profile")
+    if profile == "legacy-b64-false":
+        return {"alg": "PS256", "kid": key_id, "b64": False, "crit": ["b64"]}
+    header = {
+        "alg": "PS256",
+        "kid": key_id,
+        "typ": "JOSE",
+        "cty": "application/json",
+        _OPEN_BANKING_IAT: issued_at,
+        _OPEN_BANKING_ISS: issuer,
+        _OPEN_BANKING_TAN: _OPEN_BANKING_TRUST_ANCHOR,
+        "crit": [_OPEN_BANKING_IAT, _OPEN_BANKING_ISS, _OPEN_BANKING_TAN],
+    }
+    for protected_header in _open_banking_protected_headers_to_omit(omit_protected_headers):
+        header.pop(protected_header)
+        crit = header["crit"]
+        if isinstance(crit, list):
+            crit.remove(protected_header)
+    return header
+
+
+def _open_banking_protected_headers_to_omit(omit_protected_headers: tuple[str, ...]) -> tuple[str, ...]:
+    """Map omitted Open Banking protected-header aliases to JOSE header names.
+
+    Args:
+        omit_protected_headers: Open Banking protected-header aliases requested
+            by the manifest policy.
+
+    Returns:
+        JOSE protected-header names to omit from the detached JWS.
+
+    Raises:
+        JwtSigningError: If an omitted header alias is unsupported.
+    """
+    header_names_by_alias = {
+        "iat": _OPEN_BANKING_IAT,
+        "iss": _OPEN_BANKING_ISS,
+        "tan": _OPEN_BANKING_TAN,
+    }
+    omitted_headers: list[str] = []
+    for header_alias in omit_protected_headers:
+        try:
+            omitted_header = header_names_by_alias[header_alias]
+        except KeyError as error:
+            raise JwtSigningError(f"Unsupported Open Banking protected-header omission '{header_alias}'") from error
+        if omitted_header not in omitted_headers:
+            omitted_headers.append(omitted_header)
+    return tuple(omitted_headers)

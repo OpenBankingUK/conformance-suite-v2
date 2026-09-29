@@ -81,7 +81,7 @@ API_ALLOW_NON_LOCAL = os.environ.get("CONFORMANCE_API_ALLOW_NON_LOCAL", "false")
 # argv string handles the directory component; checking ``sys.modules``
 # provides a second independent signal for tools that have already
 # imported their own package before settings are evaluated.
-_TOOLING_ENTRYPOINTS = ("mypy", "pytest", "ruff", "interrogate", "pydoclint", "coverage")
+_TOOLING_ENTRYPOINTS = ("mypy", "pytest", "ruff", "coverage")
 _argv0 = sys.argv[0] if sys.argv else ""
 _is_tooling_run = any(tool in _argv0 for tool in _TOOLING_ENTRYPOINTS) or any(
     tool in sys.modules for tool in _TOOLING_ENTRYPOINTS
@@ -152,6 +152,16 @@ DATABASES = {
         "NAME": BASE_DIR / "db.sqlite3",
     }
 }
+
+SESSION_ENGINE = os.environ.get("DJANGO_SESSION_ENGINE", "django.contrib.sessions.backends.file")
+"""Server-side session backend used by browser wizard drafts.
+
+The default avoids requiring local SQLite migrations before `make dev` while
+keeping imported plan secrets out of browser-visible signed-cookie sessions.
+"""
+
+SESSION_FILE_PATH = os.environ.get("DJANGO_SESSION_FILE_PATH")
+"""Optional directory for Django's file-backed session data."""
 
 
 # Password validation

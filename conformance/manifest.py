@@ -7,7 +7,7 @@ import json
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Literal, cast
@@ -53,7 +53,13 @@ TokenEndpointAuthSource = Literal["fapi-signing"]
 DetachedJwsSource = Literal["fapi-signing"]
 """Source selectors for detached JWS directives on HTTP requests."""
 
-AssertionType = Literal["http_status", "json_field", "header", "response_schema"]
+DetachedJwsProfile = Literal["legacy-b64-false", "ob-v3.1.4+"]
+"""Open Banking detached-JWS signing profiles accepted by manifests."""
+
+ResponseSignatureSource = Literal["discovery-jwks"]
+"""Source selectors for response JWS verification material."""
+
+AssertionType = Literal["http_status", "json_field", "header", "response_schema", "legacy_fcs"]
 """Assertion discriminators supported by manifest assertions."""
 
 ResponseSchemaSource = Literal["bundled_openapi"]
@@ -73,6 +79,7 @@ JsonFieldRule = Literal[
     "equals",
     "one_of",
     "all_items_have_field",
+    "all_items_absent_fields",
 ]
 """JSON field validation rules supported by manifest assertions."""
 
@@ -195,9 +202,26 @@ class DetachedJwsPolicy:
     Attributes:
         source: Runtime signing configuration source used to build the
             detached JWS.
+        omit_protected_headers: Open Banking protected-header aliases to omit
+            from the generated detached JWS for negative conformance tests.
+        profile: Explicit Open Banking detached-JWS signing profile. Older
+            manifests may omit it and retain URL-derived behavior.
     """
 
     source: DetachedJwsSource
+    omit_protected_headers: tuple[str, ...] = ()
+    profile: DetachedJwsProfile | None = None
+
+
+@dataclass(frozen=True)
+class ResponseSignaturePolicy:
+    """Directive instructing an HTTP step to validate ``x-jws-signature``.
+
+    Attributes:
+        source: Runtime source of verification keys.
+    """
+
+    source: ResponseSignatureSource
 
 
 @dataclass(frozen=True)
@@ -217,15 +241,18 @@ class FollowUpRequest:
 
 @dataclass(frozen=True)
 class HttpStatusAssertion:
-    """Assertion requiring a specific HTTP response status.
+    """Assertion requiring one or more allowed HTTP response statuses.
 
     Attributes:
         type: Assertion discriminator for HTTP status checks.
-        expected: Expected HTTP status code.
+        expected: Expected HTTP status code for single-status assertions.
+        expected_one_of: Accepted HTTP status codes for one-of status
+            assertions.
     """
 
     type: Literal["http_status"]
-    expected: int
+    expected: int | None = None
+    expected_one_of: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -241,6 +268,8 @@ class JsonFieldAssertion:
         min_items: Minimum array length required by ``min_items`` rules.
         field: Field that every array item must contain for
             ``all_items_have_field`` rules.
+        fields: Fields that every array item or object must omit for
+            ``all_items_absent_fields`` rules.
     """
 
     type: Literal["json_field"]
@@ -250,6 +279,7 @@ class JsonFieldAssertion:
     values: tuple[JsonValue, ...] | None = None
     min_items: int | None = None
     field: str | None = None
+    fields: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -293,7 +323,34 @@ class ResponseSchemaAssertion:
     body_path: str | None = None
 
 
-ManifestAssertion = HttpStatusAssertion | JsonFieldAssertion | HeaderAssertion | ResponseSchemaAssertion
+@dataclass(frozen=True)
+class LegacyFcsAssertion:
+    """Exact legacy FCS assertion groups for one pinned manifest row.
+
+    Attributes:
+        type: Assertion discriminator for legacy parity evaluation.
+        row_key: Stable manifest-plus-row identity from the parity contract.
+        all_of: Expectations that must all pass.
+        one_of: Alternative expectations where at least one must pass.
+        last_if_all: Conditions followed by a final expectation that applies
+            only when every preceding condition passes.
+        schema_document: Optional bundled OpenAPI document used when the row
+            enables schema checking.
+        schema_refs: Response-status-to-schema-reference mapping.
+    """
+
+    type: Literal["legacy_fcs"]
+    row_key: str
+    all_of: tuple[Mapping[str, JsonValue], ...] = ()
+    one_of: tuple[Mapping[str, JsonValue], ...] = ()
+    last_if_all: tuple[Mapping[str, JsonValue], ...] = ()
+    schema_document: str | None = None
+    schema_refs: Mapping[int, str] = field(default_factory=lambda: MappingProxyType({}))
+
+
+ManifestAssertion = (
+    HttpStatusAssertion | JsonFieldAssertion | HeaderAssertion | ResponseSchemaAssertion | LegacyFcsAssertion
+)
 """Assertion variants accepted by manifest tests and sequential steps (v0 and v1)."""
 
 
@@ -376,6 +433,8 @@ class ManifestStep:
             placeholders without coupling consumers to token step ids.
         produces_token_id: Optional semantic auth requirement id minted by
             this step when its response carries an ``access_token``.
+        response_signature_policy: Optional directive requiring detached
+            response JWS validation against the discovery ``jwks_uri``.
     """
 
     id: str
@@ -390,6 +449,7 @@ class ManifestStep:
     token_endpoint_auth_policy: TokenEndpointAuthPolicy | None = None
     required_token_id: str | None = None
     produces_token_id: str | None = None
+    response_signature_policy: ResponseSignaturePolicy | None = None
 
 
 PsuAuthorizationMode = Literal["manual", "headless"]
@@ -419,19 +479,8 @@ V1StepKind = HttpStepKind | PsuAuthorizationStepKind
 """All v1 step ``kind`` discriminator values accepted by the parser."""
 
 
-_PSU_AUTH_TIMEOUT_MIN_SECONDS = 1
-"""Minimum permitted value for ``timeoutSeconds`` on a PSU authorisation step."""
-
-_PSU_AUTH_TIMEOUT_MAX_SECONDS = 600
-"""Maximum permitted value for ``timeoutSeconds`` on a PSU authorisation step.
-
-Bounded at ten minutes so a misauthored manifest cannot stall a CI run
-indefinitely. Parsed manifests outside this range fail before execution, so
-the executor deadline calculation receives only validated values.
-"""
-
-_PSU_AUTH_DEFAULT_TIMEOUT_SECONDS = 120
-"""Default ``timeoutSeconds`` applied when a PSU step omits the field."""
+PSU_AUTHORIZATION_TIMEOUT_SECONDS = 120
+"""Fixed wait duration for manual PSU authorisation callbacks."""
 
 _PSU_AUTH_DEFAULT_RESPONSE_TYPE = "code id_token"
 """Default ``responseType`` for a PSU authorisation step (FAPI 1 Advanced hybrid flow)."""
@@ -513,8 +562,6 @@ class PsuAuthorizationStep:
             opaque string JWT; newer manifests may instead declare a typed
             runtime-generated directive. String values permit placeholders so
             the JWT can be produced by an upstream signing step.
-        timeout_seconds: Per-step deadline in seconds. Defaults to 120;
-            must be between 1 and 600 inclusive.
         mandatory: Whether the step is required for certification
             eligibility. Same semantics as :class:`ManifestStep`.
         optional: Whether the step is opt-in for the default test plan.
@@ -538,7 +585,6 @@ class PsuAuthorizationStep:
     state: str | None = None
     nonce: str | None = None
     request_object: RequestObjectValue | None = None
-    timeout_seconds: int = _PSU_AUTH_DEFAULT_TIMEOUT_SECONDS
     mandatory: bool = False
     optional: bool = False
     group: str = "default"
@@ -736,8 +782,21 @@ Request direction accepts: ``method``, ``url`` (no sub-segments).
 Response direction accepts: ``status_code`` (no sub-segments), ``body.<path>`` (at least one segment).
 """
 
+_CONFIG_PLACEHOLDER_KEYS = (
+    "discoveryUrl",
+    "oauth.clientId",
+    "oauth.redirectUri",
+    "oauth.authorizationEndpoint",
+    "oauth.issuer",
+    "oauth.tokenEndpoint",
+    "oauth.resourceBaseUrl",
+    "oauth.responseType",
+    "oauth.requestObjectSigningAlg",
+)
+"""Safe runtime config placeholder keys accepted in v1 manifests."""
+
 _CONFIG_PLACEHOLDER_PATTERN = re.compile(
-    r"\$\{config\.(?:discoveryUrl|environment|oauth\.(?:clientId|redirectUri|openBankingIntentId|resourceBaseUrl))\}"
+    r"\$\{config\.(?:" + "|".join(re.escape(key) for key in _CONFIG_PLACEHOLDER_KEYS) + r")\}"
 )
 """Regex matching safe runtime config placeholders accepted in v1 manifests."""
 
@@ -1035,7 +1094,6 @@ _PSU_AUTH_ALLOWED_KEYS: set[str] = {
     "state",
     "nonce",
     "requestObject",
-    "timeoutSeconds",
     "mandatory",
     "optional",
     "group",
@@ -1123,7 +1181,6 @@ def _parse_v1_psu_authorization_step(
     state = _parse_psu_optional_token(raw_step, key="state", location=location, seen_ids=seen_ids)
     nonce = _parse_psu_optional_token(raw_step, key="nonce", location=location, seen_ids=seen_ids)
     request_object = _parse_psu_optional_request_object(raw_step, location=location, seen_ids=seen_ids)
-    timeout_seconds = _parse_psu_timeout_seconds(raw_step, location=location)
 
     mandatory = _parse_optional_mandatory(raw_step, location=location)
     optional = _parse_optional_optional(raw_step, location=location)
@@ -1144,7 +1201,6 @@ def _parse_v1_psu_authorization_step(
         state=state,
         nonce=nonce,
         request_object=request_object,
-        timeout_seconds=timeout_seconds,
         mandatory=mandatory,
         optional=optional,
         group=group,
@@ -1384,37 +1440,6 @@ def _validate_constant_manifest_string(value: str, *, location: str, seen_ids: s
         raise ManifestError(f"{location} must not contain placeholders")
 
 
-def _parse_psu_timeout_seconds(raw_step: dict[str, JsonValue], *, location: str) -> int:
-    """Parse the optional ``timeoutSeconds`` field on a PSU authorisation step.
-
-    Args:
-        raw_step: Raw JSON object for the PSU step.
-        location: Dot-path location string used in error messages.
-
-    Returns:
-        The validated integer timeout. Returns the module-level default
-        when the key is absent.
-
-    Raises:
-        ManifestError: If the value is present but is not a JSON integer
-            in the inclusive range
-            ``[_PSU_AUTH_TIMEOUT_MIN_SECONDS, _PSU_AUTH_TIMEOUT_MAX_SECONDS]``.
-    """
-    if "timeoutSeconds" not in raw_step:
-        return _PSU_AUTH_DEFAULT_TIMEOUT_SECONDS
-    value = raw_step["timeoutSeconds"]
-    # Reject ``bool`` (subclass of ``int``) so ``true``/``false`` cannot
-    # silently become 1/0 second timeouts on a misauthored manifest.
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise ManifestError(f"{location}.timeoutSeconds must be a JSON integer when present")
-    if value < _PSU_AUTH_TIMEOUT_MIN_SECONDS or value > _PSU_AUTH_TIMEOUT_MAX_SECONDS:
-        raise ManifestError(
-            f"{location}.timeoutSeconds must be between {_PSU_AUTH_TIMEOUT_MIN_SECONDS} "
-            f"and {_PSU_AUTH_TIMEOUT_MAX_SECONDS} inclusive (got: {value})"
-        )
-    return value
-
-
 def _parse_v1_request(raw_request: dict[str, JsonValue], *, location: str, seen_ids: set[str]) -> ManifestRequest:
     """Parse and validate a v1 manifest step request object.
 
@@ -1495,13 +1520,83 @@ def _parse_optional_detached_jws(
     policy_location = f"{location}.detachedJws"
     if not isinstance(raw_policy, dict):
         raise ManifestError(f"{policy_location} must be a JSON object when present")
-    _reject_unknown_keys(raw_policy, allowed_keys={"source"}, location=policy_location)
+    _reject_unknown_keys(
+        raw_policy,
+        allowed_keys={"source", "omitProtectedHeaders", "profile"},
+        location=policy_location,
+    )
 
     source = _required_string(raw_policy, "source", location=policy_location)
     _validate_placeholder_syntax(source, location=f"{policy_location}.source", seen_ids=seen_ids)
     if source != "fapi-signing":
         raise ManifestError(f"{policy_location}.source must be 'fapi-signing'")
-    return DetachedJwsPolicy(source="fapi-signing")
+    return DetachedJwsPolicy(
+        source="fapi-signing",
+        omit_protected_headers=_parse_detached_jws_omitted_headers(raw_policy, location=policy_location),
+        profile=_parse_detached_jws_profile(raw_policy, location=policy_location),
+    )
+
+
+def _parse_detached_jws_profile(
+    raw_policy: dict[str, JsonValue],
+    *,
+    location: str,
+) -> DetachedJwsProfile | None:
+    """Parse an optional explicit Open Banking detached-JWS profile.
+
+    Args:
+        raw_policy: Raw detached-JWS policy JSON object.
+        location: Dot-path location used in validation errors.
+
+    Returns:
+        Validated profile, or ``None`` for backwards-compatible manifests.
+
+    Raises:
+        ManifestError: If the profile is not a supported string.
+    """
+    if "profile" not in raw_policy:
+        return None
+    profile = _required_string(raw_policy, "profile", location=location)
+    if profile == "legacy-b64-false":
+        return "legacy-b64-false"
+    if profile == "ob-v3.1.4+":
+        return "ob-v3.1.4+"
+    raise ManifestError(f"{location}.profile must be one of: legacy-b64-false, ob-v3.1.4+")
+
+
+def _parse_detached_jws_omitted_headers(raw_policy: dict[str, JsonValue], *, location: str) -> tuple[str, ...]:
+    """Parse Open Banking detached-JWS protected headers to omit.
+
+    Args:
+        raw_policy: Raw detached-JWS policy JSON object.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Protected-header aliases that should be omitted from the generated
+        detached JWS.
+
+    Raises:
+        ManifestError: If ``omitProtectedHeaders`` is present but not a string
+            array, contains duplicates, or names an unsupported header.
+    """
+    if "omitProtectedHeaders" not in raw_policy:
+        return ()
+    raw_headers = raw_policy["omitProtectedHeaders"]
+    headers_location = f"{location}.omitProtectedHeaders"
+    if not isinstance(raw_headers, list):
+        raise ManifestError(f"{headers_location} must be an array of strings when present")
+
+    parsed_headers: list[str] = []
+    for index, raw_header in enumerate(raw_headers):
+        if not isinstance(raw_header, str):
+            raise ManifestError(f"{headers_location}[{index}] must be a string")
+        header = raw_header.strip()
+        if header not in {"iat", "iss", "tan"}:
+            raise ManifestError(f"{headers_location}[{index}] must be one of 'iat', 'iss', or 'tan'")
+        if header in parsed_headers:
+            raise ManifestError(f"{headers_location} must not contain duplicate header '{header}'")
+        parsed_headers.append(header)
+    return tuple(parsed_headers)
 
 
 def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str]) -> None:
@@ -1530,12 +1625,9 @@ def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str
         valid_match = _STEP_PLACEHOLDER_PATTERN.fullmatch(token)
         if valid_match is None:
             if token.startswith("${config."):
+                allowed_placeholders = ", ".join(f"${{config.{key}}}" for key in _CONFIG_PLACEHOLDER_KEYS)
                 raise ManifestError(
-                    f"{location} contains unsupported config placeholder: {token} "
-                    "(allowed: ${config.discoveryUrl}, ${config.environment}, "
-                    "${config.oauth.clientId}, ${config.oauth.redirectUri}, "
-                    "${config.oauth.openBankingIntentId}, "
-                    "${config.oauth.resourceBaseUrl})"
+                    f"{location} contains unsupported config placeholder: {token} (allowed: {allowed_placeholders})"
                 )
             if token.startswith("${tokens."):
                 raise ManifestError(
@@ -1893,7 +1985,16 @@ def _parse_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> M
     """
     assertion_type = _required_assertion_type(raw_assertion, location=location)
     if assertion_type == "http_status":
-        _reject_unknown_keys(raw_assertion, allowed_keys={"type", "expected"}, location=location)
+        _reject_unknown_keys(raw_assertion, allowed_keys={"type", "expected", "expectedOneOf"}, location=location)
+        has_expected = "expected" in raw_assertion
+        has_expected_one_of = "expectedOneOf" in raw_assertion
+        if has_expected == has_expected_one_of:
+            raise ManifestError(f"{location} must provide exactly one of expected or expectedOneOf")
+        if has_expected_one_of:
+            return HttpStatusAssertion(
+                type="http_status",
+                expected_one_of=_required_status_codes(raw_assertion, location=location),
+            )
         return HttpStatusAssertion(type="http_status", expected=_required_status_code(raw_assertion, location=location))
     if assertion_type == "json_field":
         return _parse_json_field_assertion(raw_assertion, location=location)
@@ -1901,6 +2002,8 @@ def _parse_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> M
         return _parse_header_assertion(raw_assertion, location=location)
     if assertion_type == "response_schema":
         return _parse_response_schema_assertion(raw_assertion, location=location)
+    if assertion_type == "legacy_fcs":
+        return _parse_legacy_fcs_assertion(raw_assertion, location=location)
     # Defensive: _required_assertion_type already constrains assertion_type to the
     # AssertionType literal, but an explicit raise removes the implicit None
     # fall-through and guards against future literal additions.
@@ -1931,6 +2034,8 @@ def _parse_json_field_assertion(raw_assertion: dict[str, JsonValue], *, location
         allowed_keys.add("minItems")
     elif rule == "all_items_have_field":
         allowed_keys.add("field")
+    elif rule == "all_items_absent_fields":
+        allowed_keys.add("fields")
     _reject_unknown_keys(raw_assertion, allowed_keys=allowed_keys, location=location)
 
     assertion = JsonFieldAssertion(
@@ -1971,7 +2076,91 @@ def _parse_json_field_assertion(raw_assertion: dict[str, JsonValue], *, location
             rule=assertion.rule,
             field=_required_string(raw_assertion, "field", location=location),
         )
+    if rule == "all_items_absent_fields":
+        return JsonFieldAssertion(
+            type=assertion.type,
+            path=assertion.path,
+            rule=assertion.rule,
+            fields=_required_string_array(raw_assertion, "fields", location=location),
+        )
     return assertion
+
+
+def _parse_legacy_fcs_assertion(
+    raw_assertion: dict[str, JsonValue],
+    *,
+    location: str,
+) -> LegacyFcsAssertion:
+    """Parse a pinned legacy FCS assertion bundle.
+
+    Args:
+        raw_assertion: Raw legacy assertion bundle.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Parsed immutable legacy assertion bundle.
+
+    Raises:
+        ManifestError: If the bundle shape or schema metadata is invalid.
+    """
+    _reject_unknown_keys(
+        raw_assertion,
+        allowed_keys={"type", "rowKey", "allOf", "oneOf", "lastIfAll", "schemaDocument", "schemaRefs"},
+        location=location,
+    )
+    row_key = _required_string(raw_assertion, "rowKey", location=location)
+    schema_document = raw_assertion.get("schemaDocument")
+    if schema_document is not None and (
+        not isinstance(schema_document, str) or schema_document not in _ALLOWED_RESPONSE_SCHEMA_DOCUMENTS
+    ):
+        raise ManifestError(f"{location}.schemaDocument must name an allowlisted bundled document")
+    raw_schema_refs = raw_assertion.get("schemaRefs", {})
+    if not isinstance(raw_schema_refs, dict):
+        raise ManifestError(f"{location}.schemaRefs must be a JSON object")
+    schema_refs: dict[int, str] = {}
+    for raw_status, raw_ref in raw_schema_refs.items():
+        if not raw_status.isdigit() or not isinstance(raw_ref, str) or not raw_ref.startswith("#/"):
+            raise ManifestError(f"{location}.schemaRefs must map HTTP status strings to local JSON pointers")
+        schema_refs[int(raw_status)] = raw_ref
+    return LegacyFcsAssertion(
+        type="legacy_fcs",
+        row_key=row_key,
+        all_of=_parse_legacy_expectations(raw_assertion, "allOf", location=location),
+        one_of=_parse_legacy_expectations(raw_assertion, "oneOf", location=location),
+        last_if_all=_parse_legacy_expectations(raw_assertion, "lastIfAll", location=location),
+        schema_document=schema_document,
+        schema_refs=MappingProxyType(schema_refs),
+    )
+
+
+def _parse_legacy_expectations(
+    raw_assertion: dict[str, JsonValue],
+    key: str,
+    *,
+    location: str,
+) -> tuple[Mapping[str, JsonValue], ...]:
+    """Parse one ordered legacy expectation group.
+
+    Args:
+        raw_assertion: Raw legacy assertion bundle.
+        key: Group field to parse.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Immutable ordered expectation mappings.
+
+    Raises:
+        ManifestError: If the group is not an array of JSON objects.
+    """
+    raw_expectations = raw_assertion.get(key, [])
+    if not isinstance(raw_expectations, list):
+        raise ManifestError(f"{location}.{key} must be an array")
+    expectations: list[Mapping[str, JsonValue]] = []
+    for index, expectation in enumerate(raw_expectations):
+        if not isinstance(expectation, dict):
+            raise ManifestError(f"{location}.{key}[{index}] must be a JSON object")
+        expectations.append(MappingProxyType(copy.deepcopy(expectation)))
+    return tuple(expectations)
 
 
 def _parse_header_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> HeaderAssertion:
@@ -2010,8 +2199,14 @@ def _parse_header_assertion(raw_assertion: dict[str, JsonValue], *, location: st
 
 
 _ALLOWED_RESPONSE_SCHEMA_DOCUMENTS: set[str] = {
+    "ob-read-write-v3.1.11-account-info-openapi",
+    "ob-read-write-v3.1.11-payment-initiation-openapi",
+    "ob-read-write-v3.1.11-confirmation-funds-openapi",
+    "ob-read-write-v3.1.11-vrp-openapi",
     "ob-read-write-v4.0-account-info-openapi",
+    "ob-read-write-v4.0-payment-initiation-openapi",
     "ob-read-write-v4.0.1-account-info-openapi",
+    "ob-read-write-v4.0.1-payment-initiation-openapi",
 }
 """Allowlisted bundled standards documents addressable by ``response_schema`` assertions."""
 
@@ -2160,7 +2355,9 @@ def _required_assertion_type(raw_assertion: dict[str, JsonValue], *, location: s
         return "header"
     if assertion_type == "response_schema":
         return "response_schema"
-    raise ManifestError(f"{location}.type must be one of: http_status, json_field, header, response_schema")
+    if assertion_type == "legacy_fcs":
+        return "legacy_fcs"
+    raise ManifestError(f"{location}.type must be one of: http_status, json_field, header, response_schema, legacy_fcs")
 
 
 def _required_get_method(raw_config: dict[str, JsonValue], *, location: str) -> Literal["GET"]:
@@ -2222,9 +2419,11 @@ def _required_json_field_rule(raw_assertion: dict[str, JsonValue], *, location: 
         return "one_of"
     if rule == "all_items_have_field":
         return "all_items_have_field"
+    if rule == "all_items_absent_fields":
+        return "all_items_absent_fields"
     raise ManifestError(
         f"{location}.rule must be one of: required, https_url, array, absent, string, number, boolean, object, "
-        "non_empty_array, min_items, equals, one_of, all_items_have_field"
+        "non_empty_array, min_items, equals, one_of, all_items_have_field, all_items_absent_fields"
     )
 
 
@@ -2388,6 +2587,33 @@ def _required_status_code(raw_assertion: dict[str, JsonValue], *, location: str)
     if not isinstance(value, int) or isinstance(value, bool) or value < 100 or value > 599:
         raise ManifestError(f"{location}.expected must be an HTTP status code")
     return value
+
+
+def _required_status_codes(raw_assertion: dict[str, JsonValue], *, location: str) -> tuple[int, ...]:
+    """Extract and validate a non-empty list of accepted HTTP status codes.
+
+    Args:
+        raw_assertion: Raw assertion dict expected to contain an
+            ``expectedOneOf`` field.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Tuple of accepted HTTP status codes in manifest order.
+
+    Raises:
+        ManifestError: If the value is missing, empty, or contains a value
+            outside the HTTP status-code range.
+    """
+    values = raw_assertion.get("expectedOneOf")
+    if not isinstance(values, list) or not values:
+        raise ManifestError(f"{location}.expectedOneOf must be a non-empty array of HTTP status codes")
+    parsed: list[int] = []
+    for index, value in enumerate(values):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 100 or value > 599:
+            raise ManifestError(f"{location}.expectedOneOf[{index}] must be an HTTP status code")
+        if value not in parsed:
+            parsed.append(value)
+    return tuple(parsed)
 
 
 def _required_string(raw_config: dict[str, JsonValue], key: str, *, location: str) -> str:
@@ -2612,6 +2838,32 @@ def _required_object_array(raw_config: dict[str, JsonValue], key: str, *, locati
             raise ManifestError(f"{location}.{key}[{index}] must be a JSON object")
         objects.append(item)
     return objects
+
+
+def _required_string_array(raw_config: dict[str, JsonValue], key: str, *, location: str) -> tuple[str, ...]:
+    """Extract a required non-empty array of non-empty strings.
+
+    Args:
+        raw_config: The parent JSON object to extract from.
+        key: The key to look up in the object.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        A tuple of stripped strings in source order.
+
+    Raises:
+        ManifestError: If the value is missing, empty, or contains non-string
+            or blank entries.
+    """
+    value = raw_config.get(key)
+    if not isinstance(value, list) or not value:
+        raise ManifestError(f"{location}.{key} must be a non-empty array of strings")
+    strings: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            raise ManifestError(f"{location}.{key}[{index}] must be a non-empty string")
+        strings.append(item.strip())
+    return tuple(strings)
 
 
 _STEP_ID_PATTERN = re.compile(r"^" + _STEP_ID_CHAR_CLASS + r"$")

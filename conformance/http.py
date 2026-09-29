@@ -23,6 +23,9 @@ from conformance.json_types import JsonObject, JsonValue
 # with "field is missing".
 _NO_CONTENT_STATUS_CODES: frozenset[int] = frozenset({204, 205, 304})
 
+_DEFAULT_JSON_HTTP_TIMEOUT_SECONDS = 10.0
+"""Fixed per-request timeout for conformance HTTP calls."""
+
 
 class JsonHttpClientError(RuntimeError):
     """Raised when a JSON HTTP request or response is invalid.
@@ -57,12 +60,15 @@ class JsonHttpResponse:
         body (JsonObject): Parsed JSON object body.
         headers (FrozenHeaders): Immutable response headers with
             case-insensitive lookup.
+        body_bytes (bytes): Raw response body bytes used by detached JWS
+            validation.
     """
 
     url: str
     status_code: int
     body: JsonObject
     headers: FrozenHeaders
+    body_bytes: bytes
 
     def __init__(
         self,
@@ -71,6 +77,7 @@ class JsonHttpResponse:
         status_code: int,
         body: JsonObject,
         headers: Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        body_bytes: bytes = b"",
     ) -> None:
         """Initialise a typed JSON response with frozen headers.
 
@@ -80,11 +87,13 @@ class JsonHttpResponse:
             body: Parsed JSON object body.
             headers: Source response headers copied into an immutable,
                 case-insensitive mapping.
+            body_bytes: Raw response body bytes.
         """
         object.__setattr__(self, "url", url)
         object.__setattr__(self, "status_code", status_code)
         object.__setattr__(self, "body", body)
         object.__setattr__(self, "headers", freeze_headers(headers))
+        object.__setattr__(self, "body_bytes", bytes(body_bytes))
 
 
 def get_json(client: httpx.Client, url: str) -> JsonHttpResponse:
@@ -113,12 +122,14 @@ def send_json(
     json_body: JsonValue | None = None,
     json_body_bytes: bytes | None = None,
     form_body: Mapping[str, str] | None = None,
+    raw_body: bytes | None = None,
+    allow_non_json_response: bool = False,
 ) -> JsonHttpResponse:
     """Send an HTTP request and parse a JSON object response.
 
     Dispatches the request using the given method. For methods that support a
     body (POST, PUT, PATCH, DELETE), exactly one of ``json_body``,
-    ``json_body_bytes``, or ``form_body`` may be supplied:
+    ``json_body_bytes``, ``form_body``, or ``raw_body`` may be supplied:
 
     - ``json_body`` is serialised as ``application/json`` via ``httpx``.
     - ``json_body_bytes`` sends already-serialised JSON bytes unchanged.
@@ -129,6 +140,8 @@ def send_json(
       form-url-encoding semantics (e.g. spaces may be encoded as ``+``,
       reserved characters percent-encoded). The exact byte representation
       is delegated to ``httpx``.
+    - ``raw_body`` sends exact caller-owned bytes without selecting a media
+      type. The caller must supply ``Content-Type`` explicitly.
 
     For ``form_body`` requests, ``Content-Type:
     application/x-www-form-urlencoded`` is set automatically **only** when
@@ -141,7 +154,9 @@ def send_json(
     (status-agnostic contract per DL-0011), except for the HTTP no-content
     statuses (204, 205, 304) which are defined by RFC 9110 to carry no
     message body and are normalised to an empty JSON object so status-only
-    assertions can still be evaluated.
+    assertions can still be evaluated. Callers may also opt into
+    ``allow_non_json_response`` for status/header-only negative checks where
+    the body is intentionally irrelevant.
 
     Args:
         client: Preconfigured synchronous HTTP client.
@@ -157,6 +172,10 @@ def send_json(
         form_body: Optional form-field mapping (sent as
             ``application/x-www-form-urlencoded`` for POST/PUT/PATCH/DELETE).
             Mutually exclusive with ``json_body`` and ``json_body_bytes``.
+        raw_body: Optional exact request bytes. Mutually exclusive with every
+            other body encoding and requires an explicit ``Content-Type``.
+        allow_non_json_response: Whether non-JSON response bodies should be
+            normalised to an empty object instead of raising.
 
     Returns:
         Parsed JSON object response with URL and status code.
@@ -169,9 +188,11 @@ def send_json(
     # Reject ambiguous calls eagerly: a single request can carry only one
     # body encoding. Allowing both would force the helper to silently pick
     # one, hiding manifest authoring mistakes.
-    supplied_body_encodings = sum(candidate is not None for candidate in (json_body, json_body_bytes, form_body))
+    supplied_body_encodings = sum(
+        candidate is not None for candidate in (json_body, json_body_bytes, form_body, raw_body)
+    )
     if supplied_body_encodings > 1:
-        raise ValueError("send_json: json_body, json_body_bytes, and form_body are mutually exclusive")
+        raise ValueError("send_json: json_body, json_body_bytes, form_body, and raw_body are mutually exclusive")
 
     # Normalise the method to uppercase once so the body-selection guard and
     # the dispatch call agree regardless of the caller's casing. httpx accepts
@@ -193,6 +214,7 @@ def send_json(
     send_json_body = json_body if method_allows_body else None
     send_json_body_bytes: bytes | None = json_body_bytes if method_allows_body else None
     send_form_body: Mapping[str, str] | None = form_body if method_allows_body else None
+    send_raw_body: bytes | None = raw_body if method_allows_body else None
 
     if send_json_body_bytes is not None and "content-type" not in request_headers:
         request_headers["Content-Type"] = "application/json"
@@ -202,6 +224,8 @@ def send_json(
     # ``content-type`` from a manifest correctly suppresses the default.
     if send_form_body is not None and "content-type" not in request_headers:
         request_headers["Content-Type"] = "application/x-www-form-urlencoded"
+    if send_raw_body is not None and "content-type" not in request_headers:
+        raise ValueError("send_json: raw_body requires an explicit Content-Type header")
 
     try:
         response = client.request(
@@ -209,7 +233,7 @@ def send_json(
             url,
             headers=request_headers,
             json=send_json_body,
-            content=send_json_body_bytes,
+            content=send_json_body_bytes if send_json_body_bytes is not None else send_raw_body,
             data=send_form_body,
         )
     except httpx.RequestError as error:
@@ -225,11 +249,20 @@ def send_json(
             status_code=response.status_code,
             headers=response.headers,
             body={},
+            body_bytes=response.content,
         )
 
     try:
         response_body: object = response.json()
     except ValueError as error:
+        if allow_non_json_response:
+            return JsonHttpResponse(
+                url=str(response.url),
+                status_code=response.status_code,
+                headers=response.headers,
+                body={},
+                body_bytes=response.content,
+            )
         raise JsonHttpClientError(
             f"Response from {url} was not valid JSON",
             status_code=response.status_code,
@@ -247,12 +280,13 @@ def send_json(
         status_code=response.status_code,
         headers=response.headers,
         body=json_body_parsed,
+        body_bytes=response.content,
     )
 
 
 def build_json_http_client(
     *,
-    timeout_seconds: float,
+    timeout_seconds: float = _DEFAULT_JSON_HTTP_TIMEOUT_SECONDS,
     ca_bundle_path: Path | None = None,
     client_certificate_path: Path | None = None,
     client_private_key_path: Path | None = None,
@@ -260,7 +294,7 @@ def build_json_http_client(
     """Build an `httpx` client for JSON conformance requests.
 
     Args:
-        timeout_seconds: Per-request timeout in seconds.
+        timeout_seconds: Internal per-request timeout in seconds.
         ca_bundle_path: Optional CA bundle used for TLS verification.
         client_certificate_path: Optional client certificate for mTLS.
         client_private_key_path: Optional client private key for mTLS.

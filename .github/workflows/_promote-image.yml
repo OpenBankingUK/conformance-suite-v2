@@ -1,0 +1,555 @@
+name: Promote candidate image
+
+# Reusable workflow shared by the automatic and manual promotion workflows.
+# Never runs branch-supplied code: it checks out the trusted
+# ref that owns this workflow file (the branch a human dispatched it from,
+# always main), and only reads a single file (pyproject.toml) out of the
+# candidate commit via `git show`, never executing anything from it. It
+# republishes the exact platform images a successful candidate-image CI run
+# already built, scanned, and smoke-tested; it never rebuilds. Before the
+# Environment approval gate it re-scans those exact archives against current
+# vulnerability data and main's policy (see docs/CICD_STRATEGY.md 3.2).
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        required: true
+        type: string
+        description: "preview, beta, or ga."
+      source_sha:
+        required: true
+        type: string
+        description: "Exact commit SHA the successful candidate-image run was built from."
+      branch:
+        required: true
+        type: string
+        description: "Exact source branch the candidate was built from."
+      tag:
+        required: false
+        type: string
+        default: ""
+        description: "Git tag on the release commit. Required for GA."
+      environment_name:
+        required: true
+        type: string
+      ci_run_id:
+        required: false
+        type: string
+        default: ""
+        description: "Exact successful CI run to promote; omitted for manual recovery dispatches."
+    secrets:
+      DOCKER_ORG_USERNAME:
+        required: true
+      DOCKER_ORG_ACCESS_TOKEN:
+        required: true
+      SNYK_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-promotion
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: docker.io/openbanking/conformance-suite-v2
+  INPUT_BRANCH: ${{ inputs.branch }}
+  INPUT_CHANNEL: ${{ inputs.channel }}
+  INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
+  INPUT_TAG: ${{ inputs.tag }}
+  INPUT_CI_RUN_ID: ${{ inputs.ci_run_id }}
+
+jobs:
+  locate:
+    name: Locate candidate run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      run_id: ${{ steps.locate.outputs.run_id }}
+
+    steps:
+      - name: Require a trusted main-branch dispatch
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Promotion workflows must be dispatched from main, not $GITHUB_REF." >&2
+            exit 1
+          fi
+          if ! [[ "$INPUT_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::source_sha must be a full lowercase 40-character Git SHA." >&2
+            exit 1
+          fi
+          git check-ref-format --branch "$INPUT_BRANCH" >/dev/null
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install release-tooling dependencies
+        run: uv sync --frozen --no-install-project
+
+      - name: Locate and verify the successful candidate-image run
+        id: locate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_CI_WORKFLOW_ID: "268848247"
+          TRUSTED_CI_WORKFLOW_PATH: ".github/workflows/ci.yml"
+        run: |
+          set -euo pipefail
+          if [[ -n "$INPUT_CI_RUN_ID" ]]; then
+            run_id="$INPUT_CI_RUN_ID"
+          else
+            run_id="$(
+              gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+                --json databaseId,headSha,headBranch,conclusion,event -L 100 \
+                | jq -r --arg sha "$INPUT_SOURCE_SHA" --arg branch "$INPUT_BRANCH" \
+                  'map(select(.headSha == $sha and .headBranch == $branch and .event == "push" and .conclusion == "success"))
+                   | sort_by(.databaseId) | last | .databaseId // empty'
+            )"
+          fi
+          if [[ -z "$run_id" ]]; then
+            echo "::error::No successful push CI run found for $INPUT_SOURCE_SHA on $INPUT_BRANCH." >&2
+            exit 1
+          fi
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")"
+          if ! jq -e \
+            --arg sha "$INPUT_SOURCE_SHA" \
+            --arg branch "$INPUT_BRANCH" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg path "$TRUSTED_CI_WORKFLOW_PATH" \
+            --argjson workflow_id "$TRUSTED_CI_WORKFLOW_ID" \
+            '.name == "CI"
+             and .workflow_id == $workflow_id
+             and .path == $path
+             and .head_sha == $sha
+             and .head_branch == $branch
+             and .event == "push"
+             and .conclusion == "success"
+             and .head_repository.full_name == $repository' \
+            <<<"$run_json" >/dev/null; then
+            echo "::error::CI run $run_id is not the trusted successful push CI run for $INPUT_SOURCE_SHA on $INPUT_BRANCH." >&2
+            exit 1
+          fi
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+  rescan:
+    # Re-scans the exact candidate archives with today's vulnerability data
+    # and main's policy *before* the Environment approval gate, so a
+    # vulnerability disclosed after the candidate was built blocks promotion
+    # rather than being published. No Environment, so no write credentials.
+    name: Vulnerability re-scan (${{ matrix.platform }})
+    needs: locate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            slug: linux-amd64
+            runs-on: ubuntu-latest
+          - platform: linux/arm64
+            slug: linux-arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install release-tooling dependencies
+        run: uv sync --frozen --no-install-project
+
+      - name: Download the candidate archive
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.locate.outputs.run_id }}
+          name: candidate-${{ matrix.slug }}
+          path: ${{ runner.temp }}/candidate
+
+      - name: Download the promotion manifest
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.locate.outputs.run_id }}
+          name: promotion-manifest
+          path: ${{ runner.temp }}/manifest
+
+      - name: Verify and load the candidate archive
+        id: load
+        env:
+          SLUG: ${{ matrix.slug }}
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/candidate/image-$SLUG.tar"
+          actual="$(sha256sum "$archive" | awk '{print $1}')"
+          if ! awk '{print $1}' "$RUNNER_TEMP/manifest/checksums.sha256" | grep -qx "$actual"; then
+            echo "::error::Candidate archive checksum is not recorded in the promotion manifest." >&2
+            exit 1
+          fi
+          docker load --input "$archive"
+          echo "local_tag=ob-conformance-candidate:$SLUG-$INPUT_SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Extract candidate dependency manifests (read-only)
+        # Only reads files from the candidate commit; never executes them.
+        id: source
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$INPUT_SOURCE_SHA"
+          src="$RUNNER_TEMP/candidate-source"
+          mkdir -p "$src"
+          for file in Dockerfile pyproject.toml uv.lock; do
+            git show "$INPUT_SOURCE_SHA:$file" > "$src/$file"
+          done
+          base_ref="$(uv run python -m scripts.validate_docker_base --stdin --print-runtime-base < "$src/Dockerfile")"
+          {
+            echo "dir=$src"
+            echo "runtime_base=$base_ref"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Re-scan with main's vulnerability gate
+        uses: ./.github/actions/vulnerability-scan
+        with:
+          image: ${{ steps.load.outputs.local_tag }}
+          image-source: local
+          platform: ${{ matrix.platform }}
+          target: "${{ inputs.channel }} promotion of ${{ inputs.branch }}@${{ inputs.source_sha }} (${{ matrix.platform }})"
+          vex-image: ${{ steps.source.outputs.runtime_base }}
+          vex-requires-dhi-login: "true"
+          lock-directory: ${{ steps.source.outputs.dir }}
+          dockerfile: ${{ steps.source.outputs.dir }}/Dockerfile
+          gate-directory: .
+          exceptions-file: security/vulnerability-exceptions.toml
+          report-name: promotion-vulnerability-report-${{ inputs.channel }}-${{ matrix.slug }}
+          snyk-token: ${{ secrets.SNYK_TOKEN }}
+          docker-username: ${{ secrets.DOCKER_ORG_USERNAME }}
+          docker-password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+
+  promote:
+    name: Promote (${{ inputs.channel }})
+    needs: [locate, rescan]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment_name }}
+
+    permissions:
+      contents: read
+      actions: read
+      attestations: write
+      artifact-metadata: write
+      id-token: write
+      pull-requests: read
+
+    steps:
+      - name: Require a trusted main-branch dispatch
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Promotion workflows must be dispatched from main, not $GITHUB_REF." >&2
+            exit 1
+          fi
+          if ! [[ "$INPUT_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::source_sha must be a full lowercase 40-character Git SHA." >&2
+            exit 1
+          fi
+          git check-ref-format --branch "$INPUT_BRANCH" >/dev/null
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install release-tooling dependencies
+        run: uv sync --frozen --no-install-project
+
+      - name: Locate and verify the successful candidate-image run
+        id: locate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Re-verify exactly the run the vulnerability re-scan inspected.
+          INPUT_CI_RUN_ID: ${{ needs.locate.outputs.run_id }}
+          TRUSTED_CI_WORKFLOW_ID: "268848247"
+          TRUSTED_CI_WORKFLOW_PATH: ".github/workflows/ci.yml"
+        run: |
+          set -euo pipefail
+          if [[ -n "$INPUT_CI_RUN_ID" ]]; then
+            run_id="$INPUT_CI_RUN_ID"
+          else
+            run_id="$(
+              gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+                --json databaseId,headSha,headBranch,conclusion,event -L 100 \
+                | jq -r --arg sha "$INPUT_SOURCE_SHA" --arg branch "$INPUT_BRANCH" \
+                  'map(select(.headSha == $sha and .headBranch == $branch and .event == "push" and .conclusion == "success"))
+                   | sort_by(.databaseId) | last | .databaseId // empty'
+            )"
+          fi
+          if [[ -z "$run_id" ]]; then
+            echo "::error::No successful push CI run found for $INPUT_SOURCE_SHA on $INPUT_BRANCH." >&2
+            exit 1
+          fi
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")"
+          if ! jq -e \
+            --arg sha "$INPUT_SOURCE_SHA" \
+            --arg branch "$INPUT_BRANCH" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg path "$TRUSTED_CI_WORKFLOW_PATH" \
+            --argjson workflow_id "$TRUSTED_CI_WORKFLOW_ID" \
+            '.name == "CI"
+             and .workflow_id == $workflow_id
+             and .path == $path
+             and .head_sha == $sha
+             and .head_branch == $branch
+             and .event == "push"
+             and .conclusion == "success"
+             and .head_repository.full_name == $repository' \
+            <<<"$run_json" >/dev/null; then
+            echo "::error::CI run $run_id is not the trusted successful push CI run for $INPUT_SOURCE_SHA on $INPUT_BRANCH." >&2
+            exit 1
+          fi
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Download candidate artifacts from that run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.locate.outputs.run_id }}
+          path: artifacts
+          pattern: "candidate-linux-*"
+          merge-multiple: false
+
+      - name: Download the promotion manifest from that run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.locate.outputs.run_id }}
+          name: promotion-manifest
+          path: artifacts/manifest
+
+      - name: Verify artifact checksums
+        run: |
+          set -euo pipefail
+          cd artifacts
+          amd64_tar="candidate-linux-amd64/image-linux-amd64.tar"
+          arm64_tar="candidate-linux-arm64/image-linux-arm64.tar"
+          sha256sum "$amd64_tar" "$arm64_tar" > actual.sha256
+          # The recorded checksums file used the CI job's own relative paths;
+          # compare content, not path spelling.
+          diff <(awk '{print $1}' actual.sha256 | sort) <(awk '{print $1}' manifest/checksums.sha256 | sort)
+
+      - name: Confirm candidate source and version
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            "$INPUT_SOURCE_SHA" \
+            "refs/heads/$INPUT_BRANCH:refs/remotes/origin/$INPUT_BRANCH"
+          if ! git merge-base --is-ancestor "$INPUT_SOURCE_SHA" "refs/remotes/origin/$INPUT_BRANCH"; then
+            echo "::error::$INPUT_SOURCE_SHA does not belong to $INPUT_BRANCH." >&2
+            exit 1
+          fi
+          git show "$INPUT_SOURCE_SHA:Dockerfile" \
+            | uv run python -m scripts.validate_docker_base --stdin
+          if [[ -n "$INPUT_TAG" ]]; then
+            tag_refs="$(git ls-remote --tags origin "refs/tags/$INPUT_TAG" "refs/tags/$INPUT_TAG^{}")"
+            tag_target_sha="$(
+              awk -v ref="refs/tags/$INPUT_TAG" \
+                '$2 == ref "^{}" { peeled = $1 } $2 == ref { direct = $1 }
+                 END { if (peeled != "") print peeled; else if (direct != "") print direct }' \
+                <<<"$tag_refs"
+            )"
+            if [[ -n "$tag_target_sha" && "$tag_target_sha" != "$INPUT_SOURCE_SHA" ]]; then
+              echo "::error::Git tag $INPUT_TAG already points to $tag_target_sha, not $INPUT_SOURCE_SHA." >&2
+              exit 1
+            fi
+          fi
+          if ! git diff --quiet "$INPUT_SOURCE_SHA" HEAD -- \
+            .github/workflows/ci.yml \
+            scripts/build_promotion_manifest.py \
+            scripts/docker_smoke_test.sh \
+            scripts/release_metadata.py \
+            scripts/validate_release.py \
+            scripts/validate_docker_base.py \
+            scripts/vulnerability_gate.py \
+            .github/actions/vulnerability-scan/action.yml \
+            .github/actions/vulnerability-scan/dhi-signing-key.pub \
+            security/vulnerability-exceptions.toml; then
+            echo "::error::Candidate pipeline files differ from trusted main. Merge main into $INPUT_BRANCH and rebuild." >&2
+            exit 1
+          fi
+          committed_version="$(git show "$INPUT_SOURCE_SHA:pyproject.toml" | grep -m1 '^version = ' | sed -E 's/version = "(.*)"/\1/')"
+          manifest_version="$(jq -r '.raw_version' artifacts/manifest/promotion-manifest.json)"
+          if [[ "$committed_version" != "$manifest_version" ]]; then
+            echo "::error::pyproject.toml at $INPUT_SOURCE_SHA has version $committed_version, manifest claims $manifest_version." >&2
+            exit 1
+          fi
+
+      - name: Confirm the source commit belongs to a merged pull request
+        # A merged PR is mandatory (direct pushes are rejected). A recorded
+        # PR approval is not: admins may merge release PRs by bypassing branch
+        # protection, so an unapproved merge is recorded as an audit warning
+        # and the required Environment reviewer remains the blocking human gate.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pr_json="$(gh api "repos/$GITHUB_REPOSITORY/commits/$INPUT_SOURCE_SHA/pulls" --jq 'map(select(.merged_at != null)) | first // empty')"
+          pr_number="$(jq -r '.number // empty' <<<"$pr_json")"
+          if [[ -z "$pr_number" ]]; then
+            echo "::error::No merged pull request found for commit $INPUT_SOURCE_SHA." >&2
+            exit 1
+          fi
+          merged_by="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number" --jq '.merged_by.login // "unknown"')"
+          approvers="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number/reviews" --paginate --jq '.[] | select(.state == "APPROVED") | .user.login' | sort -u | paste -sd, -)"
+          if [[ -n "$approvers" ]]; then
+            echo "Pull request #$pr_number approved by: $approvers (merged by $merged_by)."
+            summary="Source PR #$pr_number approved by \`$approvers\`, merged by \`$merged_by\`."
+          else
+            echo "::warning::Pull request #$pr_number for commit $INPUT_SOURCE_SHA was merged by $merged_by without a recorded approval (admin bypass). Promotion relies on the Environment reviewer gate."
+            summary="⚠️ Source PR #$pr_number was merged by \`$merged_by\` **without a recorded approval** (admin bypass); the Environment reviewer approval is the only human gate for this promotion."
+          fi
+          echo "$summary" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: List already-published version tags
+        run: |
+          set -euo pipefail
+          uv run python -m scripts.list_docker_hub_tags > published-versions.txt
+
+      - name: Revalidate the candidate manifest
+        id: validate
+        run: |
+          set -euo pipefail
+          args=(
+            --manifest artifacts/manifest/promotion-manifest.json
+            --source-sha "$INPUT_SOURCE_SHA"
+            --branch "$INPUT_BRANCH"
+            --channel "$INPUT_CHANNEL"
+            --published-versions-file published-versions.txt
+          )
+          if [[ -n "$INPUT_TAG" ]]; then
+            args+=(--tag "$INPUT_TAG")
+          fi
+          result="$(uv run python -m scripts.validate_promotion "${args[@]}")"
+          echo "$result"
+          {
+            echo "raw_version=$(jq -r '.raw_version' <<<"$result")"
+            echo "amd64_digest=$(jq -r '.platform_digests["linux/amd64"]' <<<"$result")"
+            echo "arm64_digest=$(jq -r '.platform_digests["linux/arm64"]' <<<"$result")"
+          } >> "$GITHUB_OUTPUT"
+          jq -c '.expected_tags' <<<"$result" > expected-tags.json
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKER_ORG_USERNAME }}
+          password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Push each already-scanned platform image by digest
+        # The candidate archives are OCI layouts holding the exact manifest,
+        # config, and compressed layers CI built and scanned. `docker push`
+        # would re-serialise the manifest and change its digest, so skopeo
+        # copies the layout unchanged to a digest reference. skopeo refuses the
+        # copy if the source manifest digest differs from the destination
+        # digest, and the registry manifest is re-hashed below as a second
+        # check. Pushing by digest creates no tags, so promotion leaves no
+        # internal staging tags behind on Docker Hub. This never rebuilds the
+        # image.
+        env:
+          AMD64_DIGEST: ${{ steps.validate.outputs.amd64_digest }}
+          ARM64_DIGEST: ${{ steps.validate.outputs.arm64_digest }}
+        run: |
+          set -euo pipefail
+          skopeo --version
+
+          stage() {
+            local slug="$1" arch="$2" expected="$3"
+            local dest="${IMAGE_NAME}@${expected}"
+            skopeo copy --preserve-digests \
+              --dest-authfile "$HOME/.docker/config.json" \
+              "oci-archive:artifacts/candidate-${slug}/image-${slug}.tar" \
+              "docker://${dest}"
+            actual="$(skopeo inspect --authfile "$HOME/.docker/config.json" --raw "docker://${dest}" | sha256sum | awk '{print "sha256:" $1}')"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "::error::Pushed ${arch} digest $actual does not match scanned digest $expected." >&2
+              exit 1
+            fi
+            echo "Pushed ${arch} at scanned digest $expected."
+          }
+
+          stage linux-amd64 amd64 "$AMD64_DIGEST"
+          stage linux-arm64 arm64 "$ARM64_DIGEST"
+
+      - name: Assemble and publish the multi-arch manifest list
+        id: publish
+        run: |
+          set -euo pipefail
+          tag_args=()
+          while IFS= read -r tag; do
+            tag_args+=(--tag "${IMAGE_NAME}:${tag}")
+          done < <(jq -r '.[]' expected-tags.json)
+
+          docker buildx imagetools create "${tag_args[@]}" \
+            "${IMAGE_NAME}@${{ steps.validate.outputs.amd64_digest }}" \
+            "${IMAGE_NAME}@${{ steps.validate.outputs.arm64_digest }}"
+          published_digest="sha256:$(
+            docker buildx imagetools inspect \
+              "${IMAGE_NAME}:${{ steps.validate.outputs.raw_version }}" --raw \
+              | sha256sum | awk '{print $1}'
+          )"
+          echo "published_digest=$published_digest" >> "$GITHUB_OUTPUT"
+
+      # actions/attest replaces the deprecated attest-build-provenance and
+      # attest-sbom wrappers. Only the provenance attestation creates the
+      # Artifact Metadata storage record (needs `artifact-metadata: write`);
+      # the SBOM attestations describe the same subject, so they skip it.
+      - name: Attest build provenance for the published manifest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.publish.outputs.published_digest }}
+          push-to-registry: true
+
+      - name: Attest amd64 SBOM for the published manifest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.publish.outputs.published_digest }}
+          sbom-path: artifacts/candidate-linux-amd64/sbom-linux-amd64.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest arm64 SBOM for the published manifest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.publish.outputs.published_digest }}
+          sbom-path: artifacts/candidate-linux-arm64/sbom-linux-arm64.spdx.json
+          push-to-registry: true
+          create-storage-record: false

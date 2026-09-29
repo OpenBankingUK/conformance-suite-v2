@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
+import re
 import secrets
 import threading
 import time
+import uuid
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import cast
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 
@@ -26,6 +29,13 @@ from conformance.api.auth_session_store import (
 )
 from conformance.approved_releases import ApprovedReleasePolicy
 from conformance.assertions import AssertionResult, evaluate_assertion
+from conformance.catalogue import (
+    CatalogueAssertion,
+    CatalogueRequestStep,
+    CatalogueTestCase,
+    CompiledTestPlan,
+    RuntimeInputRequirement,
+)
 from conformance.context import (
     ExecutionContext,
     MissingPredecessorResponseError,
@@ -38,14 +48,22 @@ from conformance.context import (
     resolve_in_structure,
     resolve_placeholders,
 )
+from conformance.dcr_execution import DcrCatalogueExecutionAdapter
 from conformance.execution_log import ExecutionLogger, NullExecutionLogger, is_developer_mode_enabled, new_run_id
 from conformance.execution_schedule import ExecutionGroup, build_execution_schedule
 from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
+    PSU_AUTHORIZATION_TIMEOUT_SECONDS,
+    DetachedJwsPolicy,
     FormBody,
     GeneratedRequestObject,
+    HeaderAssertion,
+    HttpStatusAssertion,
     JsonBody,
+    JsonFieldAssertion,
+    JsonFieldRule,
+    LegacyFcsAssertion,
     Manifest,
     ManifestAssertion,
     ManifestError,
@@ -53,26 +71,32 @@ from conformance.manifest import (
     ManifestStep,
     ManifestTest,
     PsuAuthorizationStep,
+    ResponseSchemaAssertion,
+    ResponseSignaturePolicy,
+    StepPhase,
+    TokenEndpointAuthPolicy,
     V1Step,
     validate_header_value,
 )
 from conformance.masking import SENSITIVE_JSON_KEYS, mask_form_fields, mask_headers, mask_json_value, mask_url_query
 from conformance.model_bank_config import FapiSigningConfig
+from conformance.plan_configuration import parse_dcr_execution_runtime_inputs
 from conformance.psu_authorization import (
     build_authorization_url,
     extract_redirect_parameters,
     redirect_matches_registered_uri,
     synthesize_psu_response,
 )
+from conformance.response_signature import ResponseSignatureValidationError, validate_ob_response_signature
 from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
 from conformance.signing_credentials import SigningCredentialError, load_signing_credentials
 from conformance.signing_service import (
     ClientAssertionSigningInput,
     FapiSigningService,
     JwtSigningError,
+    OpenBankingDetachedJwsProfile,
     RequestObjectSigningInput,
 )
-from conformance.suite_catalog import SuiteMetadata
 from conformance.test_plan import TestPlan
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
 
@@ -84,8 +108,164 @@ cap prevents unbounded thread creation while preserving queue-based execution
 for additional groups.
 """
 
-_OB_ACCOUNT_ACCESS_CONSENTS_PATH = "/open-banking/v4.0/aisp/account-access-consents"
-"""Open Banking AIS consent-creation path requiring detached JWS support."""
+_OB_ACCOUNT_ACCESS_CONSENTS_PATHS = frozenset(
+    {
+        "/open-banking/v3.1/aisp/account-access-consents",
+        "/open-banking/v4.0/aisp/account-access-consents",
+    }
+)
+"""Open Banking AIS consent-creation paths supporting detached JWS."""
+
+_OB_PIS_PATH_PREFIXES = ("/open-banking/v3.1/pisp/", "/open-banking/v4.0/pisp/")
+"""Open Banking PIS path prefixes supporting payment-initiation detached JWS."""
+
+_OB_VRP_RESOURCE_PATH_PREFIXES = ("/domestic-vrp-consents", "/domestic-vrps")
+"""Open Banking VRP resource paths requiring detached JWS support."""
+
+_CATALOGUE_PATH_VARIABLE_PATTERN = re.compile(r"(?<!\$)\{([^}]+)\}")
+"""Pattern matching OpenAPI-style path variables in catalogue request paths."""
+
+_CATALOGUE_GENERATED_VALUE_PATTERN = re.compile(r"\$\{generated\.([^}]+)\}")
+"""Pattern matching catalogue-owned generated runtime values in request templates."""
+
+_CATALOGUE_RUNTIME_VALUE_PATTERN = re.compile(r"\$\{runtime\.([^}]+)\}")
+"""Pattern matching plan-sourced runtime values in request templates."""
+
+_CBPII_CLIENT_CREDENTIALS_TOKEN_ID = "cbpii-client-credentials"  # noqa: S105 - semantic token id
+"""Semantic token id for CBPII client-credentials protected-resource calls."""
+
+_CBPII_FUNDS_CONFIRMATION_TOKEN_ID = "cbpii-funds-confirmation"  # noqa: S105 - semantic token id
+"""Semantic token id for CBPII authorisation-code funds-confirmation calls."""
+
+_CBPII_CONSENT_CREATE_STEP_ID = "cbpii-consent-create-core-request"
+"""Catalogue step id whose response supplies the CBPII consent id."""
+
+_CBPII_AUTHORIZATION_STEP_ID = "setup-cbpii-consent-authorisation"
+"""Synthetic PSU authorisation step id for CBPII authorised consent setup."""
+
+_CBPII_AUTHORIZATION_TOKEN_STEP_ID = "setup-token-cbpii-funds-confirmation"  # noqa: S105 - step id
+"""Synthetic authorisation-code token exchange step id for CBPII funds confirmations."""
+
+_CBPII_AUTHORISED_RESOURCE_STEP_IDS = frozenset(
+    {
+        "cbpii-consent-get-authorised-request",
+        "cbpii-funds-confirmation-create-request",
+    }
+)
+"""CBPII resource steps that require a PSU-authorised funds-confirmation consent."""
+
+_CBPII_CAPTURED_CONSENT_ID = f"${{steps.{_CBPII_CONSENT_CREATE_STEP_ID}.response.body.Data.ConsentId}}"
+"""Placeholder resolving to the CBPII consent id created during the run."""
+
+_AIS_CLIENT_CREDENTIALS_TOKEN_ID = "ais-client-credentials"  # noqa: S105 - semantic token id
+"""Semantic token id for AIS client-credentials consent-creation calls."""
+
+_AIS_BASIC_ACCOUNT_ACCESS_TOKEN_ID = "ais-account-access-basic"  # noqa: S105 - semantic token id
+"""Semantic token id for PSU-authorised AIS calls using basic read permissions."""
+
+_AIS_DETAIL_ACCOUNT_ACCESS_TOKEN_ID = "ais-account-access-detail"  # noqa: S105 - semantic token id
+"""Semantic token id for PSU-authorised AIS calls using detail read permissions."""
+
+_AIS_CONSENT_CREATE_STEP_ID = "ais-at-setup-consent-request"
+"""Catalogue template step id used to create AIS account-access consent steps."""
+
+_AIS_ACCOUNT_ACCESS_TOKEN_STEP_ID = "ais-at-setup-token-request"  # noqa: S105 - step id
+"""Catalogue template step id used to create AIS authorisation-code token steps."""
+
+_AIS_AUTHORIZATION_STEP_ID = "setup-ais-consent-authorisation"
+"""Legacy synthetic PSU authorisation step id retained for compatibility."""
+
+_AIS_CAPTURED_CONSENT_ID = f"${{steps.{_AIS_CONSENT_CREATE_STEP_ID}.response.body.Data.ConsentId}}"
+"""Legacy AIS consent-id placeholder retained for compatibility."""
+
+_AIS_PERMISSION_PROFILE_TOKEN_IDS = {
+    "basic": _AIS_BASIC_ACCOUNT_ACCESS_TOKEN_ID,
+    "detail": _AIS_DETAIL_ACCOUNT_ACCESS_TOKEN_ID,
+}
+"""Semantic token ids keyed by AIS legacy permission profile."""
+
+_AIS_BASIC_ACCOUNT_ACCESS_CONSENT_BODY: JsonObject = {
+    "Data": {
+        "Permissions": [
+            "ReadAccountsBasic",
+            "ReadBalances",
+            "ReadBeneficiariesBasic",
+            "ReadDirectDebits",
+            "ReadOffers",
+            "ReadParty",
+            "ReadPartyPSU",
+            "ReadProducts",
+            "ReadScheduledPaymentsBasic",
+            "ReadStandingOrdersBasic",
+            "ReadStatementsBasic",
+            "ReadTransactionsBasic",
+            "ReadTransactionsCredits",
+            "ReadTransactionsDebits",
+        ],
+    },
+    "Risk": {},
+}
+"""AIS account-access-consent payload matching the legacy basic permission profile."""
+
+_AIS_DETAIL_ACCOUNT_ACCESS_CONSENT_BODY: JsonObject = {
+    "Data": {
+        "Permissions": [
+            "ReadAccountsDetail",
+            "ReadBalances",
+            "ReadBeneficiariesDetail",
+            "ReadDirectDebits",
+            "ReadOffers",
+            "ReadPAN",
+            "ReadParty",
+            "ReadPartyPSU",
+            "ReadProducts",
+            "ReadScheduledPaymentsDetail",
+            "ReadStandingOrdersDetail",
+            "ReadStatementsDetail",
+            "ReadTransactionsCredits",
+            "ReadTransactionsDebits",
+            "ReadTransactionsDetail",
+        ],
+    },
+    "Risk": {},
+}
+"""AIS account-access-consent payload matching the legacy detail permission profile."""
+
+_AIS_ACCOUNT_ACCESS_CONSENT_BODIES: Mapping[str, JsonObject] = {
+    "basic": _AIS_BASIC_ACCOUNT_ACCESS_CONSENT_BODY,
+    "detail": _AIS_DETAIL_ACCOUNT_ACCESS_CONSENT_BODY,
+}
+"""AIS account-access-consent payloads keyed by legacy permission profile."""
+
+_PIS_MISSING_SIGNATURE_STEP_ID = "pis-v4-domestic-payment-consent-reject-invalid-signature-request"
+"""PIS negative test step that must deliberately omit a detached JWS header."""
+
+_VRP_CONSENT_AUTHORIZATION_STEP_IDS = frozenset(
+    {
+        "vrp-consent-create-awaiting-authorisation-v31-pre-3111-request",
+        "vrp-consent-create-awaiting-authorisation-v31-3111-request",
+        "vrp-consent-create-awaiting-authorisation-v4-request",
+        "cvrp-consent-create-awaiting-authorisation-v4-request",
+    }
+)
+"""VRP/cVRP consent-creation request steps that can be PSU-authorised."""
+
+_VRP_PSU_PAYMENT_ACCESS_TOKEN_SUFFIX = "-psu-payment-access"  # noqa: S105 - semantic token id suffix
+"""Suffix for semantic token ids produced by VRP/cVRP PSU authorisation."""
+
+_VRP_PSU_AUTHORIZATION_STEP_SUFFIX = "-authorisation"
+"""Suffix for synthetic VRP/cVRP PSU authorisation step ids."""
+
+_VRP_PSU_AUTHORIZATION_TOKEN_STEP_SUFFIX = "-psu-payment-token"  # noqa: S105 - step id suffix
+"""Suffix for synthetic VRP/cVRP authorisation-code token exchange step ids."""
+
+_CATALOGUE_TOKEN_SCOPES = {
+    _AIS_CLIENT_CREDENTIALS_TOKEN_ID: "accounts",
+    _CBPII_CLIENT_CREDENTIALS_TOKEN_ID: "fundsconfirmations",
+    "pis-payment-access": "payments",
+    "vrp-payment-access": "payments",
+}
+"""OAuth client-credentials scopes for synthetic catalogue token setup."""
 
 
 def _normalize_url_path_for_match(path: str) -> str:
@@ -202,7 +382,6 @@ def _mask_result_url_query(url: str) -> str:
 def run_manifest(
     manifest: Manifest,
     *,
-    environment: str,
     client: httpx.Client,
     execution_logger: ExecutionLogger | None = None,
     plan: TestPlan | None = None,
@@ -211,7 +390,6 @@ def run_manifest(
     runtime_config: RuntimeConfig | None = None,
     fapi_signing_config: FapiSigningConfig | None = None,
     mtls_client_configured: bool = False,
-    suite_metadata: SuiteMetadata | None = None,
     approved_release_policy: ApprovedReleasePolicy | None = None,
 ) -> SmokeCheckResult:
     """Run a parsed manifest and return a structured smoke-check result.
@@ -221,7 +399,6 @@ def run_manifest(
 
     Args:
         manifest: Parsed and validated manifest to execute.
-        environment: Environment name copied into the result file.
         client: Preconfigured synchronous HTTP client used for network requests.
         execution_logger: Optional structured execution-log sink. Defaults to
             a :class:`NullExecutionLogger` for backwards-compatible callers
@@ -254,8 +431,6 @@ def run_manifest(
         mtls_client_configured: Whether the shared HTTP client was configured
             with an mTLS client certificate and private key. Used to fail
             ``tls_client_auth`` token steps clearly before dispatch.
-        suite_metadata: Optional catalog metadata describing a config-resolved
-            suite run. Omit for explicit manifests and legacy smoke checks.
         approved_release_policy: Optional approved-release policy used by the
             generated report's participant-side certification self-assessment.
 
@@ -265,16 +440,13 @@ def run_manifest(
     logger_sink: ExecutionLogger = execution_logger or NullExecutionLogger()
     effective_run_id = run_id if run_id is not None else _logger_run_id(logger_sink) or new_run_id()
     effective_store = auth_session_store if auth_session_store is not None else AuthSessionStore()
-    run_started_payload: JsonObject = {"environment": environment, "schemaVersion": manifest.schema_version}
-    if suite_metadata is not None:
-        run_started_payload["suite"] = suite_metadata.to_json_object()
+    run_started_payload: JsonObject = {"schemaVersion": manifest.schema_version}
     logger_sink.emit("run-started", payload=run_started_payload)
     try:
         if manifest.schema_version == "v1":
             effective_plan = plan if plan is not None else TestPlan.default_plan_from_manifest(manifest)
             result = _run_manifest_v1(
                 manifest,
-                environment=environment,
                 client=client,
                 execution_logger=logger_sink,
                 plan=effective_plan,
@@ -283,19 +455,16 @@ def run_manifest(
                 runtime_config=runtime_config,
                 fapi_signing_config=fapi_signing_config,
                 mtls_client_configured=mtls_client_configured,
-                suite_metadata=suite_metadata,
                 approved_release_policy=approved_release_policy,
             )
         else:
             result = _run_manifest_v0(
                 manifest,
-                environment=environment,
                 client=client,
                 execution_logger=logger_sink,
                 run_id=effective_run_id,
                 auth_session_store=effective_store,
                 runtime_config=runtime_config,
-                suite_metadata=suite_metadata,
                 approved_release_policy=approved_release_policy,
             )
     except Exception as error:
@@ -315,6 +484,1941 @@ def run_manifest(
         },
     )
     return result
+
+
+def run_compiled_test_plan(
+    compiled_plan: CompiledTestPlan,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    client: httpx.Client,
+    execution_logger: ExecutionLogger | None = None,
+    run_id: str | None = None,
+    auth_session_store: AuthSessionStore | None = None,
+    runtime_config: RuntimeConfig | None = None,
+    fapi_signing_config: FapiSigningConfig | None = None,
+    mtls_client_configured: bool = False,
+    approved_release_policy: ApprovedReleasePolicy | None = None,
+    dcr_clock: Callable[[], datetime] | None = None,
+    dcr_jwt_id_factory: Callable[[], str] | None = None,
+) -> SmokeCheckResult:
+    """Run a compiled catalogue plan and return structured result evidence.
+
+    Args:
+        compiled_plan: Deterministic catalogue graph produced by the compiler.
+        runtime_inputs: Original runtime input mapping from the plan spec. This
+            may include sensitive values and is never persisted directly.
+        runtime_input_base_dir: Directory used to resolve runtime
+            ``file_reference`` values safely.
+        client: Preconfigured synchronous HTTP client used for network requests.
+        execution_logger: Optional structured execution-log sink.
+        run_id: Optional run identifier used for log/auth-session correlation.
+        auth_session_store: Optional PSU authorisation store.
+        runtime_config: Optional safe participant config values.
+        fapi_signing_config: Optional validated FAPI signing configuration.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            credentials configured.
+        approved_release_policy: Optional approved-release policy used by the
+            report's certification self-assessment.
+        dcr_clock: Optional timezone-aware clock for deterministic DCR JOSE tests.
+        dcr_jwt_id_factory: Optional DCR JWT identifier factory for deterministic tests.
+
+    Returns:
+        Smoke-check result populated with catalogue traceability metadata.
+    """
+    logger_sink: ExecutionLogger = execution_logger or NullExecutionLogger()
+    effective_run_id = run_id if run_id is not None else _logger_run_id(logger_sink) or new_run_id()
+    effective_store = auth_session_store if auth_session_store is not None else AuthSessionStore()
+    synthetic_manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=runtime_input_base_dir,
+        runtime_config=runtime_config,
+    )
+    logger_sink.emit(
+        "run-started",
+        payload={
+            "catalogue": {
+                "standard": compiled_plan.catalogue_key.standard,
+                "version": compiled_plan.catalogue_key.version,
+                "api": compiled_plan.catalogue_key.api,
+                "catalogueVersion": compiled_plan.catalogue_version,
+            },
+        },
+    )
+    try:
+        if compiled_plan.catalogue_key.api in {"dcr", "dynamic-client-registration"}:
+            dcr_adapter = DcrCatalogueExecutionAdapter(
+                compiled_plan=compiled_plan,
+                config=parse_dcr_execution_runtime_inputs(runtime_inputs),
+                execution_logger=logger_sink,
+                approved_release_policy=approved_release_policy,
+            )
+            if dcr_clock is not None:
+                dcr_adapter.clock = dcr_clock
+            if dcr_jwt_id_factory is not None:
+                dcr_adapter.jwt_id_factory = dcr_jwt_id_factory
+            result = dcr_adapter.run()
+        else:
+            result = _run_manifest_v1(
+                synthetic_manifest,
+                client=client,
+                execution_logger=logger_sink,
+                plan=TestPlan.default_plan_from_manifest(synthetic_manifest),
+                run_id=effective_run_id,
+                auth_session_store=effective_store,
+                runtime_config=runtime_config,
+                fapi_signing_config=fapi_signing_config,
+                mtls_client_configured=mtls_client_configured,
+                approved_release_policy=approved_release_policy,
+                compiled_plan=compiled_plan,
+            )
+    except Exception as error:
+        logger_sink.emit("application-error", payload={"message": str(error)})
+        raise
+    logger_sink.emit(
+        "run-completed",
+        payload={
+            "status": result.status,
+            "summary": {
+                "total": len(result.steps),
+                "passed": sum(1 for step in result.steps if step.status == "passed"),
+                "failed": sum(1 for step in result.steps if step.status == "failed"),
+                "warn": sum(1 for step in result.steps if step.status == "warn"),
+                "skipped": sum(1 for step in result.steps if step.status == "skipped"),
+            },
+        },
+    )
+    return result
+
+
+def _compiled_plan_to_manifest(
+    compiled_plan: CompiledTestPlan,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    runtime_config: RuntimeConfig | None,
+) -> Manifest:
+    """Build an internal manifest facade for existing HTTP execution plumbing.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to execute.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        runtime_input_base_dir: Directory used to resolve file references.
+        runtime_config: Safe participant config values, used for discovery URL.
+
+    Returns:
+        Synthetic v1 manifest containing one selected step per catalogue
+        request step.
+    """
+    steps: list[V1Step] = []
+    steps.extend(_catalogue_synthetic_token_steps(compiled_plan))
+    for test_case in compiled_plan.test_cases:
+        requirements = {requirement.input_id: requirement for requirement in test_case.runtime_input_requirements}
+        for request_step in test_case.request_steps:
+            if request_step.step_id == _AIS_CONSENT_CREATE_STEP_ID:
+                for profile in _compiled_plan_ais_permission_profiles(compiled_plan):
+                    manifest_step = _ais_profile_consent_step(
+                        request_step,
+                        profile=profile,
+                        runtime_inputs=runtime_inputs,
+                        runtime_input_base_dir=runtime_input_base_dir,
+                        runtime_config=runtime_config,
+                        requirements=requirements,
+                    )
+                    steps.append(manifest_step)
+                    steps.append(_ais_psu_authorization_step(profile=profile))
+                continue
+            if request_step.step_id == _AIS_ACCOUNT_ACCESS_TOKEN_STEP_ID:
+                steps.extend(
+                    _ais_authorization_code_token_step(profile=profile)
+                    for profile in _compiled_plan_ais_permission_profiles(compiled_plan)
+                )
+                continue
+            manifest_step = _catalogue_request_step_to_manifest_step(
+                test_case,
+                request_step,
+                runtime_inputs=runtime_inputs,
+                runtime_input_base_dir=runtime_input_base_dir,
+                runtime_config=runtime_config,
+                requirements=requirements,
+            )
+            steps.append(manifest_step)
+            steps.extend(compiled_plan_synthetic_inline_steps(compiled_plan, request_step))
+    catalogue_name = (
+        f"{compiled_plan.catalogue_key.standard} "
+        f"{compiled_plan.catalogue_key.version} "
+        f"{compiled_plan.catalogue_key.api}"
+    )
+    return Manifest(
+        schema_version="v1",
+        name=catalogue_name,
+        certification_coverage="complete",
+        steps=tuple(steps),
+    )
+
+
+def compiled_plan_synthetic_setup_steps(compiled_plan: CompiledTestPlan) -> tuple[ManifestStep, ...]:
+    """Build synthetic setup steps required by a compiled catalogue plan.
+
+    Args:
+        compiled_plan: Compiled catalogue plan whose selected resource steps
+            may consume runtime-produced artifacts.
+
+    Returns:
+        Manifest setup steps inserted before catalogue request steps.
+    """
+    return _catalogue_synthetic_token_steps(compiled_plan)
+
+
+def compiled_plan_synthetic_inline_steps(
+    compiled_plan: CompiledTestPlan,
+    request_step: CatalogueRequestStep,
+) -> tuple[V1Step, ...]:
+    """Build synthetic runtime steps inserted after a catalogue request step.
+
+    Args:
+        compiled_plan: Compiled catalogue plan whose request sequence is being
+            snapshotted or converted.
+        request_step: Catalogue request step most recently emitted.
+
+    Returns:
+        Synthetic runtime steps inserted immediately after ``request_step``.
+    """
+    return _catalogue_inline_authorization_steps(compiled_plan, request_step)
+
+
+def _catalogue_synthetic_token_steps(compiled_plan: CompiledTestPlan) -> tuple[ManifestStep, ...]:
+    """Build runtime token-acquisition setup steps missing from catalogue cases.
+
+    Args:
+        compiled_plan: Compiled catalogue plan whose selected resource steps
+            may consume semantic access-token ids.
+
+    Returns:
+        Synthetic setup steps that acquire and record semantic access tokens
+        before protected-resource requests execute.
+    """
+    required_token_ids: list[str] = []
+    produced_token_ids: set[str] = set()
+    for test_case in compiled_plan.test_cases:
+        for request_step in test_case.request_steps:
+            if request_step.produced_token_id is not None:
+                produced_token_ids.add(request_step.produced_token_id)
+            if request_step.required_token_id is not None and request_step.required_token_id not in required_token_ids:
+                required_token_ids.append(request_step.required_token_id)
+
+    steps: list[ManifestStep] = []
+    for token_id in required_token_ids:
+        if token_id in produced_token_ids:
+            continue
+        scope = _CATALOGUE_TOKEN_SCOPES.get(token_id)
+        if scope is None:
+            continue
+        steps.append(_catalogue_client_credentials_token_step(token_id=token_id, scope=scope))
+    return tuple(steps)
+
+
+def _catalogue_inline_authorization_steps(
+    compiled_plan: CompiledTestPlan,
+    request_step: CatalogueRequestStep,
+) -> tuple[V1Step, ...]:
+    """Build inline runtime authorisation steps that depend on a catalogue response.
+
+    Args:
+        compiled_plan: Compiled catalogue plan whose selected resource steps may
+            require a PSU-authorised consent.
+        request_step: Catalogue request step most recently converted.
+
+    Returns:
+        Synthetic runtime steps to insert immediately after ``request_step``.
+    """
+    if request_step.step_id != _CBPII_CONSENT_CREATE_STEP_ID:
+        pis_steps = _pis_inline_authorization_steps(compiled_plan, request_step)
+        if pis_steps:
+            return pis_steps
+        return _vrp_inline_authorization_steps(compiled_plan, request_step)
+    if not _compiled_plan_requires_cbpii_consent_authorization(compiled_plan):
+        return ()
+    return (_cbpii_psu_authorization_step(), _cbpii_authorization_code_token_step())
+
+
+def _pis_inline_authorization_steps(
+    compiled_plan: CompiledTestPlan,
+    request_step: CatalogueRequestStep,
+) -> tuple[V1Step, ...]:
+    """Build a PIS PSU authorisation step after a selected consent creation.
+
+    Args:
+        compiled_plan: Compiled catalogue plan whose selected PIS resource steps
+            determine whether an authorisation step is needed.
+        request_step: Request step most recently emitted into the manifest.
+
+    Returns:
+            A PSU authorisation step and matching authorisation-code token
+            exchange when downstream PIS steps need the created consent authorised,
+            otherwise an empty tuple.
+    """
+    if request_step.psu_authorization is None:
+        return ()
+    if not _compiled_plan_requires_pis_consent_authorization(compiled_plan, request_step):
+        return ()
+    return (_pis_psu_authorization_step(request_step), _pis_authorization_code_token_step(request_step))
+
+
+def _vrp_inline_authorization_steps(
+    compiled_plan: CompiledTestPlan,
+    request_step: CatalogueRequestStep,
+) -> tuple[V1Step, ...]:
+    """Build VRP PSU authorisation after each selected consent creation.
+
+    Args:
+        compiled_plan: Compiled catalogue plan whose selected VRP/cVRP steps may
+            require a PSU-authorised payments token.
+        request_step: Request step most recently emitted into the manifest.
+
+    Returns:
+        A PSU authorisation step and matching authorisation-code token exchange
+        when downstream VRP/cVRP steps need this consent's payment access,
+        otherwise an empty tuple.
+    """
+    if request_step.step_id not in _VRP_CONSENT_AUTHORIZATION_STEP_IDS:
+        return ()
+    if not _compiled_plan_requires_vrp_consent_authorization(compiled_plan, request_step.step_id):
+        return ()
+    return (
+        _vrp_psu_authorization_step(request_step.step_id),
+        _vrp_authorization_code_token_step(request_step.step_id),
+    )
+
+
+def _compiled_plan_requires_pis_consent_authorization(
+    compiled_plan: CompiledTestPlan,
+    consent_step: CatalogueRequestStep,
+) -> bool:
+    """Return whether selected PIS steps need a PSU-authorised consent.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to inspect.
+        consent_step: PIS consent-creation request step.
+
+    Returns:
+        ``True`` when any selected downstream step consumes the consent created
+        by ``consent_step_id``.
+    """
+    return any(
+        request_step.required_psu_authorization_step_id == consent_step.step_id
+        for test_case in compiled_plan.test_cases
+        for request_step in test_case.request_steps
+    )
+
+
+def _compiled_plan_requires_vrp_consent_authorization(compiled_plan: CompiledTestPlan, consent_step_id: str) -> bool:
+    """Return whether selected VRP/cVRP steps need this consent authorised.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to inspect.
+        consent_step_id: VRP/cVRP consent-creation request step id.
+
+    Returns:
+        ``True`` when a selected request consumes the PSU token produced by
+        authorising ``consent_step_id``.
+    """
+    token_id = _vrp_psu_payment_access_token_id(consent_step_id)
+    return any(
+        request_step.required_token_id == token_id
+        for test_case in compiled_plan.test_cases
+        for request_step in test_case.request_steps
+    )
+
+
+def _vrp_authorization_step_id(consent_step_id: str) -> str:
+    """Return the PSU authorisation step id for one VRP consent step.
+
+    Args:
+        consent_step_id: VRP/cVRP consent-creation request step id.
+
+    Returns:
+        Stable manifest step id for the synthetic PSU authorisation step.
+    """
+    return f"{consent_step_id.removesuffix('-request')}{_VRP_PSU_AUTHORIZATION_STEP_SUFFIX}"
+
+
+def _vrp_authorization_token_step_id(consent_step_id: str) -> str:
+    """Return the authorisation-code token step id for one VRP consent step.
+
+    Args:
+        consent_step_id: VRP/cVRP consent-creation request step id.
+
+    Returns:
+        Stable manifest step id for the synthetic token-exchange step.
+    """
+    return f"{consent_step_id.removesuffix('-request')}{_VRP_PSU_AUTHORIZATION_TOKEN_STEP_SUFFIX}"
+
+
+def _vrp_psu_payment_access_token_id(consent_step_id: str) -> str:
+    """Return the PSU payment token id produced for one VRP consent.
+
+    Args:
+        consent_step_id: VRP/cVRP consent-creation request step id.
+
+    Returns:
+        Semantic token id consumed by payments and funds-confirmation requests
+        bound to ``consent_step_id``.
+    """
+    return f"{consent_step_id.removesuffix('-request')}{_VRP_PSU_PAYMENT_ACCESS_TOKEN_SUFFIX}"
+
+
+def _compiled_plan_ais_permission_profiles(compiled_plan: CompiledTestPlan) -> tuple[str, ...]:
+    """Return selected legacy AIS permission profiles in deterministic order.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to inspect.
+
+    Returns:
+        Permission profile labels required by selected protected AIS resource
+        requests.
+    """
+    required_token_ids = {
+        request_step.required_token_id
+        for test_case in compiled_plan.test_cases
+        for request_step in test_case.request_steps
+        if request_step.required_token_id is not None
+    }
+    return tuple(
+        profile for profile, token_id in _AIS_PERMISSION_PROFILE_TOKEN_IDS.items() if token_id in required_token_ids
+    )
+
+
+def _ais_profile_consent_step(
+    request_step: CatalogueRequestStep,
+    *,
+    profile: str,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    runtime_config: RuntimeConfig | None,
+    requirements: Mapping[str, RuntimeInputRequirement],
+) -> ManifestStep:
+    """Build one AIS consent-creation step for a legacy permission profile.
+
+    Args:
+        request_step: Catalogue consent template request.
+        profile: Legacy AIS permission profile to materialise.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        runtime_input_base_dir: Directory used to resolve file references.
+        runtime_config: Safe participant config values, used for discovery URL.
+        requirements: Runtime input requirements keyed by input id.
+
+    Returns:
+        Manifest HTTP step that creates a profile-specific AIS account-access
+        consent.
+    """
+    generated_runtime_values = _catalogue_generated_runtime_values(request_step)
+    resolved_url = _catalogue_request_url(
+        request_step,
+        runtime_inputs=runtime_inputs,
+        runtime_config=runtime_config,
+        generated_runtime_values=generated_runtime_values,
+    )
+    return ManifestStep(
+        id=_ais_profile_consent_step_id(profile),
+        name=f"Create AIS {profile} account-access consent",
+        request=ManifestRequest(
+            method=request_step.method,
+            url=resolved_url,
+            headers=_catalogue_request_headers(
+                request_step,
+                runtime_inputs=runtime_inputs,
+                runtime_input_base_dir=runtime_input_base_dir,
+                requirements=requirements,
+                generated_header_values=_catalogue_generated_header_values(request_step),
+                generated_runtime_values=generated_runtime_values,
+            ),
+            body=JsonBody(value=_AIS_ACCOUNT_ACCESS_CONSENT_BODIES[profile]),
+            detached_jws=DetachedJwsPolicy(source="fapi-signing"),
+        ),
+        assertions=(HttpStatusAssertion(type="http_status", expected=201),),
+        mandatory=True,
+        group="catalogue",
+        phase="setup",
+        required_token_id=request_step.required_token_id,
+    )
+
+
+def _compiled_plan_requires_cbpii_consent_authorization(compiled_plan: CompiledTestPlan) -> bool:
+    """Return whether selected CBPII resource steps need PSU authorisation.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to inspect.
+
+    Returns:
+        ``True`` when a selected CBPII authorised-consent or funds-confirmation
+        request is present.
+    """
+    return any(
+        request_step.step_id in _CBPII_AUTHORISED_RESOURCE_STEP_IDS
+        for test_case in compiled_plan.test_cases
+        for request_step in test_case.request_steps
+    )
+
+
+def _compiled_plan_requires_ais_account_access(compiled_plan: CompiledTestPlan) -> bool:
+    """Return whether selected AIS steps need PSU-authorised account access.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to inspect.
+
+    Returns:
+        ``True`` when a selected AIS request consumes the semantic
+        an ``ais-account-access-*`` bearer token.
+    """
+    return any(
+        request_step.required_token_id in _AIS_PERMISSION_PROFILE_TOKEN_IDS.values()
+        for test_case in compiled_plan.test_cases
+        for request_step in test_case.request_steps
+    )
+
+
+def _ais_profile_consent_step_id(profile: str) -> str:
+    """Return the AIS consent-creation step id for a permission profile.
+
+    Args:
+        profile: Legacy AIS permission profile.
+
+    Returns:
+        Stable setup step id for the profile's account-access-consent request.
+    """
+    return f"ais-at-setup-{profile}-consent-request"
+
+
+def _ais_profile_authorization_step_id(profile: str) -> str:
+    """Return the AIS PSU authorisation step id for a permission profile.
+
+    Args:
+        profile: Legacy AIS permission profile.
+
+    Returns:
+        Stable setup step id for the profile's PSU authorisation.
+    """
+    return f"setup-ais-{profile}-consent-authorisation"
+
+
+def _ais_profile_token_step_id(profile: str) -> str:
+    """Return the AIS token-exchange step id for a permission profile.
+
+    Args:
+        profile: Legacy AIS permission profile.
+
+    Returns:
+        Stable setup step id for the profile's authorisation-code exchange.
+    """
+    return f"ais-at-setup-{profile}-token-request"
+
+
+def _ais_profile_captured_consent_id(profile: str) -> str:
+    """Return the consent-id placeholder for a permission profile.
+
+    Args:
+        profile: Legacy AIS permission profile.
+
+    Returns:
+        Placeholder resolving to the created AIS account-access consent id.
+    """
+    return f"${{steps.{_ais_profile_consent_step_id(profile)}.response.body.Data.ConsentId}}"
+
+
+def _cbpii_psu_authorization_step() -> PsuAuthorizationStep:
+    """Build the CBPII PSU consent-authorisation setup step.
+
+    Returns:
+        PSU authorisation step that binds the captured CBPII consent id into a
+        generated FAPI request object.
+    """
+    return PsuAuthorizationStep(
+        id=_CBPII_AUTHORIZATION_STEP_ID,
+        name="Authorise CBPII funds-confirmation consent",
+        mode="manual",
+        authorization_endpoint="${config.oauth.authorizationEndpoint}",
+        client_id="${config.oauth.clientId}",
+        redirect_uri="${config.oauth.redirectUri}",
+        scope="openid fundsconfirmations",
+        request_object=GeneratedRequestObject(
+            source="fapi-signing",
+            audience="${config.oauth.issuer}",
+            openbanking_intent_id=_CBPII_CAPTURED_CONSENT_ID,
+        ),
+        mandatory=True,
+        group="catalogue",
+        phase="execution",
+    )
+
+
+def _pis_psu_authorization_step(consent_step: CatalogueRequestStep) -> PsuAuthorizationStep:
+    """Build a PIS PSU consent-authorisation step.
+
+    Args:
+        consent_step: PIS consent-creation request step whose response body
+            contains the intent id and authorization metadata.
+
+    Returns:
+        PSU authorisation step that binds the captured PIS consent id into a
+        generated FAPI request object.
+
+    Raises:
+        ValueError: If the request does not declare PSU authorization metadata.
+    """
+    step_metadata = consent_step.psu_authorization
+    if step_metadata is None:
+        raise ValueError(f"PIS consent step {consent_step.step_id} is missing authorization metadata")
+    captured_consent_id = f"${{steps.{consent_step.step_id}.response.body.Data.ConsentId}}"
+    return PsuAuthorizationStep(
+        id=step_metadata.authorization_step_id,
+        name=step_metadata.authorization_step_name,
+        mode="manual",
+        authorization_endpoint="${config.oauth.authorizationEndpoint}",
+        client_id="${config.oauth.clientId}",
+        redirect_uri="${config.oauth.redirectUri}",
+        scope="openid payments",
+        request_object=GeneratedRequestObject(
+            source="fapi-signing",
+            audience="${config.oauth.issuer}",
+            openbanking_intent_id=captured_consent_id,
+        ),
+        mandatory=True,
+        group="catalogue",
+        phase="execution",
+    )
+
+
+def _pis_authorization_code_token_step(consent_step: CatalogueRequestStep) -> ManifestStep:
+    """Build a PIS authorisation-code token exchange step for one consent flow.
+
+    Args:
+        consent_step: PIS consent-creation request step whose PSU authorization
+            code should be exchanged.
+
+    Returns:
+        HTTP token-exchange step that records a flow-specific PIS bearer token
+        for downstream consent, funds-confirmation, and payment requests.
+
+    Raises:
+        ValueError: If the request does not declare PSU authorization metadata.
+    """
+    step_metadata = consent_step.psu_authorization
+    if step_metadata is None:
+        raise ValueError(f"PIS consent step {consent_step.step_id} is missing authorization metadata")
+    return ManifestStep(
+        id=step_metadata.token_step_id,
+        name=f"Exchange PIS {step_metadata.flow_label} authorisation code for payments token",
+        request=ManifestRequest(
+            method="POST",
+            url="${config.oauth.tokenEndpoint}",
+            body=FormBody(
+                fields={
+                    "grant_type": "authorization_code",
+                    "code": f"${{steps.{step_metadata.authorization_step_id}.response.body.code}}",
+                    "redirect_uri": "${config.oauth.redirectUri}",
+                    "client_id": "${config.oauth.clientId}",
+                }
+            ),
+        ),
+        assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+        mandatory=True,
+        group="catalogue",
+        phase="execution",
+        token_endpoint_auth_policy=TokenEndpointAuthPolicy(source="fapi-signing"),
+        produces_token_id=step_metadata.token_id,
+    )
+
+
+def _vrp_psu_authorization_step(consent_step_id: str) -> PsuAuthorizationStep:
+    """Build a VRP PSU consent-authorisation step.
+
+    Args:
+        consent_step_id: VRP/cVRP consent-creation request step whose response
+            body contains the intent id to authorise.
+
+    Returns:
+        PSU authorisation step that binds the captured VRP consent id into a
+        generated FAPI request object.
+    """
+    captured_consent_id = f"${{steps.{consent_step_id}.response.body.Data.ConsentId}}"
+    return PsuAuthorizationStep(
+        id=_vrp_authorization_step_id(consent_step_id),
+        name="Authorise VRP consent",
+        mode="manual",
+        authorization_endpoint="${config.oauth.authorizationEndpoint}",
+        client_id="${config.oauth.clientId}",
+        redirect_uri="${config.oauth.redirectUri}",
+        scope="openid payments",
+        request_object=GeneratedRequestObject(
+            source="fapi-signing",
+            audience="${config.oauth.issuer}",
+            openbanking_intent_id=captured_consent_id,
+        ),
+        mandatory=True,
+        group="catalogue",
+        phase="execution",
+    )
+
+
+def _vrp_authorization_code_token_step(consent_step_id: str) -> ManifestStep:
+    """Build a VRP authorisation-code token exchange step.
+
+    Args:
+        consent_step_id: VRP/cVRP consent-creation request step id whose PSU
+            authorisation produced the code.
+
+    Returns:
+        HTTP token-exchange step that records the VRP bearer token for
+        downstream payment and funds-confirmation requests.
+    """
+    authorisation_step_id = _vrp_authorization_step_id(consent_step_id)
+    return ManifestStep(
+        id=_vrp_authorization_token_step_id(consent_step_id),
+        name="Exchange VRP authorisation code for payments token",
+        request=ManifestRequest(
+            method="POST",
+            url="${config.oauth.tokenEndpoint}",
+            body=FormBody(
+                fields={
+                    "grant_type": "authorization_code",
+                    "code": f"${{steps.{authorisation_step_id}.response.body.code}}",
+                    "redirect_uri": "${config.oauth.redirectUri}",
+                    "client_id": "${config.oauth.clientId}",
+                }
+            ),
+        ),
+        assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+        mandatory=True,
+        group="catalogue",
+        phase="execution",
+        token_endpoint_auth_policy=TokenEndpointAuthPolicy(source="fapi-signing"),
+        produces_token_id=_vrp_psu_payment_access_token_id(consent_step_id),
+    )
+
+
+def _ais_psu_authorization_step(*, profile: str) -> PsuAuthorizationStep:
+    """Build the AIS PSU consent-authorisation setup step.
+
+    Args:
+        profile: Legacy AIS permission profile to authorise.
+
+    Returns:
+        PSU authorisation step that binds the captured AIS consent id into a
+        generated FAPI request object.
+    """
+    return PsuAuthorizationStep(
+        id=_ais_profile_authorization_step_id(profile),
+        name=f"Authorise AIS {profile} account-access consent",
+        mode="manual",
+        authorization_endpoint="${config.oauth.authorizationEndpoint}",
+        client_id="${config.oauth.clientId}",
+        redirect_uri="${config.oauth.redirectUri}",
+        scope="openid accounts",
+        request_object=GeneratedRequestObject(
+            source="fapi-signing",
+            audience="${config.oauth.issuer}",
+            openbanking_intent_id=_ais_profile_captured_consent_id(profile),
+        ),
+        mandatory=True,
+        group="catalogue",
+        phase="setup",
+    )
+
+
+def _cbpii_authorization_code_token_step() -> ManifestStep:
+    """Build the CBPII authorisation-code token exchange setup step.
+
+    Returns:
+        HTTP token-exchange step that records the CBPII funds-confirmation
+        bearer token for downstream protected-resource requests.
+    """
+    return ManifestStep(
+        id=_CBPII_AUTHORIZATION_TOKEN_STEP_ID,
+        name="Exchange CBPII authorisation code for funds-confirmation token",
+        request=ManifestRequest(
+            method="POST",
+            url="${config.oauth.tokenEndpoint}",
+            body=FormBody(
+                fields={
+                    "grant_type": "authorization_code",
+                    "code": f"${{steps.{_CBPII_AUTHORIZATION_STEP_ID}.response.body.code}}",
+                    "redirect_uri": "${config.oauth.redirectUri}",
+                    "client_id": "${config.oauth.clientId}",
+                }
+            ),
+        ),
+        assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+        mandatory=True,
+        group="catalogue",
+        phase="execution",
+        token_endpoint_auth_policy=TokenEndpointAuthPolicy(source="fapi-signing"),
+        produces_token_id=_CBPII_FUNDS_CONFIRMATION_TOKEN_ID,
+    )
+
+
+def _ais_authorization_code_token_step(*, profile: str) -> ManifestStep:
+    """Build an AIS authorisation-code token exchange for one profile.
+
+    Args:
+        profile: Legacy AIS permission profile whose PSU authorisation code
+            should be exchanged.
+
+    Returns:
+        HTTP token-exchange step that records the profile-specific AIS bearer
+        token for downstream protected-resource requests.
+    """
+    return ManifestStep(
+        id=_ais_profile_token_step_id(profile),
+        name=f"Exchange AIS {profile} authorisation code for account-access token",
+        request=ManifestRequest(
+            method="POST",
+            url="${config.oauth.tokenEndpoint}",
+            body=FormBody(
+                fields={
+                    "grant_type": "authorization_code",
+                    "code": f"${{steps.{_ais_profile_authorization_step_id(profile)}.response.body.code}}",
+                    "redirect_uri": "${config.oauth.redirectUri}",
+                    "client_id": "${config.oauth.clientId}",
+                }
+            ),
+        ),
+        assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+        mandatory=True,
+        group="catalogue",
+        phase="setup",
+        token_endpoint_auth_policy=TokenEndpointAuthPolicy(source="fapi-signing"),
+        produces_token_id=_AIS_PERMISSION_PROFILE_TOKEN_IDS[profile],
+    )
+
+
+def _catalogue_client_credentials_token_step(*, token_id: str, scope: str) -> ManifestStep:
+    """Build a client-credentials OAuth token setup step for a semantic token.
+
+    Args:
+        token_id: Semantic token id consumed by protected-resource steps.
+        scope: OAuth scope value requested from the token endpoint.
+
+    Returns:
+        Manifest setup step that records ``access_token`` as ``token_id``.
+    """
+    return ManifestStep(
+        id=f"setup-token-{token_id}",
+        name=f"Acquire {scope} access token",
+        request=ManifestRequest(
+            method="POST",
+            url="${config.oauth.tokenEndpoint}",
+            body=FormBody(
+                fields={
+                    "grant_type": "client_credentials",
+                    "scope": scope,
+                    "client_id": "${config.oauth.clientId}",
+                }
+            ),
+        ),
+        assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+        mandatory=True,
+        group="setup",
+        phase="setup",
+        token_endpoint_auth_policy=TokenEndpointAuthPolicy(source="fapi-signing"),
+        produces_token_id=token_id,
+    )
+
+
+def _catalogue_request_step_to_manifest_step(
+    test_case: CatalogueTestCase,
+    request_step: CatalogueRequestStep,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    runtime_config: RuntimeConfig | None,
+    requirements: Mapping[str, RuntimeInputRequirement],
+) -> ManifestStep:
+    """Convert one catalogue request skeleton into an executable HTTP step.
+
+    Args:
+        test_case: Catalogue test case that owns the request step.
+        request_step: Request skeleton to execute.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        runtime_input_base_dir: Directory used to resolve file references.
+        runtime_config: Safe participant config values, used for discovery URL.
+        requirements: Runtime input requirements keyed by input id.
+
+    Returns:
+        Manifest-compatible HTTP step for the existing executor.
+    """
+    generated_header_values = _catalogue_generated_header_values(request_step)
+    generated_runtime_values = _catalogue_generated_runtime_values(request_step)
+    resolved_url = _catalogue_request_url(
+        request_step,
+        runtime_inputs=runtime_inputs,
+        runtime_config=runtime_config,
+        generated_runtime_values=generated_runtime_values,
+    )
+    headers = _catalogue_request_headers(
+        request_step,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=runtime_input_base_dir,
+        requirements=requirements,
+        generated_header_values=generated_header_values,
+        generated_runtime_values=generated_runtime_values,
+    )
+    body = _catalogue_request_body(
+        request_step,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=runtime_input_base_dir,
+        requirements=requirements,
+        generated_runtime_values=generated_runtime_values,
+    )
+    return ManifestStep(
+        id=request_step.step_id,
+        name=request_step.name,
+        request=ManifestRequest(
+            method=request_step.method,
+            url=resolved_url,
+            headers=headers,
+            body=body,
+            detached_jws=_catalogue_detached_jws_policy(request_step),
+        ),
+        assertions=tuple(
+            _catalogue_assertion_to_manifest_assertion(
+                assertion,
+                runtime_inputs=runtime_inputs,
+                generated_header_values=generated_header_values,
+            )
+            for assertion in test_case.assertions
+        ),
+        mandatory=test_case.mandatory,
+        group="catalogue",
+        phase=_catalogue_step_phase(test_case, request_step),
+        required_token_id=request_step.required_token_id,
+        produces_token_id=request_step.produced_token_id,
+        response_signature_policy=(
+            ResponseSignaturePolicy(source="discovery-jwks") if test_case.response_signature_required else None
+        ),
+        token_endpoint_auth_policy=_catalogue_token_endpoint_auth_policy(request_step),
+    )
+
+
+def _catalogue_step_phase(test_case: CatalogueTestCase, request_step: CatalogueRequestStep) -> StepPhase:
+    """Return the manifest execution phase for a catalogue request.
+
+    Args:
+        test_case: Catalogue case that owns the request.
+        request_step: Request step being converted.
+
+    Returns:
+        Manifest phase for scheduling. AIS consent setup is deliberately
+        scheduled in setup so it runs before protected AIS resource checks.
+    """
+    if request_step.step_id == _AIS_CONSENT_CREATE_STEP_ID:
+        return "setup"
+    if test_case.role in {"setup", "security", "token"}:
+        return "setup"
+    return "execution"
+
+
+def _catalogue_detached_jws_policy(request_step: CatalogueRequestStep) -> DetachedJwsPolicy | None:
+    """Return detached-JWS policy for generated Open Banking write requests.
+
+    Args:
+        request_step: Request step being converted.
+
+    Returns:
+        Detached-JWS policy for AIS account-access consent creation and PIS
+        payment-initiation write requests, otherwise ``None``.
+    """
+    if request_step.detached_jws_profile is not None:
+        return DetachedJwsPolicy(
+            source="fapi-signing",
+            omit_protected_headers=request_step.detached_jws_omit_claims,
+            profile=request_step.detached_jws_profile,
+        )
+    if request_step.step_id == _AIS_CONSENT_CREATE_STEP_ID:
+        return DetachedJwsPolicy(source="fapi-signing")
+    if (
+        request_step.method in {"POST", "PUT", "PATCH"}
+        and request_step.path.startswith("/open-banking/v4.0/pisp/")
+        and request_step.step_id.startswith("pis-v4-")
+        and request_step.step_id != _PIS_MISSING_SIGNATURE_STEP_ID
+    ):
+        return DetachedJwsPolicy(
+            source="fapi-signing",
+            omit_protected_headers=request_step.detached_jws_omit_claims,
+        )
+    if (
+        request_step.method in {"POST", "PUT", "PATCH"}
+        and request_step.step_id.startswith(("vrp-", "cvrp-"))
+        and request_step.body_template is not None
+    ):
+        return DetachedJwsPolicy(source="fapi-signing")
+    return None
+
+
+def _catalogue_token_endpoint_auth_policy(request_step: CatalogueRequestStep) -> TokenEndpointAuthPolicy | None:
+    """Return token-endpoint authentication policy for catalogue setup steps.
+
+    Args:
+        request_step: Request step being converted.
+
+    Returns:
+        FAPI token endpoint authentication policy for generated AIS token
+        exchange steps, otherwise ``None``.
+    """
+    if request_step.step_id == _AIS_ACCOUNT_ACCESS_TOKEN_STEP_ID:
+        return TokenEndpointAuthPolicy(source="fapi-signing")
+    return None
+
+
+def _catalogue_request_url(
+    request_step: CatalogueRequestStep,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_config: RuntimeConfig | None,
+    generated_runtime_values: Mapping[str, str],
+) -> str:
+    """Resolve a catalogue request path to an absolute HTTPS URL.
+
+    Args:
+        request_step: Catalogue request skeleton.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        runtime_config: Safe participant config values, used for discovery URL.
+        generated_runtime_values: Generated runtime values keyed by catalogue
+            data id for the current request step.
+
+    Returns:
+        Absolute URL to dispatch.
+
+    Raises:
+        ValueError: If a required runtime value for URL construction is absent
+            or cannot be represented as a string.
+    """
+    if request_step.path == "/.well-known/openid-configuration":
+        if runtime_config is None or runtime_config.discovery_url is None:
+            raise ValueError("Discovery catalogue step requires runtime config discoveryUrl")
+        return runtime_config.discovery_url
+    if request_step.step_id == _AIS_ACCOUNT_ACCESS_TOKEN_STEP_ID or request_step.step_id in {
+        _ais_profile_token_step_id(profile) for profile in _AIS_PERMISSION_PROFILE_TOKEN_IDS
+    }:
+        return "${config.oauth.tokenEndpoint}"
+
+    base_url = _required_runtime_string(runtime_inputs, "resourceBaseUrl")
+    resolved_path = _resolve_catalogue_path_variables(request_step, runtime_inputs=runtime_inputs)
+    resolved_path = _resolve_catalogue_template_string(
+        resolved_path,
+        generated_runtime_values=generated_runtime_values,
+        runtime_inputs=runtime_inputs,
+    )
+    if request_step.query_parameters:
+        query = urlencode(
+            tuple(
+                (
+                    name,
+                    _resolve_catalogue_template_string(
+                        value,
+                        generated_runtime_values=generated_runtime_values,
+                        runtime_inputs=runtime_inputs,
+                    ),
+                )
+                for name, value in request_step.query_parameters.items()
+            )
+        )
+        resolved_path = f"{resolved_path}?{query}"
+    return f"{base_url.rstrip('/')}/{resolved_path.lstrip('/')}"
+
+
+def _resolve_catalogue_path_variables(
+    request_step: CatalogueRequestStep,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+) -> str:
+    """Replace OpenAPI-style path variables with plan-spec runtime values.
+
+    Args:
+        request_step: Catalogue request skeleton with a standards path.
+        runtime_inputs: Original plan-spec runtime input mapping.
+
+    Returns:
+        Request path with ``{Variable}`` tokens substituted where present.
+
+    Raises:
+        ValueError: If a path variable cannot be matched to a runtime input.
+    """
+
+    def replace_variable(match: re.Match[str]) -> str:
+        """Return the runtime value for one matched path variable.
+
+        Args:
+            match: Regular-expression match for ``{Variable}``.
+
+        Returns:
+            Runtime input value converted to a string.
+
+        Raises:
+            ValueError: If no matching runtime input exists.
+        """
+        variable = match.group(1)
+        for candidate in _path_variable_input_candidates(variable, request_step.runtime_input_refs):
+            value = runtime_inputs.get(candidate)
+            if isinstance(value, str) and value:
+                return value
+        raise ValueError(f"Runtime input for path variable {{{variable}}} is missing")
+
+    return _CATALOGUE_PATH_VARIABLE_PATTERN.sub(replace_variable, request_step.path)
+
+
+def _path_variable_input_candidates(variable: str, runtime_input_refs: tuple[str, ...]) -> tuple[str, ...]:
+    """Return candidate runtime input ids for an OpenAPI path variable.
+
+    Args:
+        variable: Path variable name without braces.
+        runtime_input_refs: Runtime input ids referenced by the request step.
+
+    Returns:
+        Candidate input ids in precedence order.
+    """
+    lower_camel = variable[:1].lower() + variable[1:]
+    suffix_matches = tuple(ref for ref in runtime_input_refs if ref.lower().endswith(lower_camel.lower()))
+    semantic_matches = ("consentedAccountId",) if lower_camel == "accountId" else ()
+    return (variable, lower_camel, *semantic_matches, *suffix_matches)
+
+
+def _catalogue_request_headers(
+    request_step: CatalogueRequestStep,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    requirements: Mapping[str, RuntimeInputRequirement],
+    generated_header_values: Mapping[str, str],
+    generated_runtime_values: Mapping[str, str],
+) -> dict[str, str] | None:
+    """Build runtime headers for a catalogue request.
+
+    Args:
+        request_step: Catalogue request skeleton.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        runtime_input_base_dir: Directory used to resolve file references.
+        requirements: Runtime input requirements keyed by input id.
+        generated_header_values: Generated header values keyed by lower-case
+            header name for the current request step.
+        generated_runtime_values: Generated runtime values keyed by catalogue
+            data id for the current request step.
+
+    Returns:
+        Header mapping, or ``None`` when no headers are needed.
+
+    Raises:
+        ValueError: If a referenced token or required header value cannot be resolved.
+    """
+    headers: dict[str, str] = {}
+    if request_step.required_token_id is not None:
+        headers["Authorization"] = f"Bearer ${{tokens.{request_step.required_token_id}.access_token}}"
+    access_token = _optional_access_token(
+        request_step,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=runtime_input_base_dir,
+        requirements=requirements,
+    )
+    if access_token is not None and request_step.required_token_id is None:
+        headers["Authorization"] = f"Bearer {access_token}"
+    invalid_access_token = generated_runtime_values.get("invalidAccessToken")
+    if invalid_access_token is not None and request_step.required_token_id is None:
+        headers["Authorization"] = f"Bearer {invalid_access_token}"
+    for request_header in request_step.headers:
+        value: str | None
+        if request_header.generated_value is not None:
+            value = generated_header_values[request_header.name.lower()]
+        else:
+            if request_header.input_id is None:
+                raise ValueError(f"Catalogue request header '{request_header.name}' has no value source")
+            value = _catalogue_request_header_value(
+                request_header.input_id,
+                runtime_inputs=runtime_inputs,
+                requirements=requirements,
+            )
+        if value is not None:
+            headers[request_header.name] = value
+    return headers or None
+
+
+def _catalogue_generated_header_values(request_step: CatalogueRequestStep) -> dict[str, str]:
+    """Generate per-request catalogue header values.
+
+    Args:
+        request_step: Catalogue request skeleton whose header declarations may
+            request generated values.
+
+    Returns:
+        Generated header values keyed by lower-case HTTP header name.
+    """
+    return {
+        request_header.name.lower(): _generated_header_value(request_header.generated_value)
+        for request_header in request_step.headers
+        if request_header.generated_value is not None
+    }
+
+
+def _generated_header_value(generated_value: str) -> str:
+    """Return a generated outbound header value.
+
+    Args:
+        generated_value: Catalogue generation strategy.
+
+    Returns:
+        Header value generated for a single request.
+
+    Raises:
+        ValueError: If the catalogue declares an unsupported strategy.
+    """
+    if generated_value == "uuid4":
+        return str(uuid.uuid4())
+    raise ValueError(f"Unsupported generated request-header value strategy '{generated_value}'")
+
+
+def _catalogue_generated_runtime_values(request_step: CatalogueRequestStep) -> dict[str, str]:
+    """Generate runtime values scoped to one catalogue request step.
+
+    Args:
+        request_step: Catalogue request skeleton whose templates may reference
+            generated runtime values.
+
+    Returns:
+        Generated runtime values keyed by catalogue data id.
+    """
+    return {
+        value_id: _generated_runtime_value(strategy) for value_id, strategy in request_step.generated_values.items()
+    }
+
+
+def _generated_runtime_value(generated_value: str) -> str:
+    """Return a generated catalogue runtime value.
+
+    Args:
+        generated_value: Catalogue generation strategy.
+
+    Returns:
+        Runtime value generated for one execution-prepared request.
+
+    Raises:
+        ValueError: If the catalogue declares an unsupported strategy.
+    """
+    if generated_value == "uuid4":
+        return str(uuid.uuid4())
+    if generated_value == "uuid4-hex":
+        return uuid.uuid4().hex
+    if generated_value == "invalid-resource-id":
+        return f"invalid-{uuid.uuid4()}"
+    if generated_value == "legacy-invalid-consent-id":
+        return "42"
+    if generated_value == "invalid-access-token":
+        return f"invalid-{secrets.token_urlsafe(24)}"
+    if generated_value == "next-day-date-offset":
+        return (datetime.now(UTC) + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if generated_value == "next-day-date-utc":
+        return (
+            (datetime.now(UTC) + timedelta(days=1))
+            .replace(hour=0, minute=0, second=0, microsecond=0)
+            .strftime("%Y-%m-%dT%H:%M:%SZ")
+        )
+    if generated_value == "next-day-date-time-offset":
+        return (datetime.now(UTC) + timedelta(days=1)).replace(microsecond=0).isoformat()
+    if generated_value == "next-day-date-time-offset-milliseconds":
+        return (datetime.now(UTC) + timedelta(days=1)).isoformat(timespec="milliseconds")
+    if generated_value == "next-day-date-time-utc":
+        return (datetime.now(UTC) + timedelta(days=1)).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if generated_value == "next-day-date-time-utc-milliseconds":
+        return (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    raise ValueError(f"Unsupported generated runtime value strategy '{generated_value}'")
+
+
+def _catalogue_request_header_value(
+    input_id: str,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    requirements: Mapping[str, RuntimeInputRequirement],
+) -> str | None:
+    """Resolve a catalogue-declared outbound header value.
+
+    Args:
+        input_id: Runtime input id backing the outbound header.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        requirements: Runtime input requirements keyed by input id.
+
+    Returns:
+        Header value to send, or ``None`` when an optional input is omitted.
+
+    Raises:
+        ValueError: If a required header input is missing or if the input value is
+            not a string.
+    """
+    value = runtime_inputs.get(input_id)
+    if value is None or (isinstance(value, str) and not value.strip()):
+        requirement = requirements.get(input_id)
+        if requirement is not None and requirement.required:
+            return _required_runtime_string(runtime_inputs, input_id)
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"Runtime input '{input_id}' must be a string")
+    return value.strip()
+
+
+def _optional_access_token(
+    request_step: CatalogueRequestStep,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    requirements: Mapping[str, RuntimeInputRequirement],
+) -> str | None:
+    """Resolve a bearer token for a request when the catalogue asks for one.
+
+    Args:
+        request_step: Catalogue request skeleton.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        runtime_input_base_dir: Directory used to resolve file references.
+        requirements: Runtime input requirements keyed by input id.
+
+    Returns:
+        Bearer token string, or ``None`` when the request does not require one.
+
+    Raises:
+        ValueError: If the token input is present but cannot be resolved.
+    """
+    for input_id in request_step.runtime_input_refs:
+        if input_id not in {"accessToken", "accessTokenRef", "invalidAccessToken"}:
+            continue
+        requirement = requirements.get(input_id)
+        if requirement is not None and requirement.input_type == "file_reference":
+            return _read_runtime_file_text(runtime_inputs, input_id, root=runtime_input_base_dir)
+        return _required_runtime_string(runtime_inputs, input_id)
+    return None
+
+
+def _catalogue_request_body(
+    request_step: CatalogueRequestStep,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    requirements: Mapping[str, RuntimeInputRequirement],
+    generated_runtime_values: Mapping[str, str],
+) -> JsonBody | FormBody | None:
+    """Build a JSON request body from a catalogue runtime file reference.
+
+    Args:
+        request_step: Catalogue request skeleton.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        runtime_input_base_dir: Directory used to resolve file references.
+        requirements: Runtime input requirements keyed by input id.
+        generated_runtime_values: Generated runtime values keyed by catalogue
+            data id for the current request step.
+
+    Returns:
+        JSON body for methods that send a body, or ``None`` when no body
+        reference is declared.
+
+    Raises:
+        ValueError: If a request body file reference is invalid.
+    """
+    if request_step.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return None
+    if request_step.step_id == _AIS_CONSENT_CREATE_STEP_ID:
+        return JsonBody(value=_AIS_BASIC_ACCOUNT_ACCESS_CONSENT_BODY)
+    if request_step.step_id == _AIS_ACCOUNT_ACCESS_TOKEN_STEP_ID:
+        return FormBody(
+            fields={
+                "grant_type": "authorization_code",
+                "code": f"${{steps.{_ais_profile_authorization_step_id('basic')}.response.body.code}}",
+                "redirect_uri": "${config.oauth.redirectUri}",
+                "client_id": "${config.oauth.clientId}",
+            }
+        )
+    if request_step.body_template is not None:
+        return JsonBody(
+            value=_resolve_catalogue_template_values(
+                request_step.body_template,
+                generated_runtime_values=generated_runtime_values,
+                runtime_inputs=runtime_inputs,
+            )
+        )
+    for input_id in request_step.runtime_input_refs:
+        requirement = requirements.get(input_id)
+        if requirement is None or requirement.input_type != "file_reference" or "request" not in input_id.lower():
+            continue
+        return JsonBody(value=_read_runtime_json_file(runtime_inputs, input_id, root=runtime_input_base_dir))
+    return None
+
+
+def _resolve_catalogue_template_values(
+    value: JsonValue,
+    *,
+    generated_runtime_values: Mapping[str, str],
+    runtime_inputs: Mapping[str, JsonValue],
+) -> JsonValue:
+    """Replace catalogue-owned placeholders inside a request template.
+
+    Args:
+        value: JSON request template value.
+        generated_runtime_values: Generated values keyed by catalogue data id.
+        runtime_inputs: Runtime inputs supplied for the selected plan.
+
+    Returns:
+        Template value with ``${generated.*}`` and ``${runtime.*}``
+        placeholders replaced.
+
+    Raises:
+        ValueError: If a template references an unavailable value.
+    """
+    if isinstance(value, str):
+        return _resolve_catalogue_template_string(
+            value,
+            generated_runtime_values=generated_runtime_values,
+            runtime_inputs=runtime_inputs,
+        )
+    if isinstance(value, list):
+        return [
+            _resolve_catalogue_template_values(
+                item,
+                generated_runtime_values=generated_runtime_values,
+                runtime_inputs=runtime_inputs,
+            )
+            for item in value
+        ]
+    if isinstance(value, dict):
+        return {
+            str(key): _resolve_catalogue_template_values(
+                item,
+                generated_runtime_values=generated_runtime_values,
+                runtime_inputs=runtime_inputs,
+            )
+            for key, item in value.items()
+        }
+    return value
+
+
+def _resolve_catalogue_template_string(
+    value: str,
+    *,
+    generated_runtime_values: Mapping[str, str],
+    runtime_inputs: Mapping[str, JsonValue],
+) -> str:
+    """Replace catalogue-owned placeholders in one string.
+
+    Args:
+        value: String that may contain catalogue-owned placeholders.
+        generated_runtime_values: Generated values keyed by catalogue data id.
+        runtime_inputs: Runtime inputs supplied for the selected plan.
+
+    Returns:
+        String with generated and runtime placeholders replaced.
+
+    Raises:
+        ValueError: If a placeholder references an unavailable value.
+    """
+
+    def replace_generated(match: re.Match[str]) -> str:
+        """Return one generated value for a regex placeholder match.
+
+        Args:
+            match: Regex match containing the generated value id.
+
+        Returns:
+            Generated value for the matched id.
+
+        Raises:
+            ValueError: If the generated value id was not declared.
+        """
+        value_id = match.group(1)
+        generated_value = generated_runtime_values.get(value_id)
+        if generated_value is None:
+            raise ValueError(f"Generated runtime value '{value_id}' is not declared for this request step")
+        return generated_value
+
+    def replace_runtime(match: re.Match[str]) -> str:
+        """Return one runtime input for a regex placeholder match.
+
+        Args:
+            match: Regex match containing the runtime input id.
+
+        Returns:
+            Runtime input value for the matched id.
+
+        Raises:
+            ValueError: If the runtime input is missing or not a string.
+        """
+        input_id = match.group(1)
+        runtime_value = runtime_inputs.get(input_id)
+        if runtime_value is None or (isinstance(runtime_value, str) and not runtime_value.strip()):
+            raise ValueError(f"Runtime input '{input_id}' is required for this request template")
+        if not isinstance(runtime_value, str):
+            raise ValueError(f"Runtime input '{input_id}' must be a string")
+        return runtime_value.strip()
+
+    generated_resolved = _CATALOGUE_GENERATED_VALUE_PATTERN.sub(replace_generated, value)
+    return _CATALOGUE_RUNTIME_VALUE_PATTERN.sub(replace_runtime, generated_resolved)
+
+
+def _read_runtime_json_file(
+    runtime_inputs: Mapping[str, JsonValue],
+    input_id: str,
+    *,
+    root: Path,
+) -> JsonValue:
+    """Read a JSON runtime file reference under the plan-spec directory.
+
+    Args:
+        runtime_inputs: Original plan-spec runtime input mapping.
+        input_id: Runtime input id that contains the file reference.
+        root: Directory that relative references are resolved under.
+
+    Returns:
+        Decoded JSON value from the referenced file.
+
+    Raises:
+        ValueError: If the reference is missing, escapes ``root``, or contains
+            invalid JSON.
+    """
+    path = _runtime_file_path(runtime_inputs, input_id, root=root)
+    try:
+        return cast("JsonValue", json.loads(path.read_text(encoding="utf-8")))
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Runtime input file '{input_id}' must contain valid JSON: {error.msg}") from error
+    except OSError as error:
+        raise ValueError(f"Unable to read runtime input file '{input_id}': {error}") from error
+
+
+def _read_runtime_file_text(
+    runtime_inputs: Mapping[str, JsonValue],
+    input_id: str,
+    *,
+    root: Path,
+) -> str:
+    """Read a text runtime file reference under the plan-spec directory.
+
+    Args:
+        runtime_inputs: Original plan-spec runtime input mapping.
+        input_id: Runtime input id that contains the file reference.
+        root: Directory that relative references are resolved under.
+
+    Returns:
+        Stripped text content from the referenced file.
+
+    Raises:
+        ValueError: If the reference is missing, escapes ``root``, cannot be
+            read, or is empty.
+    """
+    path = _runtime_file_path(runtime_inputs, input_id, root=root)
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise ValueError(f"Unable to read runtime input file '{input_id}': {error}") from error
+    if not value:
+        raise ValueError(f"Runtime input file '{input_id}' must not be empty")
+    return value
+
+
+def _runtime_file_path(runtime_inputs: Mapping[str, JsonValue], input_id: str, *, root: Path) -> Path:
+    """Resolve a runtime file-reference path under a trusted root.
+
+    Args:
+        runtime_inputs: Original plan-spec runtime input mapping.
+        input_id: Runtime input id that contains the file reference.
+        root: Directory that relative references are resolved under.
+
+    Returns:
+        Resolved file path.
+
+    Raises:
+        ValueError: If the runtime value is not a non-empty string or escapes
+            the supplied root.
+    """
+    raw_value = _required_runtime_string(runtime_inputs, input_id)
+    raw_path = Path(raw_value)
+    resolved_root = root.resolve()
+    resolved_path = raw_path.resolve() if raw_path.is_absolute() else (resolved_root / raw_path).resolve()
+    if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
+        raise ValueError(f"Runtime input file '{input_id}' must resolve inside the plan-spec directory")
+    return resolved_path
+
+
+def _required_runtime_string(runtime_inputs: Mapping[str, JsonValue], input_id: str) -> str:
+    """Extract a required runtime string value.
+
+    Args:
+        runtime_inputs: Original plan-spec runtime input mapping.
+        input_id: Runtime input id to read.
+
+    Returns:
+        Non-empty string runtime value.
+
+    Raises:
+        ValueError: If the value is absent or not a non-empty string.
+    """
+    value = runtime_inputs.get(input_id)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Runtime input '{input_id}' must be a non-empty string")
+    return value.strip()
+
+
+def _catalogue_assertion_to_manifest_assertion(
+    assertion: CatalogueAssertion,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    generated_header_values: Mapping[str, str],
+) -> ManifestAssertion:
+    """Convert a catalogue assertion into the executor's assertion model.
+
+    Args:
+        assertion: Catalogue assertion to convert.
+        runtime_inputs: Runtime inputs used to resolve selected-run assertion
+            values for playback checks.
+        generated_header_values: Generated request-header values keyed by
+            lower-case header name for playback checks.
+
+    Returns:
+        Manifest-compatible assertion dataclass.
+
+    Raises:
+        ValueError: If the assertion rule cannot be mapped to an executable
+            assertion shape.
+    """
+    if assertion.kind == "http_status":
+        expected_one_of = assertion.rule.get("expectedOneOf")
+        if isinstance(expected_one_of, list) and expected_one_of:
+            parsed_statuses: list[int] = []
+            for status_code in expected_one_of:
+                if not isinstance(status_code, int) or isinstance(status_code, bool):
+                    raise ValueError(
+                        f"Catalogue assertion '{assertion.assertion_id}' requires integer rule.expectedOneOf values"
+                    )
+                parsed_statuses.append(status_code)
+            return HttpStatusAssertion(type="http_status", expected_one_of=tuple(parsed_statuses))
+        expected = assertion.rule.get("expected")
+        if not isinstance(expected, int) or isinstance(expected, bool):
+            raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires integer rule.expected")
+        return HttpStatusAssertion(type="http_status", expected=expected)
+    if assertion.kind == "json_field":
+        return _catalogue_json_field_assertion(assertion)
+    if assertion.kind == "header":
+        return _catalogue_header_assertion(
+            assertion,
+            runtime_inputs=runtime_inputs,
+            generated_header_values=generated_header_values,
+        )
+    if assertion.kind == "legacy_fcs":
+        return _catalogue_legacy_fcs_assertion(
+            assertion,
+            generated_header_values=generated_header_values,
+        )
+    return _catalogue_response_schema_assertion(assertion)
+
+
+def _catalogue_legacy_fcs_assertion(
+    assertion: CatalogueAssertion,
+    *,
+    generated_header_values: Mapping[str, str],
+) -> LegacyFcsAssertion:
+    """Convert a pinned legacy FCS catalogue assertion bundle.
+
+    Args:
+        assertion: Catalogue assertion with ``kind == "legacy_fcs"``.
+        generated_header_values: Generated request-header values used by
+            playback expectations.
+
+    Returns:
+        Manifest-compatible legacy FCS assertion bundle.
+
+    Raises:
+        ValueError: If the parity rule is malformed.
+    """
+    row_key = assertion.rule.get("rowKey")
+    if not isinstance(row_key, str) or not row_key:
+        raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires string rule.rowKey")
+    schema_document = assertion.rule.get("schemaDocument")
+    if schema_document is not None and not isinstance(schema_document, str):
+        raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires string rule.schemaDocument")
+    raw_schema_refs = assertion.rule.get("schemaRefs", {})
+    if not isinstance(raw_schema_refs, dict):
+        raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires object rule.schemaRefs")
+    schema_refs: dict[int, str] = {}
+    for raw_status, raw_ref in raw_schema_refs.items():
+        if not raw_status.isdigit() or not isinstance(raw_ref, str):
+            raise ValueError(
+                f"Catalogue assertion '{assertion.assertion_id}' requires status-to-string rule.schemaRefs"
+            )
+        schema_refs[int(raw_status)] = raw_ref
+    return LegacyFcsAssertion(
+        type="legacy_fcs",
+        row_key=row_key,
+        all_of=_catalogue_legacy_expectations(
+            assertion,
+            key="allOf",
+            generated_header_values=generated_header_values,
+        ),
+        one_of=_catalogue_legacy_expectations(
+            assertion,
+            key="oneOf",
+            generated_header_values=generated_header_values,
+        ),
+        last_if_all=_catalogue_legacy_expectations(
+            assertion,
+            key="lastIfAll",
+            generated_header_values=generated_header_values,
+        ),
+        schema_document=schema_document,
+        schema_refs=schema_refs,
+    )
+
+
+def _catalogue_legacy_expectations(
+    assertion: CatalogueAssertion,
+    *,
+    key: str,
+    generated_header_values: Mapping[str, str],
+) -> tuple[Mapping[str, JsonValue], ...]:
+    """Resolve one legacy expectation group for manifest execution.
+
+    Args:
+        assertion: Catalogue assertion containing the parity rule.
+        key: Legacy expectation-group key.
+        generated_header_values: Generated request-header values used by
+            playback expectations.
+
+    Returns:
+        Ordered resolved legacy expectation objects.
+
+    Raises:
+        ValueError: If the expectation group is malformed.
+    """
+    raw_expectations = assertion.rule.get(key, [])
+    if not isinstance(raw_expectations, list):
+        raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires array rule.{key}")
+    expectations: list[Mapping[str, JsonValue]] = []
+    for raw_expectation in raw_expectations:
+        if not isinstance(raw_expectation, dict):
+            raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires object entries in rule.{key}")
+        resolved = _resolve_legacy_assertion_value(
+            raw_expectation,
+            generated_header_values=generated_header_values,
+        )
+        if not isinstance(resolved, dict):
+            raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' resolved rule.{key} incorrectly")
+        expectations.append(resolved)
+    return tuple(expectations)
+
+
+def _resolve_legacy_assertion_value(
+    value: JsonValue,
+    *,
+    generated_header_values: Mapping[str, str],
+) -> JsonValue:
+    """Resolve generated request-header references in legacy expectations.
+
+    Args:
+        value: Legacy assertion JSON value.
+        generated_header_values: Generated request headers keyed by lowercase
+            header name.
+
+    Returns:
+        Assertion value with supported playback references resolved.
+    """
+    if value == "$x-fapi-interaction-id":
+        return generated_header_values.get("x-fapi-interaction-id", value)
+    if isinstance(value, list):
+        return [
+            _resolve_legacy_assertion_value(item, generated_header_values=generated_header_values) for item in value
+        ]
+    if isinstance(value, dict):
+        return {
+            key: _resolve_legacy_assertion_value(item, generated_header_values=generated_header_values)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _catalogue_json_field_assertion(assertion: CatalogueAssertion) -> JsonFieldAssertion:
+    """Convert a catalogue JSON-field assertion.
+
+    Args:
+        assertion: Catalogue assertion with ``kind == "json_field"``.
+
+    Returns:
+        Manifest-compatible JSON-field assertion.
+
+    Raises:
+        ValueError: If required rule keys are missing or invalid.
+    """
+    path = assertion.rule.get("path")
+    if not isinstance(path, str) or not path:
+        raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires string rule.path")
+    if assertion.rule.get("present") is True or assertion.rule.get("expected") == "present":
+        return JsonFieldAssertion(type="json_field", path=path, rule="required")
+    if "expected" in assertion.rule:
+        return JsonFieldAssertion(type="json_field", path=path, rule="equals", value=assertion.rule["expected"])
+    rule = assertion.rule.get("rule")
+    supported_simple_rules = {
+        "required",
+        "permission_filtered",
+        "all_items_have_field",
+        "all_items_absent_fields",
+        "https_url",
+        "array",
+        "absent",
+        "string",
+        "number",
+        "boolean",
+        "object",
+        "non_empty_array",
+    }
+    if isinstance(rule, str) and rule in supported_simple_rules:
+        if rule == "permission_filtered":
+            return JsonFieldAssertion(type="json_field", path=path, rule="required")
+        if rule == "all_items_absent_fields":
+            fields = assertion.rule.get("fields")
+            if not isinstance(fields, list) or not fields or not all(isinstance(field, str) for field in fields):
+                raise ValueError(
+                    f"Catalogue assertion '{assertion.assertion_id}' requires non-empty string array rule.fields"
+                )
+            field_names = tuple(str(field) for field in fields)
+            return JsonFieldAssertion(
+                type="json_field",
+                path=path,
+                rule=cast(JsonFieldRule, rule),
+                fields=field_names,
+            )
+        if rule == "all_items_have_field":
+            field = assertion.rule.get("field")
+            if not isinstance(field, str) or not field:
+                raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires string rule.field")
+            return JsonFieldAssertion(
+                type="json_field",
+                path=path,
+                rule=cast(JsonFieldRule, rule),
+                field=field,
+            )
+        return JsonFieldAssertion(type="json_field", path=path, rule=cast(JsonFieldRule, rule))
+    raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' cannot be mapped to a JSON-field rule")
+
+
+def _catalogue_header_assertion(
+    assertion: CatalogueAssertion,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    generated_header_values: Mapping[str, str],
+) -> HeaderAssertion:
+    """Convert a catalogue header assertion.
+
+    Args:
+        assertion: Catalogue assertion with ``kind == "header"``.
+        runtime_inputs: Runtime inputs used to resolve expected playback values.
+        generated_header_values: Generated request-header values keyed by
+            lower-case header name for playback checks.
+
+    Returns:
+        Manifest-compatible header assertion.
+
+    Raises:
+        ValueError: If required rule keys are missing or invalid.
+    """
+    name = assertion.rule.get("name", assertion.rule.get("header"))
+    if not isinstance(name, str) or not name:
+        raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires rule.name or rule.header")
+    if (
+        assertion.rule.get("required") is True
+        or assertion.rule.get("presence") == "required"
+        or assertion.rule.get("rule") == "present"
+    ):
+        return HeaderAssertion(type="header", name=name, rule="present")
+    if assertion.rule.get("rule") == "playback":
+        return HeaderAssertion(
+            type="header",
+            name=name,
+            rule="equals",
+            value=_catalogue_header_playback_value(
+                name,
+                runtime_inputs=runtime_inputs,
+                generated_header_values=generated_header_values,
+            ),
+        )
+    contains = assertion.rule.get("contains")
+    if isinstance(contains, str) and contains:
+        return HeaderAssertion(type="header", name=name, rule="contains", value=contains)
+    expected = assertion.rule.get("expected")
+    if isinstance(expected, str) and expected:
+        return HeaderAssertion(type="header", name=name, rule="equals", value=expected)
+    raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' cannot be mapped to a header rule")
+
+
+def _catalogue_header_playback_value(
+    name: str,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    generated_header_values: Mapping[str, str],
+) -> str:
+    """Return the runtime input value expected in a response-header playback check.
+
+    Args:
+        name: Header name whose response value should echo the request.
+        runtime_inputs: Runtime inputs supplied for the selected plan.
+        generated_header_values: Generated request-header values keyed by
+            lower-case header name.
+
+    Returns:
+        Expected header value supplied by the matching runtime input.
+
+    Raises:
+        ValueError: If the header cannot be mapped to a runtime input or the
+            required input is missing.
+    """
+    generated_value = generated_header_values.get(name.lower())
+    if generated_value is not None:
+        return generated_value
+    input_id = _catalogue_header_runtime_input_id(name)
+    if input_id is None:
+        raise ValueError(f"Catalogue header playback is unsupported for '{name}'")
+    return _required_runtime_string(runtime_inputs, input_id)
+
+
+def _catalogue_header_runtime_input_id(name: str) -> str | None:
+    """Return the runtime input id associated with a request header name.
+
+    Args:
+        name: HTTP header name from a catalogue assertion.
+
+    Returns:
+        Runtime input id when the header has a selected-run input, otherwise
+        ``None``.
+    """
+    normalized_name = name.lower()
+    if normalized_name == "x-fapi-interaction-id":
+        return "xFapiInteractionId"
+    return None
+
+
+def _catalogue_response_schema_assertion(assertion: CatalogueAssertion) -> ResponseSchemaAssertion:
+    """Convert a catalogue response-schema assertion.
+
+    Args:
+        assertion: Catalogue assertion with ``kind == "response_schema"``.
+
+    Returns:
+        Manifest-compatible response-schema assertion.
+
+    Raises:
+        ValueError: If required schema rule keys are missing.
+    """
+    source = assertion.rule.get("source")
+    document = assertion.rule.get("document")
+    schema_ref = assertion.rule.get("schemaRef")
+    body_path = assertion.rule.get("bodyPath")
+    if source != "bundled_openapi" or not isinstance(document, str):
+        raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires bundled OpenAPI schema metadata")
+    return ResponseSchemaAssertion(
+        type="response_schema",
+        source="bundled_openapi",
+        document=document,
+        schema_ref=schema_ref if isinstance(schema_ref, str) else None,
+        body_path=body_path if isinstance(body_path, str) else None,
+    )
 
 
 def _logger_run_id(execution_logger: ExecutionLogger) -> str | None:
@@ -392,10 +2496,73 @@ class _LazyFapiSigningService:
         return self._service
 
 
+class _ResponseSignatureJwksCache:
+    """Fetch and cache discovery JWKS for response signature validation."""
+
+    def __init__(self, client: httpx.Client) -> None:
+        """Initialise the JWKS cache.
+
+        Args:
+            client: HTTP client used for discovery and JWKS requests.
+        """
+        self._client = client
+        self._jwks: JsonObject | None = None
+        self._lock = threading.Lock()
+
+    def get(self, runtime_config: RuntimeConfig | None) -> JsonObject:
+        """Return the cached JWKS, fetching it from discovery when needed.
+
+        Args:
+            runtime_config: Runtime config containing the discovery URL.
+
+        Returns:
+            JWKS JSON object with a ``keys`` array.
+
+        Raises:
+            ValueError: If runtime config or discovery metadata is missing or
+                unsafe.
+            JsonHttpClientError: If discovery or JWKS HTTP retrieval fails.
+        """
+        if self._jwks is not None:
+            return self._jwks
+        with self._lock:
+            if self._jwks is None:
+                self._jwks = _fetch_response_signature_jwks(self._client, runtime_config)
+        return self._jwks
+
+
+def _fetch_response_signature_jwks(client: httpx.Client, runtime_config: RuntimeConfig | None) -> JsonObject:
+    """Fetch the JWKS advertised by the configured discovery document.
+
+    Args:
+        client: HTTP client used for discovery and JWKS requests.
+        runtime_config: Runtime config containing ``discoveryUrl``.
+
+    Returns:
+        JWKS JSON object.
+
+    Raises:
+        ValueError: If runtime config, ``jwks_uri``, or the JWKS shape is
+            invalid.
+        JsonHttpClientError: If discovery or JWKS retrieval fails.
+    """
+    if runtime_config is None or runtime_config.discovery_url is None:
+        raise ValueError("Response signature validation requires runtime config discoveryUrl")
+    discovery_response = send_json(client, "GET", runtime_config.discovery_url)
+    jwks_uri = discovery_response.body.get("jwks_uri")
+    if not isinstance(jwks_uri, str) or not jwks_uri.strip():
+        raise ValueError("OpenID discovery response must contain jwks_uri for response signature validation")
+    validate_https_url(jwks_uri.strip(), label="discovery jwks_uri")
+    jwks_response = send_json(client, "GET", jwks_uri.strip())
+    keys = jwks_response.body.get("keys")
+    if not isinstance(keys, list):
+        raise ValueError("JWKS response must contain a keys array")
+    return dict(jwks_response.body)
+
+
 def _run_manifest_v1(
     manifest: Manifest,
     *,
-    environment: str,
     client: httpx.Client,
     execution_logger: ExecutionLogger,
     plan: TestPlan,
@@ -404,8 +2571,8 @@ def _run_manifest_v1(
     runtime_config: RuntimeConfig | None,
     fapi_signing_config: FapiSigningConfig | None,
     mtls_client_configured: bool,
-    suite_metadata: SuiteMetadata | None,
     approved_release_policy: ApprovedReleasePolicy | None,
+    compiled_plan: CompiledTestPlan | None = None,
 ) -> SmokeCheckResult:
     """Execute a v1 manifest with setup first and grouped execution after.
 
@@ -424,7 +2591,6 @@ def _run_manifest_v1(
 
     Args:
         manifest: Parsed v1 manifest containing sequential steps.
-        environment: Environment name copied into the result file.
         client: Preconfigured synchronous HTTP client.
         execution_logger: Structured execution-log sink.
         plan: Test plan governing which steps run and which are skipped
@@ -442,10 +2608,10 @@ def _run_manifest_v1(
             generate runtime FAPI request-object JWTs for PSU steps.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
-        suite_metadata: Optional catalog metadata to embed in the result for
-            config-resolved suite runs.
         approved_release_policy: Optional approved-release policy used by the
             generated report's certification self-assessment.
+        compiled_plan: Optional compiled catalogue plan whose traceability
+            should be embedded in the result.
 
     Returns:
         Smoke-check result with one entry per executed (selected) step.
@@ -455,6 +2621,7 @@ def _run_manifest_v1(
     steps: list[StepResult] = []
     context = ExecutionContext(config=runtime_config)
     fapi_signing_service = _LazyFapiSigningService(fapi_signing_config)
+    response_signature_jwks_cache = _ResponseSignatureJwksCache(client)
 
     # Emit one ``step-deselected`` event per deselected step before any
     # ``step-started`` event. Done up-front (rather than interleaved with
@@ -478,6 +2645,7 @@ def _run_manifest_v1(
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=fapi_signing_service,
         mtls_client_configured=mtls_client_configured,
+        response_signature_jwks_cache=response_signature_jwks_cache,
     )
     steps.extend(setup_steps)
 
@@ -492,18 +2660,58 @@ def _run_manifest_v1(
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=fapi_signing_service,
         mtls_client_configured=mtls_client_configured,
+        response_signature_jwks_cache=response_signature_jwks_cache,
     )
     steps.extend(execution_steps)
+    if compiled_plan is not None:
+        steps = _attach_catalogue_evidence_to_steps(steps, compiled_plan)
 
     return build_smoke_check_result(
-        environment,
         steps,
         started_at=started_at,
         plan=plan,
-        suite_metadata=suite_metadata,
         approved_release_policy=approved_release_policy,
         certification_coverage=manifest.certification_coverage,
+        compiled_plan=compiled_plan,
+        non_certifying_reasons=(compiled_plan.traceability.non_certifying_reasons if compiled_plan is not None else ()),
     )
+
+
+def _attach_catalogue_evidence_to_steps(
+    steps: list[StepResult],
+    compiled_plan: CompiledTestPlan,
+) -> list[StepResult]:
+    """Attach catalogue role and compliance scope to step result evidence.
+
+    Args:
+        steps: Step results emitted by the internal HTTP executor.
+        compiled_plan: Compiled catalogue plan that owns the executed request
+            steps.
+
+    Returns:
+        Step results with ``details.catalogue`` populated for catalogue-backed
+        request steps.
+    """
+    request_metadata: dict[str, JsonObject] = {}
+    for test_case in compiled_plan.test_cases:
+        for request_step in test_case.request_steps:
+            request_metadata[request_step.step_id] = {
+                "testCaseId": test_case.test_case_id,
+                "requestStepId": request_step.step_id,
+                "role": test_case.role,
+                "complianceScope": list(test_case.compliance_scope),
+            }
+
+    enriched_steps: list[StepResult] = []
+    for step in steps:
+        metadata = request_metadata.get(step.name)
+        if metadata is None:
+            enriched_steps.append(step)
+            continue
+        details = dict(step.details)
+        details["catalogue"] = metadata
+        enriched_steps.append(replace(step, details=details))
+    return enriched_steps
 
 
 def _execute_v1_step_sequence(
@@ -517,6 +2725,7 @@ def _execute_v1_step_sequence(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     mtls_client_configured: bool,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
 ) -> tuple[list[StepResult], ExecutionContext]:
     """Execute an ordered sequence of selected v1 steps.
 
@@ -534,6 +2743,8 @@ def _execute_v1_step_sequence(
             shared across selected steps in the current manifest run.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        response_signature_jwks_cache: Per-run cache for response JWS
+            verification keys.
 
     Returns:
         Ordered step results and the updated execution context after the
@@ -551,6 +2762,7 @@ def _execute_v1_step_sequence(
             fapi_signing_config=fapi_signing_config,
             fapi_signing_service=fapi_signing_service,
             mtls_client_configured=mtls_client_configured,
+            response_signature_jwks_cache=response_signature_jwks_cache,
         )
         steps.append(step_result)
     return steps, context
@@ -568,6 +2780,7 @@ def _execute_v1_execution_groups_concurrently(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     mtls_client_configured: bool,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
 ) -> list[StepResult]:
     """Execute execution-phase groups concurrently and merge deterministically.
 
@@ -589,6 +2802,8 @@ def _execute_v1_execution_groups_concurrently(
             shared across selected steps in the current manifest run.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        response_signature_jwks_cache: Per-run cache for response JWS
+            verification keys.
 
     Returns:
         Executed step results sorted by original manifest order.
@@ -612,6 +2827,7 @@ def _execute_v1_execution_groups_concurrently(
                     fapi_signing_config,
                     fapi_signing_service,
                     mtls_client_configured,
+                    response_signature_jwks_cache,
                 )
             )
 
@@ -634,6 +2850,7 @@ def _execute_v1_group(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     mtls_client_configured: bool,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
 ) -> list[StepResult]:
     """Run one execution group sequentially from the shared setup context.
 
@@ -650,6 +2867,8 @@ def _execute_v1_group(
             shared across selected steps in the current manifest run.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        response_signature_jwks_cache: Per-run cache for response JWS
+            verification keys.
 
     Returns:
         Step results for this group in group-local order.
@@ -664,6 +2883,7 @@ def _execute_v1_group(
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=fapi_signing_service,
         mtls_client_configured=mtls_client_configured,
+        response_signature_jwks_cache=response_signature_jwks_cache,
     )
     return group_steps
 
@@ -679,6 +2899,7 @@ def _execute_v1_manifest_step(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     mtls_client_configured: bool,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute one selected v1 step and preserve mandatory metadata.
 
@@ -696,6 +2917,8 @@ def _execute_v1_manifest_step(
             shared across selected steps in the current manifest run.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        response_signature_jwks_cache: Per-run cache for response JWS
+            verification keys.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -722,6 +2945,7 @@ def _execute_v1_manifest_step(
             fapi_signing_config=fapi_signing_config,
             fapi_signing_service=fapi_signing_service,
             mtls_client_configured=mtls_client_configured,
+            response_signature_jwks_cache=response_signature_jwks_cache,
         )
     if manifest_step.mandatory:
         step_result = replace(step_result, mandatory=True)
@@ -1093,7 +3317,7 @@ def _execute_v1_psu_step_inner(
             redirect_uri=resolved_redirect_uri,
         )
 
-    deadline = clock() + manifest_step.timeout_seconds
+    deadline = clock() + PSU_AUTHORIZATION_TIMEOUT_SECONDS
     while clock() < deadline:
         sleep(0.5)
         current_session = auth_session_store.get(run_id, session.state)
@@ -1116,7 +3340,7 @@ def _execute_v1_psu_step_inner(
                 status="failed",
                 message=f"{manifest_step.name} timed out waiting for PSU authorisation callback",
                 url=result_url,
-                details={"timeoutSeconds": manifest_step.timeout_seconds},
+                details={"timeoutSeconds": PSU_AUTHORIZATION_TIMEOUT_SECONDS},
             ),
             request_evidence=request_evidence,
             response_evidence=None,
@@ -1537,6 +3761,7 @@ def _execute_v1_step(
     fapi_signing_config: FapiSigningConfig | None = None,
     fapi_signing_service: _LazyFapiSigningService | None = None,
     mtls_client_configured: bool = False,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache | None = None,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute a single v1 manifest step with placeholder resolution.
 
@@ -1563,6 +3788,9 @@ def _execute_v1_step(
         fapi_signing_service: Optional lazy runtime signing-service cache.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured.
+        response_signature_jwks_cache: Optional per-run cache for response JWS
+            verification keys. A cache is created when omitted for direct unit
+            callers.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -1580,6 +3808,7 @@ def _execute_v1_step(
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=effective_fapi_signing_service,
         mtls_client_configured=mtls_client_configured,
+        response_signature_jwks_cache=response_signature_jwks_cache or _ResponseSignatureJwksCache(client),
     )
     execution_logger.emit(
         "step-completed",
@@ -1602,6 +3831,7 @@ def _execute_v1_step_inner(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     mtls_client_configured: bool,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
 ) -> tuple[StepResult, ExecutionContext]:
     """Inner step executor that emits per-stage events.
 
@@ -1619,6 +3849,8 @@ def _execute_v1_step_inner(
         fapi_signing_service: Optional lazy runtime signing-service cache.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured.
+        response_signature_jwks_cache: Per-run cache for response JWS
+            verification keys.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -1910,6 +4142,7 @@ def _execute_v1_step_inner(
             json_body=None if serialized_json_body is not None else resolved_json_body,
             json_body_bytes=serialized_json_body,
             form_body=resolved_form_body,
+            allow_non_json_response=not _assertions_require_json_body(manifest_step.assertions),
         )
     except JsonHttpClientError as error:
         # Preserve the response status code on the StepResult when the
@@ -1978,6 +4211,42 @@ def _execute_v1_step_inner(
         payload={"statusCode": response.status_code, "url": response.url},
     )
 
+    try:
+        response_signature_evidence = _validate_response_signature_if_required(
+            manifest_step=manifest_step,
+            response=response,
+            context=context,
+            response_signature_jwks_cache=response_signature_jwks_cache,
+        )
+    except (JsonHttpClientError, HttpsUrlValidationError, ResponseSignatureValidationError, ValueError) as error:
+        execution_logger.emit(
+            "response-signature-invalid",
+            step_id=manifest_step.id,
+            payload={"message": str(error)},
+        )
+        response_evidence["responseSignature"] = {"status": "failed", "message": str(error)}
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Response signature validation failed: {error}",
+                    url=resolved_url,
+                    status_code=response.status_code,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=response_evidence,
+            ),
+            new_context,
+        )
+    if response_signature_evidence is not None:
+        execution_logger.emit(
+            "response-signature-validated",
+            step_id=manifest_step.id,
+            payload=response_signature_evidence,
+        )
+        response_evidence["responseSignature"] = {"status": "passed", **response_signature_evidence}
+
     # Evaluate assertions
     step_result = _build_assertion_step(
         name=manifest_step.id,
@@ -2030,6 +4299,60 @@ def _record_runtime_token_if_present(
     if not isinstance(access_token, str) or not access_token:
         return context
     return record_token(context, token_id=token_id, access_token=access_token)
+
+
+def _assertions_require_json_body(assertions: tuple[ManifestAssertion, ...]) -> bool:
+    """Return whether any assertion needs a parsed JSON response body.
+
+    Args:
+        assertions: Manifest assertions attached to the current request step.
+
+    Returns:
+        ``True`` when JSON-field or schema assertions are present; ``False``
+        when the step can be evaluated using only status and headers.
+    """
+    return any(isinstance(assertion, JsonFieldAssertion | ResponseSchemaAssertion) for assertion in assertions)
+
+
+def _validate_response_signature_if_required(
+    *,
+    manifest_step: ManifestStep,
+    response: JsonHttpResponse,
+    context: ExecutionContext,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
+) -> JsonObject | None:
+    """Validate a required response detached JWS and return evidence.
+
+    Args:
+        manifest_step: Executed HTTP step whose policy may require validation.
+        response: JSON HTTP response received for the step.
+        context: Execution context containing runtime config.
+        response_signature_jwks_cache: Per-run cache for discovery JWKS.
+
+    Returns:
+        Non-secret response-signature evidence when validation was required and
+        passed, otherwise ``None``.
+
+    Raises:
+        ValueError: If the response-signature source is unsupported.
+        JsonHttpClientError: If discovery or JWKS retrieval fails.
+        HttpsUrlValidationError: If discovery advertises an unsafe JWKS URL.
+        ResponseSignatureValidationError: If the signature itself is invalid.
+    """
+    policy = manifest_step.response_signature_policy
+    if policy is None:
+        return None
+    if policy.source != "discovery-jwks":
+        raise ValueError("Unsupported response signature validation source")
+    signature = response.headers.get("x-jws-signature")
+    if signature is None or not signature.strip():
+        raise ResponseSignatureValidationError("x-jws-signature header is missing")
+    validation = validate_ob_response_signature(
+        signature=signature,
+        payload=response.body_bytes,
+        jwks=response_signature_jwks_cache.get(context.config),
+    )
+    return validation.to_json_object()
 
 
 def _skipped_step(
@@ -2129,7 +4452,7 @@ def _maybe_apply_ob_detached_jws(
     if fapi_signing_service is None:
         raise ValueError("Detached request signing requires fapiSigning configuration")
     if not _requires_ob_detached_jws(manifest_step=manifest_step, resolved_url=resolved_url):
-        raise ValueError("Detached request signing is only supported for account-access-consents requests")
+        raise ValueError("Detached request signing is only supported for AIS consent, PIS, and VRP write requests")
     if resolved_json_body is None:
         raise ValueError("Detached request signing requires a JSON request body")
 
@@ -2137,7 +4460,11 @@ def _maybe_apply_ob_detached_jws(
     signing_service = fapi_signing_service.get()
     if signing_service is None:
         raise ValueError("Detached request signing requires fapiSigning configuration")
-    detached_signature = signing_service.sign_detached_json_payload(serialized_json_body)
+    detached_signature = signing_service.sign_detached_json_payload(
+        serialized_json_body,
+        profile=manifest_step.request.detached_jws.profile or _detached_jws_profile_for_request(resolved_url),
+        omit_protected_headers=manifest_step.request.detached_jws.omit_protected_headers,
+    )
     validate_header_value(
         detached_signature,
         location=f"step '{manifest_step.id}' generated header x-jws-signature",
@@ -2148,6 +4475,42 @@ def _maybe_apply_ob_detached_jws(
     return signed_headers, serialized_json_body
 
 
+def _detached_jws_profile_for_request(resolved_url: str) -> OpenBankingDetachedJwsProfile:
+    """Return the Open Banking detached-JWS profile for one request URL.
+
+    Args:
+        resolved_url: Fully resolved request URL.
+
+    Returns:
+        PIS v4 write requests use the v3.1.4+/v4 profile; existing AIS consent
+        signing keeps the legacy unencoded-payload profile.
+    """
+    normalized_path = _normalize_url_path_for_match(urlsplit(resolved_url).path)
+    if normalized_path.startswith(_OB_PIS_PATH_PREFIXES) or _is_ob_vrp_path(normalized_path):
+        return "ob-v3.1.4+"
+    return "legacy-b64-false"
+
+
+def _is_ob_vrp_path(normalized_path: str) -> bool:
+    """Return whether a normalized path targets an Open Banking VRP resource.
+
+    Args:
+        normalized_path: Canonical absolute URL path.
+
+    Returns:
+        ``True`` when the path targets domestic VRP consent/payment resources,
+        either directly from the generated catalogue path or under a versioned
+        ``/pisp`` base path.
+    """
+    for resource_prefix in _OB_VRP_RESOURCE_PATH_PREFIXES:
+        if normalized_path == resource_prefix or normalized_path.startswith(f"{resource_prefix}/"):
+            return True
+        versioned_pisp_prefix = f"/pisp{resource_prefix}"
+        if normalized_path.endswith(versioned_pisp_prefix) or f"{versioned_pisp_prefix}/" in normalized_path:
+            return True
+    return False
+
+
 def _requires_ob_detached_jws(*, manifest_step: ManifestStep, resolved_url: str) -> bool:
     """Return whether a step should carry an Open Banking detached JWS.
 
@@ -2156,12 +4519,18 @@ def _requires_ob_detached_jws(*, manifest_step: ManifestStep, resolved_url: str)
         resolved_url: Fully resolved request URL.
 
     Returns:
-        ``True`` when the step targets the AIS account-access-consents
-        endpoint and is an eligible write method, otherwise ``False``.
+        ``True`` when the step targets the AIS account-access-consents endpoint,
+        a PIS endpoint, or a VRP endpoint and is an eligible write method,
+        otherwise ``False``.
     """
     if manifest_step.request.method not in {"POST", "PUT", "PATCH"}:
         return False
-    return _normalize_url_path_for_match(urlsplit(resolved_url).path) == _OB_ACCOUNT_ACCESS_CONSENTS_PATH
+    normalized_path = _normalize_url_path_for_match(urlsplit(resolved_url).path)
+    return (
+        normalized_path in _OB_ACCOUNT_ACCESS_CONSENTS_PATHS
+        or normalized_path.startswith(_OB_PIS_PATH_PREFIXES)
+        or _is_ob_vrp_path(normalized_path)
+    )
 
 
 def _serialize_json_request_body(body: JsonValue) -> bytes:
@@ -2179,13 +4548,11 @@ def _serialize_json_request_body(body: JsonValue) -> bytes:
 def _run_manifest_v0(
     manifest: Manifest,
     *,
-    environment: str,
     client: httpx.Client,
     execution_logger: ExecutionLogger,
     run_id: str,
     auth_session_store: AuthSessionStore,
     runtime_config: RuntimeConfig | None,
-    suite_metadata: SuiteMetadata | None,
     approved_release_policy: ApprovedReleasePolicy | None,
 ) -> SmokeCheckResult:
     """Execute a v0 manifest preserving original skip-on-fail semantics.
@@ -2197,7 +4564,6 @@ def _run_manifest_v0(
 
     Args:
         manifest: Parsed v0 manifest containing tests with optional followUp.
-        environment: Environment name copied into the result file.
         client: Preconfigured synchronous HTTP client.
         execution_logger: Structured execution-log sink threaded through to
             each desugared v1 step.
@@ -2208,8 +4574,6 @@ def _run_manifest_v0(
             mirroring ``run_id`` for the same reason.
         runtime_config: Optional safe participant config values available to
             desugared step placeholder resolution.
-        suite_metadata: Optional catalog metadata to embed in the result for
-            config-resolved suite runs.
         approved_release_policy: Optional approved-release policy used by the
             generated report's certification self-assessment.
 
@@ -2312,10 +4676,8 @@ def _run_manifest_v0(
                 steps.append(follow_up_result)
 
     return build_smoke_check_result(
-        environment,
         steps,
         started_at=started_at,
-        suite_metadata=suite_metadata,
         approved_release_policy=approved_release_policy,
     )
 

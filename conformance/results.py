@@ -7,15 +7,15 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import CertificationCoverage
-from conformance.suite_catalog import SuiteMetadata
 from conformance.version import REPORT_METADATA_VERSION, resolve_conformance_tool_version
 
 if TYPE_CHECKING:
     from conformance.approved_releases import ApprovedReleasePolicy
+    from conformance.catalogue import CompiledTestPlan
     from conformance.test_plan import TestPlan
 
 CheckStatus = Literal["passed", "failed", "warn", "skipped"]
@@ -83,7 +83,6 @@ class SmokeCheckResult:
     """Complete result for a model-bank smoke-check execution.
 
     Attributes:
-        environment: Environment name copied from the input config.
         status: Aggregate pass/fail outcome across all steps.
         started_at: UTC timestamp when execution started.
         finished_at: UTC timestamp when execution finished.
@@ -100,9 +99,6 @@ class SmokeCheckResult:
             self-assess whether the report's tool version is eligible for
             certification submission. ``None`` means the report explicitly
             marks the check as not supplied.
-        suite_metadata: Optional catalog metadata for config-resolved suite
-            runs. Omitted for legacy smoke checks and explicit manifest runs
-            so their public result shape remains stable.
         certification_coverage: Whether the manifest used for this run declares
             full certification coverage (``complete``) or is intentionally
             partial / non-certifying (``partial``). Defaults to ``partial`` for
@@ -110,9 +106,12 @@ class SmokeCheckResult:
             certification eligibility model. A ``partial`` value blocks
             ``certificationEligibility.eligible`` even when all mandatory steps
             pass and the tool version is approved.
+        compiled_plan: Optional compiled catalogue plan whose traceability
+            metadata should be embedded in the generated report.
+        non_certifying_reasons: Additional catalogue-plan reasons that block
+            certification eligibility even when mandatory executed steps pass.
     """
 
-    environment: str
     status: CheckStatus
     started_at: datetime
     finished_at: datetime
@@ -120,8 +119,9 @@ class SmokeCheckResult:
     plan_summary: Mapping[str, int] | None = None
     deselected_mandatory_step_ids: tuple[str, ...] = ()
     approved_release_policy: ApprovedReleasePolicy | None = None
-    suite_metadata: SuiteMetadata | None = None
     certification_coverage: CertificationCoverage = "partial"
+    compiled_plan: CompiledTestPlan | None = None
+    non_certifying_reasons: tuple[str, ...] = ()
 
     def to_json_object(self) -> JsonObject:
         """Convert the smoke-check result into the public JSON report shape.
@@ -133,7 +133,6 @@ class SmokeCheckResult:
         body: JsonObject = {
             "metadata": {"reportVersion": REPORT_METADATA_VERSION},
             "tool": {"version": tool_version},
-            "environment": self.environment,
             "status": self.status,
             "startedAt": self.started_at.isoformat(),
             "finishedAt": self.finished_at.isoformat(),
@@ -150,30 +149,30 @@ class SmokeCheckResult:
                 approved_release_policy=self.approved_release_policy,
                 tool_version=tool_version,
                 certification_coverage=self.certification_coverage,
+                non_certifying_reasons=self.non_certifying_reasons,
             ),
             "steps": [step.to_json_object() for step in self.steps],
         }
-        if self.suite_metadata is not None:
-            body["suite"] = self.suite_metadata.to_json_object()
         if self.plan_summary is not None:
             body["plan"] = dict(self.plan_summary)
+        if self.compiled_plan is not None:
+            body["catalogue"] = _compiled_plan_to_json_object(self.compiled_plan, steps=self.steps)
         return body
 
 
 def build_smoke_check_result(
-    environment: str,
     steps: list[StepResult],
     *,
     started_at: datetime,
     plan: TestPlan | None = None,
     approved_release_policy: ApprovedReleasePolicy | None = None,
-    suite_metadata: SuiteMetadata | None = None,
     certification_coverage: CertificationCoverage = "partial",
+    compiled_plan: CompiledTestPlan | None = None,
+    non_certifying_reasons: tuple[str, ...] = (),
 ) -> SmokeCheckResult:
     """Build an aggregate smoke-check result from collected step outcomes.
 
     Args:
-        environment: Environment name copied from the input config.
         steps: Ordered mutable list of step outcomes collected by the runner.
         started_at: UTC timestamp captured before execution began.
         plan: Optional :class:`TestPlan` that drove this run. When supplied,
@@ -185,15 +184,16 @@ def build_smoke_check_result(
             generated report's participant-side certification self-assessment.
             Omit when no approved-release policy was supplied with the
             participant config.
-        suite_metadata: Optional catalog metadata for a config-resolved suite
-            run. Omit for smoke checks and explicit manifest runs to preserve
-            their existing result shape.
         certification_coverage: Whether the manifest declares full certification
             coverage (``complete``) or is intentionally partial / non-certifying
             (``partial``). Defaults to ``"partial"`` so non-manifest callers and
             v0 manifest callers are safe by default. A ``partial`` value blocks
             ``certificationEligibility.eligible`` even when all mandatory steps
             pass and the tool version is approved.
+        compiled_plan: Optional compiled catalogue plan whose traceability
+            metadata should be embedded in the top-level ``catalogue`` block.
+        non_certifying_reasons: Additional catalogue-plan reasons that should
+            block certification eligibility.
 
     Returns:
         Immutable smoke-check result with finished timestamp and aggregate status.
@@ -210,7 +210,6 @@ def build_smoke_check_result(
         plan_summary = plan.summary()
         deselected_mandatory = tuple(plan.deselected_mandatory_step_ids())
     return SmokeCheckResult(
-        environment=environment,
         status=status,
         started_at=started_at,
         finished_at=finished_at,
@@ -218,9 +217,45 @@ def build_smoke_check_result(
         plan_summary=plan_summary,
         deselected_mandatory_step_ids=deselected_mandatory,
         approved_release_policy=approved_release_policy,
-        suite_metadata=suite_metadata,
         certification_coverage=certification_coverage,
+        compiled_plan=compiled_plan,
+        non_certifying_reasons=non_certifying_reasons,
     )
+
+
+def mark_development_result_evidence(validation_result: JsonObject, result_object: JsonObject) -> None:
+    """Mark development-mode result evidence as non-certifying.
+
+    Args:
+        validation_result: Validation result captured before launch.
+        result_object: Mutable run result JSON object to annotate.
+    """
+    if validation_result.get("executionMode") != "development":
+        return
+    metadata = result_object.get("metadata")
+    if isinstance(metadata, dict):
+        metadata["executionMode"] = "development"
+    else:
+        result_object["metadata"] = {"executionMode": "development"}
+    eligibility = result_object.get("certificationEligibility")
+    if not isinstance(eligibility, dict):
+        return
+    reason = "Development-mode run is not certification evidence"
+    raw_reasons = eligibility.get("reasons")
+    reasons = list(raw_reasons) if isinstance(raw_reasons, list) else []
+    if reason not in reasons:
+        reasons.insert(0, reason)
+    raw_issues = validation_result.get("issues")
+    if isinstance(raw_issues, list):
+        for raw_issue in raw_issues:
+            if not isinstance(raw_issue, dict) or raw_issue.get("severity") != "warning":
+                continue
+            message = raw_issue.get("message")
+            if isinstance(message, str) and message not in reasons:
+                reasons.append(message)
+    eligibility["eligible"] = False
+    eligibility["reason"] = reason
+    eligibility["reasons"] = reasons
 
 
 def _build_eligibility(
@@ -230,6 +265,7 @@ def _build_eligibility(
     approved_release_policy: ApprovedReleasePolicy | None = None,
     tool_version: str,
     certification_coverage: CertificationCoverage = "partial",
+    non_certifying_reasons: tuple[str, ...] = (),
 ) -> JsonObject:
     """Build the ``certificationEligibility`` block for the result file.
 
@@ -282,6 +318,8 @@ def _build_eligibility(
             Defaults to ``"partial"`` for backwards-compatible callers that do not
             supply a manifest. A ``partial`` value blocks eligibility and adds a
             stable reason string so the blocker is machine-readable.
+        non_certifying_reasons: Additional compiled-plan reasons that block
+            certification eligibility.
 
     Returns:
         JSON object containing the boolean ``eligible`` flag, per-status
@@ -333,6 +371,7 @@ def _build_eligibility(
         reasons.append("No mandatory steps declared")
     if certification_coverage != "complete":
         reasons.append("Manifest is not marked as complete certification coverage")
+    reasons.extend(non_certifying_reasons)
     if approved_release_policy is not None and not approved_release_policy.is_tool_version_approved(tool_version):
         reasons.append(f"Tool version is not in the approved-release policy: {tool_version}")
     if approved_release_policy is None:
@@ -348,6 +387,208 @@ def _build_eligibility(
         block["reason"] = reasons[0]
         block["reasons"] = reasons
     return block
+
+
+def _compiled_plan_to_json_object(
+    compiled_plan: CompiledTestPlan,
+    *,
+    steps: tuple[StepResult, ...],
+) -> JsonObject:
+    """Convert compiled catalogue traceability into report JSON.
+
+    Args:
+        compiled_plan: Compiled catalogue plan that drove execution.
+        steps: Final execution results used to populate hierarchical statuses.
+
+    Returns:
+        JSON object containing catalogue identity, selected endpoints,
+        generated test cases, runtime-input trace, applicability decisions,
+        and certification planning status.
+    """
+    traceability = compiled_plan.traceability
+    result: JsonObject = {
+        "standard": traceability.catalogue_key.standard,
+        "version": traceability.catalogue_key.version,
+        "api": traceability.catalogue_key.api,
+        "catalogueVersion": traceability.catalogue_version,
+        "securityProfile": traceability.security_profile,
+        "certifying": compiled_plan.certifying,
+        "generatedTestCaseIds": list(traceability.generated_test_case_ids),
+        "skippedTestCaseIds": [case.test_case_id for case in compiled_plan.skipped_test_cases],
+        "selectedEndpoints": [
+            {
+                "method": endpoint.method,
+                "path": endpoint.path,
+                "resourceGroup": endpoint.resource_group,
+                **({"capabilities": list(endpoint.capability_ids)} if endpoint.capability_ids else {}),
+                **({"operationId": endpoint.operation_id} if endpoint.operation_id is not None else {}),
+            }
+            for endpoint in traceability.selected_endpoints
+        ],
+        "selectedCapabilities": [
+            {
+                "method": capability.method,
+                "path": capability.path,
+                "capabilityId": capability.capability_id,
+                "label": capability.label,
+                "required": capability.required,
+            }
+            for capability in traceability.selected_capabilities
+        ],
+        "applicabilityDecisions": [
+            {
+                "testCaseId": decision.test_case_id,
+                "selected": decision.selected,
+                "reason": decision.reason,
+                "dependencyOf": list(decision.dependency_of),
+            }
+            for decision in traceability.applicability_decisions
+        ],
+        "runtimeInputSnapshot": [
+            {
+                "inputId": runtime_input.input_id,
+                "inputType": runtime_input.input_type,
+                "required": runtime_input.required,
+                "sensitive": runtime_input.sensitive,
+                "provided": runtime_input.provided,
+                **({"value": runtime_input.value} if runtime_input.value is not None else {}),
+            }
+            for runtime_input in traceability.runtime_input_snapshot
+        ],
+        "nonCertifyingReasons": list(traceability.non_certifying_reasons),
+    }
+    if traceability.provenance is not None:
+        result["provenance"] = {
+            "repository": traceability.provenance.repository,
+            "release": traceability.provenance.release,
+            "commit": traceability.provenance.commit,
+            "sourcePaths": list(traceability.provenance.source_paths),
+            "references": dict(traceability.provenance.references),
+        }
+    trace_groups = _compiled_trace_groups_to_json_object(compiled_plan, steps=steps)
+    if trace_groups:
+        result["traceGroups"] = trace_groups
+    return result
+
+
+def _compiled_trace_groups_to_json_object(
+    compiled_plan: CompiledTestPlan,
+    *,
+    steps: tuple[StepResult, ...],
+) -> list[JsonValue]:
+    """Serialize selected scenario, case, and execution-step trace hierarchy.
+
+    Args:
+        compiled_plan: Compiled plan containing generic catalogue trace groups.
+        steps: Final step outcomes keyed by each execution step's stable ID.
+
+    Returns:
+        Ordered trace groups with their selected cases and protocol-neutral steps.
+    """
+    grouped_cases: dict[str, list[JsonValue]] = {}
+    group_metadata: dict[str, JsonObject] = {}
+    group_order: list[str] = []
+    skipped_ids = {case.test_case_id for case in compiled_plan.skipped_test_cases}
+    result_by_step_id = {step.name: step for step in steps}
+    trace_cases = sorted(
+        (*compiled_plan.test_cases, *compiled_plan.skipped_test_cases),
+        key=lambda case: case.test_case_id,
+    )
+    for test_case in trace_cases:
+        trace_group = test_case.trace_group
+        if trace_group is None:
+            continue
+        if trace_group.group_id not in grouped_cases:
+            grouped_cases[trace_group.group_id] = []
+            group_order.append(trace_group.group_id)
+            group_metadata[trace_group.group_id] = {
+                "traceGroupId": trace_group.group_id,
+                "name": trace_group.name,
+                "intent": trace_group.intent,
+                "sourceSymbol": trace_group.source_symbol,
+                "normativeReferenceIds": list(trace_group.normative_reference_ids),
+            }
+        case_is_unselected = test_case.test_case_id in skipped_ids
+        rendered_steps: list[JsonValue] = []
+        case_statuses: list[CheckStatus] = []
+        for execution_step in test_case.execution_steps:
+            step_result = result_by_step_id.get(execution_step.step_id)
+            status: CheckStatus = "skipped" if case_is_unselected else step_result.status if step_result else "skipped"
+            case_statuses.append(status)
+            rendered_steps.append(
+                {
+                    "stepId": execution_step.step_id,
+                    "definitionId": execution_step.definition_id,
+                    "name": execution_step.name,
+                    "kind": execution_step.kind,
+                    "status": status,
+                    **(
+                        {"expectedStatus": execution_step.expected_status}
+                        if execution_step.expected_status is not None
+                        else {}
+                    ),
+                    **(
+                        {"actualStatusCode": step_result.status_code}
+                        if step_result is not None and step_result.status_code is not None
+                        else {}
+                    ),
+                    **({"message": step_result.message} if step_result is not None else {}),
+                    **({"variant": execution_step.variant} if execution_step.variant is not None else {}),
+                    **({"deviationId": execution_step.deviation_id} if execution_step.deviation_id is not None else {}),
+                    **({"skipReason": "endpoint-not-selected"} if case_is_unselected else {}),
+                }
+            )
+        case_status = _aggregate_trace_status(case_statuses)
+        grouped_cases[trace_group.group_id].append(
+            {
+                "testCaseId": test_case.test_case_id,
+                "name": test_case.name,
+                "role": test_case.role,
+                "mandatory": test_case.mandatory,
+                "status": case_status,
+                "complianceScope": list(test_case.compliance_scope),
+                "expectedHttpStatuses": list(test_case.expected_http_statuses),
+                **({"skipReason": "endpoint-not-selected"} if case_is_unselected else {}),
+                "steps": rendered_steps,
+            }
+        )
+    rendered_groups: list[JsonValue] = []
+    for group_id in group_order:
+        test_cases = grouped_cases[group_id]
+        statuses = [
+            case["status"]
+            for case in test_cases
+            if isinstance(case, dict) and case.get("status") in {"passed", "failed", "warn", "skipped"}
+        ]
+        group_status = _aggregate_trace_status(cast("list[CheckStatus]", statuses))
+        rendered_groups.append(
+            {
+                **group_metadata[group_id],
+                "status": group_status,
+                **({"skipReason": "endpoint-not-selected"} if group_status == "skipped" else {}),
+                "testCases": test_cases,
+            }
+        )
+    return rendered_groups
+
+
+def _aggregate_trace_status(statuses: list[CheckStatus]) -> CheckStatus:
+    """Aggregate child outcomes for a catalogue trace case or group.
+
+    Args:
+        statuses: Ordered child statuses.
+
+    Returns:
+        Failed when any child failed, warn when any child warned without a
+        failure, passed when at least one child passed, otherwise skipped.
+    """
+    if "failed" in statuses:
+        return "failed"
+    if "warn" in statuses:
+        return "warn"
+    if "passed" in statuses:
+        return "passed"
+    return "skipped"
 
 
 def _build_approved_release_eligibility(

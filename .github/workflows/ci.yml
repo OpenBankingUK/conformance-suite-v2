@@ -5,12 +5,14 @@ on:
     branches:
       - main
       - develop
+      - "preview/**"
       - "release/**"
       - "hotfix/**"
   push:
     branches:
       - main
       - develop
+      - "preview/**"
       - "release/**"
       - "hotfix/**"
 
@@ -22,11 +24,8 @@ permissions:
   contents: read
 
 jobs:
-  # ────────────────────────────────────────────────
-  # Job 1: Lint & Type Check
-  # ────────────────────────────────────────────────
-  lint:
-    name: Lint & Type Check
+  check:
+    name: Check
     runs-on: ubuntu-latest
 
     steps:
@@ -43,85 +42,56 @@ jobs:
         # --no-install-project: this is a container-deployed app, not a package
         run: uv sync --frozen --no-install-project
 
-      - name: Ruff — lint check
-        run: uv run ruff check . --output-format=github
+      - name: Run canonical quality gate
+        # CI intentionally clears the local OpenAPI exclusion so every tracked
+        # file is scanned for secrets.
+        run: make check SECRET_SCAN_EXCLUDE_PATHSPEC=
 
-      - name: Ruff — format check
-        run: uv run ruff format --check .
-
-      - name: interrogate — docstring coverage
-        # Enforces that every function, method, and class — including private
-        # (_-prefixed) helpers — carries a docstring. Ruff's pydocstyle D1xx
-        # rules are public-only, so interrogate fills the gap.
-        run: uv run interrogate -c pyproject.toml .
-
-      - name: pydoclint — docstring structure
-        # Enforces that Args/Returns/Raises sections match the function
-        # signature. Complements interrogate (presence) with structural
-        # correctness.
-        run: uv run pydoclint .
-
-      - name: mypy — type check
-        run: uv run mypy .
-
-      - name: Detect secrets
-        run: |
-          git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline --
-
-  # ────────────────────────────────────────────────
-  # Job 2: Unit & Integration Tests
-  # ────────────────────────────────────────────────
-  test:
-    name: Unit & Integration Tests
+  plan:
+    name: Plan
     runs-on: ubuntu-latest
-    needs: lint
+    outputs:
+      is_candidate: ${{ steps.classify.outputs.is_candidate }}
+      is_hardened: ${{ steps.classify.outputs.is_hardened }}
+      target_branch: ${{ steps.classify.outputs.target_branch }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          enable-cache: true
-
-      - name: Install dependencies
-        # Includes the dev dependency group by default (ruff, mypy, pytest, etc.)
-        # --no-install-project: this is a container-deployed app, not a package
-        run: uv sync --frozen --no-install-project
-
-      - name: Run pytest (exclude E2E)
+      - name: Classify this run
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_REF_NAME: ${{ github.ref_name }}
         run: |
-          uv run pytest \
-            --cov=. \
-            --cov-report=xml:coverage.xml \
-            --cov-report=term-missing \
-            --json-report \
-            --json-report-file=test-results.json \
-            -m "not e2e" \
-            -v
+          target_branch="$PUSH_REF_NAME"
+          is_candidate=false
+          is_hardened=false
+          # Bootstrap compatibility gate: main keeps its existing Docker CI
+          # until the hardened Docker implementation lands. The hardened
+          # contract is DHI base, distroless UID, and entrypoint; candidate
+          # builds start automatically on eligible push branches once present.
+          if python3 -m scripts.validate_docker_base --dockerfile Dockerfile \
+            && grep -q '^USER 65532:65532$' Dockerfile \
+            && [[ -f docker/entrypoint.py ]]; then
+              is_hardened=true
+          fi
+          if [[ "$is_hardened" == "true" && "$EVENT_NAME" == "push" ]] \
+            && { [[ "$target_branch" == "main" ]] || [[ "$target_branch" == preview/* ]] || [[ "$target_branch" == release/* ]]; }; then
+              is_candidate=true
+          fi
 
-      - name: Upload coverage report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
-        with:
-          name: coverage-report-${{ github.run_id }}
-          path: coverage.xml
+          {
+            echo "target_branch=$target_branch"
+            echo "is_hardened=$is_hardened"
+            echo "is_candidate=$is_candidate"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Upload test results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
-        with:
-          name: test-results-${{ github.run_id }}
-          path: test-results.json
-
-  # ────────────────────────────────────────────────
-  # Job 3: Docker Build
-  # ────────────────────────────────────────────────
   docker-build:
     name: Docker Build
+    needs: plan
     runs-on: ubuntu-latest
-    needs: test
 
     permissions:
       contents: read
@@ -133,6 +103,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
+      - name: Log in to dhi.io
+        # Docker Hardened Images require registry authentication even to pull;
+        # uses the repository-level read-only organisation token.
+        if: needs.plan.outputs.is_hardened == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DOCKER_ORG_USERNAME }}
+          password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+
       - name: Build Docker image (no push)
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
@@ -140,10 +120,33 @@ jobs:
           push: false
           load: true
           tags: ob-conformance-tool:${{ github.sha }}
+          build-args: |
+            CONFORMANCE_TOOL_VERSION=0.0.0+ci.${{ github.sha }}
+            SOURCE_REVISION=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Log out of dhi.io before running repository scripts
+        # login-action leaves the credential in ~/.docker/config.json until
+        # post-job cleanup; remove it once the private base has been pulled so
+        # branch-controlled scripts below cannot read it.
+        if: always() && needs.plan.outputs.is_hardened == 'true'
+        run: docker logout dhi.io
+
+      - name: Run hardened smoke test
+        # The hardened image serves HTTPS with a generated certificate and has
+        # no shell/curl, so it needs the dedicated smoke-test script.
+        if: needs.plan.outputs.is_hardened == 'true'
+        run: ./scripts/docker_smoke_test.sh ob-conformance-tool:${{ github.sha }}
+
+      - name: Validate Compose configuration
+        if: needs.plan.outputs.is_hardened == 'true'
+        run: |
+          docker compose -f compose.yaml config >/dev/null
+          docker compose -f compose.yaml -f compose.certs.yaml config >/dev/null
+
       - name: Run container smoke test
+        if: needs.plan.outputs.is_hardened != 'true'
         env:
           DJANGO_SECRET_KEY: "ci-dummy-key-not-for-production"
           DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,0.0.0.0"
@@ -153,8 +156,7 @@ jobs:
             -e DJANGO_ALLOWED_HOSTS="$DJANGO_ALLOWED_HOSTS" \
             -p 8443:8443 \
             ob-conformance-tool:${{ github.sha }}
-          # Wait for the server to be ready
-          for i in $(seq 1 10); do
+          for _ in $(seq 1 10); do
             if curl -sf http://localhost:8443/health/; then
               echo "Health check passed"
               exit 0
@@ -168,3 +170,367 @@ jobs:
       - name: Stop container
         if: always()
         run: docker rm -f smoke || true
+
+  image:
+    # Builds the exact image for each platform on every PR and push. This job
+    # intentionally runs the PR head checkout and therefore never receives the
+    # Snyk token or executes the vulnerability gate.
+    name: Image (${{ matrix.platform }})
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            slug: linux-amd64
+            runs-on: ubuntu-latest
+          - platform: linux/arm64
+            slug: linux-arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install release-tooling dependencies
+        run: uv sync --frozen --no-install-project
+
+      - name: Verify the assessed DHI runtime base
+        # Must pass before promotion can consume Docker's signed VEX
+        # assessment, which is bound to this exact base digest.
+        if: needs.plan.outputs.is_hardened == 'true'
+        run: uv run python -m scripts.validate_docker_base --dockerfile Dockerfile
+
+      - name: Resolve image version
+        id: metadata
+        env:
+          IS_CANDIDATE: ${{ needs.plan.outputs.is_candidate }}
+          TARGET_BRANCH: ${{ needs.plan.outputs.target_branch }}
+        run: |
+          set -euo pipefail
+          if [[ "$IS_CANDIDATE" == "true" ]]; then
+            result="$(uv run python -m scripts.validate_release --branch "$TARGET_BRANCH")"
+            echo "$result"
+            raw_version="$(jq -r '.raw_version' <<<"$result")"
+          else
+            raw_version="0.0.0+ci.${GITHUB_SHA}"
+          fi
+          echo "raw_version=$raw_version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Log in to dhi.io
+        if: needs.plan.outputs.is_hardened == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DOCKER_ORG_USERNAME }}
+          password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+
+      - name: Build image archive
+        # Exported as a docker archive rather than pushed anywhere. Candidate
+        # images are never published before the matching approval gate; the
+        # promotion workflow downloads this exact artifact and pushes it
+        # byte-for-byte, it never rebuilds. Tagging during export gives docker
+        # load a stable local name; the buildx digest is not guaranteed to be
+        # a Docker image ID.
+        env:
+          LOCAL_TAG: ob-conformance-candidate:${{ matrix.slug }}-${{ github.sha }}
+          RAW_VERSION: ${{ steps.metadata.outputs.raw_version }}
+        run: |
+          mkdir -p artifacts
+          docker buildx build \
+            --platform "${{ matrix.platform }}" \
+            --build-arg CONFORMANCE_TOOL_VERSION="$RAW_VERSION" \
+            --build-arg SOURCE_REVISION="${{ github.sha }}" \
+            --tag "$LOCAL_TAG" \
+            --output type=docker,dest=artifacts/image-${{ matrix.slug }}.tar \
+            --metadata-file artifacts/metadata-${{ matrix.slug }}.json \
+            --cache-from type=gha,scope=candidate-${{ matrix.slug }} \
+            --cache-to type=gha,mode=max,scope=candidate-${{ matrix.slug }} \
+            .
+
+      - name: Log out of dhi.io before running repository scripts
+        # login-action leaves the credential in ~/.docker/config.json until
+        # post-job cleanup; remove it before any branch-controlled code runs.
+        if: always() && needs.plan.outputs.is_hardened == 'true'
+        run: docker logout dhi.io
+
+      - name: Load image for local verification
+        id: load
+        env:
+          LOCAL_TAG: ob-conformance-candidate:${{ matrix.slug }}-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker load --input artifacts/image-${{ matrix.slug }}.tar
+          echo "local_tag=$LOCAL_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Verify image OCI identity labels
+        # Part of the hardened Docker contract; the legacy image has no labels.
+        if: needs.plan.outputs.is_hardened == 'true'
+        env:
+          EXPECTED_REVISION: ${{ github.sha }}
+          EXPECTED_VERSION: ${{ steps.metadata.outputs.raw_version }}
+          IMAGE_REF: ${{ steps.load.outputs.local_tag }}
+        run: |
+          set -euo pipefail
+          revision="$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$IMAGE_REF")"
+          version="$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$IMAGE_REF")"
+          [[ "$revision" == "$EXPECTED_REVISION" ]]
+          [[ "$version" == "$EXPECTED_VERSION" ]]
+
+      - name: Run hardened smoke test
+        if: needs.plan.outputs.is_hardened == 'true'
+        run: ./scripts/docker_smoke_test.sh "${{ steps.load.outputs.local_tag }}"
+
+      - name: Generate SBOM
+        if: needs.plan.outputs.is_candidate == 'true'
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ${{ steps.load.outputs.local_tag }}
+          format: spdx-json
+          output-file: artifacts/sbom-${{ matrix.slug }}.spdx.json
+
+      - name: Upload image artifacts
+        if: needs.plan.outputs.is_candidate != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-${{ matrix.slug }}
+          path: |
+            artifacts/image-${{ matrix.slug }}.tar
+            artifacts/metadata-${{ matrix.slug }}.json
+          retention-days: 14
+
+      - name: Upload candidate artifacts
+        if: needs.plan.outputs.is_candidate == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-${{ matrix.slug }}
+          path: |
+            artifacts/image-${{ matrix.slug }}.tar
+            artifacts/metadata-${{ matrix.slug }}.json
+            artifacts/sbom-${{ matrix.slug }}.spdx.json
+          retention-days: 14
+
+  scan:
+    # Runs the secret-bearing scanner in a clean job. It checks out only the
+    # trusted gate implementation and treats PR-head files as inert data.
+    name: Scan (${{ matrix.platform }})
+    needs: [plan, image]
+    if: needs.image.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            slug: linux-amd64
+            runs-on: ubuntu-latest
+          - platform: linux/arm64
+            slug: linux-arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    steps:
+      - name: Checkout trusted vulnerability gate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Select vulnerability gate source
+        run: |
+          set -euo pipefail
+          has_gate() { [[ -f .github/actions/vulnerability-scan/action.yml && -f scripts/vulnerability_gate.py ]]; }
+          if has_gate; then
+            exit 0
+          fi
+          # Base branches that predate the gate (for example a release branch
+          # not yet synced with main) are judged by main's gate instead of the
+          # PR's own copy.
+          git fetch --no-tags --depth=1 origin main
+          git checkout --force FETCH_HEAD
+          if has_gate; then
+            echo "::warning title=Vulnerability gate from main::The base commit has no vulnerability gate; using main's."
+          else
+            # One-time bootstrap: only the PR introducing the gate reaches this.
+            echo "::warning title=Vulnerability gate bootstrap::Neither the base commit nor main has a vulnerability gate; using this PR's copy for this initial introduction only."
+            git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+            git checkout --force "$HEAD_SHA"
+            has_gate
+          fi
+        env:
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install trusted gate dependencies
+        run: uv sync --frozen --no-install-project
+
+      - name: Download image archive
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: candidate-${{ matrix.slug }}
+          path: artifacts
+
+      - name: Load image for scanning
+        id: load
+        env:
+          LOCAL_TAG: ob-conformance-candidate:${{ matrix.slug }}-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker load --input artifacts/image-${{ matrix.slug }}.tar
+          echo "local_tag=$LOCAL_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch head scan inputs as data
+        env:
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+          rm -rf .scan-input
+          mkdir -p .scan-input/security
+          for path in Dockerfile pyproject.toml uv.lock; do
+            git show "$HEAD_SHA:$path" > ".scan-input/$path"
+          done
+          if git cat-file -e "$HEAD_SHA:security/vulnerability-exceptions.toml"; then
+            git show "$HEAD_SHA:security/vulnerability-exceptions.toml" > .scan-input/security/vulnerability-exceptions.toml
+          else
+            : > .scan-input/security/vulnerability-exceptions.toml
+          fi
+
+      - name: Resolve the DHI runtime base reference
+        id: runtime_base
+        env:
+          IS_HARDENED: ${{ needs.plan.outputs.is_hardened }}
+        run: |
+          set -euo pipefail
+          if [[ "$IS_HARDENED" != "true" ]]; then
+            echo "ref=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base_ref="$(uv run python -m scripts.validate_docker_base --stdin --print-runtime-base < .scan-input/Dockerfile)"
+          echo "ref=$base_ref" >> "$GITHUB_OUTPUT"
+
+      - name: Scan for vulnerabilities
+        uses: ./.github/actions/vulnerability-scan
+        with:
+          image: ${{ steps.load.outputs.local_tag }}
+          image-source: local
+          platform: ${{ matrix.platform }}
+          target: "${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }} (${{ matrix.platform }})"
+          vex-image: ${{ steps.runtime_base.outputs.ref }}
+          vex-requires-dhi-login: ${{ needs.plan.outputs.is_hardened }}
+          lock-directory: .scan-input
+          dockerfile: .scan-input/Dockerfile
+          gate-directory: .
+          exceptions-file: .scan-input/security/vulnerability-exceptions.toml
+          report-name: vulnerability-report-${{ matrix.slug }}
+          sarif-category: container-image-${{ matrix.slug }}
+          snyk-token: ${{ secrets.SNYK_TOKEN }}
+          docker-username: ${{ secrets.DOCKER_ORG_USERNAME }}
+          docker-password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+
+  vulnerability-scan:
+    # Stable, matrix-independent name for the required status check.
+    name: Vulnerability Scan
+    needs: [image, scan]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require every platform scan to pass
+        env:
+          IMAGE_RESULT: ${{ needs.image.result }}
+          SCAN_RESULT: ${{ needs.scan.result }}
+        run: |
+          if [[ "$IMAGE_RESULT" != "success" || "$SCAN_RESULT" != "success" ]]; then
+            echo "::error title=Vulnerability Scan failed::Image result was '$IMAGE_RESULT' and scan result was '$SCAN_RESULT'. Open the 'Image (...)' and 'Scan (...)' job summaries for details."
+            exit 1
+          fi
+          echo "All platform images passed the vulnerability gate."
+
+  candidate-manifest:
+    name: Assemble promotion manifest
+    needs: [plan, check, image, vulnerability-scan]
+    if: needs.plan.outputs.is_candidate == 'true'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install release-tooling dependencies
+        run: uv sync --frozen --no-install-project
+
+      - name: Download amd64 candidate metadata
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: candidate-linux-amd64
+          path: artifacts/linux-amd64
+
+      - name: Download arm64 candidate metadata
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: candidate-linux-arm64
+          path: artifacts/linux-arm64
+
+      - name: Compute artifact checksums
+        run: |
+          sha256sum artifacts/linux-amd64/image-linux-amd64.tar artifacts/linux-arm64/image-linux-arm64.tar > artifacts/checksums.sha256
+
+      - name: Build promotion manifest
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          TARGET_BRANCH: ${{ needs.plan.outputs.target_branch }}
+        run: |
+          set -euo pipefail
+          amd64_digest="$(jq -r '."containerimage.digest"' artifacts/linux-amd64/metadata-linux-amd64.json)"
+          arm64_digest="$(jq -r '."containerimage.digest"' artifacts/linux-arm64/metadata-linux-arm64.json)"
+          raw_version="$(
+            uv run python -c \
+              'from pathlib import Path; from scripts.release_metadata import read_pyproject_raw_version; print(read_pyproject_raw_version(Path("pyproject.toml")))'
+          )"
+
+          uv run python -m scripts.build_promotion_manifest \
+            --branch "$TARGET_BRANCH" \
+            --source-sha "$SOURCE_SHA" \
+            --platform-digest "linux/amd64=$amd64_digest" \
+            --platform-digest "linux/arm64=$arm64_digest" \
+            --oci-label "org.opencontainers.image.revision=$SOURCE_SHA" \
+            --oci-label "org.opencontainers.image.version=$raw_version" \
+            --output artifacts/promotion-manifest.json
+
+      - name: Upload promotion manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: promotion-manifest
+          path: |
+            artifacts/promotion-manifest.json
+            artifacts/checksums.sha256
+          retention-days: 90

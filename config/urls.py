@@ -4,13 +4,22 @@ from django.contrib import admin
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.urls import include, path
-from django.views.generic import RedirectView
 
 from conformance.api.callback_views import callback_view
 from conformance.api.ui_views import (
-    plan_builder,
-    plan_launch,
-    plan_preview,
+    builder_catalogue_boundary,
+    builder_config,
+    builder_discovery_config,
+    builder_export,
+    builder_import,
+    builder_launch,
+    builder_new,
+    builder_review,
+    builder_runtime_config,
+    builder_scope,
+    builder_scope_options,
+    builder_security_config,
+    home,
     run_detail,
     run_log_download,
     run_log_partial,
@@ -55,11 +64,20 @@ def not_found(request: HttpRequest, unmatched_path: str) -> HttpResponse:
 
 
 urlpatterns = [
-    path("", RedirectView.as_view(pattern_name="plan-builder", permanent=False), name="home"),
+    path("", home, name="home"),
     path("health/", health, name="health"),
-    path("plan/", plan_builder, name="plan-builder"),
-    path("plan/preview/", plan_preview, name="plan-preview"),
-    path("plan/launch/", plan_launch, name="plan-launch"),
+    path("builder/new/", builder_new, name="builder-new"),
+    path("builder/import/", builder_import, name="builder-import"),
+    path("builder/<str:draft_id>/catalogue/", builder_catalogue_boundary, name="builder-catalogue-boundary"),
+    path("builder/<str:draft_id>/scope/", builder_scope, name="builder-scope"),
+    path("builder/<str:draft_id>/scope/options/", builder_scope_options, name="builder-scope-options"),
+    path("builder/<str:draft_id>/config/", builder_config, name="builder-config"),
+    path("builder/<str:draft_id>/config/discovery/", builder_discovery_config, name="builder-discovery-config"),
+    path("builder/<str:draft_id>/config/security/", builder_security_config, name="builder-security-config"),
+    path("builder/<str:draft_id>/config/runtime/", builder_runtime_config, name="builder-runtime-config"),
+    path("builder/<str:draft_id>/review/", builder_review, name="builder-review"),
+    path("builder/<str:draft_id>/export.json", builder_export, name="builder-export"),
+    path("builder/<str:draft_id>/launch/", builder_launch, name="builder-launch"),
     path("runs/<str:run_id>/", run_detail, name="ui-run-detail"),
     path("runs/<str:run_id>/status/", run_status_partial, name="ui-run-status"),
     path("runs/<str:run_id>/steps/", run_steps_partial, name="ui-run-steps"),

@@ -1,0 +1,47 @@
+name: Promote GA image
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        required: true
+        description: "Exact commit SHA on main to promote (the finalized release/X.Y.Z merge)."
+      tag:
+        required: true
+        description: "The exact vX.Y.Z Git tag identifying the release commit on main."
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    name: Promote
+    uses: ./.github/workflows/_promote-image.yml
+    with:
+      channel: ga
+      source_sha: ${{ inputs.source_sha }}
+      branch: main
+      tag: ${{ inputs.tag }}
+      environment_name: ga-release
+    permissions:
+      contents: read
+      actions: read
+      attestations: write
+      artifact-metadata: write
+      id-token: write
+      pull-requests: read
+    secrets:
+      DOCKER_ORG_USERNAME: ${{ secrets.DOCKER_ORG_USERNAME }}
+      DOCKER_ORG_ACCESS_TOKEN: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  finalize-ga:
+    name: Tag release and open develop merge-back
+    needs: promote
+    uses: ./.github/workflows/_finalize-ga-release.yml
+    with:
+      source_sha: ${{ inputs.source_sha }}
+      tag: ${{ inputs.tag }}
+    permissions:
+      contents: write
+      pull-requests: write
