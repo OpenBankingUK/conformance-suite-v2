@@ -165,6 +165,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Docker-signed OpenVEX is verified against Docker's pinned DHI signing key
+  without a Rekor transparency-log lookup, which DHI VEX attestations do not
+  have; previously every hardened-image scan failed at VEX verification.
 - A required `Vulnerability Scan` status check now builds and scans the image
   for both platforms on **every pull request** (Docker Scout, Snyk Container
   with application packages, and pip-audit of `uv.lock`). It fails on any
