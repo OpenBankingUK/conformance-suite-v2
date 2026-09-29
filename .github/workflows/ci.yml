@@ -52,6 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       is_candidate: ${{ steps.classify.outputs.is_candidate }}
+      is_hardened: ${{ steps.classify.outputs.is_hardened }}
       target_branch: ${{ steps.classify.outputs.target_branch }}
 
     steps:
@@ -66,20 +67,24 @@ jobs:
         run: |
           target_branch="$PUSH_REF_NAME"
           is_candidate=false
+          is_hardened=false
           # Bootstrap compatibility gate: main keeps its existing Docker CI
-          # until the hardened Docker implementation lands. Candidate builds
-          # start automatically on eligible push branches once that contract
-          # (DHI base, distroless UID, and entrypoint) is present.
-          if [[ "$EVENT_NAME" == "push" ]] \
-            && { [[ "$target_branch" == "main" ]] || [[ "$target_branch" == preview/* ]] || [[ "$target_branch" == release/* ]]; } \
-            && python3 -m scripts.validate_docker_base --dockerfile Dockerfile \
+          # until the hardened Docker implementation lands. The hardened
+          # contract is DHI base, distroless UID, and entrypoint; candidate
+          # builds start automatically on eligible push branches once present.
+          if python3 -m scripts.validate_docker_base --dockerfile Dockerfile \
             && grep -q '^USER 65532:65532$' Dockerfile \
             && [[ -f docker/entrypoint.py ]]; then
+              is_hardened=true
+          fi
+          if [[ "$is_hardened" == "true" && "$EVENT_NAME" == "push" ]] \
+            && { [[ "$target_branch" == "main" ]] || [[ "$target_branch" == preview/* ]] || [[ "$target_branch" == release/* ]]; }; then
               is_candidate=true
           fi
 
           {
             echo "target_branch=$target_branch"
+            echo "is_hardened=$is_hardened"
             echo "is_candidate=$is_candidate"
           } >> "$GITHUB_OUTPUT"
 
@@ -98,6 +103,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
+      - name: Log in to dhi.io
+        # Docker Hardened Images require registry authentication even to pull;
+        # uses the repository-level read-only organisation token.
+        if: needs.plan.outputs.is_hardened == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DOCKER_ORG_USERNAME }}
+          password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+
       - name: Build Docker image (no push)
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
@@ -105,10 +120,26 @@ jobs:
           push: false
           load: true
           tags: ob-conformance-tool:${{ github.sha }}
+          build-args: |
+            CONFORMANCE_TOOL_VERSION=0.0.0+ci.${{ github.sha }}
+            SOURCE_REVISION=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Run hardened smoke test
+        # The hardened image serves HTTPS with a generated certificate and has
+        # no shell/curl, so it needs the dedicated smoke-test script.
+        if: needs.plan.outputs.is_hardened == 'true'
+        run: ./scripts/docker_smoke_test.sh ob-conformance-tool:${{ github.sha }}
+
+      - name: Validate Compose configuration
+        if: needs.plan.outputs.is_hardened == 'true'
+        run: |
+          docker compose -f compose.yaml config >/dev/null
+          docker compose -f compose.yaml -f compose.certs.yaml config >/dev/null
+
       - name: Run container smoke test
+        if: needs.plan.outputs.is_hardened != 'true'
         env:
           DJANGO_SECRET_KEY: "ci-dummy-key-not-for-production"
           DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,0.0.0.0"
@@ -190,7 +221,7 @@ jobs:
         with:
           registry: dhi.io
           username: ${{ secrets.DOCKER_ORG_USERNAME }}
-          password: ${{ secrets.DOCKER_DHI_PULL_TOKEN }}
+          password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
 
       - name: Build candidate image
         # Exported as an OCI-loadable docker archive artifact rather than
