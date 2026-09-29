@@ -276,11 +276,7 @@ jobs:
       - name: Fetch signed VEX statement for the DHI runtime base image
         run: |
           set -euo pipefail
-          base_ref="$(grep -oE '^FROM (dhi\.io/[^ ]+) AS runtime$' Dockerfile | awk '{print $2}')"
-          if [[ -z "$base_ref" ]]; then
-            echo "::error::Could not find the 'FROM dhi.io/... AS runtime' line in Dockerfile." >&2
-            exit 1
-          fi
+          base_ref="$(uv run python -m scripts.validate_docker_base --print-runtime-base)"
           docker scout vex get "$base_ref" \
             --platform "${{ matrix.platform }}" \
             --output artifacts/base-image.vex.json

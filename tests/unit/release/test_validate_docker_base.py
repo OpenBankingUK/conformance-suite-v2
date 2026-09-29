@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from scripts.validate_docker_base import EXPECTED_RUNTIME_BASE, DockerBaseError, main, validate_runtime_base
+from scripts.validate_docker_base import (
+    EXPECTED_RUNTIME_BASE,
+    DockerBaseError,
+    get_runtime_base,
+    main,
+    validate_runtime_base,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -21,7 +27,9 @@ def test_assessed_digest_matches_snyk_policy() -> None:
 
 def test_accepts_exact_pinned_runtime_base() -> None:
     """The exact digest assessed by the Snyk policy and signed VEX is accepted."""
-    validate_runtime_base(f"FROM python:3.14-alpine AS builder\nFROM {EXPECTED_RUNTIME_BASE} AS runtime\n")
+    dockerfile = f"FROM python:3.14-alpine AS builder\nFROM {EXPECTED_RUNTIME_BASE} AS runtime\n"
+    validate_runtime_base(dockerfile)
+    assert get_runtime_base(dockerfile) == EXPECTED_RUNTIME_BASE
 
 
 @pytest.mark.parametrize(
@@ -62,3 +70,17 @@ def test_cli_reads_dockerfile_from_stdin(monkeypatch: pytest.MonkeyPatch, capsys
 
     assert main(["--stdin"]) == 0
     assert EXPECTED_RUNTIME_BASE in capsys.readouterr().out
+
+
+def test_cli_prints_runtime_base_with_platform_qualified_from(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The validated image reference supports Docker FROM options and whitespace."""
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        f"FROM --platform=$BUILDPLATFORM python:3.14-alpine AS builder\n"
+        f"  FROM --platform=linux/amd64 {EXPECTED_RUNTIME_BASE} AS runtime\n"
+    )
+
+    assert main(["--dockerfile", str(dockerfile), "--print-runtime-base"]) == 0
+    assert capsys.readouterr().out == f"{EXPECTED_RUNTIME_BASE}\n"

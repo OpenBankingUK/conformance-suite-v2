@@ -22,11 +22,14 @@ class DockerBaseError(ValueError):
     """Raised when a Dockerfile does not use the assessed runtime base."""
 
 
-def validate_runtime_base(dockerfile: str) -> None:
-    """Require exactly one runtime stage based on the assessed DHI digest.
+def get_runtime_base(dockerfile: str) -> str:
+    """Return the validated base reference of the final runtime stage.
 
     Args:
         dockerfile: Complete Dockerfile contents.
+
+    Returns:
+        The assessed runtime base image reference.
 
     Raises:
         DockerBaseError: If the runtime stage is missing, ambiguous, or uses
@@ -59,6 +62,20 @@ def validate_runtime_base(dockerfile: str) -> None:
         raise DockerBaseError(f"Runtime base must be exactly {EXPECTED_RUNTIME_BASE!r}; found {runtime_base!r}.")
     if runtime_stage_number != from_count:
         raise DockerBaseError("The assessed runtime stage must be the final Dockerfile stage.")
+    return runtime_base
+
+
+def validate_runtime_base(dockerfile: str) -> None:
+    """Require exactly one final runtime stage using the assessed DHI digest.
+
+    Args:
+        dockerfile: Complete Dockerfile contents.
+
+    Raises:
+        DockerBaseError: If the runtime stage is missing, ambiguous, or uses
+            a different image reference.
+    """
+    get_runtime_base(dockerfile)
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -74,6 +91,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--dockerfile", type=Path, default=Path("Dockerfile"))
     source.add_argument("--stdin", action="store_true", help="Read Dockerfile contents from standard input.")
+    parser.add_argument(
+        "--print-runtime-base",
+        action="store_true",
+        help="Print the validated final runtime image reference.",
+    )
     return parser.parse_args(argv)
 
 
@@ -90,12 +112,15 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     try:
         contents = sys.stdin.read() if args.stdin else args.dockerfile.read_text(encoding="utf-8")
-        validate_runtime_base(contents)
+        runtime_base = get_runtime_base(contents)
     except (DockerBaseError, OSError) as error:
         sys.stderr.write(f"error: {error}\n")
         return 1
 
-    sys.stdout.write(f"Validated runtime base: {EXPECTED_RUNTIME_BASE}\n")
+    if args.print_runtime_base:
+        sys.stdout.write(f"{runtime_base}\n")
+    else:
+        sys.stdout.write(f"Validated runtime base: {runtime_base}\n")
     return 0
 
 
