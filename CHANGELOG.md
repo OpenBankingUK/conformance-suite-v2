@@ -61,6 +61,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Docker-signed OpenVEX is verified against Docker's DHI signing key, now
+  checked into the repository and pinned by SHA-256 rather than downloaded,
+  without a Rekor transparency-log lookup, which DHI VEX attestations do not
+  have; previously every hardened-image scan failed at VEX verification.
+- Removed unused system pip and its vendored packages from the hardened
+  runtime image; the application uses an isolated uv-managed virtual environment.
+- A required `Vulnerability Scan` status check now builds and scans the image
+  for both platforms on **every pull request** (Docker Scout, Snyk Container
+  with application packages, and pip-audit of `uv.lock`). It fails on any
+  fixable vulnerability of any severity and on unfixed critical/high findings,
+  applies Docker-signed OpenVEX only to DHI base-image packages, and lists
+  every finding in the job summary, annotations and code scanning.
+- Vulnerability exceptions now live only in
+  `security/vulnerability-exceptions.toml`, with owner, distinct approver and
+  a maximum 90-day expiry; expired, stale or now-fixable exceptions fail the
+  gate. The `.snyk` policy file has been removed (its two entries are covered
+  by Docker's signed VEX).
+- Promotion re-scans the exact candidate archives with current data before
+  the Environment approval gate, and a daily `security-rescan.yml` re-scans
+  `main`, `release/*` and published Docker Hub images, tracking one issue per
+  vulnerability.
+- Dependabot now updates `uv.lock`, Dockerfile base-image digests and GitHub
+  Actions.
+- Upgraded Django to 6.0.8 (fixes vulnerabilities in 6.0.5) and refreshed
+  cryptography 50.0.1, sqlparse 0.6.0 and anyio 4.15.1.
+- Candidate image scans and trusted promotion now require the runtime base to
+  match the exact DHI digest covered by the signed VEX assessment.
 - Bumped vulnerable Python dependencies so the candidate container image carries
   no known HIGH or CRITICAL advisories:
   - `anyio` 4.13.0 → 4.15.1 (CVE-2026-63374, CRITICAL) — transitive via `httpx`

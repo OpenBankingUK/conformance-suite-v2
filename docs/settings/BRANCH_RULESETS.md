@@ -109,7 +109,7 @@ The following rules are available but intentionally **not enabled**:
 | Require merge queue | Not needed at current team size; can be reconsidered as contributor count grows |
 | Require deployments to succeed | No deployment environments configured yet |
 | Require signed commits | Not enforced at this stage; may revisit based on organisation security policy |
-| Require status checks to pass | Enabled for `Check`, candidate image quality gate where applicable, and Snyk status checks |
+| Require status checks to pass | Enabled for `Check`, candidate image quality gate where applicable, and Snyk status checks; add `Vulnerability Scan` after the release merge-back (see TODO below) |
 | Require code scanning results | Deferred until CodeQL or equivalent is configured in CI |
 | Require code quality results | Not yet configured |
 | Restrict commit metadata | Not needed at this stage |
@@ -121,4 +121,10 @@ The following rules are available but intentionally **not enabled**:
 
 - [ ] **Verify required status check names** after the release workflows are created and add their exact GitHub check contexts to this ruleset
 - [ ] **Add branch/channel validation CI job** — Create a CI workflow job that checks `[project].version`, source branch, target branch, and intended image tag are compatible
+- [ ] **Enable required status checks and Code Owners review (vulnerability gate)** — apply once `release/2.0.0` (hardened DHI image) has been merged back to `main` and `main` has merged into every `release/*` branch; before then the `Vulnerability Scan` check fails on `main`'s legacy Alpine image, or never reports on release branches without the gate, which would block every PR. Apply to both the `main & develop` ruleset (id `15781582`) and the `release branch checks` ruleset (id `24119519`), saving `gh api` output before and after:
+  - `required_status_checks`: `Check`, `Docker Build`, `Vulnerability Scan`, `code/snyk (Standards)` (strict).
+  - `pull_request`: `required_approving_review_count` ≥ 1 and `require_code_owner_review: true` (CODEOWNERS now protects `security/`, `.github/`, `scripts/`, `Dockerfile`, `pyproject.toml`, `uv.lock`).
+  - `main & develop`: remove the **Always** bypass actors (use "pull request only" bypass at most), so exceptions and the gate cannot be merged around.
+  - Example: `gh api repos/OpenBankingUK/conformance-suite-v2/rulesets/24119519 > before.json`, edit `rules`, then `gh api -X PUT repos/OpenBankingUK/conformance-suite-v2/rulesets/24119519 --input after.json`.
+- [ ] **Add branch naming validation CI job** — Create a CI workflow job that checks the source branch name on PRs to `main` matches the allowed pattern (`feature/`, `bugfix/`, `release/`, `hotfix/`). GitHub rulesets cannot natively restrict which _source_ branches may merge into a target branch
 - [ ] **Investigate Copilot review status check** — Determine whether Copilot code review produces a check status that could be added as a required status check to strengthen the review gate

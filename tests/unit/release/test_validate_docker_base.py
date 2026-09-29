@@ -17,16 +17,8 @@ from scripts.validate_docker_base import (
 pytestmark = pytest.mark.unit
 
 
-def test_assessed_digest_matches_snyk_policy() -> None:
-    """The runtime guard and both Snyk policy justifications stay bound to one digest."""
-    policy_path = Path(__file__).resolve().parents[3] / ".snyk"
-    policy = " ".join(policy_path.read_text(encoding="utf-8").split())
-
-    assert policy.count(EXPECTED_RUNTIME_BASE) == 2
-
-
 def test_accepts_exact_pinned_runtime_base() -> None:
-    """The exact digest assessed by the Snyk policy and signed VEX is accepted."""
+    """The exact digest assessed by Docker's signed VEX is accepted."""
     dockerfile = f"FROM python:3.14-alpine AS builder\nFROM {EXPECTED_RUNTIME_BASE} AS runtime\n"
     validate_runtime_base(dockerfile)
     assert get_runtime_base(dockerfile) == EXPECTED_RUNTIME_BASE

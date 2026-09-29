@@ -38,10 +38,15 @@ RUN mkdir -p /data/results /data/logs /data/sessions && \
     chown -R 65532:65532 /app /data
 
 # ─── Runtime stage ────────────────────────────────────────────────────────────
-# Distroless DHI runtime variant: no shell, no package manager, defaults to
-# non-root UID/GID 65532. Pinned to an exact digest for the same reasons as
-# the builder stage above.
+# Distroless DHI runtime variant: no shell, defaults to non-root UID/GID 65532.
+# Pinned to an exact digest for the same reasons as the builder stage above.
 FROM dhi.io/python:3.14-debian13@sha256:e1a5bd571d9585d7eb80c8278b54b69a0e0bf5a9bb2b1424b9e4576374df6659 AS runtime
+
+# The DHI base includes system pip and its vendored packages; neither is
+# needed by the uv-managed application venv. Remove them from the final
+# filesystem so stale vendored-package advisories cannot affect the runtime.
+USER 0:0
+RUN ["python3", "-c", "import shutil; from pathlib import Path; root = Path('/usr/lib/python3/dist-packages'); shutil.rmtree(root / 'pip'); [shutil.rmtree(p) for p in root.glob('pip-*.dist-info')]; (Path('/usr/bin/pip')).unlink(); (Path('/usr/bin/pip3')).unlink()"]
 
 WORKDIR /app
 
