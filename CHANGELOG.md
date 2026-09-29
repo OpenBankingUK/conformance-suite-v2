@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now gates on Snyk and Docker Scout VEX assessments, and approved promotion
   publishes to Docker Hub instead of GHCR.
 
+### Fixed
+
+- Docker Scout VEX fetch and candidate scan steps now authenticate via
+  `DOCKER_SCOUT_HUB_USER`/`DOCKER_SCOUT_HUB_PASSWORD` using the existing
+  organisation credentials; the `dhi.io` registry login alone does not
+  authenticate the Scout CLI.
+
 ## [2.0.0-beta.1] - 2026-09-28
 
 First public beta of the MVP: the Open Banking UK Read/Write v3.1.11 and v4.0.x
