@@ -146,6 +146,7 @@ class TestBuilderWizardUi:
         assert step_response.status_code == 200
         content = step_response.content.decode("utf-8")
         assert "Choose specification" in content
+        assert 'aria-label="Beta release notice"' in content
         assert "Step 1: specification" in content
         assert 'name="security_profile"' not in content
         assert "FAPI 2" not in content
