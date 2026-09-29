@@ -112,6 +112,7 @@ class TestRunDetailUi:
         assert response.status_code == 200
         content = response.content.decode("utf-8")
         assert f"Run {record.run_id}" in content
+        assert 'aria-label="Beta release notice"' in content
         assert "List AIS accounts" in content
         assert "ais-at-accounts-list-200-request" in content
         assert "passed" in content
