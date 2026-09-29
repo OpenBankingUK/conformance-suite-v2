@@ -277,26 +277,39 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
-      - name: Load and stage each already-scanned platform image
-        # Loads the exact bytes candidate-image CI built and scanned, retags
-        # them to a temporary per-run staging tag, and pushes only so that
-        # digest exists in the registry for imagetools to reference below.
-        # This never rebuilds the image.
+      - name: Stage each already-scanned platform image byte-for-byte
+        # The candidate archives are OCI layouts holding the exact manifest,
+        # config, and compressed layers CI built and scanned. `docker push`
+        # would re-serialise the manifest and change its digest, so skopeo
+        # copies the layout unchanged and --preserve-digests fails the copy if
+        # the registry digest would differ from the manifest-recorded digest.
+        # Staging tags exist only so imagetools can reference the digests
+        # below. This never rebuilds the image.
+        env:
+          AMD64_DIGEST: ${{ steps.validate.outputs.amd64_digest }}
+          ARM64_DIGEST: ${{ steps.validate.outputs.arm64_digest }}
         run: |
           set -euo pipefail
-          staging_suffix="promote-$INPUT_SOURCE_SHA"
+          staging_suffix="promote-${INPUT_SOURCE_SHA}-${GITHUB_RUN_ID}"
+          skopeo --version
 
-          docker load --input "artifacts/candidate-linux-amd64/image-linux-amd64.tar"
-          docker tag \
-            "ob-conformance-candidate:linux-amd64-${INPUT_SOURCE_SHA}" \
-            "${IMAGE_NAME}:${staging_suffix}-amd64"
-          docker push "${IMAGE_NAME}:${staging_suffix}-amd64"
+          stage() {
+            local slug="$1" arch="$2" expected="$3"
+            local dest="${IMAGE_NAME}:${staging_suffix}-${arch}"
+            skopeo copy --preserve-digests \
+              --dest-authfile "$HOME/.docker/config.json" \
+              "oci-archive:artifacts/candidate-${slug}/image-${slug}.tar" \
+              "docker://${dest}"
+            actual="$(skopeo inspect --authfile "$HOME/.docker/config.json" --raw "docker://${dest}" | sha256sum | awk '{print "sha256:" $1}')"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "::error::Staged ${arch} digest $actual does not match scanned digest $expected." >&2
+              exit 1
+            fi
+            echo "Staged ${arch} at scanned digest $expected."
+          }
 
-          docker load --input "artifacts/candidate-linux-arm64/image-linux-arm64.tar"
-          docker tag \
-            "ob-conformance-candidate:linux-arm64-${INPUT_SOURCE_SHA}" \
-            "${IMAGE_NAME}:${staging_suffix}-arm64"
-          docker push "${IMAGE_NAME}:${staging_suffix}-arm64"
+          stage linux-amd64 amd64 "$AMD64_DIGEST"
+          stage linux-arm64 arm64 "$ARM64_DIGEST"
 
       - name: Assemble and publish the multi-arch manifest list
         id: publish

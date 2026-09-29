@@ -329,7 +329,9 @@ it; manual recovery dispatches locate the matching run. Candidate CI and
 release-script files must exactly match the trusted copies on `main`; pipeline
 changes therefore land on `main` before release branches consume them. Only
 then does the Environment-gated job receive Docker Hub credentials; it stages
-the platform images under SHA-specific internal tags and assembles the
+the platform images under SHA-specific internal tags with `skopeo copy
+--preserve-digests` (so the registry digests equal the scanned digests; a plain
+`docker push` would re-serialise the manifest) and assembles the
 already-tested images without rebuilding. Promotion is serialized to prevent
 tag races, rejects an existing immutable version tag discovered through the
 Docker Hub tags API, and attests the published
