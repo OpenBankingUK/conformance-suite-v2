@@ -1,0 +1,272 @@
+name: Security re-scan
+
+# Daily re-scan of what we ship and what we are about to ship, against
+# current vulnerability data. New CVEs are disclosed after merge/publish, so
+# PR-time scanning alone is not enough. Results are tracked as one GitHub
+# issue per vulnerability (and per exception problem), updated every run and
+# closed automatically once a complete run no longer reports it.
+#
+# Everything that executes comes from the default branch: the scan action,
+# the gate and the issue sync. Other branches are only built with Docker and
+# read for their Dockerfile, uv.lock and exceptions file.
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-rescan
+  cancel-in-progress: false
+
+jobs:
+  targets:
+    name: Select scan targets
+    runs-on: ubuntu-latest
+    outputs:
+      branches: ${{ steps.select.outputs.branches }}
+      tags: ${{ steps.select.outputs.tags }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install release-tooling dependencies
+        run: uv sync --frozen --no-install-project
+
+      - name: List branches and published tags
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          branches="$(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/branches" --jq '.[].name' \
+              | jq -R -s -c --arg default "$DEFAULT_BRANCH" \
+                'split("\n") | map(select(. != "" and (. == $default or startswith("release/")))) | unique'
+          )"
+          tags="$(uv run python -m scripts.list_docker_hub_tags | jq -R -s -c 'split("\n") | map(select(. != "")) | unique')"
+          echo "Branches: $branches"
+          echo "Published tags: $tags"
+          {
+            echo "branches=$branches"
+            echo "tags=$tags"
+          } >> "$GITHUB_OUTPUT"
+
+  scan-branch:
+    name: Branch ${{ matrix.branch }}
+    needs: targets
+    if: needs.targets.outputs.branches != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJSON(needs.targets.outputs.branches) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Checkout branch under scan
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ matrix.branch }}
+          path: target
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install release-tooling dependencies
+        run: uv sync --frozen --no-install-project
+
+      - name: Inspect branch
+        id: inspect
+        env:
+          BRANCH: ${{ matrix.branch }}
+        run: |
+          set -euo pipefail
+          # The default branch's validator decides whether the branch uses the
+          # assessed DHI base, so only then is Docker's VEX applied.
+          if base_ref="$(uv run python -m scripts.validate_docker_base --stdin --print-runtime-base < target/Dockerfile 2>/dev/null)"; then
+            hardened=true
+          else
+            hardened=false
+            base_ref=""
+          fi
+          exceptions="target/security/vulnerability-exceptions.toml"
+          if [[ ! -f "$exceptions" ]]; then
+            echo "::warning::$BRANCH has no security/vulnerability-exceptions.toml yet; scanning with no exceptions."
+            exceptions=".scan-empty-exceptions.toml"
+            : > "$exceptions"
+          fi
+          slug="$(tr -c 'A-Za-z0-9._-' '-' <<<"$BRANCH" | sed 's/-*$//')"
+          {
+            echo "hardened=$hardened"
+            echo "runtime_base=$base_ref"
+            echo "exceptions=$exceptions"
+            echo "slug=$slug"
+            echo "sha=$(git -C target rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Log in to dhi.io
+        if: steps.inspect.outputs.hardened == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DOCKER_ORG_USERNAME }}
+          password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+
+      - name: Build branch image (linux/amd64)
+        env:
+          SHA: ${{ steps.inspect.outputs.sha }}
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform linux/amd64 \
+            --build-arg CONFORMANCE_TOOL_VERSION="0.0.0+scan.$SHA" \
+            --build-arg SOURCE_REVISION="$SHA" \
+            --tag "ob-conformance-scan:$SHA" \
+            --load \
+            target
+
+      - name: Log out of dhi.io
+        if: always() && steps.inspect.outputs.hardened == 'true'
+        run: docker logout dhi.io
+
+      - name: Scan branch image
+        uses: ./.github/actions/vulnerability-scan
+        with:
+          image: ob-conformance-scan:${{ steps.inspect.outputs.sha }}
+          image-source: local
+          platform: linux/amd64
+          target: "branch ${{ matrix.branch }} (linux/amd64)"
+          vex-image: ${{ steps.inspect.outputs.runtime_base }}
+          vex-requires-dhi-login: "true"
+          lock-directory: target
+          dockerfile: target/Dockerfile
+          gate-directory: .
+          exceptions-file: ${{ steps.inspect.outputs.exceptions }}
+          report-name: vulnerability-report-branch-${{ steps.inspect.outputs.slug }}
+          fail-on-findings: "false"
+          sarif-category: scheduled-branch-${{ steps.inspect.outputs.slug }}
+          sarif-ref: refs/heads/${{ matrix.branch }}
+          sarif-sha: ${{ steps.inspect.outputs.sha }}
+          snyk-token: ${{ secrets.SNYK_TOKEN }}
+          docker-username: ${{ secrets.DOCKER_ORG_USERNAME }}
+          docker-password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+
+  scan-image:
+    name: Published ${{ matrix.tag }} (${{ matrix.platform }})
+    needs: targets
+    if: needs.targets.outputs.tags != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: ${{ fromJSON(needs.targets.outputs.tags) }}
+        platform: [linux/amd64, linux/arm64]
+    runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Name report
+        id: name
+        env:
+          TAG: ${{ matrix.tag }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          slug="$(tr -c 'A-Za-z0-9._-' '-' <<<"$TAG-$PLATFORM" | sed 's/-*$//')"
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+
+      - name: Scan published image
+        # VEX comes from the published image itself (Docker resolves the DHI
+        # base assessment through its provenance); exceptions are main's.
+        uses: ./.github/actions/vulnerability-scan
+        with:
+          image: docker.io/openbanking/conformance-suite-v2:${{ matrix.tag }}
+          image-source: registry
+          platform: ${{ matrix.platform }}
+          target: "published openbanking/conformance-suite-v2:${{ matrix.tag }} (${{ matrix.platform }})"
+          vex-image: docker.io/openbanking/conformance-suite-v2:${{ matrix.tag }}
+          gate-directory: .
+          exceptions-file: security/vulnerability-exceptions.toml
+          report-name: vulnerability-report-image-${{ steps.name.outputs.slug }}
+          fail-on-findings: "false"
+          snyk-token: ${{ secrets.SNYK_TOKEN }}
+          docker-username: ${{ secrets.DOCKER_ORG_USERNAME }}
+          docker-password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+
+  issues:
+    name: Sync vulnerability issues
+    needs: [targets, scan-branch, scan-image]
+    if: always() && needs.targets.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Download reports
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: vulnerability-report-*
+          path: ${{ runner.temp }}/reports
+
+      - name: Create, update and close issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH_RESULT: ${{ needs.scan-branch.result }}
+          IMAGE_RESULT: ${{ needs.scan-image.result }}
+        run: |
+          set -euo pipefail
+          mapfile -t reports < <(find "$RUNNER_TEMP/reports" -name report.json -type f | sort)
+          args=()
+          # Issues are only closed when every target produced a report;
+          # otherwise a failed scan could look like a fixed vulnerability.
+          if [[ "$BRANCH_RESULT" =~ ^(success|skipped)$ && "$IMAGE_RESULT" =~ ^(success|skipped)$ ]]; then
+            args+=(--complete)
+          else
+            echo "::warning::Not every scan completed (branches: $BRANCH_RESULT, images: $IMAGE_RESULT); open issues will not be auto-closed this run."
+          fi
+          if (( ${#reports[@]} == 0 )); then
+            echo "::error::No vulnerability reports were produced." >&2
+            exit 1
+          fi
+          uv run --no-project --python 3.14 -- python -m scripts.vulnerability_issues "${args[@]}" "${reports[@]}"
+
+      - name: Fail when a scan could not run
+        if: needs.scan-branch.result == 'failure' || needs.scan-image.result == 'failure'
+        run: |
+          echo "::error::At least one scheduled scan failed to run. Check the scan jobs; scanner or credential errors fail closed." >&2
+          exit 1

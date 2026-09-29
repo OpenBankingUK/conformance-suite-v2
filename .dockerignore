@@ -38,3 +38,6 @@ db.sqlite3
 .secrets.baseline
 docs/
 CHANGELOG.md
+
+# ─── Security policy (CI-only) ──────────────────────────────────────────────
+security/
