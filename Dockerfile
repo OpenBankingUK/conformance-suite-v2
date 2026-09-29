@@ -8,12 +8,12 @@
 # Pulling from `dhi.io` requires `docker login dhi.io` using a Docker account
 # (see docs/DEVELOPER_GUIDE.md); CI authenticates with a read-only
 # organisation-owned credential. Pinned to an exact digest for
-# reproducibility — Dependabot opens a PR to bump this when Docker publishes
-# a new DHI build (see .github/dependabot.yml).
+# reproducibility; base updates require a reviewed digest bump and scanner
+# policy reassessment.
 FROM dhi.io/python:3.14-debian13-dev@sha256:42cd56dede69350b250398097287cbf1020d0ead0ad8cb4e179bd3bac1a98634 AS builder
 
 # Install uv for fast, reproducible dependency resolution
-COPY --from=ghcr.io/astral-sh/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /usr/local/bin/uv
+COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /usr/local/bin/uv
 
 WORKDIR /app
 

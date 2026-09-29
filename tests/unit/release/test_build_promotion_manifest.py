@@ -60,7 +60,7 @@ class TestMain:
             "raw_version": "2.0.0-dev.1",
             "comparison_version": "2.0.0.dev1",
             "channel": "preview",
-            "image_name": "ghcr.io/openbankinguk/conformance-suite-v2",
+            "image_name": "docker.io/openbanking/conformance-suite-v2",
             "source_sha": "abc123",
             "platform_digests": {
                 "linux/amd64": "sha256:aaa",

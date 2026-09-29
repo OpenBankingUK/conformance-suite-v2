@@ -23,39 +23,23 @@ jobs:
       branch: main
       tag: ${{ inputs.tag }}
       environment_name: ga-release
-    secrets: inherit
-
-  open-develop-merge-back:
-    name: Open main-to-develop merge-back PR
-    needs: promote
-    runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
+      actions: read
+      attestations: write
+      id-token: write
+      pull-requests: read
+    secrets:
+      DOCKER_ORG_USERNAME: ${{ secrets.DOCKER_ORG_USERNAME }}
+      DOCKER_ORG_ACCESS_TOKEN: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
 
-      - name: Open a pull request merging main back into develop
-        # Never merges automatically: a human still reviews and merges this,
-        # same as any other PR into develop.
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          if git diff --quiet origin/develop origin/main -- 2>/dev/null; then
-            echo "develop is already up to date with main; nothing to open."
-            exit 0
-          fi
-          existing="$(gh pr list --base develop --head main --state open --json number --jq '.[0].number // empty')"
-          if [[ -n "$existing" ]]; then
-            echo "Merge-back PR #$existing already open."
-            exit 0
-          fi
-          gh pr create \
-            --base develop \
-            --head main \
-            --title "Merge GA release ${{ inputs.tag }} back into develop" \
-            --body "Automated merge-back after promoting ${{ inputs.tag }} to GA. Review and merge to keep develop current with the released state of main."
+  finalize-ga:
+    name: Tag release and open develop merge-back
+    needs: promote
+    uses: ./.github/workflows/_finalize-ga-release.yml
+    with:
+      source_sha: ${{ inputs.source_sha }}
+      tag: ${{ inputs.tag }}
+    permissions:
+      contents: write
+      pull-requests: write

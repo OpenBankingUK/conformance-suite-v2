@@ -3,7 +3,7 @@ volumes:
 
 services:
   conformance-suite:
-    image: ghcr.io/openbankinguk/conformance-suite-v2:${CONFORMANCE_SUITE_VERSION:-latest}
+    image: docker.io/openbanking/conformance-suite-v2:${CONFORMANCE_SUITE_VERSION:-latest}
     build: .
     ports:
       - "127.0.0.1:8443:8443"

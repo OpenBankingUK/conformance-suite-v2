@@ -7,15 +7,16 @@ Django secret.
 
 ## Pulling the image
 
-Images are published to a private GHCR repository:
-`ghcr.io/openbankinguk/conformance-suite-v2`. Authenticate with a GitHub
-personal access token that has at least `read:packages` scope and is
-authorized for the `OpenBankingUK` organization:
+Approved images are published to Docker Hub at
+`docker.io/openbanking/conformance-suite-v2`. The organisation must create
+the Docker Hub repository before the first promotion:
 
 ```bash
-echo "$GITHUB_TOKEN" | docker login ghcr.io -u <your-github-username> --password-stdin
-docker pull ghcr.io/openbankinguk/conformance-suite-v2:<version>
+docker pull docker.io/openbanking/conformance-suite-v2:<version>
 ```
+
+If the repository requires authentication, log in to Docker Hub with
+credentials that grant access before pulling.
 
 Replace `<version>` with an exact published tag, for example `2.0.0`,
 `2.0.0-beta.1`, or `2.0.0-dev.1`. See
@@ -30,7 +31,7 @@ For a disposable local session with no persisted data:
 
 ```bash
 docker run --rm -p 127.0.0.1:8443:8443 \
-  ghcr.io/openbankinguk/conformance-suite-v2:<version>
+  docker.io/openbanking/conformance-suite-v2:<version>
 ```
 
 Open `https://127.0.0.1:8443/`. The container generates a local self-signed
@@ -55,7 +56,7 @@ docker run --rm -p 127.0.0.1:8443:8443 \
   --read-only --cap-drop=ALL --security-opt=no-new-privileges \
   --tmpfs /tmp:size=64m,mode=1777 \
   -v conformance-suite-data:/data \
-  ghcr.io/openbankinguk/conformance-suite-v2:<version>
+  docker.io/openbanking/conformance-suite-v2:<version>
 ```
 
 This is exactly what `make docker` runs locally (see the repository
@@ -95,7 +96,7 @@ docker run --rm -p 127.0.0.1:8443:8443 \
   --tmpfs /tmp:size=64m,mode=1777 \
   -v conformance-suite-data:/data \
   -v /path/to/your/certs:/certs:ro \
-  ghcr.io/openbankinguk/conformance-suite-v2:<version>
+  docker.io/openbanking/conformance-suite-v2:<version>
 ```
 
 `/certs` is never copied, cached, or written elsewhere in the container — it
@@ -175,7 +176,7 @@ docker run --rm \
   -v conformance-suite-data:/data \
   -v /path/to/your/certs:/certs:ro \
   -v /path/to/your/test-plan.json:/test-plan.json:ro \
-  ghcr.io/openbankinguk/conformance-suite-v2:<version> \
+  docker.io/openbanking/conformance-suite-v2:<version> \
   python3 main.py --test-plan /test-plan.json
 ```
 

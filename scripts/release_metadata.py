@@ -23,8 +23,8 @@ from pathlib import Path
 
 from packaging.version import InvalidVersion, Version
 
-IMAGE_NAME = "ghcr.io/openbankinguk/conformance-suite-v2"
-"""Fully qualified GHCR image name (without tag) images are published under."""
+IMAGE_NAME = "docker.io/openbanking/conformance-suite-v2"
+"""Fully qualified Docker Hub image name (without tag) images are published under."""
 
 
 class ReleaseChannel(str, Enum):
