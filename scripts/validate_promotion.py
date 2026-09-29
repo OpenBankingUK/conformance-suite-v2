@@ -22,10 +22,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
 from scripts.release_metadata import (
+    IMAGE_NAME,
     ReleaseChannel,
     ReleaseMetadataError,
     classify_raw_version,
@@ -35,6 +37,7 @@ from scripts.release_metadata import (
 )
 
 _REQUIRED_PLATFORMS = frozenset({"linux/amd64", "linux/arm64"})
+_DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -50,6 +53,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--manifest", type=Path, required=True, help="Path to the candidate promotion manifest JSON.")
     parser.add_argument("--source-sha", required=True, help="Exact commit SHA the promotion was requested for.")
     parser.add_argument("--branch", required=True, help="Exact source branch the promotion was requested for.")
+    parser.add_argument("--channel", required=True, choices=[channel.value for channel in ReleaseChannel])
     parser.add_argument("--tag", default=None, help="Git tag on the release commit (required for GA).")
     parser.add_argument(
         "--published-versions-file",
@@ -91,6 +95,21 @@ def main(argv: list[str] | None = None) -> int:
         # its version string does not actually support.
         metadata = classify_raw_version(manifest["raw_version"])
         validate_branch_compatibility(metadata, args.branch)
+        if metadata.channel.value != args.channel:
+            raise ReleaseMetadataError(
+                f"Manifest version belongs to channel {metadata.channel.value!r}, not requested {args.channel!r}."
+            )
+        if manifest["image_name"] != IMAGE_NAME:
+            raise ReleaseMetadataError(f"Manifest image_name must be exactly {IMAGE_NAME!r}.")
+        if manifest.get("oci_labels", {}).get("org.opencontainers.image.revision") != args.source_sha:
+            raise ReleaseMetadataError("Manifest revision label does not match the requested source SHA.")
+        if manifest.get("oci_labels", {}).get("org.opencontainers.image.version") != metadata.raw_version:
+            raise ReleaseMetadataError("Manifest version label does not match its raw release version.")
+        invalid_digests = [
+            digest for digest in manifest["platform_digests"].values() if not _DIGEST_PATTERN.fullmatch(digest)
+        ]
+        if invalid_digests:
+            raise ReleaseMetadataError("Manifest contains an invalid platform image digest.")
 
         if metadata.channel is ReleaseChannel.GA:
             if args.tag is None:

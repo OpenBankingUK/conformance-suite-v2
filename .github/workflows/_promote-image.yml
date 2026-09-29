@@ -1,7 +1,7 @@
 name: Promote candidate image
 
-# Reusable workflow shared by promote-preview.yml, promote-beta.yml, and
-# promote-ga.yml. Never runs branch-supplied code: it checks out the trusted
+# Reusable workflow shared by the automatic and manual promotion workflows.
+# Never runs branch-supplied code: it checks out the trusted
 # ref that owns this workflow file (the branch a human dispatched it from,
 # always main), and only reads a single file (pyproject.toml) out of the
 # candidate commit via `git show`, never executing anything from it. It
@@ -31,14 +31,32 @@ on:
       environment_name:
         required: true
         type: string
+      ci_run_id:
+        required: false
+        type: string
+        default: ""
+        description: "Exact successful CI run to promote; omitted for manual recovery dispatches."
+    secrets:
+      DOCKER_ORG_USERNAME:
+        required: true
+      DOCKER_ORG_ACCESS_TOKEN:
+        required: true
 
 permissions:
   contents: read
 
+concurrency:
+  group: image-promotion
+  cancel-in-progress: false
+
 env:
-  IMAGE_NAME: ghcr.io/openbankinguk/conformance-suite-v2
-  PACKAGE_OWNER: openbankinguk
-  PACKAGE_NAME: conformance-suite-v2
+  IMAGE_NAME: docker.io/openbanking/conformance-suite-v2
+  OCI_SUBJECT_NAME: index.docker.io/openbanking/conformance-suite-v2
+  INPUT_BRANCH: ${{ inputs.branch }}
+  INPUT_CHANNEL: ${{ inputs.channel }}
+  INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
+  INPUT_TAG: ${{ inputs.tag }}
+  INPUT_CI_RUN_ID: ${{ inputs.ci_run_id }}
 
 jobs:
   promote:
@@ -48,15 +66,30 @@ jobs:
 
     permissions:
       contents: read
-      packages: write
+      actions: read
       attestations: write
       id-token: write
+      pull-requests: read
 
     steps:
+      - name: Require a trusted main-branch dispatch
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Promotion workflows must be dispatched from main, not $GITHUB_REF." >&2
+            exit 1
+          fi
+          if ! [[ "$INPUT_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::source_sha must be a full lowercase 40-character Git SHA." >&2
+            exit 1
+          fi
+          git check-ref-format --branch "$INPUT_BRANCH" >/dev/null
+
       - name: Checkout repository
-        # Checks out the trusted ref this workflow file lives on (main), not
-        # the candidate source SHA.
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          persist-credentials: false
 
       - name: Set up uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -66,19 +99,46 @@ jobs:
       - name: Install release-tooling dependencies
         run: uv sync --frozen --no-install-project
 
-      - name: Locate the successful candidate-image run for this source SHA
+      - name: Locate and verify the successful candidate-image run
         id: locate
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_CI_WORKFLOW_ID: "268848247"
+          TRUSTED_CI_WORKFLOW_PATH: ".github/workflows/ci.yml"
         run: |
           set -euo pipefail
-          run_id="$(
-            gh run list --repo "${{ github.repository }}" --workflow ci.yml --json databaseId,headSha,conclusion,event -L 100 \
-              | jq -r --arg sha "${{ inputs.source_sha }}" \
-                'map(select(.headSha == $sha and .conclusion == "success")) | sort_by(.databaseId) | last | .databaseId // empty'
-          )"
+          if [[ -n "$INPUT_CI_RUN_ID" ]]; then
+            run_id="$INPUT_CI_RUN_ID"
+          else
+            run_id="$(
+              gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+                --json databaseId,headSha,headBranch,conclusion,event -L 100 \
+                | jq -r --arg sha "$INPUT_SOURCE_SHA" --arg branch "$INPUT_BRANCH" \
+                  'map(select(.headSha == $sha and .headBranch == $branch and .event == "push" and .conclusion == "success"))
+                   | sort_by(.databaseId) | last | .databaseId // empty'
+            )"
+          fi
           if [[ -z "$run_id" ]]; then
-            echo "::error::No successful CI run found for commit ${{ inputs.source_sha }}." >&2
+            echo "::error::No successful push CI run found for $INPUT_SOURCE_SHA on $INPUT_BRANCH." >&2
+            exit 1
+          fi
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")"
+          if ! jq -e \
+            --arg sha "$INPUT_SOURCE_SHA" \
+            --arg branch "$INPUT_BRANCH" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg path "$TRUSTED_CI_WORKFLOW_PATH" \
+            --argjson workflow_id "$TRUSTED_CI_WORKFLOW_ID" \
+            '.name == "CI"
+             and .workflow_id == $workflow_id
+             and .path == $path
+             and .head_sha == $sha
+             and .head_branch == $branch
+             and .event == "push"
+             and .conclusion == "success"
+             and .head_repository.full_name == $repository' \
+            <<<"$run_json" >/dev/null; then
+            echo "::error::CI run $run_id is not the trusted successful push CI run for $INPUT_SOURCE_SHA on $INPUT_BRANCH." >&2
             exit 1
           fi
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
@@ -86,7 +146,7 @@ jobs:
       - name: Download candidate artifacts from that run
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.token }}
           run-id: ${{ steps.locate.outputs.run_id }}
           path: artifacts
           pattern: "candidate-linux-*"
@@ -95,7 +155,7 @@ jobs:
       - name: Download the promotion manifest from that run
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.token }}
           run-id: ${{ steps.locate.outputs.run_id }}
           name: promotion-manifest
           path: artifacts/manifest
@@ -111,40 +171,69 @@ jobs:
           # compare content, not path spelling.
           diff <(awk '{print $1}' actual.sha256 | sort) <(awk '{print $1}' manifest/checksums.sha256 | sort)
 
-      - name: Confirm the candidate commit's own pyproject.toml matches the manifest
+      - name: Confirm candidate source and version
         run: |
           set -euo pipefail
-          git fetch --depth=1 origin "${{ inputs.source_sha }}"
-          committed_version="$(git show "${{ inputs.source_sha }}:pyproject.toml" | grep -m1 '^version = ' | sed -E 's/version = "(.*)"/\1/')"
+          git fetch --no-tags origin \
+            "$INPUT_SOURCE_SHA" \
+            "refs/heads/$INPUT_BRANCH:refs/remotes/origin/$INPUT_BRANCH"
+          if ! git merge-base --is-ancestor "$INPUT_SOURCE_SHA" "refs/remotes/origin/$INPUT_BRANCH"; then
+            echo "::error::$INPUT_SOURCE_SHA does not belong to $INPUT_BRANCH." >&2
+            exit 1
+          fi
+          git show "$INPUT_SOURCE_SHA:Dockerfile" \
+            | uv run python -m scripts.validate_docker_base --stdin
+          if [[ -n "$INPUT_TAG" ]]; then
+            tag_refs="$(git ls-remote --tags origin "refs/tags/$INPUT_TAG" "refs/tags/$INPUT_TAG^{}")"
+            tag_target_sha="$(
+              awk -v ref="refs/tags/$INPUT_TAG" \
+                '$2 == ref "^{}" { peeled = $1 } $2 == ref { direct = $1 }
+                 END { if (peeled != "") print peeled; else if (direct != "") print direct }' \
+                <<<"$tag_refs"
+            )"
+            if [[ -n "$tag_target_sha" && "$tag_target_sha" != "$INPUT_SOURCE_SHA" ]]; then
+              echo "::error::Git tag $INPUT_TAG already points to $tag_target_sha, not $INPUT_SOURCE_SHA." >&2
+              exit 1
+            fi
+          fi
+          if ! git diff --quiet "$INPUT_SOURCE_SHA" HEAD -- \
+            .github/workflows/ci.yml \
+            scripts/build_promotion_manifest.py \
+            scripts/docker_smoke_test.sh \
+            scripts/release_metadata.py \
+            scripts/validate_release.py \
+            scripts/validate_docker_base.py \
+            .snyk; then
+            echo "::error::Candidate pipeline files differ from trusted main. Merge main into $INPUT_BRANCH and rebuild." >&2
+            exit 1
+          fi
+          committed_version="$(git show "$INPUT_SOURCE_SHA:pyproject.toml" | grep -m1 '^version = ' | sed -E 's/version = "(.*)"/\1/')"
           manifest_version="$(jq -r '.raw_version' artifacts/manifest/promotion-manifest.json)"
           if [[ "$committed_version" != "$manifest_version" ]]; then
-            echo "::error::pyproject.toml at ${{ inputs.source_sha }} has version $committed_version, manifest claims $manifest_version." >&2
+            echo "::error::pyproject.toml at $INPUT_SOURCE_SHA has version $committed_version, manifest claims $manifest_version." >&2
             exit 1
           fi
 
       - name: Confirm the source commit belongs to a reviewed, approved pull request
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          pr_number="$(gh api "repos/${{ github.repository }}/commits/${{ inputs.source_sha }}/pulls" --jq 'map(select(.merged_at != null)) | first | .number // empty')"
+          pr_number="$(gh api "repos/$GITHUB_REPOSITORY/commits/$INPUT_SOURCE_SHA/pulls" --jq 'map(select(.merged_at != null)) | first | .number // empty')"
           if [[ -z "$pr_number" ]]; then
-            echo "::error::No merged pull request found for commit ${{ inputs.source_sha }}." >&2
+            echo "::error::No merged pull request found for commit $INPUT_SOURCE_SHA." >&2
             exit 1
           fi
-          approved="$(gh api "repos/${{ github.repository }}/pulls/$pr_number/reviews" --jq 'map(select(.state == "APPROVED")) | length')"
+          approved="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number/reviews" --jq 'map(select(.state == "APPROVED")) | length')"
           if [[ "$approved" -lt 1 ]]; then
             echo "::error::Pull request #$pr_number for commit ${{ inputs.source_sha }} has no recorded approval." >&2
             exit 1
           fi
 
       - name: List already-published version tags
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh api "orgs/${PACKAGE_OWNER}/packages/container/${PACKAGE_NAME}/versions" --paginate \
-            --jq '.[].metadata.container.tags[]?' > published-versions.txt || touch published-versions.txt
+          uv run python -m scripts.list_docker_hub_tags > published-versions.txt
 
       - name: Revalidate the candidate manifest
         id: validate
@@ -152,12 +241,13 @@ jobs:
           set -euo pipefail
           args=(
             --manifest artifacts/manifest/promotion-manifest.json
-            --source-sha "${{ inputs.source_sha }}"
-            --branch "${{ inputs.branch }}"
+            --source-sha "$INPUT_SOURCE_SHA"
+            --branch "$INPUT_BRANCH"
+            --channel "$INPUT_CHANNEL"
             --published-versions-file published-versions.txt
           )
-          if [[ -n "${{ inputs.tag }}" ]]; then
-            args+=(--tag "${{ inputs.tag }}")
+          if [[ -n "$INPUT_TAG" ]]; then
+            args+=(--tag "$INPUT_TAG")
           fi
           result="$(uv run python -m scripts.validate_promotion "${args[@]}")"
           echo "$result"
@@ -168,12 +258,11 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           jq -c '.expected_tags' <<<"$result" > expected-tags.json
 
-      - name: Log in to GHCR
+      - name: Log in to Docker Hub
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKER_ORG_USERNAME }}
+          password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
@@ -185,17 +274,22 @@ jobs:
         # This never rebuilds the image.
         run: |
           set -euo pipefail
-          staging_suffix="promote-${{ inputs.source_sha }}"
+          staging_suffix="promote-$INPUT_SOURCE_SHA"
 
           docker load --input "artifacts/candidate-linux-amd64/image-linux-amd64.tar"
-          docker tag "${{ steps.validate.outputs.amd64_digest }}" "${IMAGE_NAME}:${staging_suffix}-amd64"
+          docker tag \
+            "ob-conformance-candidate:linux-amd64-${INPUT_SOURCE_SHA}" \
+            "${IMAGE_NAME}:${staging_suffix}-amd64"
           docker push "${IMAGE_NAME}:${staging_suffix}-amd64"
 
           docker load --input "artifacts/candidate-linux-arm64/image-linux-arm64.tar"
-          docker tag "${{ steps.validate.outputs.arm64_digest }}" "${IMAGE_NAME}:${staging_suffix}-arm64"
+          docker tag \
+            "ob-conformance-candidate:linux-arm64-${INPUT_SOURCE_SHA}" \
+            "${IMAGE_NAME}:${staging_suffix}-arm64"
           docker push "${IMAGE_NAME}:${staging_suffix}-arm64"
 
       - name: Assemble and publish the multi-arch manifest list
+        id: publish
         run: |
           set -euo pipefail
           tag_args=()
@@ -206,36 +300,32 @@ jobs:
           docker buildx imagetools create "${tag_args[@]}" \
             "${IMAGE_NAME}@${{ steps.validate.outputs.amd64_digest }}" \
             "${IMAGE_NAME}@${{ steps.validate.outputs.arm64_digest }}"
-
-      - name: Remove the temporary staging tags
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        if: always()
-        run: |
-          set -euo pipefail
-          staging_suffix="promote-${{ inputs.source_sha }}"
-          for platform_tag in "${staging_suffix}-amd64" "${staging_suffix}-arm64"; do
-            # shellcheck disable=SC2016 # $tag below is a jq variable, not a shell expansion.
-            version_id="$(
-              gh api "orgs/${PACKAGE_OWNER}/packages/container/${PACKAGE_NAME}/versions" --paginate \
-                --jq --arg tag "$platform_tag" 'map(select(.metadata.container.tags[]? == $tag)) | first | .id // empty'
-            )"
-            if [[ -n "$version_id" ]]; then
-              gh api -X DELETE "orgs/${PACKAGE_OWNER}/packages/container/${PACKAGE_NAME}/versions/${version_id}" || true
-            fi
-          done
+          published_digest="sha256:$(
+            docker buildx imagetools inspect \
+              "${IMAGE_NAME}:${{ steps.validate.outputs.raw_version }}" --raw \
+              | sha256sum | awk '{print $1}'
+          )"
+          echo "published_digest=$published_digest" >> "$GITHUB_OUTPUT"
 
       - name: Attest build provenance for the published manifest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: ${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.validate.outputs.amd64_digest }}
+          subject-name: ${{ env.OCI_SUBJECT_NAME }}
+          subject-digest: ${{ steps.publish.outputs.published_digest }}
           push-to-registry: true
 
-      - name: Attest SBOM for the published manifest
+      - name: Attest amd64 SBOM for the published manifest
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-name: ${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.validate.outputs.amd64_digest }}
+          subject-name: ${{ env.OCI_SUBJECT_NAME }}
+          subject-digest: ${{ steps.publish.outputs.published_digest }}
           sbom-path: artifacts/candidate-linux-amd64/sbom-linux-amd64.spdx.json
+          push-to-registry: true
+
+      - name: Attest arm64 SBOM for the published manifest
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ env.OCI_SUBJECT_NAME }}
+          subject-digest: ${{ steps.publish.outputs.published_digest }}
+          sbom-path: artifacts/candidate-linux-arm64/sbom-linux-arm64.spdx.json
           push-to-registry: true

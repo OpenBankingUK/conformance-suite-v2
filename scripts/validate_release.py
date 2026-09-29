@@ -2,7 +2,7 @@
 
 Used by candidate-image CI to fail fast — before building, smoke-testing, or
 scanning any container image — when the raw project version, source branch,
-or release tag are incompatible with the agreed publication channels.
+or optional release tag are incompatible with the agreed publication channels.
 
 Usage::
 
@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 
 from scripts.release_metadata import (
-    ReleaseChannel,
     ReleaseMetadataError,
     classify_raw_version,
     read_pyproject_raw_version,
@@ -39,7 +38,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--branch", required=True, help="Exact source branch name.")
-    parser.add_argument("--tag", default=None, help="Git tag on the release commit (required for GA).")
+    parser.add_argument("--tag", default=None, help="Optional Git tag to validate against a GA release.")
     parser.add_argument(
         "--previous-version",
         default=None,
@@ -71,9 +70,7 @@ def main(argv: list[str] | None = None) -> int:
         metadata = classify_raw_version(raw_version)
         validate_branch_compatibility(metadata, args.branch)
 
-        if metadata.channel is ReleaseChannel.GA:
-            if args.tag is None:
-                raise ReleaseMetadataError("GA releases require --tag <vX.Y.Z>.")
+        if args.tag is not None:
             validate_release_tag(metadata, args.tag)
 
         require_version_increase(metadata, args.previous_version)

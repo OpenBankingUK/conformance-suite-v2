@@ -19,11 +19,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Reject non-release branches
+        env:
+          INPUT_BRANCH: ${{ inputs.branch }}
         run: |
-          case "${{ inputs.branch }}" in
+          case "$INPUT_BRANCH" in
             release/*) exit 0 ;;
             *)
-              echo "::error::Beta promotion requires a 'release/X.Y.Z' branch, got '${{ inputs.branch }}'." >&2
+              echo "::error::Beta promotion requires a 'release/X.Y.Z' branch, got '$INPUT_BRANCH'." >&2
               exit 1
               ;;
           esac
@@ -37,4 +39,12 @@ jobs:
       source_sha: ${{ inputs.source_sha }}
       branch: ${{ inputs.branch }}
       environment_name: beta-release
-    secrets: inherit
+    permissions:
+      contents: read
+      actions: read
+      attestations: write
+      id-token: write
+      pull-requests: read
+    secrets:
+      DOCKER_ORG_USERNAME: ${{ secrets.DOCKER_ORG_USERNAME }}
+      DOCKER_ORG_ACCESS_TOKEN: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}

@@ -50,12 +50,13 @@ class TestMain:
             "base_release": "2.0.0",
         }
 
-    def test_ga_candidate_requires_tag(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """A GA version without --tag fails with an actionable error."""
+    def test_ga_candidate_does_not_require_tag(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """A GA candidate can be built before its matching release tag exists."""
         pyproject_path = _write_pyproject(tmp_path, "2.0.0")
         exit_code = main(["--pyproject", str(pyproject_path), "--branch", "main"])
-        assert exit_code == 1
-        assert "--tag" in capsys.readouterr().err
+        assert exit_code == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["channel"] == "ga"
 
     def test_ga_candidate_with_matching_tag_succeeds(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         """A GA version with a matching tag on main exits 0."""

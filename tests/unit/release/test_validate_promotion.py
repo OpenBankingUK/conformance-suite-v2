@@ -26,16 +26,23 @@ def _write_manifest(tmp_path: Path, **overrides: object) -> Path:
         "raw_version": "2.0.0-dev.1",
         "comparison_version": "2.0.0.dev1",
         "channel": "preview",
-        "image_name": "ghcr.io/openbankinguk/conformance-suite-v2",
+        "image_name": "docker.io/openbanking/conformance-suite-v2",
         "source_sha": "a" * 40,
         "platform_digests": {
             "linux/amd64": "sha256:" + "1" * 64,
             "linux/arm64": "sha256:" + "2" * 64,
         },
-        "oci_labels": {},
+        "oci_labels": {
+            "org.opencontainers.image.revision": "a" * 40,
+            "org.opencontainers.image.version": "2.0.0-dev.1",
+        },
         "expected_tags": ["2.0.0-dev.1"],
     }
     manifest.update(overrides)
+    if "raw_version" in overrides and "oci_labels" not in overrides:
+        labels = manifest["oci_labels"]
+        assert isinstance(labels, dict)
+        labels["org.opencontainers.image.version"] = manifest["raw_version"]
     manifest_path = tmp_path / "promotion-manifest.json"
     manifest_path.write_text(json.dumps(manifest))
     return manifest_path
@@ -56,6 +63,8 @@ class TestMain:
                 "a" * 40,
                 "--branch",
                 "preview/new-cert-flow",
+                "--channel",
+                "preview",
             ]
         )
 
@@ -75,6 +84,8 @@ class TestMain:
                 "a" * 40,
                 "--branch",
                 "main",
+                "--channel",
+                "ga",
                 "--tag",
                 "v2.0.0",
             ]
@@ -96,6 +107,8 @@ class TestMain:
                 "a" * 40,
                 "--branch",
                 "main",
+                "--channel",
+                "ga",
             ]
         )
 
@@ -113,6 +126,8 @@ class TestMain:
                 "b" * 40,
                 "--branch",
                 "preview/new-cert-flow",
+                "--channel",
+                "preview",
             ]
         )
 
@@ -130,6 +145,8 @@ class TestMain:
                 "a" * 40,
                 "--branch",
                 "main",
+                "--channel",
+                "preview",
             ]
         )
 
@@ -147,6 +164,8 @@ class TestMain:
                 "a" * 40,
                 "--branch",
                 "preview/new-cert-flow",
+                "--channel",
+                "preview",
             ]
         )
 
@@ -166,6 +185,8 @@ class TestMain:
                 "a" * 40,
                 "--branch",
                 "preview/new-cert-flow",
+                "--channel",
+                "preview",
                 "--published-versions-file",
                 str(published_path),
             ]
@@ -183,6 +204,68 @@ class TestMain:
                 "a" * 40,
                 "--branch",
                 "preview/new-cert-flow",
+                "--channel",
+                "preview",
+            ]
+        )
+
+        assert exit_code == 1
+
+    def test_rejects_channel_mismatch(self, tmp_path: Path) -> None:
+        """A caller cannot promote a manifest through a different channel workflow."""
+        manifest_path = _write_manifest(tmp_path)
+
+        exit_code = main(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--source-sha",
+                "a" * 40,
+                "--branch",
+                "preview/new-cert-flow",
+                "--channel",
+                "beta",
+            ]
+        )
+
+        assert exit_code == 1
+
+    def test_rejects_unexpected_image_name(self, tmp_path: Path) -> None:
+        """A manifest cannot redirect publication to another registry package."""
+        manifest_path = _write_manifest(tmp_path, image_name="docker.io/example/other")
+
+        exit_code = main(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--source-sha",
+                "a" * 40,
+                "--branch",
+                "preview/new-cert-flow",
+                "--channel",
+                "preview",
+            ]
+        )
+
+        assert exit_code == 1
+
+    def test_rejects_mismatched_revision_label(self, tmp_path: Path) -> None:
+        """The OCI revision label must bind the image to the requested source SHA."""
+        manifest_path = _write_manifest(
+            tmp_path,
+            oci_labels={"org.opencontainers.image.revision": "b" * 40},
+        )
+
+        exit_code = main(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--source-sha",
+                "a" * 40,
+                "--branch",
+                "preview/new-cert-flow",
+                "--channel",
+                "preview",
             ]
         )
 
