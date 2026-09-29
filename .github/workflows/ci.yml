@@ -72,7 +72,7 @@ jobs:
           # (DHI base, distroless UID, and entrypoint) is present.
           if [[ "$EVENT_NAME" == "push" ]] \
             && { [[ "$target_branch" == "main" ]] || [[ "$target_branch" == preview/* ]] || [[ "$target_branch" == release/* ]]; } \
-            && grep -q '^FROM dhi\.io/' Dockerfile \
+            && python3 -m scripts.validate_docker_base --dockerfile Dockerfile \
             && grep -q '^USER 65532:65532$' Dockerfile \
             && [[ -f docker/entrypoint.py ]]; then
               is_candidate=true
