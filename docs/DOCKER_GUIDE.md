@@ -193,6 +193,12 @@ the container (visible via `docker inspect --format='{{json .State.Health}}'
 <container>`). It requires no host networking and works the same whether or
 not `/data`/`/certs` are mounted.
 
+Docker repeats the probe every 30 seconds to detect failures after startup.
+Successful loopback `GET /health/` requests are omitted from the container's
+Uvicorn access log to avoid repetitive terminal output. Failed health requests
+and other access logs (including browser requests for `/favicon.ico`) remain
+visible; Docker still records the container's health status.
+
 ## Advanced: overriding the command
 
 The default `CMD` starts the ASGI server. Any override (for example the

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Suppressed successful local `/health/` access-log entries in the Docker
+  container while retaining recurring health checks and all other request logs.
 - Added a consistent beta notice to every browser UI page to clarify that the
   conformance suite is an MVP beta and features and behaviour may change.
 - Removed the standalone runtime-input page from the browser plan builder.
