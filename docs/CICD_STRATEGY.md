@@ -226,17 +226,27 @@ The following secrets must be configured in **Repository Settings → Secrets an
 | Secret | Description |
 |---|---|
 | `GITHUB_TOKEN` | Automatically provided by GitHub Actions; no manual setup |
-| `DOCKER_ORG_USERNAME` | Organisation Docker account used to pull Docker Hardened Images and publish the approved image |
-| `DOCKER_DHI_PULL_TOKEN` | Read-only Docker Hub/DHI token used by candidate-image jobs to pull Docker Hardened Images |
-| `DOCKER_ORG_ACCESS_TOKEN` | Docker Hub access token used only by gated promotion; it must have push/write permission on `openbanking/conformance-suite-v2` |
+| `DOCKER_ORG_USERNAME` | Organisation Docker account used to pull Docker Hardened Images, authenticate Docker Scout, and publish the approved image |
+| `DOCKER_ORG_ACCESS_TOKEN` (repository secret) | **Read-only** organisation access token used by CI jobs to pull Docker Hardened Images from `dhi.io` and to authenticate the Docker Scout CLI (`DOCKER_SCOUT_HUB_USER`/`DOCKER_SCOUT_HUB_PASSWORD`) |
+| `DOCKER_ORG_ACCESS_TOKEN` (environment secret on `preview-release`, `beta-release`, `ga-release`) | **Write-capable** organisation access token scoped to push on `openbanking/conformance-suite-v2`; overrides the read-only repository secret only inside the approved promotion job |
 | `SNYK_TOKEN` | Token used by candidate-image jobs for the blocking container scan |
 
 Before enabling promotion, a repository administrator must create the Docker
-Hub repository `openbanking/conformance-suite-v2` and create/configure
-`DOCKER_ORG_ACCESS_TOKEN` with push/write access to that repository. Also
-create `DOCKER_DHI_PULL_TOKEN` with read-only DHI access for candidate builds.
-The write-capable token is passed only to the gated reusable promotion
-workflow; candidate builds do not publish images.
+Hub repository `openbanking/conformance-suite-v2` (public) and configure two
+organisation access tokens under the same secret name:
+
+1. A **read-only** token as the repository-level `DOCKER_ORG_ACCESS_TOKEN`,
+   used by every CI run (PRs included) to pull DHI base images and run
+   Docker Scout.
+2. A **write-capable** token (image push on `openbanking/conformance-suite-v2`
+   only) as an **environment secret** named `DOCKER_ORG_ACCESS_TOKEN` on each
+   of `preview-release`, `beta-release`, and `ga-release`.
+
+The reusable promotion job declares `environment:`, so GitHub resolves the
+environment secret in preference to the repository secret passed by the
+caller. Push credentials are therefore only released after a required
+reviewer approves the Environment gate; candidate builds never publish
+images.
 
 There are currently no repository-level variables required by CI: the
 supported pytest suite is fully offline and does not target a live model bank

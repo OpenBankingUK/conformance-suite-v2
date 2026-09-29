@@ -83,6 +83,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DOCKER_SCOUT_HUB_USER`/`DOCKER_SCOUT_HUB_PASSWORD` using the existing
   read-only org credentials; the `dhi.io` registry login alone does not
   authenticate the Scout CLI.
+- Candidate-image `dhi.io` login now uses the existing read-only repository
+  `DOCKER_ORG_ACCESS_TOKEN` instead of the never-provisioned
+  `DOCKER_DHI_PULL_TOKEN`; promotion receives the write-capable token as a
+  release Environment secret.
+- The `Docker Build` job now detects the hardened Docker contract and, when
+  present, logs in to `dhi.io` and runs `scripts/docker_smoke_test.sh` plus
+  Compose validation instead of the legacy plain-HTTP health probe, which
+  cannot reach the HTTPS-only hardened image.
 - Docker Hub tag discovery now fails closed on 404 responses, which can indicate
   a private or inaccessible repository rather than a repository that has not
   been created.
