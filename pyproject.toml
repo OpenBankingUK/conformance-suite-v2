@@ -5,7 +5,7 @@ description = "Open Banking UK Conformance Test Tool for verifying API standards
 readme = "README.md"
 requires-python = ">=3.14.4"
 dependencies = [
-    "django>=6.0.4",
+    "django>=6.0.8",
     "httpx>=0.28.1",
     "jsonschema>=4.25.1",
     "joserfc>=1.7.1",

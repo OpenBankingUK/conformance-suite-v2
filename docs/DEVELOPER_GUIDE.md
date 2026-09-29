@@ -332,11 +332,22 @@ level unless an independently trustworthy attestation can be verified.
 
 ## CI pipeline
 
-GitHub Actions run two independent jobs in parallel. `Check` invokes the
+GitHub Actions run independent jobs in parallel. `Check` invokes the
 canonical `make check` gate with the local OpenAPI exclusion cleared, so it
 runs ruff, mypy, the complete offline `unit`/`component` suite with coverage,
 and a full tracked-file secret scan. `Docker Build` builds the image, starts a
-container, and probes `/health/`.
+container, and probes `/health/`. `Image (linux/amd64|arm64)` builds each
+platform image and scans it; the aggregate `Vulnerability Scan` check fails on
+any fixable vulnerability and on unfixed critical/high findings. Open the job
+summary for the full report.
+
+To resolve a failing `Vulnerability Scan`, upgrade the affected package
+(`uv lock --upgrade-package <name>`) or base image. If no fix is possible and
+the risk is accepted, add a reviewed entry to
+`security/vulnerability-exceptions.toml` (maximum 90 days; see
+[CI/CD Strategy §3.2](CICD_STRATEGY.md#32-vulnerability-scanning-and-the-pr-gate)).
+You can run the policy locally against scanner output with
+`uv run python -m scripts.vulnerability_gate --help`.
 
 There is no live-network or end-to-end workflow. Container startup and health
 checking validate packaging only; they are not an Ozone or conformance-system

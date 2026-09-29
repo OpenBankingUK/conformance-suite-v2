@@ -1,8 +1,11 @@
 """Validate the pinned runtime base image used by candidate containers.
 
-The scanner exceptions and signed VEX evidence apply only to the exact
-Docker Hardened Image digest below. Candidate CI and trusted promotion both
-use this check so a different runtime base cannot inherit those assessments.
+Docker's signed OpenVEX evidence is consumed by the vulnerability gate
+(``scripts/vulnerability_gate.py``) only for the exact Docker Hardened Image
+digest below. Candidate CI and trusted promotion both use this check so a
+different runtime base cannot inherit that assessment. Updating the digest
+(for example from a Dependabot pull request) requires updating this constant
+in the same reviewed change.
 """
 
 from __future__ import annotations
