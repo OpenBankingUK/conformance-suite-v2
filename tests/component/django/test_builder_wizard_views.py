@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from html.parser import HTMLParser
 from unittest.mock import Mock, patch
 
 import pytest
@@ -40,6 +41,76 @@ def _draft_id_from_builder_redirect(location: str) -> str:
         Draft id segment from the redirect target.
     """
     return location.rstrip("/").rsplit("/", maxsplit=2)[-2]
+
+
+class _FormFieldCollector(HTMLParser):
+    """Collect submittable field values from a rendered wizard page.
+
+    Attributes:
+        values: Field name to rendered value, as a browser would submit them.
+    """
+
+    def __init__(self) -> None:
+        """Initialise the collector with no captured fields."""
+        super().__init__(convert_charrefs=True)
+        self.values: dict[str, str] = {}
+        self._textarea_name: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Capture input values and open textarea elements.
+
+        Args:
+            tag: Element name.
+            attrs: Element attributes.
+        """
+        attributes = dict(attrs)
+        name = attributes.get("name")
+        if name is None:
+            return
+        if tag == "input" and attributes.get("type") not in {"checkbox", "radio", "submit"}:
+            self.values[name] = attributes.get("value") or ""
+        elif tag == "textarea":
+            self._textarea_name = name
+            self.values[name] = ""
+
+    def handle_data(self, data: str) -> None:
+        """Capture the body of an open textarea element.
+
+        Args:
+            data: Character data inside the current element.
+        """
+        if self._textarea_name is not None:
+            self.values[self._textarea_name] += data
+
+    def handle_endtag(self, tag: str) -> None:
+        """Close the current textarea element.
+
+        Args:
+            tag: Element name.
+        """
+        if tag == "textarea":
+            self._textarea_name = None
+
+
+def _rendered_form_data(html: str, **overrides: str) -> dict[str, str]:
+    """Replay a rendered wizard page as a browser form submission.
+
+    Collapsed advanced JSON textareas are pre-filled and are submitted by the
+    browser whether or not the participant expands them, which is what makes the
+    friendly-field precedence rule observable end to end.
+
+    Args:
+        html: Rendered page markup.
+        overrides: Field values the participant edited before submitting.
+
+    Returns:
+        Form data equivalent to submitting the rendered page with those edits.
+    """
+    collector = _FormFieldCollector()
+    collector.feed(html)
+    data = {name: value for name, value in collector.values.items() if name != "csrfmiddlewaretoken"}
+    data.update(overrides)
+    return data
 
 
 def _valid_security_form_data(**overrides: str) -> dict[str, str]:
@@ -904,6 +975,71 @@ class TestBuilderWizardUi:
         assert launch_response.status_code == 302
         runtime_inputs = mock_start_run.call_args.kwargs["runtime_inputs"]
         assert runtime_inputs["consentedAccountId"] == "account-123"
+
+    @patch("conformance.api.ui_views.start_run")
+    def test_imported_business_value_edited_in_builder_reaches_the_launched_plan(self, mock_start_run: Mock) -> None:
+        """Editing an imported CBPII debtor account in the builder changes the run.
+
+        The advanced JSON textarea is pre-filled from the imported plan and is
+        resubmitted by the browser even while collapsed. It previously overrode
+        the edited friendly field, so a participant could certify against the
+        value they believed they had corrected.
+        """
+        mock_start_run.return_value = {"id": "run-456", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
+        client = Client()
+        plan_document = {
+            "schemaVersion": "1.0",
+            "specification": {
+                "family": "OBL_READ_WRITE",
+                "version": "4.0.1",
+                "profile": "FAPI1_ADVANCED",
+            },
+            "executionMode": "development",
+            "securityEnvironment": {
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "resourceBaseUrl": "https://resource.example.com",
+            },
+            "resourceGroups": ["CBPII"],
+            "businessTestData": {
+                "cbpii": {
+                    "debtorAccount": {
+                        "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                        "identification": "10000109010102",
+                        "name": "Model Bank Account",
+                        "secondaryIdentification": "ROLL-1",
+                    }
+                }
+            },
+            "metadata": {"aspspName": "Example Bank"},
+        }
+
+        import_response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
+        draft_id = _draft_id_from_builder_redirect(import_response["Location"])
+        business_url = f"/builder/{draft_id}/config/"
+        business_page = client.get(business_url)
+        business_response = client.post(
+            business_url,
+            data=_rendered_form_data(
+                business_page.content.decode("utf-8"),
+                cbpii_debtor_account_identification="100002",
+            ),
+        )
+        exported = json.loads(
+            client.post(f"/builder/{draft_id}/export.json", data={"include_secrets": "1"}).content.decode("utf-8")
+        )
+        launch_response = client.post(f"/builder/{draft_id}/launch/")
+
+        assert business_page.status_code == 200
+        assert "10000109010102" in business_page.content.decode("utf-8")
+        assert business_response.status_code == 302
+        assert exported["businessTestData"]["cbpii"]["debtorAccount"] == {
+            "schemeName": "UK.OBIE.SortCodeAccountNumber",
+            "identification": "100002",
+            "name": "Model Bank Account",
+            "secondaryIdentification": "ROLL-1",
+        }
+        assert launch_response.status_code == 302
+        assert mock_start_run.call_args.kwargs["runtime_inputs"]["debtorAccountIdentification"] == "100002"
 
     def test_import_rejects_legacy_v2_documents(self) -> None:
         """Browser import accepts only canonical schemaVersion 1.0 plans."""

@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Business-default values edited in the plan builder after importing a test plan
+  are no longer discarded. The collapsed "advanced JSON" textarea is pre-filled
+  from the imported plan and is resubmitted by the browser even when never
+  opened, and it previously overrode the friendly fields — so a participant who
+  corrected, for example, a CBPII debtor account could unknowingly certify
+  against the original imported value and record a false pass. Friendly fields
+  the participant actually changed now take precedence, overlaid on the JSON so
+  keys the friendly fields cannot express (such as `secondaryIdentification`)
+  are still preserved.
 - Docker Scout VEX fetch and candidate scan steps now authenticate via
   `DOCKER_SCOUT_HUB_USER`/`DOCKER_SCOUT_HUB_PASSWORD` using the existing
   organisation credentials; the `dhi.io` registry login alone does not
