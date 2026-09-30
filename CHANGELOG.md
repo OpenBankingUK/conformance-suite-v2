@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.2] - 2026-09-30
+
 ### Changed
 
 - Suppressed successful local `/health/` access-log entries in the Docker
@@ -21,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Synced the trusted release pipeline with `main`: candidate image scanning
   now gates on Snyk and Docker Scout VEX assessments, and approved promotion
   publishes to Docker Hub instead of GHCR.
+- Clarified in the README that certification submissions continue to come from
+  the legacy FCS v1 while this release is an evaluation beta, and documented
+  how to run the browser UI from a source checkout as an alternative to the
+  published Docker image.
 
 ### Fixed
 

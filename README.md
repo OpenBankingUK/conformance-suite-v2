@@ -1,6 +1,6 @@
-# Functional Conformance Suite v2 beta.1
+# Functional Conformance Suite v2 beta.2
 
-**Beta only — not for certification.** FCS v2 `2.0.0-beta.1` is an MVP for
+**Beta only — not for certification.** FCS v2 `2.0.0-beta.2` is an MVP for
 evaluating the new Open Banking UK Functional Conformance Suite and providing
 feedback. It is **not approved for certification**; runs and reports from this
 beta must not be submitted as certification evidence, even if a plan or result
@@ -22,7 +22,7 @@ announced separately — you do not need to migrate or do anything in advance.
 With Docker installed and running, start the beta on your own computer:
 
 ```bash
-docker run --rm -p 127.0.0.1:8443:8443 openbanking/conformance-suite-v2:2.0.0-beta.1
+docker run --rm -p 127.0.0.1:8443:8443 openbanking/conformance-suite-v2:2.0.0-beta.2
 ```
 
 Open `https://127.0.0.1:8443/` in your browser. Accept the warning for the
@@ -41,7 +41,7 @@ does not persist browser sessions, results, or logs across runs.
 For the complete beta UI walkthrough and optional persistence or certificate
 mounts, see the [Docker deployment guide](docs/DOCKER_GUIDE.md). CLI, REST,
 Compose, and file-based credential configuration below are advanced reference,
-not the primary beta.1 participant workflow.
+not the primary beta.2 participant workflow.
 
 ## Alternative: run from source
 
@@ -108,7 +108,7 @@ The supported workflow is:
 
 The UI shows generated tests, counts, source traceability, runtime/auth
 requirements, launch blockers, and internal certification-status labels after
-preview. **Those labels do not make beta.1 runs valid for certification.**
+preview. **Those labels do not make beta.2 runs valid for certification.**
 Generated tests are read-only: participants cannot select exact generated
 tests. Lower-level request and assertion details stay collapsed under audit
 details.
