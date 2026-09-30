@@ -1,16 +1,16 @@
 # ─── Build stage ──────────────────────────────────────────────────────────────
-# Docker Hardened Image (DHI), Debian 13, "-dev" variant: has a shell, apt,
+# Docker Hardened Image (DHI), Alpine 3.24, "-dev" variant: has a shell, apk,
 # and pip so it can build the venv, but is otherwise the same underlying
-# Python 3.14 install as the distroless runtime stage below (glibc, so
-# uvicorn's C-extension deps — httptools, uvloop, watchfiles — install from
-# prebuilt manylinux wheels; no compiler toolchain is required).
+# Python 3.14/musl environment as the distroless runtime stage below.
+# Uvicorn's C-extension dependencies (httptools, uvloop, and watchfiles)
+# provide prebuilt musllinux wheels, so no compiler toolchain is required.
 #
 # Pulling from `dhi.io` requires `docker login dhi.io` using a Docker account
 # (see docs/DEVELOPER_GUIDE.md); CI authenticates with a read-only
 # organisation-owned credential. Pinned to an exact digest for
 # reproducibility; base updates require a reviewed digest bump and scanner
 # policy reassessment.
-FROM dhi.io/python:3.14-debian13-dev@sha256:42cd56dede69350b250398097287cbf1020d0ead0ad8cb4e179bd3bac1a98634 AS builder
+FROM dhi.io/python:3.14-alpine3.24-dev@sha256:a40c90f9eb46f8a1c8d56ea1bb990c556677622e4b7d3d7130d713a9de4b4b1d AS builder
 
 # Install uv for fast, reproducible dependency resolution
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /usr/local/bin/uv
@@ -40,13 +40,7 @@ RUN mkdir -p /data/results /data/logs /data/sessions && \
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 # Distroless DHI runtime variant: no shell, defaults to non-root UID/GID 65532.
 # Pinned to an exact digest for the same reasons as the builder stage above.
-FROM dhi.io/python:3.14-debian13@sha256:e1a5bd571d9585d7eb80c8278b54b69a0e0bf5a9bb2b1424b9e4576374df6659 AS runtime
-
-# The DHI base includes system pip and its vendored packages; neither is
-# needed by the uv-managed application venv. Remove them from the final
-# filesystem so stale vendored-package advisories cannot affect the runtime.
-USER 0:0
-RUN ["python3", "-c", "import shutil; from pathlib import Path; root = Path('/usr/lib/python3/dist-packages'); shutil.rmtree(root / 'pip'); [shutil.rmtree(p) for p in root.glob('pip-*.dist-info')]; (Path('/usr/bin/pip')).unlink(); (Path('/usr/bin/pip3')).unlink()"]
+FROM dhi.io/python:3.14-alpine3.24@sha256:4361d30a5f505dd5509622eff5c7bef79afa798b4f3eedd3f5cb1abc92be9168 AS runtime
 
 WORKDIR /app
 

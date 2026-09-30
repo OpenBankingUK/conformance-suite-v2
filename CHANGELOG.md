@@ -78,12 +78,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Migrated the pinned Docker Hardened Image builder and distroless runtime
+  from Debian 13 to Alpine 3.24, eliminating the unfixed OpenSSL
+  CVE-2026-84782 finding. The Alpine runtime ships without system pip, so the
+  Debian-specific pip-removal layer is no longer needed.
+- Vulnerability scans now continue without VEX suppressions only when Docker
+  Scout explicitly reports that the assessed DHI publishes no OpenVEX
+  attestations; authentication, signature and all other fetch failures remain
+  blocking.
 - Docker-signed OpenVEX is verified against Docker's DHI signing key, now
   checked into the repository and pinned by SHA-256 rather than downloaded,
   without a Rekor transparency-log lookup, which DHI VEX attestations do not
   have; previously every hardened-image scan failed at VEX verification.
-- Removed unused system pip and its vendored packages from the hardened
-  runtime image; the application uses an isolated uv-managed virtual environment.
 - A required `Vulnerability Scan` status check now builds and scans the image
   for both platforms on **every pull request** (Docker Scout, Snyk Container
   with application packages, and pip-audit of `uv.lock`). It fails on any
