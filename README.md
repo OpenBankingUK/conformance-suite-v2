@@ -6,6 +6,15 @@ feedback. It is **not approved for certification**; runs and reports from this
 beta must not be submitted as certification evidence, even if a plan or result
 mentions certification or appears eligible in the UI.
 
+This applies to every way of running this version — the published Docker image,
+a locally built image, and a run from source are all equally non-certifying.
+Certification will only be supported by a later, explicitly approved release;
+until then, continue to use your existing certification route. The
+`executionMode: "certification"` plan value, the certification-status labels in
+the UI, and the internal certification validator described below are
+implementation plumbing for that future release. They do not make a beta.1 run
+valid for certification.
+
 ## Get started: local browser UI
 
 With Docker installed and running, start the beta on your own computer:
@@ -31,6 +40,41 @@ For the complete beta UI walkthrough and optional persistence or certificate
 mounts, see the [Docker deployment guide](docs/DOCKER_GUIDE.md). CLI, REST,
 Compose, and file-based credential configuration below are advanced reference,
 not the primary beta.1 participant workflow.
+
+## Alternative: run from source
+
+If you would rather review and run the source code than pull the published
+image, you can start the same browser UI locally. This is an alternative to
+Docker, not an additional requirement, and it produces the same non-certifying
+beta behaviour.
+
+You need:
+
+- Python 3.14.4 or later (the version is pinned in `.python-version`)
+- [uv](https://docs.astral.sh/uv/) for dependency management
+- GNU Make and OpenSSL (both are present by default on macOS and most Linux
+  distributions)
+
+```bash
+git clone https://github.com/OpenBankingUK/conformance-suite-v2.git
+cd conformance-suite-v2
+uv sync --frozen --no-install-project
+make dev
+```
+
+`make dev` generates a local self-signed certificate under
+`local-config/certs/` on first use and serves the application over HTTPS. Open
+`https://127.0.0.1:8443/` and accept the certificate warning, then follow the
+same browser builder workflow described below. Stop the server with Ctrl+C.
+
+There is no database to migrate and no separate build step. If you prefer to
+run without auto-reload and with Django debug mode off, use `make serve`
+instead. To build and run the hardened container image from the same checkout,
+use `make docker`.
+
+If you intend to change the code as well as run it, see the
+[Developer Guide](docs/DEVELOPER_GUIDE.md) for the full toolchain, the
+`make check` verification workflow, and environment variable reference.
 
 ## Browser builder workflow
 
