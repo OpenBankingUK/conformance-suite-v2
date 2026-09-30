@@ -8,12 +8,14 @@ mentions certification or appears eligible in the UI.
 
 This applies to every way of running this version — the published Docker image,
 a locally built image, and a run from source are all equally non-certifying.
-Certification will only be supported by a later, explicitly approved release;
-until then, continue to use your existing certification route. The
-`executionMode: "certification"` plan value, the certification-status labels in
-the UI, and the internal certification validator described below are
-implementation plumbing for that future release. They do not make a beta.1 run
-valid for certification.
+
+**Keep using the existing FCS v1 for certification.** Nothing about your
+certification process changes while this beta is available. Continue to run
+your certification tests on FCS v1 and submit those results as usual. Results
+produced here are for evaluation and feedback only, and Open Banking UK will
+not accept them as certification submissions. Certification on FCS v2 will only
+begin once a later release is formally approved for it, and that will be
+announced separately — you do not need to migrate or do anything in advance.
 
 ## Get started: local browser UI
 
