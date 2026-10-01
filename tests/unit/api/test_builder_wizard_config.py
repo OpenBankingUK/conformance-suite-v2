@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import pytest
 from django.contrib.sessions.backends.signed_cookies import SessionStore
 
@@ -9,10 +11,12 @@ from conformance.api.builder_draft_store import SessionBuilderDraftStore
 from conformance.api.builder_wizard import (
     BusinessConfigForm,
     ConfigVisibility,
+    business_config_form_initial,
     catalogue_scope_hierarchy,
     config_visibility_for_draft,
 )
 from conformance.catalogue import PlanDocumentBoundary
+from conformance.json_types import JsonObject
 
 pytestmark = pytest.mark.unit
 
@@ -406,5 +410,206 @@ def test_business_config_form_requires_only_selected_pis_family() -> None:
                 "name": "International Creditor",
             },
             "instructedAmount": {"amount": "10.00", "currency": "GBP"},
+        }
+    }
+
+
+CBPII_VISIBILITY = ConfigVisibility(
+    selected_api_ids=frozenset({"cbpii"}),
+    show_ais=False,
+    show_pis=False,
+    show_cbpii=True,
+    show_vrp=False,
+    show_business_defaults=True,
+)
+"""Visibility exposing only the CBPII business-default fields."""
+
+IMPORTED_CBPII_CONFIG: JsonObject = {
+    "cbpii": {
+        "debtorAccount": {
+            "schemeName": "UK.OBIE.SortCodeAccountNumber",
+            "identification": "10000109010102",
+            "name": "Imported Account",
+            "secondaryIdentification": "ROLL-1",
+        }
+    }
+}
+"""Imported CBPII debtor account carrying a key the friendly fields cannot express."""
+
+
+def _resubmitted_business_data(
+    initial: Mapping[str, object],
+    **overrides: str,
+) -> dict[str, object]:
+    """Simulate a browser resubmitting every pre-filled business field.
+
+    Args:
+        initial: Form initial values rendered into the page.
+        overrides: Field values the participant edited.
+
+    Returns:
+        POST data equivalent to the rendered form with the given edits applied.
+    """
+    data: dict[str, object] = {key: "" if value is None else value for key, value in initial.items()}
+    data.update(overrides)
+    return data
+
+
+def test_business_config_form_friendly_edit_overrides_prefilled_json() -> None:
+    """An edited friendly field wins over the pre-filled advanced JSON fallback."""
+    initial = business_config_form_initial(IMPORTED_CBPII_CONFIG)
+    form = BusinessConfigForm(
+        data=_resubmitted_business_data(initial, cbpii_debtor_account_identification="100002"),
+        initial=initial,
+        config_visibility=CBPII_VISIBILITY,
+    )
+
+    assert form.is_valid(), form.errors.as_json()
+    assert form.config == {
+        "cbpii": {
+            "debtorAccount": {
+                "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                "identification": "100002",
+                "name": "Imported Account",
+                "secondaryIdentification": "ROLL-1",
+            }
+        }
+    }
+
+
+def test_business_config_form_unchanged_submission_preserves_imported_json() -> None:
+    """Resubmitting an imported config without edits leaves the JSON fallback intact."""
+    initial = business_config_form_initial(IMPORTED_CBPII_CONFIG)
+    form = BusinessConfigForm(
+        data=_resubmitted_business_data(initial),
+        initial=initial,
+        config_visibility=CBPII_VISIBILITY,
+    )
+
+    assert form.is_valid(), form.errors.as_json()
+    assert form.config == IMPORTED_CBPII_CONFIG
+
+
+def test_business_config_form_json_edit_alone_is_authoritative() -> None:
+    """Editing only the advanced JSON keeps that value without friendly-field overlay."""
+    initial = business_config_form_initial(IMPORTED_CBPII_CONFIG)
+    form = BusinessConfigForm(
+        data=_resubmitted_business_data(
+            initial,
+            cbpii_debtor_account_json='{"schemeName": "UK.OBIE.IBAN", "identification": "GB29NWBK60161331926819"}',
+        ),
+        initial=initial,
+        config_visibility=CBPII_VISIBILITY,
+    )
+
+    assert form.is_valid(), form.errors.as_json()
+    assert form.config == {
+        "cbpii": {
+            "debtorAccount": {
+                "schemeName": "UK.OBIE.IBAN",
+                "identification": "GB29NWBK60161331926819",
+            }
+        }
+    }
+
+
+def test_business_config_form_friendly_edit_overlays_edited_json() -> None:
+    """When both inputs change, the friendly field overlays the edited JSON base."""
+    initial = business_config_form_initial(IMPORTED_CBPII_CONFIG)
+    form = BusinessConfigForm(
+        data=_resubmitted_business_data(
+            initial,
+            cbpii_debtor_account_identification="100002",
+            cbpii_debtor_account_json='{"schemeName": "UK.OBIE.IBAN", "identification": "GB29NWBK60161331926819"}',
+        ),
+        initial=initial,
+        config_visibility=CBPII_VISIBILITY,
+    )
+
+    assert form.is_valid(), form.errors.as_json()
+    assert form.config == {
+        "cbpii": {
+            "debtorAccount": {
+                "schemeName": "UK.OBIE.IBAN",
+                "identification": "100002",
+            }
+        }
+    }
+
+
+def test_business_config_form_pis_friendly_edit_overrides_prefilled_json() -> None:
+    """PIS creditor account edits survive the pre-filled advanced JSON fallback."""
+    config: JsonObject = {
+        "pis": {
+            "creditorAccount": {
+                "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                "identification": "12345678901234",
+                "name": "Model Bank Account",
+                "secondaryIdentification": "ROLL-2",
+            },
+            "instructedAmount": {"amount": "10.00", "currency": "GBP"},
+        }
+    }
+    visibility = ConfigVisibility(
+        selected_api_ids=frozenset({"pis"}),
+        show_ais=False,
+        show_pis=True,
+        show_cbpii=False,
+        show_vrp=False,
+        show_business_defaults=True,
+    )
+    initial = business_config_form_initial(config)
+    form = BusinessConfigForm(
+        data=_resubmitted_business_data(initial, pis_creditor_account_identification="99999999999999"),
+        initial=initial,
+        config_visibility=visibility,
+    )
+
+    assert form.is_valid(), form.errors.as_json()
+    assert form.config == {
+        "pis": {
+            "creditorAccount": {
+                "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                "identification": "99999999999999",
+                "name": "Model Bank Account",
+                "secondaryIdentification": "ROLL-2",
+            },
+            "instructedAmount": {"amount": "10.00", "currency": "GBP"},
+        }
+    }
+
+
+def test_business_config_form_ais_account_edit_preserves_other_resource_ids() -> None:
+    """An edited AIS account identifier replaces only the first consented account."""
+    config: JsonObject = {
+        "ais": {
+            "resourceIds": {
+                "accountIds": [{"accountId": "70000170000001"}, {"accountId": "70000170000002"}],
+                "statementIds": [{"statementId": "140"}],
+            }
+        }
+    }
+    visibility = ConfigVisibility(
+        selected_api_ids=frozenset({"ais"}),
+        show_ais=True,
+        show_pis=False,
+        show_cbpii=False,
+        show_vrp=False,
+        show_business_defaults=True,
+    )
+    initial = business_config_form_initial(config)
+    form = BusinessConfigForm(
+        data=_resubmitted_business_data(initial, ais_consented_account_id="70000170000009"),
+        initial=initial,
+        config_visibility=visibility,
+    )
+
+    assert form.is_valid(), form.errors.as_json()
+    assert form.config == {
+        "ais": {
+            "resourceIds": {
+                "accountIds": [{"accountId": "70000170000009"}, {"accountId": "70000170000002"}],
+                "statementIds": [{"statementId": "140"}],
+            }
         }
     }

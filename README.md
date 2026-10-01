@@ -1,17 +1,28 @@
-# Functional Conformance Suite v2 beta.1
+# Functional Conformance Suite v2 beta.2
 
-**Beta only — not for certification.** FCS v2 `2.0.0-beta.1` is an MVP for
+**Beta only — not for certification.** FCS v2 `2.0.0-beta.2` is an MVP for
 evaluating the new Open Banking UK Functional Conformance Suite and providing
 feedback. It is **not approved for certification**; runs and reports from this
 beta must not be submitted as certification evidence, even if a plan or result
 mentions certification or appears eligible in the UI.
+
+This applies to every way of running this version — the published Docker image,
+a locally built image, and a run from source are all equally non-certifying.
+
+**Keep using the existing FCS v1 for certification.** Nothing about your
+certification process changes while this beta is available. Continue to run
+your certification tests on FCS v1 and submit those results as usual. Results
+produced here are for evaluation and feedback only, and Open Banking UK will
+not accept them as certification submissions. Certification on FCS v2 will only
+begin once a later release is formally approved for it, and that will be
+announced separately — you do not need to migrate or do anything in advance.
 
 ## Get started: local browser UI
 
 With Docker installed and running, start the beta on your own computer:
 
 ```bash
-docker run --rm -p 127.0.0.1:8443:8443 openbanking/conformance-suite-v2:2.0.0-beta.1
+docker run --rm -p 127.0.0.1:8443:8443 openbanking/conformance-suite-v2:2.0.0-beta.2
 ```
 
 Open `https://127.0.0.1:8443/` in your browser. Accept the warning for the
@@ -30,7 +41,42 @@ does not persist browser sessions, results, or logs across runs.
 For the complete beta UI walkthrough and optional persistence or certificate
 mounts, see the [Docker deployment guide](docs/DOCKER_GUIDE.md). CLI, REST,
 Compose, and file-based credential configuration below are advanced reference,
-not the primary beta.1 participant workflow.
+not the primary beta.2 participant workflow.
+
+## Alternative: run from source
+
+If you would rather review and run the source code than pull the published
+image, you can start the same browser UI locally. This is an alternative to
+Docker, not an additional requirement, and it produces the same non-certifying
+beta behaviour.
+
+You need:
+
+- Python 3.14.4 or later (the version is pinned in `.python-version`)
+- [uv](https://docs.astral.sh/uv/) for dependency management
+- GNU Make and OpenSSL (both are present by default on macOS and most Linux
+  distributions)
+
+```bash
+git clone https://github.com/OpenBankingUK/conformance-suite-v2.git
+cd conformance-suite-v2
+uv sync --frozen --no-install-project
+make dev
+```
+
+`make dev` generates a local self-signed certificate under
+`local-config/certs/` on first use and serves the application over HTTPS. Open
+`https://127.0.0.1:8443/` and accept the certificate warning, then follow the
+same browser builder workflow described below. Stop the server with Ctrl+C.
+
+There is no database to migrate and no separate build step. If you prefer to
+run without auto-reload and with Django debug mode off, use `make serve`
+instead. To build and run the hardened container image from the same checkout,
+use `make docker`.
+
+If you intend to change the code as well as run it, see the
+[Developer Guide](docs/DEVELOPER_GUIDE.md) for the full toolchain, the
+`make check` verification workflow, and environment variable reference.
 
 ## Browser builder workflow
 
@@ -62,7 +108,7 @@ The supported workflow is:
 
 The UI shows generated tests, counts, source traceability, runtime/auth
 requirements, launch blockers, and internal certification-status labels after
-preview. **Those labels do not make beta.1 runs valid for certification.**
+preview. **Those labels do not make beta.2 runs valid for certification.**
 Generated tests are read-only: participants cannot select exact generated
 tests. Lower-level request and assertion details stay collapsed under audit
 details.

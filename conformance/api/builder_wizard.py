@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Mapping, MutableMapping
+from collections.abc import Collection, Iterable, Mapping, MutableMapping
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -1047,7 +1047,11 @@ class BusinessConfigForm(forms.Form):
         cleaned_data: dict[str, object] = {} if base_cleaned_data is None else dict(base_cleaned_data)
         if self.errors:
             return cleaned_data
-        self.config = _business_config_from_fields(cleaned_data, self.config_visibility)
+        self.config = _business_config_from_fields(
+            cleaned_data,
+            self.config_visibility,
+            changed_fields=self.changed_data,
+        )
         if self.config_visibility.show_ais and self.config_visibility.ais_account_id_required:
             ais_config = self.config.get("ais")
             if not _ais_config_has_account_id(ais_config):
@@ -2930,12 +2934,17 @@ def _pruned_catalogue_boundary_form_data(
 def _business_config_from_fields(
     cleaned_data: Mapping[str, object],
     config_visibility: ConfigVisibility,
+    *,
+    changed_fields: Collection[str] = (),
 ) -> JsonObject:
     """Build a business/default partial config from form fields.
 
     Args:
         cleaned_data: Cleaned form values.
         config_visibility: Scope-derived structured-field visibility.
+        changed_fields: Names of fields the participant actually edited. Friendly
+            fields listed here take precedence over the advanced JSON fallback,
+            which would otherwise silently discard the edit.
 
     Returns:
         Partial v2 plan config containing business/request default sections.
@@ -2954,7 +2963,10 @@ def _business_config_from_fields(
         )
         resource_ids_json = _cleaned_optional_string(cleaned_data.get("ais_resource_ids_json"))
         if resource_ids_json is not None:
-            ais["resourceIds"] = _load_json_object(resource_ids_json, label="AIS resource IDs JSON")
+            resource_ids = _load_json_object(resource_ids_json, label="AIS resource IDs JSON")
+            if "ais_consented_account_id" in changed_fields:
+                _overlay_ais_account_id(resource_ids, cleaned_data.get("ais_consented_account_id"))
+            ais["resourceIds"] = resource_ids
         else:
             account_id = _cleaned_optional_string(cleaned_data.get("ais_consented_account_id"))
             if account_id is not None:
@@ -2982,6 +2994,7 @@ def _business_config_from_fields(
                 "name": "pis_creditor_account_name",
             },
             label="Domestic creditor account JSON",
+            changed_fields=changed_fields,
         )
         _set_object_from_fields_or_json(
             pis,
@@ -2994,6 +3007,7 @@ def _business_config_from_fields(
                 "name": "pis_international_creditor_account_name",
             },
             label="International creditor account JSON",
+            changed_fields=changed_fields,
         )
         _set_object_from_fields_or_json(
             pis,
@@ -3005,6 +3019,7 @@ def _business_config_from_fields(
                 "currency": "pis_instructed_amount_currency",
             },
             label="Instructed amount JSON",
+            changed_fields=changed_fields,
         )
         _set_object_from_fields_or_json(
             pis,
@@ -3016,6 +3031,7 @@ def _business_config_from_fields(
                 "pointInTime": "pis_standing_order_frequency_point_in_time",
             },
             label="Standing-order frequency JSON",
+            changed_fields=changed_fields,
         )
         _set_optional_string(
             pis,
@@ -3039,6 +3055,7 @@ def _business_config_from_fields(
                 "name": "cbpii_debtor_account_name",
             },
             label="CBPII debtor account JSON",
+            changed_fields=changed_fields,
         )
         if cbpii:
             config["cbpii"] = cbpii
@@ -3511,6 +3528,30 @@ def _dcr_redirect_uri_lines(value: object) -> tuple[str, ...]:
     return () if text is None else tuple(line.strip() for line in text.splitlines() if line.strip())
 
 
+def _overlay_ais_account_id(resource_ids: JsonObject, value: object) -> None:
+    """Overlay an edited consented account identifier onto AIS resource IDs.
+
+    The friendly field only ever displays the first ``accountIds`` entry, so an
+    edit is applied there while any further entries are preserved.
+
+    Args:
+        resource_ids: Mutable resource IDs object parsed from the advanced JSON.
+        value: Raw friendly-field value for the consented account identifier.
+    """
+    account_id = _cleaned_optional_string(value)
+    if account_id is None:
+        return
+    account_ids = resource_ids.get("accountIds")
+    if isinstance(account_ids, list) and account_ids:
+        first = account_ids[0]
+        if isinstance(first, dict):
+            first["accountId"] = account_id
+            return
+        account_ids[0] = {"accountId": account_id}
+        return
+    resource_ids["accountIds"] = [{"accountId": account_id}]
+
+
 def _set_object_from_fields_or_json(
     target: JsonObject,
     key: str,
@@ -3519,8 +3560,16 @@ def _set_object_from_fields_or_json(
     json_field: str,
     field_mapping: Mapping[str, str],
     label: str,
+    changed_fields: Collection[str] = (),
 ) -> None:
     """Set a nested object from friendly fields or an advanced JSON fallback.
+
+    The advanced JSON textarea is pre-filled from the current config, so it is
+    almost always submitted even when the participant never opened it. Treating
+    it as an unconditional override silently discarded edits made in the
+    friendly fields, so any friendly field the participant actually changed is
+    overlaid on top of the JSON base. Keys the friendly fields cannot represent
+    are preserved from the JSON.
 
     Args:
         target: Mutable object to update.
@@ -3529,13 +3578,19 @@ def _set_object_from_fields_or_json(
         json_field: Field containing advanced JSON fallback text.
         field_mapping: Mapping of nested config key to friendly form field.
         label: Human-readable JSON field label for validation messages.
+        changed_fields: Names of fields the participant actually edited.
 
     Raises:
         ValidationError: If the advanced JSON fallback is malformed.
     """
     raw_json = _cleaned_optional_string(cleaned_data.get(json_field))
     if raw_json is not None:
-        target[key] = _load_json_object(raw_json, label=label)
+        nested = _load_json_object(raw_json, label=label)
+        for config_key, field_name in field_mapping.items():
+            if field_name not in changed_fields:
+                continue
+            _set_optional_string(nested, config_key, cleaned_data.get(field_name))
+        target[key] = nested
         return
     nested = _nested_object_from_fields(cleaned_data, field_mapping)
     if nested:

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.2] - 2026-09-30
+
 ### Changed
 
 - Suppressed successful local `/health/` access-log entries in the Docker
@@ -21,9 +23,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Synced the trusted release pipeline with `main`: candidate image scanning
   now gates on Snyk and Docker Scout VEX assessments, and approved promotion
   publishes to Docker Hub instead of GHCR.
+- Clarified in the README that certification submissions continue to come from
+  the legacy FCS v1 while this release is an evaluation beta, and documented
+  how to run the browser UI from a source checkout as an alternative to the
+  published Docker image.
 
 ### Fixed
 
+- Business-default values edited in the plan builder after importing a test plan
+  are no longer discarded. The collapsed "advanced JSON" textarea is pre-filled
+  from the imported plan and is resubmitted by the browser even when never
+  opened, and it previously overrode the friendly fields — so a participant who
+  corrected, for example, a CBPII debtor account could unknowingly certify
+  against the original imported value and record a false pass. Friendly fields
+  the participant actually changed now take precedence, overlaid on the JSON so
+  keys the friendly fields cannot express (such as `secondaryIdentification`)
+  are still preserved.
 - Docker Scout VEX fetch and candidate scan steps now authenticate via
   `DOCKER_SCOUT_HUB_USER`/`DOCKER_SCOUT_HUB_PASSWORD` using the existing
   organisation credentials; the `dhi.io` registry login alone does not

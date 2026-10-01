@@ -20,8 +20,8 @@ git config core.hooksPath .githooks
 
 | Command | Server | Auto-reload | Use case |
 | --- | --- | --- | --- |
-| `make dev` | Django `runserver` on `0.0.0.0:8443` | Yes | Day-to-day browser development. |
-| `make dev-unmasked` | Django `runserver` on `0.0.0.0:8443` | Yes | Local engine debugging with unmasked logs. |
+| `make dev` | Uvicorn (HTTPS) on `0.0.0.0:8443` | Yes | Day-to-day browser development. |
+| `make dev-unmasked` | Uvicorn (HTTPS) on `0.0.0.0:8443` | Yes | Local engine debugging with unmasked logs. |
 | `make serve` | Uvicorn on `0.0.0.0:8443` | No | Local production-behaviour check. |
 | `make docker` | Uvicorn in Docker | Yes | Hardened, production-like container run with generated local TLS (see [`docs/DOCKER_GUIDE.md`](DOCKER_GUIDE.md) for the full participant-facing guide). |
 
