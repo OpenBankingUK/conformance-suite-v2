@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.3] - 2026-10-01
+
 ### Changed
 
 - The run page now updates its status, steps, log and result panels in place
