@@ -5,6 +5,7 @@
     <title>Choose test plan catalogue</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
+    {% include "conformance/partials/htmx_script.html" %}
     <style>
         :root {
             color-scheme: light;
@@ -210,7 +211,8 @@
 </head>
 <body>
 {% include "conformance/partials/beta_notice.html" %}
-<main>
+{# hx-boost: wizard links and form posts swap the page body over AJAX instead of a full reload. #}
+<main hx-boost="true">
     <header>
         <div>
             <h1>Choose specification</h1>

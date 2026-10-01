@@ -264,7 +264,9 @@ The wizard follows the PRD order:
 3. Enter the `.well-known/openid-configuration` URL at
    `/builder/<draft>/config/discovery/`. The server attempts discovery metadata
    lookup, records non-secret helper metadata in the draft, and allows manual
-   continuation when the lookup fails.
+   continuation when the lookup fails. **Check discovery URL** posts to
+   `/builder/<draft>/config/discovery/preview/`, which runs the same validation
+   and fetch and renders the metadata inline without saving anything.
 4. Enter OAuth/FAPI/security, mTLS, and resource-server settings at
    `/builder/<draft>/config/security/`. Discovery-derived values are editable
    prefilled fields; the token-endpoint-auth-method selector remains the tool's
@@ -301,6 +303,38 @@ downloads continue to use the same masking boundary as CLI/API execution. Run
 detail surfaces the top-level catalogue evidence summary from the completed
 result: selected endpoints, selected capabilities, generated test-case counts,
 and non-certifying reasons.
+
+### Dynamic pages (HTMX)
+
+The browser UI is server-rendered Django templates enhanced with
+[HTMX](https://htmx.org/); there is no single-page app or JavaScript build step.
+Every page except the OAuth callback includes
+`conformance/partials/htmx_script.html`, which loads the vendored bundle,
+sends Django's CSRF token on HTMX requests, disables HTMX history snapshots
+(builder pages can render credential references), and swaps `4xx`/`5xx`
+response bodies so `400` validation re-renders appear in place.
+
+- **Run detail** panels poll their partial routes every 2 seconds while the run
+  is `pending` or `running`. Terminal states render no `hx-trigger`, so polling
+  stops. The terminal status poll sends `HX-Trigger: run-finished` and the other
+  panels refresh once more on that event. A `<noscript>` meta refresh keeps the
+  page live without JavaScript.
+- **Builder steps** set `hx-boost="true"` on `<main>`, so wizard links and form
+  posts swap the page body instead of reloading it. The `head-support`
+  extension merges each page's `<head>` styles. Export downloads, export with
+  secrets, launch and links to run pages opt out with `hx-boost="false"`.
+  Inline page scripts must stay idempotent IIFEs because boosted swaps re-run them.
+- **Scope** refreshes `#scope-options` through `hx-post` to
+  `/builder/<draft>/scope/options/`; the bulk select buttons fire a
+  `scope-refresh` event.
+
+Static assets are served by [WhiteNoise](https://whitenoise.readthedocs.io/)
+because uvicorn has no static file handler. The Docker build runs
+`collectstatic`; local runs and tests fall back to the static finders
+(`WHITENOISE_USE_FINDERS`). Vendored files live in
+`conformance/api/static/conformance/vendor/` with their versions in the
+filenames. The README there records source, licence and SHA-256 and explains
+how to upgrade.
 
 ## Certification validation
 

@@ -5,7 +5,9 @@
     <title>Run {{ run.run_id }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
-    {% if run.status == "pending" or run.status == "running" %}<meta http-equiv="refresh" content="2">{% endif %}
+    {% include "conformance/partials/htmx_script.html" %}
+    {# Panels poll via HTMX while the run is active; full-page refresh only without JavaScript. #}
+    {% if run_is_active %}<noscript><meta http-equiv="refresh" content="2"></noscript>{% endif %}
     <style>
         :root {
             color-scheme: light;
@@ -604,9 +606,14 @@
 
         loadStepStates();
         restoreStepStates();
-        document.querySelectorAll(STEP_SELECTOR).forEach(function (det) {
-            det.addEventListener("toggle", captureStepStates);
-        });
+        // "toggle" does not bubble, so listen in the capture phase; this also
+        // covers <details> elements swapped in by HTMX polling.
+        document.addEventListener("toggle", function (event) {
+            if (event.target instanceof Element && event.target.matches(STEP_SELECTOR)) {
+                captureStepStates();
+            }
+        }, true);
+        document.body.addEventListener("htmx:afterSwap", restoreStepStates);
         window.addEventListener("pagehide", captureStepStates);
     }());
 </script>

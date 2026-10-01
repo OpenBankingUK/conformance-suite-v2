@@ -45,7 +45,7 @@ from conformance.api.builder_wizard import (
 )
 from conformance.api.plan_review import PlanTestCaseRow, compiled_plan_rows
 from conformance.api.run_lifecycle import start_run
-from conformance.api.run_store import RunConflictError, RunRecord, run_store
+from conformance.api.run_store import RunConflictError, RunRecord, RunStatus, run_store
 from conformance.catalogue import (
     CatalogueError,
     CompiledTestPlan,
@@ -70,6 +70,8 @@ from conformance.test_plan_validation import (
 )
 
 _UI_DISPLAY_TIME_ZONE = ZoneInfo("Europe/London")
+# Run statuses for which the run page panels keep polling (HTMX ``every 2s``).
+_ACTIVE_RUN_STATUSES: frozenset[RunStatus] = frozenset({"pending", "running"})
 """Open Banking UK browser fallback timezone for server-rendered timestamps."""
 
 
@@ -406,6 +408,46 @@ def builder_discovery_config(request: HttpRequest, draft_id: str) -> HttpRespons
     )
 
 
+@require_POST
+def builder_discovery_preview(request: HttpRequest, draft_id: str) -> HttpResponse:
+    """Render the HTMX fragment previewing OpenID discovery metadata.
+
+    Lets the participant check an OpenID Provider ``.well-known/openid-configuration``
+    URL before continuing. It validates and fetches exactly as the discovery
+    step's submit path does (same HTTPS URL validation and
+    :func:`_fetch_discovery_metadata`), so it adds no new outbound request
+    capability, and it persists nothing to the draft.
+
+    Args:
+        request: The incoming HTMX POST request.
+        draft_id: Session-scoped draft id from the route.
+
+    Returns:
+        Partial HTML response with the discovery metadata, the fetch error, or
+        the URL validation errors (``400``); ``404`` when the draft is unknown.
+    """
+    draft = SessionBuilderDraftStore(request.session).get(draft_id)
+    if draft is None:
+        return HttpResponseNotFound("Builder draft not found")
+    if _draft_boundary(draft) is None:
+        return HttpResponseNotFound("Builder draft catalogue boundary not selected")
+
+    form = DiscoveryConfigForm(data=request.POST, discovery_required=True)
+    if not form.is_valid() or form.config is None:
+        return render(
+            request,
+            "conformance/partials/builder_discovery_preview.html",
+            {"preview_checked": True, "preview_errors": form.errors.get("discovery_url") or form.non_field_errors()},
+            status=400,
+        )
+    metadata = _fetch_discovery_metadata(form.config)
+    return render(
+        request,
+        "conformance/partials/builder_discovery_preview.html",
+        {"preview_checked": True, "preview": _discovery_metadata_context(metadata)},
+    )
+
+
 @require_http_methods(["GET", "POST"])
 def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse:
     """Render or save OAuth/FAPI/security settings for a draft.
@@ -707,7 +749,13 @@ def run_status_partial(request: HttpRequest, run_id: str) -> HttpResponse:
     record = run_store.get_run(run_id)
     if record is None:
         return HttpResponseNotFound("Run not found")
-    return render(request, "conformance/partials/run_status.html", _run_context(record))
+    response = render(request, "conformance/partials/run_status.html", _run_context(record))
+    if request.headers.get("HX-Request") == "true" and not _run_is_active(record):
+        # HTMX dispatches this event on the polling status panel before the
+        # swap; the steps/log/result panels listen for it on <body> so they
+        # all render their final state together once the run ends.
+        response["HX-Trigger"] = "run-finished"
+    return response
 
 
 @require_GET
@@ -1428,6 +1476,19 @@ def _sensitive_runtime_input_ids(compiled_plan: CompiledTestPlan) -> tuple[str, 
     return tuple(trace.input_id for trace in compiled_plan.traceability.runtime_input_snapshot if trace.sensitive)
 
 
+def _run_is_active(record: RunRecord) -> bool:
+    """Return whether the run page should keep polling for updates.
+
+    Args:
+        record: Snapshot of the run record being rendered.
+
+    Returns:
+        ``True`` while the run is ``pending`` or ``running``; ``False`` once it
+        has reached a terminal status.
+    """
+    return record.status in _ACTIVE_RUN_STATUSES
+
+
 def _run_context(record: RunRecord) -> dict[str, object]:
     """Build template context for run detail and partial views.
 
@@ -1441,6 +1502,7 @@ def _run_context(record: RunRecord) -> dict[str, object]:
     step_progress = _step_progress_rows(record)
     return {
         "run": record,
+        "run_is_active": _run_is_active(record),
         "run_times": {
             "created_at": _run_time_display(record.created_at),
             "started_at": _run_time_display(record.started_at),

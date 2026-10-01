@@ -28,6 +28,10 @@ RUN uv sync --frozen --no-dev --no-install-project
 # only files are excluded via .dockerignore)
 COPY . .
 
+# Collect static assets (vendored HTMX) into STATIC_ROOT so WhiteNoise can
+# serve pre-compressed copies at runtime. Build-time only; no secrets needed.
+RUN .venv/bin/python manage.py collectstatic --noinput
+
 # Pre-create the persistent data root with its subpaths, owned by the
 # runtime's non-root UID/GID (65532). The final stage's runtime user cannot
 # run `mkdir`/`chown` itself — its image has no shell — so these are created

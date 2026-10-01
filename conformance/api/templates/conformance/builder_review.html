@@ -5,6 +5,7 @@
     <title>Review generated test plan</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
+    {% include "conformance/partials/htmx_script.html" %}
     <style>
         :root {
             color-scheme: light;
@@ -96,7 +97,8 @@
 </head>
 <body>
 {% include "conformance/partials/beta_notice.html" %}
-<main>
+{# hx-boost: wizard links and form posts swap the page body over AJAX instead of a full reload. #}
+<main hx-boost="true">
     <header>
         <div>
             <h1>Review generated test plan</h1>
@@ -113,7 +115,7 @@
         {% if launch_error %}
             <div class="message error">
                 {{ launch_error }}
-                {% if active_run_id %}<a href="{% url 'ui-run-detail' active_run_id %}">Open active run</a>{% endif %}
+                {% if active_run_id %}<a href="{% url 'ui-run-detail' active_run_id %}" hx-boost="false">Open active run</a>{% endif %}
             </div>
         {% endif %}
 
@@ -148,12 +150,13 @@
             {% if draft.specification != "dynamic-client-registration" %}
                 <a class="button secondary" href="{% url 'builder-config' draft.draft_id %}">Edit business data</a>
             {% endif %}
-            <a class="button secondary" href="{% url 'builder-export' draft.draft_id %}">Export safe JSON</a>
-            <form method="post" action="{% url 'builder-export' draft.draft_id %}">
+            {# Downloads and the run page use full navigation: attachments cannot be swapped, and the run page binds document-level listeners. #}
+            <a class="button secondary" href="{% url 'builder-export' draft.draft_id %}" hx-boost="false">Export safe JSON</a>
+            <form method="post" action="{% url 'builder-export' draft.draft_id %}" hx-boost="false">
                 {% csrf_token %}
                 <button class="secondary" type="submit" name="include_secrets" value="1">Export with secrets</button>
             </form>
-            <form method="post" action="{% url 'builder-launch' draft.draft_id %}">
+            <form method="post" action="{% url 'builder-launch' draft.draft_id %}" hx-boost="false">
                 {% csrf_token %}
                 <button type="submit" {% if not review.launch_supported %}disabled{% endif %}>Launch run</button>
             </form>

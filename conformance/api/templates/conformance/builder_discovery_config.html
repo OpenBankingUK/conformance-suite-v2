@@ -5,6 +5,7 @@
     <title>Discovery configuration</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
+    {% include "conformance/partials/htmx_script.html" %}
     <style>
         :root { color-scheme: light; --bg: #f7f8fa; --panel: #ffffff; --border: #ccd3dc; --text: #1b1f24; --muted: #667085; --accent: #0b6bcb; --danger: #b42318; --warning: #a15c07; }
         * { box-sizing: border-box; }
@@ -30,12 +31,18 @@
         .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
         button, .button { min-height: 38px; border: 1px solid var(--accent); border-radius: 6px; padding: 8px 14px; background: var(--accent); color: #ffffff; font: inherit; font-weight: 650; text-decoration: none; cursor: pointer; }
         .button.secondary, button.secondary { background: #ffffff; color: var(--accent); }
-        @media (max-width: 840px) { header, .grid { display: block; } .grid > div + div { margin-top: 12px; } }
+        .metadata-list { display: grid; grid-template-columns: minmax(180px, 0.5fr) 1fr; gap: 8px 12px; margin-top: 12px; }
+        .metadata-list dt { font-weight: 650; }
+        .metadata-list dd { margin: 0; overflow-wrap: anywhere; }
+        #discovery-preview > * { margin-top: 12px; }
+        button:disabled { opacity: 0.6; cursor: progress; }
+        @media (max-width: 840px) { header, .grid, .metadata-list { display: block; } .grid > div + div, .metadata-list dd + dt { margin-top: 12px; } }
     </style>
 </head>
 <body>
 {% include "conformance/partials/beta_notice.html" %}
-<main>
+{# hx-boost: wizard links and form posts swap the page body over AJAX instead of a full reload. #}
+<main hx-boost="true">
     <header>
         <div>
             <h1>Discovery configuration</h1>
@@ -64,6 +71,17 @@
                         <input id="{{ form.discovery_url.id_for_label }}" name="discovery_url" type="url" value="{{ form.discovery_url.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
                     </div>
                 </div>
+                <div class="field-row">
+                    <button type="button"
+                            class="secondary"
+                            hx-post="{% url 'builder-discovery-preview' draft.draft_id %}"
+                            hx-include="closest form"
+                            hx-target="#discovery-preview"
+                            hx-swap="outerHTML"
+                            hx-sync="this:replace"
+                            hx-disabled-elt="this">Check discovery URL</button>
+                </div>
+                {% include "conformance/partials/builder_discovery_preview.html" %}
             </section>
 
             <div class="actions">

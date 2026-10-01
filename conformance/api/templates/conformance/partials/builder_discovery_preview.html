@@ -1,0 +1,24 @@
+<section id="discovery-preview" aria-live="polite">
+    {% if preview_checked %}
+        {% if preview_errors %}
+            <ul class="errorlist">{% for error in preview_errors %}<li>{{ error }}</li>{% endfor %}</ul>
+        {% elif preview.fetch_error %}
+            <div class="message warning">Discovery metadata could not be fetched from {{ preview.source_url }}: {{ preview.fetch_error }}</div>
+        {% else %}
+            <div class="config-card">
+                <h3>Discovery metadata</h3>
+                <p class="helper">Fetched from <code>{{ preview.source_url }}</code>. This check is not saved; continue to store the URL and metadata.</p>
+                {% if preview.fields %}
+                    <dl class="metadata-list">
+                        {% for row in preview.fields %}
+                            <dt>{{ row.label }}</dt>
+                            <dd>{{ row.value }}</dd>
+                        {% endfor %}
+                    </dl>
+                {% else %}
+                    <div class="message warning">The discovery document did not contain any recognised metadata fields.</div>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% endif %}
+</section>
