@@ -79,6 +79,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The trusted image-promotion vulnerability re-scan on `main` now accepts the
+  pinned DHI Python 3.14 Alpine 3.24 runtime base used by release candidates,
+  and continues without VEX suppressions only when Docker Scout explicitly
+  reports that no OpenVEX attestations exist for that image.
 - Image promotion now pushes each scanned platform image to Docker Hub by
   digest, so it no longer leaves `promote-*` staging tags on the repository.
 - Image attestations now use `actions/attest` instead of the deprecated

@@ -194,12 +194,14 @@ consolidated container vulnerability gate on **every pull request and push**:
 - Unfixed `critical`/`high` findings fail. Findings with no severity from any
   scanner are treated as `high` (fail closed).
 - Unfixed `medium`/`low` findings are reported but do not fail.
-- Docker's signed OpenVEX for the exact DHI runtime base (author must be
-  `@docker.com`; see `scripts/validate_docker_base.py`) suppresses only
-  base-image OS findings with the exact package version. It never applies to
-  application packages under `/app/`.
-- Scanner, authentication or parsing errors fail closed. Snyk runs from an
-  empty directory, so a `.snyk` file cannot silently ignore findings.
+- When published, Docker's signed OpenVEX for the exact DHI runtime base
+  (author must be `@docker.com`; see `scripts/validate_docker_base.py`)
+  suppresses only base-image OS findings with the exact package version. It
+  never applies to application packages under `/app/`. If Docker Scout
+  explicitly reports that the image has no VEX attestations, scanning
+  continues without VEX suppressions.
+- Scanner, authentication, signature or parsing errors fail closed. Snyk runs
+  from an empty directory, so a `.snyk` file cannot silently ignore findings.
 
 The job summary, GitHub annotations and SARIF all report **every** finding:
 blocking findings as errors, informational open findings as warnings, and
@@ -217,14 +219,16 @@ introduces the gate may bootstrap from its own copy, and it emits an explicit
 warning. Because the workflow definition for `pull_request` events is still
 read from the PR head, CODEOWNERS review of `.github/` remains the control for
 workflow changes; CODEOWNERS review of `scripts/` and `security/` protects the
-policy code and exception data. Docker's VEX is fetched with `--verify` against
-Docker's DHI signing key, checked in as
+policy code and exception data. When available, Docker's VEX is fetched with
+`--verify` against Docker's DHI signing key, checked in as
 `.github/actions/vulnerability-scan/dhi-signing-key.pub` and pinned by
 SHA-256 (rotate via a reviewed PR against
 [docker-hardened-images/keyring](https://github.com/docker-hardened-images/keyring)).
 `--skip-tlog` is used because Docker does not publish DHI VEX attestations to
-the public Rekor log; the signature itself is still verified. PRs from forks have no secrets and fail closed;
-re-push them to a branch in this repository.
+the public Rekor log; the signature itself is still verified. An explicit
+"no VEX attestations found" response is the only non-fatal VEX-fetch outcome;
+all other failures remain blocking. PRs from forks have no secrets and fail
+closed; re-push them to a branch in this repository.
 
 #### Exceptions
 

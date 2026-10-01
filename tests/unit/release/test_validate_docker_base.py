@@ -27,8 +27,8 @@ def test_accepts_exact_pinned_runtime_base() -> None:
 @pytest.mark.parametrize(
     "runtime_base",
     [
-        "dhi.io/python:3.14-debian13",
-        "dhi.io/python:3.14-debian13@sha256:" + "0" * 64,
+        "dhi.io/python:3.14-alpine3.24",
+        "dhi.io/python:3.14-alpine3.24@sha256:" + "0" * 64,
         "python:3.14-alpine",
     ],
 )
