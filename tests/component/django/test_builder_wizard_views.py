@@ -644,6 +644,11 @@ class TestBuilderWizardUi:
         assert "accessToken" not in content
         assert "fixture-account-id" not in content
         draft_id = _draft_id_from_builder_redirect(business_response["Location"])
+        # Downloads and launch leave the boosted wizard via full navigation.
+        assert '<main hx-boost="true">' in content
+        assert f'href="/builder/{draft_id}/export.json" hx-boost="false"' in content
+        assert f'action="/builder/{draft_id}/export.json" hx-boost="false"' in content
+        assert f'action="/builder/{draft_id}/launch/" hx-boost="false"' in content
 
         safe_export = client.get(f"/builder/{draft_id}/export.json")
 

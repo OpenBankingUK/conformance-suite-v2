@@ -5,6 +5,7 @@
     <title>Select test plan endpoints</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
+    {% include "conformance/partials/htmx_script.html" %}
     <style>
         :root {
             color-scheme: light;
@@ -255,11 +256,13 @@
                 margin-top: 12px;
             }
         }
+        #scope-options[aria-busy="true"] { opacity: 0.6; transition: opacity 0.15s ease-in; }
     </style>
 </head>
 <body>
 {% include "conformance/partials/beta_notice.html" %}
-<main>
+{# hx-boost: wizard links and form posts swap the page body over AJAX instead of a full reload. #}
+<main hx-boost="true">
     <header>
         <div>
             <h1>Select test plan scope</h1>
@@ -291,14 +294,19 @@
 
         <form method="post"
               action="{% url 'builder-scope' draft.draft_id %}"
-              data-scope-form
-              data-scope-options-url="{% url 'builder-scope-options' draft.draft_id %}"
-              hx-post="{% url 'builder-scope-options' draft.draft_id %}"
-              hx-trigger="change from:input[name='resource_groups'], change from:input[name='endpoints'], change from:input[name='endpoint_capabilities']"
-              hx-target="#scope-options"
-              hx-swap="outerHTML">
+              data-scope-form>
             {% csrf_token %}
-            {% include "conformance/partials/builder_scope_options.html" %}
+            {# Re-render the scope tree when any scope checkbox in this wrapper changes, or a bulk action fires "scope-refresh". #}
+            {# hx-sync replace aborts any in-flight refresh so the latest selection always wins. #}
+            <div data-scope-refresh
+                 hx-post="{% url 'builder-scope-options' draft.draft_id %}"
+                 hx-trigger="change, scope-refresh"
+                 hx-include="closest form"
+                 hx-target="#scope-options"
+                 hx-swap="outerHTML"
+                 hx-sync="this:replace">
+                {% include "conformance/partials/builder_scope_options.html" %}
+            </div>
 
             <div class="actions">
                 <a class="button secondary" href="{% if direct_endpoints %}{% url 'builder-catalogue-boundary' draft.draft_id %}{% else %}{% url 'builder-security-config' draft.draft_id %}{% endif %}">{% if direct_endpoints %}Back to specification{% else %}Back to security{% endif %}</a>
@@ -310,81 +318,19 @@
 <script>
     (() => {
         const form = document.querySelector("[data-scope-form]");
-        if (!form) {
+        const refresher = form ? form.querySelector("[data-scope-refresh]") : null;
+        if (!form || !refresher) {
             return;
         }
-
-        let activeRequest = null;
-
-        const scopeInputs = new Set(["resource_groups", "endpoints", "endpoint_capabilities"]);
 
         const checkboxInputs = (name) => Array.from(form.querySelectorAll(`input[name='${name}']`))
             .filter((input) => input instanceof HTMLInputElement);
 
-        const csrfToken = () => {
-            const input = form.querySelector("input[name='csrfmiddlewaretoken']");
-            return input instanceof HTMLInputElement ? input.value : "";
-        };
-
-        const replaceScopeOptions = (html) => {
+        refresher.addEventListener("htmx:beforeRequest", () => {
             const current = document.querySelector("#scope-options");
-            if (!current) {
-                return;
-            }
-            const parsed = new DOMParser().parseFromString(html, "text/html");
-            const replacement = parsed.querySelector("#scope-options");
-            if (!replacement) {
-                throw new Error("Scope options refresh did not return the expected fragment.");
-            }
-            current.replaceWith(replacement);
-        };
-
-        const refreshScopeOptions = async () => {
-            const current = document.querySelector("#scope-options");
-            if (activeRequest) {
-                activeRequest.abort();
-            }
-            const request = new AbortController();
-            activeRequest = request;
             if (current) {
                 current.setAttribute("aria-busy", "true");
             }
-            try {
-                const response = await fetch(form.dataset.scopeOptionsUrl || form.action, {
-                    method: "POST",
-                    body: new FormData(form),
-                    credentials: "same-origin",
-                    signal: request.signal,
-                    headers: {
-                        "X-CSRFToken": csrfToken(),
-                        "X-Requested-With": "XMLHttpRequest",
-                    },
-                });
-                if (!response.ok) {
-                    throw new Error(`Scope options refresh failed with HTTP ${response.status}.`);
-                }
-                replaceScopeOptions(await response.text());
-            } catch (error) {
-                if (!(error instanceof DOMException) || error.name !== "AbortError") {
-                    console.error(error);
-                }
-            } finally {
-                const refreshed = document.querySelector("#scope-options");
-                if (refreshed) {
-                    refreshed.removeAttribute("aria-busy");
-                }
-                if (activeRequest === request) {
-                    activeRequest = null;
-                }
-            }
-        };
-
-        form.addEventListener("change", (event) => {
-            const target = event.target;
-            if (!(target instanceof HTMLInputElement) || !scopeInputs.has(target.name)) {
-                return;
-            }
-            void refreshScopeOptions();
         });
 
         form.addEventListener("click", (event) => {
@@ -404,18 +350,12 @@
             for (const input of checkboxInputs("endpoints")) {
                 input.checked = selectEndpoints;
             }
-            for (const input of checkboxInputs("resource_groups")) {
-                const card = input.closest(".resource-card");
-                if (card) {
-                    card.classList.toggle("selected", input.checked);
-                }
-            }
             if (!selectEndpoints) {
                 for (const input of checkboxInputs("endpoint_capabilities")) {
                     input.checked = false;
                 }
             }
-            void refreshScopeOptions();
+            htmx.trigger(refresher, "scope-refresh");
         });
     })();
 </script>

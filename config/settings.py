@@ -109,6 +109,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Serves the vendored HTMX bundle and other static assets under uvicorn
+    # (ASGI has no static file handler when DEBUG is false).
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -199,6 +202,25 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
+
+# ``conformance.api`` is not an INSTALLED_APP (see TEMPLATES above), so its
+# static directory is listed explicitly rather than discovered via app dirs.
+STATICFILES_DIRS = [BASE_DIR / "conformance" / "api" / "static"]
+
+# Populated by ``collectstatic`` during the Docker image build.
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Compressed (not Manifest) storage: assets are versioned by filename (for
+# example ``htmx-2.0.x.min.js``), so templates resolve without requiring a
+# ``collectstatic`` run in tests or local development.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
+}
+
+# Fall back to the finders when STATIC_ROOT has not been collected (local
+# uvicorn runs and tests). The Docker image always serves collected files.
+WHITENOISE_USE_FINDERS = True
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field

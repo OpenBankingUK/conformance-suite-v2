@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.3] - 2026-10-01
+
+### Changed
+
+- The run page now updates its status, steps, log and result panels in place
+  while a run is active and stops polling once it finishes, instead of
+  reloading the whole page every 2 seconds.
+- Builder wizard steps now navigate and submit without full page reloads, and
+  validation errors re-render in place. The scope step refreshes endpoints and
+  features through HTMX, replacing its hand-written fetch code.
+
+### Added
+
+- **Check discovery URL** on the builder discovery step, which fetches and
+  shows OpenID discovery metadata inline without saving it.
+- Vendored, pinned HTMX 2.0.11 and its `head-support` extension, served from
+  the application with no CDN.
+- WhiteNoise static file serving, with `collectstatic` run during the Docker
+  image build.
+
 ## [2.0.0-beta.2] - 2026-09-30
 
 ### Changed
