@@ -283,16 +283,29 @@ The wizard follows the PRD order:
    Known account, amount, date, and frequency shapes use friendly fields with
    advanced JSON fallbacks.
 7. Review the generated plan at `/builder/<draft>/review/`, including summary
-   counts, masked config, launch blockers, safe export preview, and collapsed
-   generated-test rows.
+   counts, masked config, import warnings, launch blockers, the collapsed
+   unmasked plan JSON editor (`POST /builder/<draft>/review/json/`), and
+   collapsed generated-test rows.
 8. Download safe JSON from `/builder/<draft>/export.json`, explicitly request
    local secret-bearing JSON with a POST `include_secrets=1`, or launch through
    `/builder/<draft>/launch/`.
 
-Imported schemaVersion `1.0` plans enter through `/builder/import/` and go
-straight to the same review page. Missing secret-capable runtime inputs do not
-block import; the review page shows launch blockers and edit links back to the
-appropriate wizard steps.
+Imported plans enter through `/builder/import/` (pasted JSON or an uploaded
+`.json` file, up to 1 MB) and go straight to the same review page. Import is
+lenient (`conformance/api/plan_import_recovery.py`): only empty input, invalid
+JSON, or a non-object root is rejected. Every other document is recovered field
+by field against the schemaVersion `1.0` shape. Values the builder can represent
+load into the draft; missing, invalid, unrecognised, or unresolvable values
+(including individual scope items) are recorded as import warnings and kept
+verbatim in the draft's unrepresented-field overlay rather than being replaced
+with defaults. The plan JSON composed from the builder and that overlay is the
+single source of truth for review, export, and launch: while the overlay is
+non-empty, review runs normal load validation on the composed JSON and launch
+uses `prepare_test_plan_for_run` on it, so lenient import never relaxes launch
+validation. Saving a builder step takes ownership of the overlay fields that
+step produces and clears their warnings. The review JSON editor reloads the
+draft with the same recovery rules. Because it shows secrets unmasked, the
+review page is served with `Cache-Control: no-store`.
 
 Generated tests are always read-only. Scope changes happen by editing resource
 groups, endpoints, and capabilities; the review page must not expose generated

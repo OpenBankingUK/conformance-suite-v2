@@ -112,6 +112,17 @@
         <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         {% if review.error %}<div class="message error">{{ review.error }}</div>{% endif %}
+        {% if import_issues %}
+            <div class="message warning" role="status" aria-labelledby="import-warnings-heading">
+                <strong id="import-warnings-heading">Import warnings</strong>
+                <p>Some imported fields could not be loaded into the builder. Complete or fix them in the builder steps or in the plan JSON editor below; launch stays blocked until the plan is valid.</p>
+                <ul>
+                    {% for issue in import_issues %}
+                        <li><span class="badge">{{ issue.kind|capfirst }}</span>{% if issue.path %} <code>{{ issue.path }}</code>{% endif %} {{ issue.message }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
         {% if launch_error %}
             <div class="message error">
                 {{ launch_error }}
@@ -171,19 +182,23 @@
         </section>
     {% endif %}
 
-    {% if review.safe_export_json %}
-        <section class="panel" aria-labelledby="safe-export-heading">
-            <h2 id="safe-export-heading">Safe export preview</h2>
-            <p class="helper">Safe export keeps the reusable JSON-first plan shape but writes secret-bearing strings as empty strings.</p>
-            <form method="post" action="{% url 'builder-import' %}">
+    <section class="panel" aria-labelledby="plan-json-heading">
+        <h2 id="plan-json-heading">Plan JSON</h2>
+        <p class="helper">Edit the full plan JSON, including imported fields the builder cannot show. Saving reloads the draft with the same rules as import.</p>
+        {% if plan_json_error %}<div class="message error">{{ plan_json_error }}</div>{% endif %}
+        <details{% if plan_json_error %} open{% endif %}>
+            <summary>Edit plan JSON</summary>
+            <div class="message warning">This editor shows secrets unmasked, including tokens and inline private keys. Do not share your screen while it is open.</div>
+            <form method="post" action="{% url 'builder-review-json' draft.draft_id %}">
                 {% csrf_token %}
-                <textarea name="plan_json" spellcheck="false">{{ review.safe_export_json }}</textarea>
+                <label for="id_review_plan_json">Plan JSON</label>
+                <textarea id="id_review_plan_json" name="plan_json" spellcheck="false" autocomplete="off">{{ plan_json_text }}</textarea>
                 <div class="actions">
-                    <button class="secondary" type="submit">Edit raw JSON as new draft</button>
+                    <button class="secondary" type="submit">Save plan JSON</button>
                 </div>
             </form>
-        </section>
-    {% endif %}
+        </details>
+    </section>
 
     <section class="panel" aria-labelledby="generated-tests-heading">
         <h2 id="generated-tests-heading">Generated test summary</h2>

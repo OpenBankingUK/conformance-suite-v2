@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from html.parser import HTMLParser
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 
 from conformance.api.builder_wizard import EndpointOption, catalogue_scope_hierarchy, endpoint_capability_value
@@ -90,6 +92,32 @@ class _FormFieldCollector(HTMLParser):
         """
         if tag == "textarea":
             self._textarea_name = None
+
+
+def _valid_import_plan() -> dict[str, Any]:
+    """Return a minimal valid Read/Write plan for browser import tests.
+
+    Returns:
+        Canonical schemaVersion 1.0 test-plan JSON object.
+    """
+    return {
+        "schemaVersion": "1.0",
+        "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI1_ADVANCED"},
+        "executionMode": "development",
+        "securityEnvironment": {
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "resourceBaseUrl": "https://resource.example.com",
+        },
+        "resourceGroups": [
+            {
+                "id": "AIS",
+                "label": "Accounts",
+                "endpoints": [{"method": "GET", "path": "/open-banking/v4.0/aisp/accounts"}],
+            }
+        ],
+        "businessTestData": {},
+        "metadata": {"aspspName": "Example Bank"},
+    }
 
 
 def _rendered_form_data(html: str, **overrides: str) -> dict[str, str]:
@@ -640,7 +668,7 @@ class TestBuilderWizardUi:
         assert review_response.status_code == 200
         content = review_response.content.decode("utf-8")
         assert "Review generated test plan" in content
-        assert "Safe export preview" in content
+        assert "Edit plan JSON" in content
         assert "accessToken" not in content
         assert "fixture-account-id" not in content
         draft_id = _draft_id_from_builder_redirect(business_response["Location"])
@@ -1046,8 +1074,9 @@ class TestBuilderWizardUi:
         assert launch_response.status_code == 302
         assert mock_start_run.call_args.kwargs["runtime_inputs"]["debtorAccountIdentification"] == "100002"
 
-    def test_import_rejects_legacy_v2_documents(self) -> None:
-        """Browser import accepts only canonical schemaVersion 1.0 plans."""
+    @patch("conformance.api.ui_views.start_run")
+    def test_import_loads_legacy_v2_documents_as_blocked_drafts(self, mock_start_run: Mock) -> None:
+        """Legacy documents open as drafts with warnings and cannot launch."""
         client = Client()
         plan_document = {
             "schemaVersion": "v2",
@@ -1060,32 +1089,231 @@ class TestBuilderWizardUi:
         }
 
         response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
+        draft_id = _draft_id_from_builder_redirect(response["Location"])
+        review = client.get(f"/builder/{draft_id}/review/")
+        launch = client.post(f"/builder/{draft_id}/launch/")
 
-        assert response.status_code == 400
-        assert "canonical schemaVersion 1.0 test plan document" in response.content.decode("utf-8")
+        assert response.status_code == 302
+        content = review.content.decode("utf-8")
+        assert "Import warnings" in content
+        assert "schemaVersion &quot;v2&quot; is not supported" in content
+        assert "scheme is not a recognised test-plan field." in content
+        assert "specification must be a JSON object" in content
+        assert "Choose a specification in the builder or the plan JSON before launch." in content
+        assert review["Cache-Control"] == "no-store"
+        assert launch.status_code == 400
+        mock_start_run.assert_not_called()
 
-    def test_import_rejects_profile_not_declared_by_specification_version(self) -> None:
-        """Browser import rejects Read/Write FAPI 2 for the v4.0.1 boundary."""
+    @patch("conformance.api.ui_views.start_run")
+    def test_import_loads_profile_not_declared_by_specification_version_as_blocked_draft(
+        self,
+        mock_start_run: Mock,
+    ) -> None:
+        """An unsupported profile is reported and blocks launch instead of failing import."""
         client = Client()
-        plan_document = {
-            "schemaVersion": "1.0",
-            "specification": {
-                "family": "OBL_READ_WRITE",
-                "version": "4.0.1",
-                "profile": "FAPI2",
-            },
-            "securityEnvironment": {
-                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-            },
-            "resourceGroups": ["AIS"],
-            "businessTestData": {},
-            "metadata": {},
-        }
+        plan_document = _valid_import_plan()
+        plan_document["specification"] = {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI2"}
 
         response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
+        draft_id = _draft_id_from_builder_redirect(response["Location"])
+        content = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
+        launch = client.post(f"/builder/{draft_id}/launch/")
+
+        assert response.status_code == 302
+        assert "profile must be one of: FAPI1_ADVANCED" in content
+        assert "resourceGroups could not be loaded because the specification is missing or invalid" in content
+        assert launch.status_code == 400
+        mock_start_run.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("plan_json", "message"),
+        [
+            ("", "Paste plan JSON or choose a .json file to import."),
+            ("{not json", "Plan JSON must be valid JSON"),
+            ("[]", "Plan JSON must be a JSON object."),
+        ],
+    )
+    def test_import_rejects_input_with_nothing_to_recover(self, plan_json: str, message: str) -> None:
+        """Only empty text, invalid JSON, or a non-object root are rejected."""
+        response = Client().post("/builder/import/", data={"plan_json": plan_json})
 
         assert response.status_code == 400
-        assert "profile must be one of: FAPI1_ADVANCED" in response.content.decode("utf-8")
+        assert message in response.content.decode("utf-8")
+
+    def test_import_page_offers_json_file_upload(self) -> None:
+        """The import page accepts a .json file as multipart form data."""
+        content = Client().get("/builder/import/").content.decode("utf-8")
+
+        assert 'enctype="multipart/form-data"' in content
+        assert 'name="plan_file" type="file" accept=".json,application/json"' in content
+
+    @patch("conformance.api.ui_views.start_run")
+    def test_import_accepts_uploaded_plan_file(self, mock_start_run: Mock) -> None:
+        """A valid uploaded plan opens in review ready to launch."""
+        mock_start_run.return_value = {"id": "run-123", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
+        client = Client()
+        upload = SimpleUploadedFile(
+            "plan.json",
+            json.dumps(_valid_import_plan()).encode("utf-8"),
+            content_type="application/json",
+        )
+
+        response = client.post("/builder/import/", data={"plan_json": "", "plan_file": upload})
+        draft_id = _draft_id_from_builder_redirect(response["Location"])
+        content = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
+        launch = client.post(f"/builder/{draft_id}/launch/")
+
+        assert response.status_code == 302
+        assert "Import warnings" not in content
+        assert "Ready to launch from this reviewed plan." in content
+        assert launch.status_code == 302
+
+    def test_import_rejects_non_utf8_uploaded_file(self) -> None:
+        """Uploaded files must be UTF-8 JSON."""
+        upload = SimpleUploadedFile("plan.json", b"\xff\xfe\x00", content_type="application/json")
+
+        response = Client().post("/builder/import/", data={"plan_file": upload})
+
+        assert response.status_code == 400
+        assert "Plan file must be UTF-8 encoded JSON." in response.content.decode("utf-8")
+
+    @patch("conformance.api.ui_views.start_run")
+    def test_partial_import_warns_blocks_launch_and_is_fixed_in_review_json_editor(
+        self,
+        mock_start_run: Mock,
+    ) -> None:
+        """Invalid and unknown fields are kept, block launch, and can be fixed as JSON."""
+        mock_start_run.return_value = {"id": "run-123", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
+        client = Client()
+        plan_document = _valid_import_plan()
+        plan_document["securityEnvironment"]["discoveryUrl"] = "http://insecure.example.com"
+        plan_document["unexpected"] = True
+        plan_document["resourceGroups"].append("NOT_A_GROUP")
+
+        response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
+        draft_id = _draft_id_from_builder_redirect(response["Location"])
+        review = client.get(f"/builder/{draft_id}/review/")
+        content = review.content.decode("utf-8")
+        blocked_launch = client.post(f"/builder/{draft_id}/launch/")
+        blocked_export = client.get(f"/builder/{draft_id}/export.json").json()
+
+        assert response.status_code == 302
+        assert "securityEnvironment.discoveryUrl must be an HTTPS URL." in content
+        assert "unexpected is not a recognised test-plan field." in content
+        assert "resourceGroups[1] could not be loaded" in content
+        assert "http://insecure.example.com" in content
+        assert blocked_launch.status_code == 400
+        mock_start_run.assert_not_called()
+        assert blocked_export["unexpected"] is True
+        assert blocked_export["securityEnvironment"]["discoveryUrl"] == "http://insecure.example.com"
+        assert [group["id"] if isinstance(group, dict) else group for group in blocked_export["resourceGroups"]] == [
+            "AIS",
+            "NOT_A_GROUP",
+        ]
+
+        save_response = client.post(
+            f"/builder/{draft_id}/review/json/",
+            data={"plan_json": json.dumps(_valid_import_plan())},
+        )
+        fixed_content = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
+        launch = client.post(f"/builder/{draft_id}/launch/")
+
+        assert save_response.status_code == 302
+        assert save_response["Location"] == f"/builder/{draft_id}/review/"
+        assert "Import warnings" not in fixed_content
+        assert "Ready to launch from this reviewed plan." in fixed_content
+        assert launch.status_code == 302
+        mock_start_run.assert_called_once()
+
+    @patch("conformance.api.ui_views._fetch_discovery_metadata")
+    @patch("conformance.api.ui_views.start_run")
+    def test_partial_import_is_fixed_by_saving_the_builder_step(
+        self,
+        mock_start_run: Mock,
+        mock_fetch_discovery: Mock,
+    ) -> None:
+        """Saving the owning builder step clears the imported invalid value and its warning."""
+        mock_start_run.return_value = {"id": "run-123", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
+        mock_fetch_discovery.return_value = {}
+        client = Client()
+        plan_document = _valid_import_plan()
+        plan_document["securityEnvironment"]["discoveryUrl"] = "http://insecure.example.com"
+        response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
+        draft_id = _draft_id_from_builder_redirect(response["Location"])
+
+        discovery = client.post(
+            f"/builder/{draft_id}/config/discovery/",
+            data={"discovery_url": "https://example.com/.well-known/openid-configuration"},
+        )
+        content = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
+        launch = client.post(f"/builder/{draft_id}/launch/")
+
+        assert discovery.status_code == 302
+        assert "http://insecure.example.com" not in content
+        assert "must be an HTTPS URL" not in content
+        assert launch.status_code == 302
+
+    def test_builder_save_keeps_unrepresented_imported_fields(self) -> None:
+        """Unknown imported keys survive unrelated builder saves and keep launch blocked."""
+        client = Client()
+        plan_document = _valid_import_plan()
+        plan_document["unexpected"] = {"kept": True}
+        response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
+        draft_id = _draft_id_from_builder_redirect(response["Location"])
+
+        endpoint = _scope_endpoint(
+            selected_resource_group_id="account-and-transaction",
+            path="/open-banking/v4.0/aisp/accounts",
+        )
+        scope = client.post(
+            f"/builder/{draft_id}/scope/",
+            data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]},
+        )
+        review = client.get(f"/builder/{draft_id}/review/")
+        exported = client.get(f"/builder/{draft_id}/export.json").json()
+
+        assert scope.status_code == 302
+        content = review.content.decode("utf-8")
+        assert "unexpected is not a recognised test-plan field." in content
+        assert "Resolve review blockers before launch." in content
+        assert exported["unexpected"] == {"kept": True}
+
+    def test_review_json_editor_rejects_non_object_text(self) -> None:
+        """Invalid review JSON is shown back with an error and the draft is unchanged."""
+        client = Client()
+        response = client.post("/builder/import/", data={"plan_json": json.dumps(_valid_import_plan())})
+        draft_id = _draft_id_from_builder_redirect(response["Location"])
+
+        rejected = client.post(f"/builder/{draft_id}/review/json/", data={"plan_json": "{broken"})
+        review = client.get(f"/builder/{draft_id}/review/")
+
+        assert rejected.status_code == 400
+        assert rejected["Cache-Control"] == "no-store"
+        assert "Plan JSON must be valid JSON" in rejected.content.decode("utf-8")
+        assert "{broken" in rejected.content.decode("utf-8")
+        assert "Ready to launch from this reviewed plan." in review.content.decode("utf-8")
+
+    def test_review_json_editor_returns_404_for_unknown_draft(self) -> None:
+        """The review JSON editor is scoped to drafts in this browser session."""
+        response = Client().post("/builder/missing/review/json/", data={"plan_json": "{}"})
+
+        assert response.status_code == 404
+
+    @patch("conformance.api.ui_views.start_run")
+    def test_safe_export_redacts_imported_secret_fields(self, mock_start_run: Mock) -> None:
+        """Unrepresented imported secrets are blanked in safe export and kept in secret export."""
+        client = Client()
+        plan_document = _valid_import_plan()
+        plan_document["unexpected"] = {"accessToken": "imported-secret-token"}
+        response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
+        draft_id = _draft_id_from_builder_redirect(response["Location"])
+
+        safe = client.get(f"/builder/{draft_id}/export.json").json()
+        with_secrets = client.post(f"/builder/{draft_id}/export.json", data={"include_secrets": "1"}).json()
+
+        assert safe["unexpected"]["accessToken"] != "imported-secret-token"
+        assert with_secrets["unexpected"]["accessToken"] == "imported-secret-token"
+        mock_start_run.assert_not_called()
 
     def test_removed_single_page_builder_routes_return_404(self) -> None:
         """The legacy /plan/ builder routes are no longer mounted."""

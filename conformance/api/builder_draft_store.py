@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import cast
+from typing import Literal, cast, get_args
 from uuid import uuid4
 
 from django.contrib.sessions.backends.base import SessionBase
@@ -26,6 +26,66 @@ _MAX_SESSION_DRAFTS = 5
 
 _DEFAULT_SECURITY_PROFILE: SecurityProfile = "fapi1-advanced"
 """Placeholder profile used only before a specification boundary is selected."""
+
+type PlanImportIssueKind = Literal["missing", "invalid", "unknown", "skipped", "notice"]
+"""Category of a field-level problem found while loading plan JSON into a draft."""
+
+_PLAN_IMPORT_ISSUE_KINDS: frozenset[str] = frozenset(get_args(PlanImportIssueKind.__value__))
+"""Accepted import-issue kinds when decoding session state."""
+
+
+@dataclass(frozen=True)
+class PlanImportIssue:
+    """One field-level problem found while loading test-plan JSON into a draft.
+
+    Attributes:
+        path: Human-readable JSON path, for example
+            ``securityEnvironment.discoveryUrl`` or ``resourceGroups[1]``.
+        ref: Object-key path used to match the issue against the draft's
+            unrepresented plan fields; empty for whole-plan notices.
+        kind: ``missing`` (required field absent), ``invalid`` (value kept but
+            fails validation), ``unknown`` (key not in the canonical schema),
+            ``skipped`` (value kept but could not be loaded into the builder),
+            or ``notice`` (whole-plan information).
+        message: Participant-facing explanation of the problem.
+    """
+
+    path: str
+    ref: tuple[str, ...]
+    kind: PlanImportIssueKind
+    message: str
+
+    def to_session_object(self) -> JsonObject:
+        """Serialise this issue into a Django-session-safe JSON object.
+
+        Returns:
+            JSON object stored with the draft.
+        """
+        return {"path": self.path, "ref": list(self.ref), "kind": self.kind, "message": self.message}
+
+    @classmethod
+    def from_session_object(cls, raw_value: object) -> PlanImportIssue | None:
+        """Decode an import issue from session state.
+
+        Args:
+            raw_value: Value read from the Django session.
+
+        Returns:
+            Parsed issue, or ``None`` when the value is malformed.
+        """
+        if not isinstance(raw_value, dict):
+            return None
+        path = raw_value.get("path")
+        kind = raw_value.get("kind")
+        message = raw_value.get("message")
+        if not (isinstance(path, str) and isinstance(message, str) and kind in _PLAN_IMPORT_ISSUE_KINDS):
+            return None
+        return cls(
+            path=path,
+            ref=_string_tuple(raw_value.get("ref")),
+            kind=cast(PlanImportIssueKind, kind),
+            message=message,
+        )
 
 
 @dataclass(frozen=True)
@@ -62,6 +122,13 @@ class BuilderDraft:
             to prefill later config steps without exporting raw metadata.
         created_at: UTC ISO timestamp for draft creation.
         updated_at: UTC ISO timestamp for the latest draft write.
+        unrepresented_plan_fields: Canonical-shaped test-plan JSON overlay for
+            values the builder cannot represent (invalid values, unknown keys,
+            scope that could not be resolved). It is merged over the
+            builder-generated plan JSON so loaded values are never silently
+            replaced; normal launch validation fails until they are fixed.
+        import_issues: Field-level problems reported by the latest plan JSON
+            load, shown as review warnings.
     """
 
     draft_id: str
@@ -81,6 +148,8 @@ class BuilderDraft:
     discovery_metadata: Mapping[str, JsonValue]
     created_at: str
     updated_at: str
+    unrepresented_plan_fields: Mapping[str, JsonValue] = field(default_factory=dict)
+    import_issues: tuple[PlanImportIssue, ...] = ()
 
     @classmethod
     def create(cls) -> BuilderDraft:
@@ -152,6 +221,8 @@ class BuilderDraft:
             discovery_metadata=_json_object(raw_value.get("discoveryMetadata")),
             created_at=created_at,
             updated_at=updated_at,
+            unrepresented_plan_fields=_json_object(raw_value.get("unrepresentedPlanFields")),
+            import_issues=_import_issues(raw_value.get("importIssues")),
         )
 
     def with_catalogue_boundary(
@@ -176,23 +247,12 @@ class BuilderDraft:
                 exactly one security profile.
         """
         security_profile = derived_security_profile_for_boundary(scheme, specification, version)
-        return BuilderDraft(
-            draft_id=self.draft_id,
+        return replace(
+            self,
             scheme=scheme,
             specification=specification,
             version=version,
             security_profile=security_profile,
-            resource_group_ids=self.resource_group_ids,
-            endpoint_ids=self.endpoint_ids,
-            endpoint_capability_ids=self.endpoint_capability_ids,
-            config=self.config,
-            security_environment=self.security_environment,
-            business_test_data=self.business_test_data,
-            dynamic_client_registration=self.dynamic_client_registration,
-            metadata=self.metadata,
-            execution_mode=self.execution_mode,
-            discovery_metadata=self.discovery_metadata,
-            created_at=self.created_at,
             updated_at=_utc_timestamp(),
         )
 
@@ -214,25 +274,13 @@ class BuilderDraft:
         Returns:
             Updated draft with a refreshed ``updated_at`` timestamp.
         """
-        return BuilderDraft(
-            draft_id=self.draft_id,
-            scheme=self.scheme,
-            specification=self.specification,
-            version=self.version,
-            security_profile=self.security_profile,
+        return replace(
+            self,
             resource_group_ids=resource_group_ids,
             endpoint_ids=endpoint_ids,
             endpoint_capability_ids={
                 endpoint_id: tuple(capability_ids) for endpoint_id, capability_ids in endpoint_capability_ids.items()
             },
-            config=self.config,
-            security_environment=self.security_environment,
-            business_test_data=self.business_test_data,
-            dynamic_client_registration=self.dynamic_client_registration,
-            metadata=self.metadata,
-            execution_mode=self.execution_mode,
-            discovery_metadata=self.discovery_metadata,
-            created_at=self.created_at,
             updated_at=_utc_timestamp(),
         )
 
@@ -246,23 +294,9 @@ class BuilderDraft:
         Returns:
             Updated draft with a refreshed ``updated_at`` timestamp.
         """
-        return BuilderDraft(
-            draft_id=self.draft_id,
-            scheme=self.scheme,
-            specification=self.specification,
-            version=self.version,
-            security_profile=self.security_profile,
-            resource_group_ids=self.resource_group_ids,
-            endpoint_ids=self.endpoint_ids,
-            endpoint_capability_ids=self.endpoint_capability_ids,
+        return replace(
+            self,
             config=_config_object(config),
-            security_environment=self.security_environment,
-            business_test_data=self.business_test_data,
-            dynamic_client_registration=self.dynamic_client_registration,
-            metadata=self.metadata,
-            execution_mode=self.execution_mode,
-            discovery_metadata=self.discovery_metadata,
-            created_at=self.created_at,
             updated_at=_utc_timestamp(),
         )
 
@@ -290,16 +324,8 @@ class BuilderDraft:
         Returns:
             Updated draft with a refreshed ``updated_at`` timestamp.
         """
-        return BuilderDraft(
-            draft_id=self.draft_id,
-            scheme=self.scheme,
-            specification=self.specification,
-            version=self.version,
-            security_profile=self.security_profile,
-            resource_group_ids=self.resource_group_ids,
-            endpoint_ids=self.endpoint_ids,
-            endpoint_capability_ids=self.endpoint_capability_ids,
-            config=self.config,
+        return replace(
+            self,
             security_environment=_json_object(security_environment),
             business_test_data=_json_object(business_test_data),
             dynamic_client_registration=(
@@ -309,8 +335,6 @@ class BuilderDraft:
             ),
             metadata=_json_object(metadata),
             execution_mode=execution_mode,
-            discovery_metadata=self.discovery_metadata,
-            created_at=self.created_at,
             updated_at=_utc_timestamp(),
         )
 
@@ -324,25 +348,38 @@ class BuilderDraft:
         Returns:
             Updated draft with a refreshed ``updated_at`` timestamp.
         """
-        return BuilderDraft(
-            draft_id=self.draft_id,
-            scheme=self.scheme,
-            specification=self.specification,
-            version=self.version,
-            security_profile=self.security_profile,
-            resource_group_ids=self.resource_group_ids,
-            endpoint_ids=self.endpoint_ids,
-            endpoint_capability_ids=self.endpoint_capability_ids,
-            config=self.config,
-            security_environment=self.security_environment,
-            business_test_data=self.business_test_data,
-            dynamic_client_registration=self.dynamic_client_registration,
-            metadata=self.metadata,
-            execution_mode=self.execution_mode,
+        return replace(
+            self,
             discovery_metadata=_json_object(discovery_metadata),
-            created_at=self.created_at,
             updated_at=_utc_timestamp(),
         )
+
+    def with_unrepresented_plan_fields(self, *, unrepresented_plan_fields: Mapping[str, JsonValue]) -> BuilderDraft:
+        """Return a copy with the unrepresented plan-JSON overlay replaced.
+
+        Args:
+            unrepresented_plan_fields: Canonical-shaped JSON overlay of values
+                the builder cannot represent.
+
+        Returns:
+            Updated draft with a refreshed ``updated_at`` timestamp.
+        """
+        return replace(
+            self,
+            unrepresented_plan_fields=_json_object(unrepresented_plan_fields),
+            updated_at=_utc_timestamp(),
+        )
+
+    def with_import_issues(self, *, import_issues: tuple[PlanImportIssue, ...]) -> BuilderDraft:
+        """Return a copy with plan-JSON import issues replaced.
+
+        Args:
+            import_issues: Field-level problems to show on review.
+
+        Returns:
+            Updated draft with a refreshed ``updated_at`` timestamp.
+        """
+        return replace(self, import_issues=tuple(import_issues), updated_at=_utc_timestamp())
 
     def to_session_object(self) -> JsonObject:
         """Serialise this draft into a Django-session-safe JSON object.
@@ -371,6 +408,8 @@ class BuilderDraft:
             "discoveryMetadata": _json_object(self.discovery_metadata),
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
+            "unrepresentedPlanFields": _json_object(self.unrepresented_plan_fields),
+            "importIssues": [issue.to_session_object() for issue in self.import_issues],
         }
 
 
@@ -515,6 +554,20 @@ def _json_object(value: object) -> JsonObject:
     if not isinstance(value, Mapping):
         return {}
     return {key: _copy_json_value(item) for key, item in value.items() if isinstance(key, str) and _is_json_value(item)}
+
+
+def _import_issues(value: object) -> tuple[PlanImportIssue, ...]:
+    """Return import issues decoded from session JSON.
+
+    Args:
+        value: Raw value decoded from the Django session.
+
+    Returns:
+        Parsed issues; malformed entries are dropped.
+    """
+    if not isinstance(value, list):
+        return ()
+    return tuple(issue for issue in map(PlanImportIssue.from_session_object, value) if issue is not None)
 
 
 def _config_object(value: object) -> JsonObject:

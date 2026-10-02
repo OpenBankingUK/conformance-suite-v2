@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import cast
@@ -27,14 +27,15 @@ from conformance.api.builder_wizard import (
     catalogue_boundary_continue_blocker,
     config_visibility_for_plan_document,
     discovery_config_form_initial,
-    draft_scope_from_plan_document,
     endpoint_capability_values_from_mapping,
     merge_business_config,
     merge_discovery_config,
+    merge_plan_json_overlay,
     merge_security_config,
     model_bank_config_from_plan_config,
     plan_document_from_draft,
     plan_document_to_export_json,
+    plan_json_from_draft,
     refresh_security_environment,
     security_config_form_initial,
     security_credential_rows,
@@ -42,6 +43,13 @@ from conformance.api.builder_wizard import (
     specification_options,
     stored_security_credentials,
     version_options,
+)
+from conformance.api.plan_import_recovery import (
+    PlanImportError,
+    PlanImportForm,
+    parse_plan_import_text,
+    reconcile_draft_after_builder_save,
+    recover_draft_from_plan_json,
 )
 from conformance.api.plan_review import PlanTestCaseRow, compiled_plan_rows
 from conformance.api.run_lifecycle import start_run
@@ -52,7 +60,6 @@ from conformance.catalogue import (
     PlanDocumentBoundary,
     PlanDocumentV2,
     compile_test_plan_document,
-    parse_test_plan_document,
     plan_document_to_json_object,
 )
 from conformance.catalogue_registry import supported_catalogues
@@ -66,6 +73,7 @@ from conformance.plan_configuration import parse_dcr_plan_configuration, validat
 from conformance.test_plan_validation import (
     TestPlanValidationError,
     prepare_test_plan_for_run,
+    redact_sensitive_plan_json,
     validate_test_plan_for_load,
 )
 
@@ -88,6 +96,9 @@ class _BuilderReviewState:
         error: Non-recoverable review error, if the draft cannot be interpreted.
         safe_export_json: Secret-safe export text.
         sensitive_export_warning: Warning shown beside export-with-secrets.
+        plan_json_text: Unmasked plan JSON composed from the builder draft and
+            any imported fields the builder cannot represent yet, for the review
+            JSON editor.
     """
 
     document: PlanDocumentV2 | None
@@ -97,6 +108,7 @@ class _BuilderReviewState:
     error: str | None
     safe_export_json: str
     sensitive_export_warning: str
+    plan_json_text: str = ""
 
     @property
     def launch_supported(self) -> bool:
@@ -182,6 +194,7 @@ def builder_catalogue_boundary(request: HttpRequest, draft_id: str) -> HttpRespo
                 endpoint_ids=pruned_scope.selected_endpoint_ids,
                 endpoint_capability_ids=pruned_scope.selected_endpoint_capability_ids,
             )
+            updated_draft = reconcile_draft_after_builder_save(draft, updated_draft, step="catalogue")
             draft_store.save(updated_draft)
             if catalogue_boundary_continue_blocker(selected_boundary) is not None:
                 return render(
@@ -238,7 +251,7 @@ def builder_scope(request: HttpRequest, draft_id: str) -> HttpResponse:
                 endpoint_ids=form.selected_endpoint_ids,
                 endpoint_capability_ids=form.selected_endpoint_capability_ids,
             )
-            draft_store.save(updated_draft)
+            draft_store.save(reconcile_draft_after_builder_save(draft, updated_draft, step="scope"))
             if not boundary_requires_resource_groups(boundary):
                 return redirect("builder-discovery-config", draft_id=draft.draft_id)
             return redirect("builder-config", draft_id=draft.draft_id)
@@ -336,7 +349,8 @@ def builder_config(request: HttpRequest, draft_id: str) -> HttpResponse:
             config_visibility=config_visibility,
         )
         if form.is_valid() and form.config is not None:
-            draft_store.save(draft.with_config(config=merge_business_config(draft.config, form.config)))
+            updated_draft = draft.with_config(config=merge_business_config(draft.config, form.config))
+            draft_store.save(reconcile_draft_after_builder_save(draft, updated_draft, step="config"))
             return redirect("builder-review", draft_id=draft.draft_id)
         return render(
             request,
@@ -386,9 +400,10 @@ def builder_discovery_config(request: HttpRequest, draft_id: str) -> HttpRespons
             metadata = (
                 _fetch_discovery_metadata(updated_config) if _metadata_string(updated_config, "discoveryUrl") else {}
             )
-            draft_store.save(
-                draft.with_config(config=updated_config).with_discovery_metadata(discovery_metadata=metadata)
+            updated_draft = draft.with_config(config=updated_config).with_discovery_metadata(
+                discovery_metadata=metadata
             )
+            draft_store.save(reconcile_draft_after_builder_save(draft, updated_draft, step="discovery"))
             return redirect("builder-security-config", draft_id=draft.draft_id)
         return render(
             request,
@@ -506,7 +521,7 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
                         metadata=draft.metadata,
                         execution_mode=draft.execution_mode,
                     )
-                draft_store.save(updated_draft)
+                draft_store.save(reconcile_draft_after_builder_save(draft, updated_draft, step="security"))
                 destination = "builder-review" if _is_dcr_draft(draft) else "builder-scope"
                 return redirect(destination, draft_id=draft.draft_id)
             form.add_error(None, validation_error)
@@ -538,67 +553,70 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
 
 @require_http_methods(["GET", "POST"])
 def builder_import(request: HttpRequest) -> HttpResponse:
-    """Render or process the browser v2 test-plan import flow.
+    """Render or process the browser test-plan import flow.
+
+    Import is lenient: any JSON object is accepted and as much of it as matches
+    the schemaVersion 1.0 canonical test-plan shape is loaded into a new builder
+    draft. Missing, invalid, or unrecognised fields are kept on the draft and
+    reported as warnings on the review page, where launch stays blocked until
+    the plan passes normal validation.
 
     Args:
         request: The incoming browser request.
 
     Returns:
-        HTML import page, validation errors, or a redirect to the imported
-        draft review page.
+        HTML import page, a ``400`` error when the input is not a JSON object,
+        or a redirect to the imported draft review page.
     """
     if request.method == "GET":
         return render(request, "conformance/builder_import.html", {"plan_json": "", "import_error": None})
 
-    raw_plan_json = request.POST.get("plan_json", "")
-    try:
-        raw_document = json.loads(raw_plan_json)
-    except json.JSONDecodeError as error:
+    form = PlanImportForm(data=request.POST, files=request.FILES)
+    plan_text = form.data.get("plan_json", "") if form.is_bound else ""
+    if not form.is_valid() or form.raw_plan is None:
         return render(
             request,
             "conformance/builder_import.html",
-            {"plan_json": raw_plan_json, "import_error": f"Plan JSON must be valid JSON: {error.msg}"},
-            status=400,
-        )
-    try:
-        validation_result = validate_test_plan_for_load(raw_document)
-        if not validation_result.valid:
-            raise CatalogueError(validation_result.summary_message())
-        parsed_document = parse_test_plan_document(raw_document)
-        if not isinstance(parsed_document, PlanDocumentV2) or parsed_document.schema_version != "1.0":
-            raise CatalogueError("Browser import accepts schemaVersion 1.0 test plans only")
-    except CatalogueError as error:
-        return render(
-            request,
-            "conformance/builder_import.html",
-            {"plan_json": raw_plan_json, "import_error": f"Plan validation failed: {error}"},
+            {"plan_json": plan_text, "import_error": form.import_error()},
             status=400,
         )
 
     draft_store = SessionBuilderDraftStore(request.session)
     draft = draft_store.create()
-    resource_group_ids, endpoint_ids, capability_ids = draft_scope_from_plan_document(parsed_document)
-    imported_draft = (
-        draft.with_catalogue_boundary(
-            scheme=parsed_document.scheme,
-            specification=parsed_document.specification,
-            version=parsed_document.version,
+    draft_store.save(recover_draft_from_plan_json(form.raw_plan, draft=draft))
+    return redirect("builder-review", draft_id=draft.draft_id)
+
+
+@require_POST
+def builder_review_json(request: HttpRequest, draft_id: str) -> HttpResponse:
+    """Replace a draft with plan JSON edited on the review page.
+
+    The edited JSON is recovered with the same lenient rules as import, so the
+    participant can fix fields the guided builder cannot represent.
+
+    Args:
+        request: The incoming browser POST request.
+        draft_id: Session-scoped draft id from the route.
+
+    Returns:
+        Redirect to the review page, the review page with a ``400`` error when
+        the text is not a JSON object, or ``404`` when the draft is unknown.
+    """
+    draft_store = SessionBuilderDraftStore(request.session)
+    draft = draft_store.get(draft_id)
+    if draft is None:
+        return HttpResponseNotFound("Builder draft not found")
+    plan_text = request.POST.get("plan_json", "")
+    try:
+        raw_plan = parse_plan_import_text(plan_text)
+    except PlanImportError as error:
+        return _review_response(
+            request,
+            _builder_review_context(draft=draft, plan_json_error=str(error), plan_json_text=plan_text),
+            status=400,
         )
-        .with_scope_selection(
-            resource_group_ids=resource_group_ids,
-            endpoint_ids=endpoint_ids,
-            endpoint_capability_ids=capability_ids,
-        )
-        .with_config(config=parsed_document.config)
-        .with_plan_context(
-            security_environment=parsed_document.security_environment,
-            business_test_data=parsed_document.business_test_data,
-            metadata=parsed_document.metadata,
-            execution_mode=parsed_document.execution_mode,
-            dynamic_client_registration=parsed_document.dynamic_client_registration,
-        )
-    )
-    draft_store.save(imported_draft)
+    fresh_draft = replace(BuilderDraft.create(), draft_id=draft.draft_id, created_at=draft.created_at)
+    draft_store.save(recover_draft_from_plan_json(raw_plan, draft=fresh_draft))
     return redirect("builder-review", draft_id=draft.draft_id)
 
 
@@ -616,7 +634,7 @@ def builder_review(request: HttpRequest, draft_id: str) -> HttpResponse:
     draft = SessionBuilderDraftStore(request.session).get(draft_id)
     if draft is None:
         return HttpResponseNotFound("Builder draft not found")
-    return render(request, "conformance/builder_review.html", _builder_review_context(draft=draft))
+    return _review_response(request, _builder_review_context(draft=draft))
 
 
 @require_http_methods(["GET", "POST"])
@@ -645,6 +663,12 @@ def builder_export(request: HttpRequest, draft_id: str) -> HttpResponse:
         sensitive_runtime_input_ids=_sensitive_runtime_input_ids(state.compiled_plan),
         include_secrets=include_secrets,
     )
+    if draft.unrepresented_plan_fields:
+        overlay = dict(draft.unrepresented_plan_fields)
+        exported = merge_plan_json_overlay(
+            exported,
+            overlay if include_secrets else redact_sensitive_plan_json(overlay),
+        )
     response = HttpResponse(
         json.dumps(exported, indent=2, sort_keys=True),
         content_type="application/json",
@@ -674,15 +698,17 @@ def builder_launch(request: HttpRequest, draft_id: str) -> HttpResponse:
         return HttpResponseNotFound("Builder draft not found")
     state = _builder_review_state(draft)
     if not state.launch_supported or state.document is None:
-        return render(
+        return _review_response(
             request,
-            "conformance/builder_review.html",
             _builder_review_context(draft=draft, launch_error="Resolve review blockers before launching."),
             status=400,
         )
 
+    launch_plan = (
+        plan_json_from_draft(draft) if draft.unrepresented_plan_fields else plan_document_to_json_object(state.document)
+    )
     try:
-        prepared = prepare_test_plan_for_run(plan_document_to_json_object(state.document), base_dir=Path.cwd())
+        prepared = prepare_test_plan_for_run(launch_plan, base_dir=Path.cwd())
         status_body = start_run(
             config=prepared.config,
             compiled_plan=prepared.compiled_plan,
@@ -693,16 +719,14 @@ def builder_launch(request: HttpRequest, draft_id: str) -> HttpResponse:
             validation_result=prepared.validation.to_json_object(),
         )
     except (CatalogueError, ConfigError, TestPlanValidationError) as error:
-        return render(
+        return _review_response(
             request,
-            "conformance/builder_review.html",
             _builder_review_context(draft=draft, launch_error=f"Launch validation failed: {error}"),
             status=400,
         )
     except RunConflictError as error:
-        return render(
+        return _review_response(
             request,
-            "conformance/builder_review.html",
             _builder_review_context(
                 draft=draft,
                 launch_error=f"A run is already active: {error.active_run_id}",
@@ -1210,6 +1234,8 @@ def _builder_review_context(
     draft: BuilderDraft,
     launch_error: str | None = None,
     active_run_id: str | None = None,
+    plan_json_error: str | None = None,
+    plan_json_text: str | None = None,
 ) -> dict[str, object]:
     """Build template context for the builder review page.
 
@@ -1217,6 +1243,8 @@ def _builder_review_context(
         draft: Current browser wizard draft.
         launch_error: Optional launch failure message.
         active_run_id: Optional active run id supplied for conflict links.
+        plan_json_error: Optional error for rejected review JSON edits.
+        plan_json_text: Rejected review JSON text to show back to the user.
 
     Returns:
         Template context for the generated review/summary page.
@@ -1228,6 +1256,9 @@ def _builder_review_context(
         "review_counts": _builder_review_counts(state),
         "review_phase_counts": _builder_review_phase_counts(state.rows),
         "masked_test_plan_json": _masked_review_test_plan_json(state),
+        "import_issues": draft.import_issues,
+        "plan_json_text": state.plan_json_text if plan_json_text is None else plan_json_text,
+        "plan_json_error": plan_json_error,
     }
     if launch_error is not None:
         context["launch_error"] = launch_error
@@ -1236,8 +1267,60 @@ def _builder_review_context(
     return context
 
 
+def _review_response(request: HttpRequest, context: dict[str, object], *, status: int = 200) -> HttpResponse:
+    """Render the review page without caching.
+
+    The review page embeds the unmasked plan JSON editor, so the response must
+    not be stored by the browser or intermediaries.
+
+    Args:
+        request: The incoming browser request.
+        context: Review template context.
+        status: HTTP status code.
+
+    Returns:
+        HTML review response with ``Cache-Control: no-store``.
+    """
+    response = render(request, "conformance/builder_review.html", context, status=status)
+    response["Cache-Control"] = "no-store"
+    response["Pragma"] = "no-cache"
+    return response
+
+
 def _builder_review_state(draft: BuilderDraft) -> _BuilderReviewState:
-    """Compute generated review state for a builder draft.
+    """Compute review state, including blockers from imported plan JSON.
+
+    Launch blockers come from the builder document plus normal load validation
+    of the composed plan JSON whenever the draft still holds imported fields the
+    builder cannot represent, so lenient import never relaxes launch validation.
+
+    Args:
+        draft: Current browser wizard draft.
+
+    Returns:
+        Review state with preview rows, launch blockers, and export JSON.
+    """
+    state = _builder_document_review_state(draft)
+    plan_json = plan_json_from_draft(draft)
+    blockers = list(state.blockers)
+    error = state.error
+    if _draft_boundary(draft) is None:
+        error = None
+        blockers = ["Choose a specification in the builder or the plan JSON before launch."]
+    if draft.unrepresented_plan_fields:
+        for issue in validate_test_plan_for_load(plan_json).issues:
+            if issue.blocking and issue.message not in blockers:
+                blockers.append(issue.message)
+    return replace(
+        state,
+        blockers=tuple(blockers),
+        error=error,
+        plan_json_text=json.dumps(plan_json, indent=2, sort_keys=True),
+    )
+
+
+def _builder_document_review_state(draft: BuilderDraft) -> _BuilderReviewState:
+    """Compute generated review state for the builder-represented draft.
 
     Args:
         draft: Current browser wizard draft.
