@@ -1,21 +1,16 @@
 # ─── Build stage ──────────────────────────────────────────────────────────────
-# Alpine base (musl libc) chosen over Debian slim to eliminate the bulk of
-# upstream OS-package CVEs that Snyk flags on the Debian image. Pinned to
-# Alpine 3.22 + the stable Python 3.14 line (matches `requires-python` in
-# pyproject.toml — no release-candidate interpreters in regulated builds).
-# Pinned to the 3.14.5 patch so the image is reproducible (the `3.14` minor
-# tag re-points to whichever 3.14.x is current on Docker Hub).
-FROM python:3.14.5-alpine3.22 AS builder
-
-# Build toolchain for C/Rust extensions pulled in by uvicorn[standard]
-# (httptools, uvloop, watchfiles). musl wheels exist for most of these on
-# recent releases, but installing build deps here is the belt-and-braces
-# guarantee — everything stays in the discarded builder layer.
-RUN apk add --no-cache \
-        build-base \
-        libffi-dev \
-        cargo \
-        rust
+# Docker Hardened Image (DHI), Alpine 3.24, "-dev" variant: has a shell, apk,
+# and pip so it can build the venv, but is otherwise the same underlying
+# Python 3.14/musl environment as the distroless runtime stage below.
+# Uvicorn's C-extension dependencies (httptools, uvloop, and watchfiles)
+# provide prebuilt musllinux wheels, so no compiler toolchain is required.
+#
+# Pulling from `dhi.io` requires `docker login dhi.io` using a Docker account
+# (see docs/DEVELOPER_GUIDE.md); CI authenticates with a read-only
+# organisation-owned credential. Pinned to an exact digest for
+# reproducibility; base updates require a reviewed digest bump and scanner
+# policy reassessment.
+FROM dhi.io/python:3.14-alpine3.24-dev@sha256:a40c90f9eb46f8a1c8d56ea1bb990c556677622e4b7d3d7130d713a9de4b4b1d AS builder
 
 # Install uv for fast, reproducible dependency resolution
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /usr/local/bin/uv
@@ -29,35 +24,63 @@ COPY pyproject.toml uv.lock ./
 # is a container-deployed Django app, not a distributable Python package)
 RUN uv sync --frozen --no-dev --no-install-project
 
-# Copy application source
+# Copy application source (docs/, tests/, scripts/, and other CI/participant-
+# only files are excluded via .dockerignore)
 COPY . .
 
+# Pre-create the persistent data root with its subpaths, owned by the
+# runtime's non-root UID/GID (65532). The final stage's runtime user cannot
+# run `mkdir`/`chown` itself — its image has no shell — so these are created
+# here and copied across with the correct ownership already applied. A named
+# volume mounted at /data in the runtime container inherits this ownership
+# and starts empty on first run (Docker volume initialisation semantics).
+RUN mkdir -p /data/results /data/logs /data/sessions && \
+    chown -R 65532:65532 /app /data
+
 # ─── Runtime stage ────────────────────────────────────────────────────────────
-FROM python:3.14.5-alpine3.22 AS runtime
+# Distroless DHI runtime variant: no shell, defaults to non-root UID/GID 65532.
+# Pinned to an exact digest for the same reasons as the builder stage above.
+FROM dhi.io/python:3.14-alpine3.24@sha256:4361d30a5f505dd5509622eff5c7bef79afa798b4f3eedd3f5cb1abc92be9168 AS runtime
 
 WORKDIR /app
 
-# Create non-root user. Alpine ships BusyBox addgroup/adduser rather than
-# groupadd/useradd; flags differ from the shadow-utils equivalents used on
-# Debian. `-D` disables the password, `-S` would create a system user (we
-# want a regular UID 1000 so file ownership is predictable on bind mounts).
-RUN addgroup -g 1000 appuser && \
-    adduser -u 1000 -G appuser -s /bin/sh -D appuser
+# Copy the application and venv, and the pre-created /data tree. --chown is
+# required even though the builder already chowned these paths: COPY creates
+# a *new* destination directory owned by root by default whenever the
+# destination does not yet exist in this stage, regardless of the source
+# ownership.
+COPY --from=builder --chown=65532:65532 /app /app
+COPY --from=builder --chown=65532:65532 /data /data
 
-# Copy virtual environment and application from builder (with correct ownership)
-COPY --from=builder --chown=appuser:appuser /app /app
-
-# Ensure the venv is on PATH
 ARG CONFORMANCE_TOOL_VERSION=""
+ARG SOURCE_REVISION=""
 ENV PATH="/app/.venv/bin:$PATH"
 ENV CONFORMANCE_TOOL_VERSION=${CONFORMANCE_TOOL_VERSION}
 
-# Switch to non-root user
-USER appuser
+# OCI labels used by the promotion workflow to cross-check a built candidate
+# image against its release metadata before publishing (see scripts/release_metadata.py).
+LABEL org.opencontainers.image.title="Open Banking UK Conformance Suite" \
+      org.opencontainers.image.description="Open Banking UK Conformance Test Tool for verifying API standards compliance" \
+      org.opencontainers.image.source="https://github.com/OpenBankingUK/conformance-suite-v2" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version=${CONFORMANCE_TOOL_VERSION} \
+      org.opencontainers.image.revision=${SOURCE_REVISION}
+
+# The base image already defaults to this UID/GID; set explicitly so the
+# requirement holds regardless of upstream base image changes.
+USER 65532:65532
 
 EXPOSE 8443
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8443/health/', headers={'Host': 'healthcheck.local'}).raise_for_status()" || exit 1
+VOLUME ["/data"]
 
-CMD ["uvicorn", "config.asgi:application", "--host", "0.0.0.0", "--port", "8443"]
+# Exec-form healthcheck: the runtime image has no shell, so a shell-form
+# `CMD` string (as used by most Dockerfiles) cannot run here.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["python3", "/app/docker/healthcheck.py"]
+
+# The entrypoint prepares /data, the Django secret key, local TLS material,
+# and safe defaults, then execs into CMD (or an operator-supplied override,
+# e.g. the existing headless CLI) so signals and exit codes reach it directly.
+ENTRYPOINT ["python3", "/app/docker/entrypoint.py"]
+CMD ["uvicorn", "config.asgi:application", "--host", "0.0.0.0", "--port", "8443", "--ssl-keyfile", "/tmp/conformance-suite-tls/localhost-private-key.pem", "--ssl-certfile", "/tmp/conformance-suite-tls/localhost-certificate.pem", "--log-config", "/app/docker/uvicorn_logging.json"]

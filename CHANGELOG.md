@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Automatic Docker Hub `beta-latest` pointer updates after approved beta
+  publication and provenance/SBOM attestations, with manifest-digest
+  verification. Docker Hub's highest published beta across release branches
+  determines eligibility; older backfills and GA releases leave it unchanged.
 - Automatic, Environment-gated preview, beta, and GA image promotions after
   successful candidate CI runs, with manual promotion dispatch retained for
   recovery and backfill.
@@ -50,6 +54,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Main's Docker image now uses the assessed, digest-pinned DHI Alpine 3.24
+  builder and distroless runtime instead of the vulnerable Alpine 3.22 base.
+  The non-root HTTPS entrypoint, persistent local identity, exec-form
+  healthcheck, and hardened Compose/local-run profile are carried over from
+  the approved release implementation without changing release trust gates.
+- Docker build contexts exclude local participant configuration, development
+  certificates, and generated output so these files cannot be copied into
+  distributed images.
 - Pull request CI now invokes the canonical `make check` gate with a full
   tracked-file secret scan while Docker image build, startup, and `/health/`
   validation run independently in parallel. The duplicated lint/test command

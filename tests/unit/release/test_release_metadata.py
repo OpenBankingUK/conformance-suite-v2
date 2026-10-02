@@ -15,11 +15,30 @@ from scripts.release_metadata import (
     read_pyproject_raw_version,
     require_not_already_published,
     require_version_increase,
+    should_update_beta_latest,
     validate_branch_compatibility,
     validate_release_tag,
 )
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.parametrize(
+    ("version", "tags", "expected"),
+    [
+        ("2.0.0-beta.1", [], True),
+        ("2.0.0-beta.10", ["2.0.0-beta.9"], True),
+        ("2.0.0-beta.9", ["2.0.0-beta.10"], False),
+        ("2.1.0-beta.1", ["2.0.0-beta.10"], True),
+        ("2.0.0-beta.11", ["2.1.0-beta.1"], False),
+        ("2.0.0-beta.1", ["2.0.0-beta.1", "latest", "beta-latest", "3.0.0", "4.0.0-dev.1"], True),
+        ("2.0.0", [], False),
+        ("2.0.0-dev.1", [], False),
+    ],
+)
+def test_beta_latest_policy(version: str, tags: list[str], expected: bool) -> None:
+    """Only the highest numeric beta across all Docker Hub releases may move the alias."""
+    assert should_update_beta_latest(classify_raw_version(version), tags) is expected
 
 
 class TestClassifyRawVersion:

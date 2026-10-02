@@ -419,6 +419,7 @@ dispatch of the `promote-*` workflows is reserved for recovery or backfill.
 |---|---|---|
 | `vX.Y.Z` | `v1.2.0` | Stable release |
 | `X.Y.Z-beta.N` in `pyproject.toml` | `2.0.0-beta.1` | Beta image |
+| `beta-latest` (Docker Hub only) | `beta-latest` | Mutable highest-beta pointer |
 
 ```bash
 git tag -a v1.2.0 -m "Release 1.2.0"
@@ -468,12 +469,38 @@ Beta releases allow pre-release images to be distributed before a final stable t
    waits for approval of the `beta-release` Environment deployment.
 3. Approve the Environment deployment. The workflow publishes the exact
    artifacts as immutable
-   `X.Y.Z-beta.N`; it does not create or move `latest`.
+   `X.Y.Z-beta.N`, completes provenance and both platform SBOM attestations,
+   then updates `beta-latest` if this is the highest published beta version.
+   It does not create or move GA `latest`.
 4. Increment `N` in a new approved change for each subsequent beta.
 
 Manual **Promote beta image** dispatch is available from `main` only for
 recovery/backfill.
 ```
+
+The developer does not set `beta-latest` in `pyproject.toml` or run another
+workflow. Both automatic and manual beta promotions maintain it through the
+same Environment-approved publication path. Docker Hub's complete published
+tag inventory is the source of truth: compare exact beta versions numerically
+across all release branches, not by merge time, branch, or publication time.
+An older backfill publishes its exact version but leaves the pointer unchanged;
+preview and GA releases never move it.
+
+The pointer copies the exact attested multi-architecture manifest by digest,
+without rebuilding, and promotion verifies that its digest matches the version
+tag. Registry inventory, alias publication, or verification errors fail the
+workflow explicitly. Publication and alias updates are not atomic: a failed
+promotion may leave an exact version published with the alias unchanged.
+Duplicate-version protection still applies; this change introduces no separate
+seed or repair workflow. The alias is first created on the next eligible beta
+promotion, not retroactively for existing images.
+
+Docker Hub tag-immutability rules must allow `beta-latest` (and GA `latest`)
+to move while protecting exact version tags. Only the serialized promotion
+pipeline should write these aliases; independent registry writers are outside
+its concurrency protection. Release branches must incorporate updated trusted
+main pipeline tooling and rebuild candidates when required by the existing
+pipeline-file equality check.
 
 ### 5.4 Release Exception Process
 
