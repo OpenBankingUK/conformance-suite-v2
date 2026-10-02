@@ -59,6 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The non-root HTTPS entrypoint, persistent local identity, exec-form
   healthcheck, and hardened Compose/local-run profile are carried over from
   the approved release implementation without changing release trust gates.
+- Docker build contexts exclude local participant configuration, development
+  certificates, and generated output so these files cannot be copied into
+  distributed images.
 - Pull request CI now invokes the canonical `make check` gate with a full
   tracked-file secret scan while Docker image build, startup, and `/health/`
   validation run independently in parallel. The duplicated lint/test command

@@ -34,6 +34,7 @@ from collections.abc import MutableMapping
 from datetime import UTC, datetime, timedelta
 from ipaddress import ip_address
 from pathlib import Path
+from typing import NoReturn
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -295,6 +296,11 @@ def _write_private_file(path: Path, content: bytes, *, mode: int = 0o600) -> Non
     os.replace(temporary_path, path)
 
 
+def _exec_command(command: list[str]) -> NoReturn:
+    """Replace the entrypoint process with the requested command."""
+    os.execvp(command[0], command)  # noqa: S606 - trusted, image-supplied CMD/operator override, not user input.
+
+
 def main(argv: list[str] | None = None) -> int:
     """Prepare the runtime environment, then ``exec`` into the requested command.
 
@@ -317,7 +323,7 @@ def main(argv: list[str] | None = None) -> int:
         if str(TLS_CERTIFICATE_PATH) not in command or str(TLS_PRIVATE_KEY_PATH) not in command:
             raise RuntimeError("The local TLS certificate and private key must be configured together.")
         prepare_local_tls(data_dir)
-    os.execvp(command[0], command)  # noqa: S606 - trusted, image-supplied CMD/operator override, not user input.
+    _exec_command(command)
 
 
 if __name__ == "__main__":
