@@ -1255,7 +1255,6 @@ def _builder_review_context(
         "review": state,
         "review_counts": _builder_review_counts(state),
         "review_phase_counts": _builder_review_phase_counts(state.rows),
-        "masked_test_plan_json": _masked_review_test_plan_json(state),
         "import_issues": draft.import_issues,
         "plan_json_text": state.plan_json_text if plan_json_text is None else plan_json_text,
         "plan_json_error": plan_json_error,
@@ -1487,49 +1486,6 @@ def _builder_review_phase_counts(rows: tuple[PlanTestCaseRow, ...]) -> dict[str,
         "security": sum(1 for row in rows if row.role == "security"),
         "resource": sum(1 for row in rows if row.role == "resource"),
     }
-
-
-def _masked_review_test_plan_json(state: _BuilderReviewState) -> str:
-    """Return masked canonical test-plan JSON for the review summary.
-
-    Args:
-        state: Computed builder review state.
-
-    Returns:
-        JSON text with secret-bearing values replaced by ``"***"``.
-    """
-    if state.document is None or state.compiled_plan is None:
-        return ""
-    safe_plan = plan_document_to_export_json(
-        state.document,
-        sensitive_runtime_input_ids=_sensitive_runtime_input_ids(state.compiled_plan),
-        include_secrets=False,
-    )
-    masked_plan = _replace_empty_secret_markers(safe_plan)
-    return json.dumps(masked_plan, indent=2, sort_keys=True)
-
-
-def _replace_empty_secret_markers(value: JsonValue) -> JsonValue:
-    """Replace safe-export empty secret strings with a review mask.
-
-    Args:
-        value: Safe-export JSON value.
-
-    Returns:
-        JSON value with empty secret placeholders rendered as ``"***"`` for
-        participant-facing review.
-    """
-    if isinstance(value, dict):
-        replaced: JsonObject = {}
-        for key, item in value.items():
-            if item == "" and (_review_key_looks_sensitive(key) or key == "value"):
-                replaced[key] = "***"
-            else:
-                replaced[key] = _replace_empty_secret_markers(item)
-        return replaced
-    if isinstance(value, list):
-        return [_replace_empty_secret_markers(item) for item in value]
-    return value
 
 
 def _review_key_looks_sensitive(key: str) -> bool:

@@ -668,7 +668,8 @@ class TestBuilderWizardUi:
         assert review_response.status_code == 200
         content = review_response.content.decode("utf-8")
         assert "Review generated test plan" in content
-        assert "Edit plan JSON" in content
+        assert "Save plan JSON" in content
+        assert "Masked test plan summary" not in content
         assert "accessToken" not in content
         assert "fixture-account-id" not in content
         draft_id = _draft_id_from_builder_redirect(business_response["Location"])

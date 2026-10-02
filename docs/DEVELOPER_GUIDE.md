@@ -283,8 +283,8 @@ The wizard follows the PRD order:
    Known account, amount, date, and frequency shapes use friendly fields with
    advanced JSON fallbacks.
 7. Review the generated plan at `/builder/<draft>/review/`, including summary
-   counts, masked config, import warnings, launch blockers, the collapsed
-   unmasked plan JSON editor (`POST /builder/<draft>/review/json/`), and
+   counts, import warnings, launch blockers, the unmasked, editable plan JSON
+   (`POST /builder/<draft>/review/json/`), which is the single view of the plan, and
    collapsed generated-test rows.
 8. Download safe JSON from `/builder/<draft>/export.json`, explicitly request
    local secret-bearing JSON with a POST `include_secrets=1`, or launch through

@@ -175,29 +175,19 @@
         <p class="helper">{{ review.sensitive_export_warning }}</p>
     </section>
 
-    {% if masked_test_plan_json %}
-        <section class="panel" aria-labelledby="config-summary-heading">
-            <h2 id="config-summary-heading">Masked test plan summary</h2>
-            <textarea readonly spellcheck="false">{{ masked_test_plan_json }}</textarea>
-        </section>
-    {% endif %}
-
     <section class="panel" aria-labelledby="plan-json-heading">
         <h2 id="plan-json-heading">Plan JSON</h2>
-        <p class="helper">Edit the full plan JSON, including imported fields the builder cannot show. Saving reloads the draft with the same rules as import.</p>
+        <p class="helper">The full plan JSON, including imported fields the builder cannot show. Saving reloads the draft with the same rules as import.</p>
+        <div class="message warning">Secrets are shown unmasked, including tokens and inline private keys. Do not share your screen while reviewing.</div>
         {% if plan_json_error %}<div class="message error">{{ plan_json_error }}</div>{% endif %}
-        <details{% if plan_json_error %} open{% endif %}>
-            <summary>Edit plan JSON</summary>
-            <div class="message warning">This editor shows secrets unmasked, including tokens and inline private keys. Do not share your screen while it is open.</div>
-            <form method="post" action="{% url 'builder-review-json' draft.draft_id %}">
-                {% csrf_token %}
-                <label for="id_review_plan_json">Plan JSON</label>
-                <textarea id="id_review_plan_json" name="plan_json" spellcheck="false" autocomplete="off">{{ plan_json_text }}</textarea>
-                <div class="actions">
-                    <button class="secondary" type="submit">Save plan JSON</button>
-                </div>
-            </form>
-        </details>
+        <form method="post" action="{% url 'builder-review-json' draft.draft_id %}">
+            {% csrf_token %}
+            <label for="id_review_plan_json">Plan JSON</label>
+            <textarea id="id_review_plan_json" name="plan_json" spellcheck="false" autocomplete="off">{{ plan_json_text }}</textarea>
+            <div class="actions">
+                <button class="secondary" type="submit">Save plan JSON</button>
+            </div>
+        </form>
     </section>
 
     <section class="panel" aria-labelledby="generated-tests-heading">

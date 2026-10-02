@@ -15,10 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.json` file as well as pasted JSON, and loads as much of an incomplete or
   partly invalid plan as possible into an editable builder draft instead of
   rejecting it. The review page lists import warnings for missing, invalid,
-  unrecognised, and skipped fields. Fix them in the builder steps or in the new
-  collapsed **Edit plan JSON** editor (unmasked, with a secrets notice). Launch
-  still requires the plan to pass normal validation. The review page's
-  "Edit raw JSON as new draft" form is replaced by this editor.
+  unrecognised, and skipped fields. Fix them in the builder steps or in the review
+  page's **Plan JSON** editor, now the single, unmasked and editable view of
+  the plan (with a secrets notice). Launch still requires the plan to pass
+  normal validation. The "Masked test plan summary" box and the "Edit raw JSON
+  as new draft" form are replaced by this editor.
 
 ### Changed
 
