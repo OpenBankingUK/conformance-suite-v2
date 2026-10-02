@@ -2034,6 +2034,63 @@ def _parse_catalogue_key(raw_key: Mapping[str, JsonValue]) -> CatalogueKey:
     )
 
 
+def parse_canonical_specification(
+    raw_specification: Mapping[str, JsonValue],
+) -> tuple[PlanDocumentBoundary, bool, SecurityProfile]:
+    """Parse a canonical ``testPlan.specification`` section on its own.
+
+    Used by lenient browser import to recover the specification boundary from
+    a test plan whose other sections may be invalid.
+
+    Args:
+        raw_specification: Raw ``testPlan.specification`` object.
+
+    Returns:
+        Compiler boundary, whether the family uses resource groups
+        (``OBL_READ_WRITE``) rather than direct endpoints (``OBL_DCR``), and the
+        security profile.
+
+    Raises:
+        CatalogueError: If the specification family, profile, or version is not
+            supported.
+    """
+    boundary, definition, security_profile = _parse_canonical_specification(raw_specification)
+    return boundary, definition.uses_resource_groups, security_profile
+
+
+def validate_canonical_security_environment(raw_environment: Mapping[str, JsonValue]) -> None:
+    """Validate a (possibly partial) canonical ``securityEnvironment`` object.
+
+    Args:
+        raw_environment: Raw security environment object or a subset of it.
+
+    Raises:
+        CatalogueError: If keys are unknown or known fields are malformed, for
+            example a non-HTTPS ``discoveryUrl``.
+    """
+    _parse_canonical_security_environment(raw_environment)
+
+
+def canonical_plan_config(
+    *,
+    security_environment: Mapping[str, JsonValue],
+    business_test_data: Mapping[str, JsonValue],
+) -> JsonObject:
+    """Build executable model-bank config from canonical plan sections.
+
+    Args:
+        security_environment: Canonical security environment.
+        business_test_data: Canonical resource-group business data.
+
+    Returns:
+        Config object accepted by the existing model-bank runner.
+
+    Raises:
+        CatalogueError: If a business-data section has the wrong shape.
+    """
+    return _canonical_plan_config(security_environment=security_environment, business_test_data=business_test_data)
+
+
 def _parse_canonical_plan_document(spec: Mapping[str, JsonValue]) -> PlanDocumentV2:
     """Parse a PRD JSON-first test plan document.
 

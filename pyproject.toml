@@ -1,6 +1,6 @@
 [project]
 name = "conformance-suite-v2"
-version = "2.0.0-beta.4"
+version = "2.0.0-beta.5"
 description = "Open Banking UK Conformance Test Tool for verifying API standards compliance"
 readme = "README.md"
 requires-python = ">=3.14.4"
@@ -44,6 +44,9 @@ markers = [
 # --strict-markers: error on typo'd markers (e.g. @pytest.mark.untit won't silently pass).
 # --tb=short: shorter tracebacks — less noise, still useful.
 addopts = "-ra --strict-markers --tb=short"
+# Dump thread stacks when an individual test exceeds a minute; this diagnoses
+# offline-suite hangs without terminating the test or changing its outcome.
+faulthandler_timeout = 60
 # STATIC_ROOT is only populated by ``collectstatic`` in the Docker build; tests
 # serve static assets through WhiteNoise's finder fallback instead.
 filterwarnings = ["ignore:No directory at.*staticfiles:UserWarning"]

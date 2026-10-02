@@ -77,11 +77,14 @@
 
     <section class="panel" aria-labelledby="import-heading">
         <h2 id="import-heading">Plan JSON</h2>
-        <p class="helper">Paste a schemaVersion 1.0 test plan with specification, security environment, resource groups, business test data, and metadata. Imported secrets are retained only in this browser session and are masked in review.</p>
+        <p class="helper">Upload or paste a schemaVersion 1.0 test plan. Incomplete plans are still imported: everything that can be loaded opens in the builder, and missing or invalid fields are listed as warnings on the review page so you can complete them before launch. Imported secrets are retained only in this browser session.</p>
         {% if import_error %}<div class="message error">{{ import_error }}</div>{% endif %}
-        <form method="post" action="{% url 'builder-import' %}">
+        {# Full navigation: file uploads are posted as multipart form data. #}
+        <form method="post" action="{% url 'builder-import' %}" enctype="multipart/form-data" hx-boost="false">
             {% csrf_token %}
-            <label for="id_plan_json">Test plan JSON</label>
+            <label for="id_plan_file">Test plan file</label>
+            <input id="id_plan_file" name="plan_file" type="file" accept=".json,application/json">
+            <label for="id_plan_json">Or paste test plan JSON</label>
             <textarea id="id_plan_json" name="plan_json" spellcheck="false">{{ plan_json }}</textarea>
             <div class="actions">
                 <a class="button secondary" href="{% url 'home' %}">Cancel</a>

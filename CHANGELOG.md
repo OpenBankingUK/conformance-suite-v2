@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.5] - 2026-10-03
+
+### Added
+
+- Lenient browser test-plan import. **Import test plan** now accepts an uploaded
+  `.json` file as well as pasted JSON, and loads as much of an incomplete or
+  partly invalid plan as possible into an editable builder draft instead of
+  rejecting it. The review page lists import warnings for missing, invalid,
+  unrecognised, and skipped fields. Fix them in the builder steps or in the review
+  page's **Plan JSON** editor, now the single, unmasked and editable view of
+  the plan (with a secrets notice). Launch, export, and the Edit-step buttons
+  use the editor's contents directly, with no separate save. Launch still
+  requires the plan to pass normal validation. The "Masked test plan summary" box and the "Edit raw JSON
+  as new draft" form are replaced by this editor.
+
 ### Changed
 
 - Renamed the temporary MVP beta pointer from `beta-latest` to
