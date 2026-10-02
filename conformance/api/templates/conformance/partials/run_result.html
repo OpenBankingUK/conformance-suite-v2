@@ -43,6 +43,12 @@
             <div class="grid">
                 <div class="metric"><strong>{{ catalogue_trace_summary.api }}</strong><span>{{ catalogue_trace_summary.standard }} {{ catalogue_trace_summary.version }}</span></div>
                 <div class="metric"><strong>{{ catalogue_trace_summary.catalogueVersion }}</strong><span>Catalogue version</span></div>
+                {% if catalogue_trace_summary.openApiDocumentUpdate %}
+                    <div class="metric"><strong>{{ catalogue_trace_summary.openApiDocumentUpdate }}</strong><span>OpenAPI document update</span></div>
+                {% endif %}
+                {% if catalogue_trace_summary.endpointVersion %}
+                    <div class="metric"><strong>{{ catalogue_trace_summary.endpointVersion }}</strong><span>Endpoint version</span></div>
+                {% endif %}
                 <div class="metric"><strong>{{ catalogue_trace_summary.generatedCount }}</strong><span>Generated test cases</span></div>
                 <div class="metric"><strong>{{ catalogue_trace_summary.endpointCount }}</strong><span>Selected endpoints</span></div>
                 <div class="metric"><strong>{{ catalogue_trace_summary.capabilityCount }}</strong><span>Selected capabilities</span></div>

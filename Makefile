@@ -1,6 +1,6 @@
 .PHONY: check lint test unit component secrets audit dev dev-unmasked serve docker help
 
-SECRET_SCAN_EXCLUDE_PATHSPEC ?= :(exclude,top,glob)conformance/standards/ob_read_write/v*/*-openapi.json
+SECRET_SCAN_EXCLUDE_PATHSPEC ?= :(exclude,top,glob)conformance/standards/ob_read_write/openapi/*/*-openapi.json
 
 check: secrets lint test ## Run all local checks (secrets + lint + complete offline test suite)
 

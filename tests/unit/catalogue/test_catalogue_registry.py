@@ -59,4 +59,6 @@ def test_config_package_contains_no_public_example_payloads() -> None:
 def test_unsupported_catalogue_error_lists_plan_spec_families() -> None:
     """Unsupported plan-spec keys fail with the supported catalogue families."""
     with pytest.raises(ValueError, match="Supported catalogues:"):
-        resolve_catalogue(CatalogueKey(standard="open-banking", version="v4.0", api="cards"))
+        resolve_catalogue(
+            CatalogueKey(standard="open-banking", version="v4.0", api="cards", specification_version="4.0.0")
+        )

@@ -15,6 +15,7 @@ from conformance.approved_releases import ApprovedReleasePolicyError
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import CertificationCoverage, Manifest, ManifestError, load_manifest
 from conformance.results import CheckStatus
+from conformance.specification_registry import openapi_document_update_by_catalogue_id
 
 APPROVED_RELEASE_POLICY_SCHEMA_VERSION = approved_releases.APPROVED_RELEASE_POLICY_SCHEMA_VERSION
 """Approved-release policy schema version accepted by the validator."""
@@ -252,12 +253,57 @@ def parse_submitted_report(raw_report: object) -> SubmittedReport:
     metadata = _required_object(report, "metadata", location="report")
     tool = _required_object(report, "tool", location="report")
     raw_steps = _required_array(report, "steps", location="report")
+    _validate_openapi_document_update_evidence(report)
 
     return SubmittedReport(
         report_version=_required_non_empty_string(metadata, "reportVersion", location="report.metadata"),
         tool_version=_required_non_empty_string(tool, "version", location="report.tool"),
         steps=_parse_report_steps(raw_steps),
     )
+
+
+def _validate_openapi_document_update_evidence(report: Mapping[str, object]) -> None:
+    """Check reported Read/Write OpenAPI document update provenance against the registry.
+
+    Reports for Open Banking Read/Write plans record which published OpenAPI
+    ("swagger") document update backed response-schema checks. The update must
+    be one this tool bundles, for the reported specification version, with
+    matching upstream tag and commit, so certification evidence cannot claim
+    a snapshot the tool never validated against.
+
+    Args:
+        report: Decoded report root object.
+
+    Raises:
+        CertificationValidationError: If the evidence is malformed or does not
+            match a registered update.
+    """
+    raw_catalogue = report.get("catalogue")
+    if not isinstance(raw_catalogue, dict) or "openApiDocumentUpdate" not in raw_catalogue:
+        return
+    catalogue = cast(dict[str, object], raw_catalogue)
+    location = "report.catalogue.openApiDocumentUpdate"
+    evidence = _required_object(catalogue, "openApiDocumentUpdate", location="report.catalogue")
+    catalogue_id = _required_non_empty_string(evidence, "catalogueId", location=location)
+    try:
+        registered = openapi_document_update_by_catalogue_id(catalogue_id)
+    except ValueError as error:
+        raise CertificationValidationError(
+            f"{location}.catalogueId is not a bundled OpenAPI document update"
+        ) from error
+    expected = {
+        "update": registered.update,
+        "upstreamTag": registered.upstream_tag,
+        "upstreamCommit": registered.upstream_commit,
+    }
+    for key, value in expected.items():
+        if _required_non_empty_string(evidence, key, location=location) != value:
+            raise CertificationValidationError(f"{location}.{key} does not match bundled update {catalogue_id}")
+    specification_version = _required_non_empty_string(catalogue, "specificationVersion", location="report.catalogue")
+    if specification_version != registered.specification_version:
+        raise CertificationValidationError(
+            f"report.catalogue.specificationVersion does not match OpenAPI document update {catalogue_id}"
+        )
 
 
 def parse_approved_release_policy(raw_policy: object) -> ApprovedReleasePolicy:

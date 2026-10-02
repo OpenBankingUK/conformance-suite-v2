@@ -570,7 +570,7 @@ def test_run_manifest_v1_schema_failure_records_masked_evidence() -> None:
                     {
                         "type": "response_schema",
                         "source": "bundled_openapi",
-                        "document": "ob-read-write-v4.0-account-info-openapi",
+                        "document": "ob-read-write/v4.0.0-Update-5/account-info-openapi",
                         "schemaRef": "#/components/schemas/OBReadAccount6",
                     },
                 ],

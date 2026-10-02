@@ -129,8 +129,30 @@ they came from discovery or manual entry. A single Read/Write plan can span AIS,
 PIS, CBPII, and VRP catalogue areas when those groups use one security
 environment and OpenID discovery URL. cVRP is not exposed under the Open Banking
 UK Read/Write boundary for now. Read/Write version `3.1.11` is backed by
-dedicated v3.1 catalogue areas and the pinned v3.1.11 OpenAPI documents; it is
-not routed through the v4 catalogues.
+dedicated v3.1 catalogue areas; it is not routed through the v4 catalogues.
+
+### OpenAPI document updates
+
+Open Banking UK Read/Write core specification pages only change with a version
+bump (for example `4.0.0` → `4.0.1`), but the OpenAPI ("swagger") documents that
+represent a version are republished upstream as updates. Read/Write plans must
+select one with `specification.openApiDocumentUpdate`; response-schema
+assertions then validate against that update's pinned snapshot. Names follow the
+upstream history: `Baseline` is the original publication, and later updates
+keep the terminology in use when they were published (`Release-N` before the
+switch to `Update-N`).
+
+| Version | `openApiDocumentUpdate` values (oldest → latest) |
+| --- | --- |
+| `3.1.11` | `Baseline`, `Release-2`, `Release-3`, `Release-4`, `Release-5` |
+| `4.0.0` | `Baseline`, `Release-2`, `Update-3`, `Update-4`, `Update-5` |
+| `4.0.1` | `Baseline`, `Update-1` |
+
+The browser builder preselects the latest update and lets you choose a
+historical one. DCR plans must not set `openApiDocumentUpdate`. Results record
+the selected update (with its upstream tag and commit) under
+`catalogue.openApiDocumentUpdate`, alongside `specificationVersion` and
+`endpointVersion`.
 
 For v3.1.11 domestic standing orders, set
 `businessTestData.pis.standingOrderFrequencyV31` to the scalar frequency format
@@ -144,6 +166,7 @@ for v4 plans.
   "specification": {
     "family": "OBL_READ_WRITE",
     "version": "4.0.1",
+    "openApiDocumentUpdate": "Update-1",
     "profile": "FAPI1_ADVANCED"
   },
   "executionMode": "certification",
@@ -200,7 +223,7 @@ in `POST /api/runs/`:
 ```json
 {
   "schemaVersion": "1.0",
-  "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1"},
+  "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "openApiDocumentUpdate": "Update-1"},
   "securityEnvironment": {
     "discoveryUrl": "https://aspsp.example.com/.well-known/openid-configuration",
     "resourceBaseUrl": "https://resource.example.com"
@@ -240,20 +263,16 @@ failed structured case or step regardless of console transcript text.
 
 The bundled catalogue registry currently covers the legacy FCS baseline for:
 
-| Standard | Version | API family |
-| --- | --- | --- |
-| `open-banking` | `v3.1` | `ais` |
-| `open-banking` | `v3.1` | `pis` |
-| `open-banking` | `v3.1` | `cbpii` |
-| `open-banking` | `v3.1` | `vrp` |
-| `open-banking` | `v4.0` | `ais` |
-| `open-banking` | `v4.0` | `pis` |
-| `open-banking` | `v4.0` | `cbpii` |
-| `open-banking` | `v4.0` | `vrp` |
-| `open-banking` | `v3.4` | `dcr` |
+| Standard | Endpoint version | Specification version | API family |
+| --- | --- | --- | --- |
+| `open-banking` | `v3.1` | `3.1.11` | `ais`, `pis`, `cbpii`, `vrp` |
+| `open-banking` | `v4.0` | `4.0.0` | `ais`, `pis`, `cbpii`, `vrp` |
+| `open-banking` | `v4.0` | `4.0.1` | `ais`, `pis`, `cbpii`, `vrp` |
+| `open-banking` | `v3.4` | `3.4` | `dcr` |
 
-The participant-facing Read/Write versions are `3.1.11`, `4.0`, `4.0.0`, and
-`4.0.1`; the internal `v3.1` key is used only to bind exact `3.1.11` plans.
+The participant-facing Read/Write versions are `3.1.11`, `4.0.0`, and `4.0.1`.
+`4.0.0` and `4.0.1` share `v4.0` endpoint paths but have independent catalogue
+copies so their coverage can diverge.
 Each catalogue case carries traceability back to the relevant legacy FCS
 coverage in its compliance scope. Each catalogue can also define endpoint-scoped
 capabilities that explain baseline and optional implementation coverage without

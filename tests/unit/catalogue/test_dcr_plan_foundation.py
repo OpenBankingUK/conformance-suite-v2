@@ -134,7 +134,7 @@ def _dcr_catalogue() -> TestCatalogue:
         for method in ("POST", "GET", "PUT", "DELETE")
     )
     return TestCatalogue(
-        key=CatalogueKey(standard="open-banking", version="v3.4", api="dcr"),
+        key=CatalogueKey(standard="open-banking", version="v3.4", api="dcr", specification_version="3.4"),
         catalogue_version="dcr-foundation-test",
         test_cases=cases,
     )
@@ -193,6 +193,7 @@ def test_dcr_optional_management_endpoints_compile_through_shared_boundary(tmp_p
         standard="open-banking-uk",
         version="3.4",
         api="dynamic-client-registration",
+        specification_version="3.4",
     )
     assert prepared.compiled_plan.traceability.generated_test_case_ids == ("dcr-post", "dcr-get")
     assert [endpoint.resource_group for endpoint in prepared.compiled_plan.traceability.selected_endpoints] == [

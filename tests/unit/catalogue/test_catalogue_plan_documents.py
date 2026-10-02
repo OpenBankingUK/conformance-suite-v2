@@ -16,7 +16,7 @@ from conformance.json_types import JsonValue
 
 pytestmark = pytest.mark.unit
 
-CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="ais")
+CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="ais", specification_version="4.0.0")
 
 
 def test_parse_v2_plan_derives_runtime_inputs_from_structured_config() -> None:
@@ -27,6 +27,7 @@ def test_parse_v2_plan_derives_runtime_inputs_from_structured_config() -> None:
             "scheme": "open-banking-uk",
             "specification": "read-write",
             "version": "4.0.1",
+            "openApiDocumentUpdate": "Update-1",
             "securityProfile": "fapi1-advanced",
             "scope": {"resourceGroups": []},
             "config": {
@@ -60,7 +61,13 @@ def test_parse_v2_plan_derives_runtime_inputs_from_structured_config() -> None:
 def test_parse_test_plan_spec_validates_exportable_json_shape() -> None:
     raw_spec: dict[str, JsonValue] = {
         "schemaVersion": "v1",
-        "catalogue": {"standard": "open-banking", "version": "v4.0", "api": "ais"},
+        "catalogue": {
+            "standard": "open-banking",
+            "version": "v4.0",
+            "api": "ais",
+            "specificationVersion": "4.0.0",
+            "openApiDocumentUpdate": "Update-5",
+        },
         "securityProfile": "fapi1-advanced",
         "implementedEndpoints": [
             {
@@ -85,6 +92,7 @@ def test_parse_test_plan_spec_validates_exportable_json_shape() -> None:
     spec = parse_test_plan_spec(raw_spec)
 
     assert spec.catalogue_key == CATALOGUE_KEY
+    assert spec.openapi_document_update == "Update-5"
     assert spec.implemented_endpoints[0].method == "GET"
     assert spec.implemented_endpoints[0].path == "/open-banking/v4.0/aisp/accounts"
     assert spec.implemented_endpoints[0].capability_ids == ("accounts.balances",)
@@ -99,6 +107,7 @@ def test_parse_test_plan_document_v2_serializes_nested_scope_and_config() -> Non
         "scheme": "open-banking-uk",
         "specification": "read-write",
         "version": "4.0.1",
+        "openApiDocumentUpdate": "Update-1",
         "securityProfile": "fapi1-advanced",
         "scope": {
             "resourceGroups": [
@@ -139,6 +148,7 @@ def test_parse_test_plan_document_v2_serializes_nested_scope_and_config() -> Non
         "specification": {
             "family": "OBL_READ_WRITE",
             "version": "4.0.1",
+            "openApiDocumentUpdate": "Update-1",
             "profile": "FAPI1_ADVANCED",
         },
         "executionMode": "certification",
@@ -213,6 +223,7 @@ def test_parse_canonical_plan_document_maps_prd_business_and_security_fields() -
         "specification": {
             "family": "OBL_READ_WRITE",
             "version": "4.0.1",
+            "openApiDocumentUpdate": "Update-1",
             "profile": "FAPI1_ADVANCED",
         },
         "securityEnvironment": {
@@ -262,6 +273,7 @@ def test_parse_canonical_plan_document_rejects_security_timeout() -> None:
         "specification": {
             "family": "OBL_READ_WRITE",
             "version": "4.0.1",
+            "openApiDocumentUpdate": "Update-1",
             "profile": "FAPI1_ADVANCED",
         },
         "securityEnvironment": {
@@ -300,6 +312,7 @@ def test_parse_canonical_plan_document_rejects_removed_security_fields(
         "specification": {
             "family": "OBL_READ_WRITE",
             "version": "4.0.1",
+            "openApiDocumentUpdate": "Update-1",
             "profile": "FAPI1_ADVANCED",
         },
         "securityEnvironment": {
@@ -322,6 +335,7 @@ def test_parse_canonical_plan_document_rejects_mtls_certificate_path_root() -> N
         "specification": {
             "family": "OBL_READ_WRITE",
             "version": "4.0.1",
+            "openApiDocumentUpdate": "Update-1",
             "profile": "FAPI1_ADVANCED",
         },
         "securityEnvironment": {
@@ -343,7 +357,7 @@ def test_parse_canonical_plan_document_requires_business_data_and_metadata() -> 
     """Canonical parser enforces required empty-object sections without relying on JSON Schema."""
     raw_spec: dict[str, JsonValue] = {
         "schemaVersion": "1.0",
-        "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1"},
+        "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "openApiDocumentUpdate": "Update-1"},
         "securityEnvironment": {"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"},
         "resourceGroups": ["AIS"],
     }
@@ -363,6 +377,7 @@ def test_parse_canonical_plan_document_rejects_conflicting_profile_aliases() -> 
         "specification": {
             "family": "OBL_READ_WRITE",
             "version": "4.0.1",
+            "openApiDocumentUpdate": "Update-1",
             "profile": "FAPI1_ADVANCED",
             "securityProfile": "FAPI2",
         },
@@ -383,6 +398,7 @@ def test_parse_canonical_plan_document_accepts_matching_profile_aliases() -> Non
         "specification": {
             "family": "OBL_READ_WRITE",
             "version": "4.0.1",
+            "openApiDocumentUpdate": "Update-1",
             "profile": "FAPI1_ADVANCED",
             "securityProfile": "fapi1-advanced",
         },
@@ -405,6 +421,7 @@ def test_parse_canonical_plan_document_rejects_profile_not_declared_by_version()
         "specification": {
             "family": "OBL_READ_WRITE",
             "version": "4.0.1",
+            "openApiDocumentUpdate": "Update-1",
             "profile": "FAPI2",
         },
         "securityEnvironment": {"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"},
@@ -426,7 +443,13 @@ def test_parse_plan_document_uses_neutral_root_for_schema_version_errors() -> No
 def test_parse_test_plan_spec_rejects_duplicate_endpoint_capability_selection() -> None:
     raw_spec: dict[str, JsonValue] = {
         "schemaVersion": "v1",
-        "catalogue": {"standard": "open-banking", "version": "v4.0", "api": "ais"},
+        "catalogue": {
+            "standard": "open-banking",
+            "version": "v4.0",
+            "api": "ais",
+            "specificationVersion": "4.0.0",
+            "openApiDocumentUpdate": "Update-5",
+        },
         "securityProfile": "fapi1-advanced",
         "implementedEndpoints": [
             {
@@ -445,7 +468,13 @@ def test_parse_test_plan_spec_rejects_duplicate_endpoint_capability_selection() 
 def test_parse_test_plan_spec_rejects_duplicate_endpoint_selection() -> None:
     raw_spec: dict[str, JsonValue] = {
         "schemaVersion": "v1",
-        "catalogue": {"standard": "open-banking", "version": "v4.0", "api": "ais"},
+        "catalogue": {
+            "standard": "open-banking",
+            "version": "v4.0",
+            "api": "ais",
+            "specificationVersion": "4.0.0",
+            "openApiDocumentUpdate": "Update-5",
+        },
         "securityProfile": "fapi1-advanced",
         "implementedEndpoints": [
             {"method": "GET", "path": "/accounts", "resourceGroup": "Accounts"},

@@ -542,6 +542,12 @@ def run_compiled_test_plan(
                 "standard": compiled_plan.catalogue_key.standard,
                 "version": compiled_plan.catalogue_key.version,
                 "api": compiled_plan.catalogue_key.api,
+                "specificationVersion": compiled_plan.catalogue_key.specification_version,
+                **(
+                    {"openApiDocumentUpdate": compiled_plan.traceability.openapi_document_update.update}
+                    if compiled_plan.traceability.openapi_document_update is not None
+                    else {}
+                ),
                 "catalogueVersion": compiled_plan.catalogue_version,
             },
         },

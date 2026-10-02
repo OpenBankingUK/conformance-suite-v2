@@ -37,7 +37,12 @@ VALID_CONFIG = {
 
 VALID_TEST_PLAN = {
     "schemaVersion": "1.0",
-    "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI1_ADVANCED"},
+    "specification": {
+        "family": "OBL_READ_WRITE",
+        "version": "4.0.1",
+        "profile": "FAPI1_ADVANCED",
+        "openApiDocumentUpdate": "Update-1",
+    },
     "securityEnvironment": {
         "discoveryUrl": "https://example.com/.well-known/openid-configuration",
         "resourceBaseUrl": "https://resource.example.com",
@@ -211,7 +216,7 @@ class TestCreateRunEndpoint:
         from conformance.model_bank_config import ModelBankConfig
 
         catalogue = TestCatalogue(
-            key=CatalogueKey(standard="open-banking", version="v4.0", api="ais"),
+            key=CatalogueKey(standard="open-banking", version="v4.0", api="ais", specification_version="4.0.0"),
             catalogue_version="test.1",
             test_cases=(
                 CatalogueTestCase(
@@ -262,6 +267,7 @@ class TestCreateRunEndpoint:
                 security_profile="fapi1-advanced",
                 implemented_endpoints=(),
                 runtime_inputs={},
+                openapi_document_update="Update-5",
             ),
         )
         config = ModelBankConfig(
@@ -317,6 +323,7 @@ class TestCreateRunEndpoint:
                     "resourceBaseUrl": "https://resource.example.com",
                     "consentedAccountId": "account-123",
                 },
+                openapi_document_update="Update-5",
             ),
         )
         config = ModelBankConfig(
@@ -389,6 +396,7 @@ class TestCreateRunEndpoint:
         client = Client()
         body = json.loads(json.dumps(VALID_TEST_PLAN))
         body["specification"]["version"] = "3.1.11"
+        body["specification"]["openApiDocumentUpdate"] = "Release-5"
         body["resourceGroups"][0]["endpoints"][0]["path"] = "/open-banking/v3.1/aisp/accounts"
 
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
@@ -417,6 +425,7 @@ class TestCreateRunEndpoint:
             "specification": {
                 "family": "OBL_READ_WRITE",
                 "version": "4.0.1",
+                "openApiDocumentUpdate": "Update-1",
                 "profile": "FAPI1_ADVANCED",
             },
             "securityEnvironment": {

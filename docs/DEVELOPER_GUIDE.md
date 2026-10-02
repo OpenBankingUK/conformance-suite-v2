@@ -158,6 +158,7 @@ version `1.0`:
   "specification": {
     "family": "OBL_READ_WRITE",
     "version": "4.0.1",
+    "openApiDocumentUpdate": "Update-1",
     "profile": "FAPI1_ADVANCED"
   },
   "securityEnvironment": {
@@ -187,12 +188,49 @@ version `1.0`:
 ```
 
 The canonical `specification.family` and `version` select one or more underlying
-bundled catalogues. The current Open Banking UK Read/Write boundary maps to the
-bundled Open Banking v4.0 AIS, PIS, CBPII, and VRP catalogue areas so one plan
-document can span multiple resource families. cVRP is intentionally not exposed
+bundled catalogues. Read/Write `4.0.0` and `4.0.1` each map to their own copy of
+the Open Banking v4.0 AIS, PIS, CBPII, and VRP catalogue areas (keyed by
+`CatalogueKey.specification_version`; `CatalogueKey.version` is the shared `v4.0`
+endpoint version), so one plan document can span multiple resource families and
+the two versions' coverage can diverge independently. cVRP is intentionally not exposed
 under this Open Banking UK boundary for now. Dynamic Client Registration 3.4 is
 bound to the executable `open-banking/v3.4/dcr` catalogue and uses direct
 endpoint scope with no synthetic resource group.
+
+### OpenAPI document updates
+
+Read/Write core specification pages only change with a version bump, but the
+OpenAPI ("swagger") documents for a version are republished upstream in
+`OpenBankingUK/read-write-api-specs` as updates. Each version in
+`conformance.specification_registry` lists its `OpenApiDocumentUpdate`s in
+publication order with the upstream tag and immutable commit. Plans select one
+with `specification.openApiDocumentUpdate` (mandatory for Read/Write).
+
+Catalogue assertions reference *logical* documents such as
+`ob-read-write/account-info-openapi`. Compilation binds them to the selected
+update's bundled snapshot, `ob-read-write/<catalogue-id>/<document>` (for example
+`ob-read-write/v4.0.1-Update-1/account-info-openapi`), stored at
+`conformance/standards/ob_read_write/openapi/<catalogue-id>/`. Naming follows
+upstream history: `Baseline` for the original publication, then `Release-N` or
+`Update-N` matching the tag terminology used at the time. Release candidates and
+drafts are not bundled.
+
+To add a new update (for example `v4.0.1-Update-2`):
+
+1. Download the four YAML-generated JSON documents (`account-info-openapi.json`,
+   `payment-initiation-openapi.json`, `confirmation-funds-openapi.json`,
+   `vrp-openapi.json`) from `dist/openapi/` at the tag's commit into
+   `conformance/standards/ob_read_write/openapi/v4.0.1-Update-2/`.
+2. Write `sources.json` beside them, copying an existing one: record the tag,
+   commit, raw URLs, and each file's SHA-256 split into eight 8-character
+   `sha256Chunks` (this keeps detect-secrets quiet).
+3. Append an `OpenApiDocumentUpdate` to the version's
+   `openapi_document_updates` tuple in `conformance/specification_registry.py`.
+   The last entry is treated as the latest and preselected in the builder.
+4. Run `make check`. `tests/unit/catalogue/test_openapi_document_updates.py`
+   verifies hashes, registry/directory consistency, and that every catalogue
+   `schemaRef` resolves in every update; fix any schema renames it reports.
+5. Add a `CHANGELOG.md` entry under `[Unreleased]`.
 
 Each exact specification version declares its valid security profiles in
 `conformance.specification_registry`. Read/Write 4.0.x derives

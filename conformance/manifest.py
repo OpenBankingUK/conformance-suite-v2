@@ -13,6 +13,7 @@ from types import MappingProxyType
 from typing import Literal, cast
 
 from conformance.json_types import JsonValue
+from conformance.openapi_documents import bundled_openapi_document_paths
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
 
 
@@ -2198,16 +2199,7 @@ def _parse_header_assertion(raw_assertion: dict[str, JsonValue], *, location: st
     return HeaderAssertion(type="header", name=name, rule=rule, value=value)
 
 
-_ALLOWED_RESPONSE_SCHEMA_DOCUMENTS: set[str] = {
-    "ob-read-write-v3.1.11-account-info-openapi",
-    "ob-read-write-v3.1.11-payment-initiation-openapi",
-    "ob-read-write-v3.1.11-confirmation-funds-openapi",
-    "ob-read-write-v3.1.11-vrp-openapi",
-    "ob-read-write-v4.0-account-info-openapi",
-    "ob-read-write-v4.0-payment-initiation-openapi",
-    "ob-read-write-v4.0.1-account-info-openapi",
-    "ob-read-write-v4.0.1-payment-initiation-openapi",
-}
+_ALLOWED_RESPONSE_SCHEMA_DOCUMENTS: frozenset[str] = frozenset(bundled_openapi_document_paths())
 """Allowlisted bundled standards documents addressable by ``response_schema`` assertions."""
 
 

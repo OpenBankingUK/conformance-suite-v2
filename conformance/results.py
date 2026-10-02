@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Literal, cast
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import CertificationCoverage
 from conformance.masking import mask_free_text
+from conformance.specification_registry import OpenApiDocumentUpdate
 from conformance.version import REPORT_METADATA_VERSION, resolve_conformance_tool_version
 
 if TYPE_CHECKING:
@@ -390,6 +391,25 @@ def _build_eligibility(
     return block
 
 
+def openapi_document_update_to_json(update: OpenApiDocumentUpdate) -> JsonObject:
+    """Serialise the selected Read/Write OpenAPI document update as report evidence.
+
+    Args:
+        update: OpenAPI document update whose snapshot backed schema assertions.
+
+    Returns:
+        JSON object identifying the update and its pinned upstream source.
+    """
+    return {
+        "update": update.update,
+        "label": update.label,
+        "catalogueId": update.catalogue_id,
+        "displayName": update.display_name,
+        "upstreamTag": update.upstream_tag,
+        "upstreamCommit": update.upstream_commit,
+    }
+
+
 def _compiled_plan_to_json_object(
     compiled_plan: CompiledTestPlan,
     *,
@@ -411,6 +431,13 @@ def _compiled_plan_to_json_object(
         "standard": traceability.catalogue_key.standard,
         "version": traceability.catalogue_key.version,
         "api": traceability.catalogue_key.api,
+        "specificationVersion": traceability.catalogue_key.specification_version,
+        **({"endpointVersion": traceability.endpoint_version} if traceability.endpoint_version is not None else {}),
+        **(
+            {"openApiDocumentUpdate": openapi_document_update_to_json(traceability.openapi_document_update)}
+            if traceability.openapi_document_update is not None
+            else {}
+        ),
         "catalogueVersion": traceability.catalogue_version,
         "securityProfile": traceability.security_profile,
         "certifying": compiled_plan.certifying,

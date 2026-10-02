@@ -25,8 +25,11 @@ from conformance.catalogue import (
 from conformance.catalogues.common import open_banking_request_headers_for
 from conformance.catalogues.read_write_v311 import build_v311_catalogue
 from conformance.json_types import JsonValue
+from conformance.openapi_documents import logical_read_write_document
 
-AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="ais")
+AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY = CatalogueKey(
+    standard="open-banking", version="v4.0", api="ais", specification_version="4.0.0"
+)
 """Catalogue boundary for AIS accounts-and-transactions legacy FCS import."""
 
 AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_VERSION = "2026.07.legacy-fcs-ais-at.1"
@@ -38,7 +41,7 @@ _FAPI1_ADVANCED_ONLY = SecurityProfileApplicability(profiles=("fapi1-advanced",)
 _AIS_V31_SPECIFICATION_VERSIONS = ("3.1", "3.1.11")
 """User-facing Read/Write versions that can execute legacy v3.1-only AIS cases."""
 
-_AIS_V40_SPECIFICATION_VERSIONS = ("4.0", "4.0.0", "4.0.1")
+_AIS_V40_SPECIFICATION_VERSIONS = ("4.0.0",)
 """User-facing Read/Write versions that can execute legacy v4 AIS cases."""
 
 _ACCOUNTS_ENDPOINT = EndpointRef(method="GET", path=f"{_AIS_BASE_PATH}/accounts")
@@ -1303,7 +1306,7 @@ def _legacy_schema_assertions(
                 f"Response body satisfies the legacy v4 AIS {expected_status} schema check.",
                 {
                     "source": "bundled_openapi",
-                    "document": "ob-read-write-v4.0-account-info-openapi",
+                    "document": logical_read_write_document("account-info-openapi"),
                     "schemaRef": schema_ref,
                     "legacyAssertionIds": ["legacy-schema-check"],
                 },

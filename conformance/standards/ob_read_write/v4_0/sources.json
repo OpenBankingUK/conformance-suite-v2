@@ -3,23 +3,8 @@
   "specVersion": "v4.0",
   "retrievedAt": "2026-06-08",
   "hashNote": "sha256Chunks joins to the SHA-256 digest of the bundled file after line-end whitespace normalization.",
+  "openApiDocumentsNote": "OpenAPI document snapshots for every selectable update live under ../openapi/<catalogue-id>/.",
   "sources": [
-    {
-      "file": "account-info-openapi.json",
-      "description": "Open Banking Read/Write v4.0 Account and Transaction API OpenAPI snapshot from the latest v4.0 swagger update tag.",
-      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0-Update-5/dist/openapi/account-info-openapi.json",
-      "repository": "OpenBankingUK/read-write-api-specs",
-      "ref": "v4.0-Update-5",
-      "sha256Chunks": ["d57ebf8b", "0132e950", "68999aab", "66066040", "38aee247", "780cf21d", "63c8ea4f", "366ef738"]
-    },
-    {
-      "file": "payment-initiation-openapi.json",
-      "description": "Open Banking Read/Write v4.0 Payment Initiation API OpenAPI snapshot from the latest v4.0 swagger update tag.",
-      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0-Update-5/dist/openapi/payment-initiation-openapi.json",
-      "repository": "OpenBankingUK/read-write-api-specs",
-      "ref": "v4.0-Update-5",
-      "sha256Chunks": ["0c24d422", "7e6ff6df", "d6400b81", "aeb66238", "239fb336", "05a75290", "b7c334bc", "06ee7d13"]
-    },
     {
       "file": "legacy/ob_4.0_payment_fca.json",
       "description": "Legacy FCS v1.10.0 v4 PIS manifest used as the strict behavioural parity contract.",
@@ -43,22 +28,6 @@
       "repository": "OpenBankingUK/conformance-suite",
       "ref": "1908789b52e26e0a79fc5a565e411f771006c3ce",
       "sha256Chunks": ["7ecd1b80", "1ad9dd38", "bbb74540", "c0aea603", "6cdda888", "3b0c1236", "341dc9b7", "daac7a10"]
-    },
-    {
-      "file": "confirmation-funds-openapi.json",
-      "description": "Open Banking Read/Write v4.0 Confirmation of Funds API OpenAPI snapshot from the latest v4.0 swagger update tag.",
-      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0-Update-5/dist/openapi/confirmation-funds-openapi.json",
-      "repository": "OpenBankingUK/read-write-api-specs",
-      "ref": "v4.0-Update-5",
-      "sha256Chunks": ["0a51f223", "be2775b8", "1ec1eeb6", "bf3f321c", "7cc0774e", "066e1408", "789dcc6c", "66f23105"]
-    },
-    {
-      "file": "vrp-openapi.json",
-      "description": "Open Banking Read/Write v4.0 Variable Recurring Payments API OpenAPI snapshot from the latest v4.0 swagger update tag.",
-      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0-Update-5/dist/openapi/vrp-openapi.json",
-      "repository": "OpenBankingUK/read-write-api-specs",
-      "ref": "v4.0-Update-5",
-      "sha256Chunks": ["1723cde2", "5440c390", "b188f709", "beab5316", "59b1ce28", "bf99d3f8", "7814f012", "87eb0653"]
     },
     {
       "file": "legacy-ob_4.0_accounts_transactions_fca.json",

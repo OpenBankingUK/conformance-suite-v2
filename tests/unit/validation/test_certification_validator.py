@@ -16,7 +16,8 @@ from conformance.certification_validator import (
 )
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest, parse_manifest
-from conformance.results import CheckStatus
+from conformance.results import CheckStatus, openapi_document_update_to_json
+from conformance.specification_registry import OpenApiDocumentUpdate, openapi_document_update_by_catalogue_id
 from tests.support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.unit
@@ -119,6 +120,48 @@ def test_validate_report_rejects_manifest_without_mandatory_steps() -> None:
 def test_parse_submitted_report_rejects_missing_metadata() -> None:
     with pytest.raises(CertificationValidationError, match="report.metadata is required"):
         parse_submitted_report({"tool": {"version": "1.2.3"}, "steps": []})
+
+
+def test_parse_submitted_report_accepts_registered_openapi_document_update() -> None:
+    raw_report = _report_json(tool_version="1.2.3", steps=(("discovery", "passed"),))
+    raw_report["catalogue"] = _catalogue_with_update(openapi_document_update_by_catalogue_id("v4.0.1-Update-1"))
+
+    report = parse_submitted_report(raw_report)
+
+    assert report.tool_version == "1.2.3"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("catalogueId", "v4.0.1-Update-9", "not a bundled OpenAPI document update"),
+        ("upstreamCommit", "0" * 40, "upstreamCommit does not match"),
+        ("update", "Baseline", "update does not match"),
+        ("specificationVersion", "4.0.0", "specificationVersion does not match"),
+    ],
+)
+def test_parse_submitted_report_rejects_unregistered_openapi_document_update(
+    field: str, value: str, message: str
+) -> None:
+    raw_report = _report_json(tool_version="1.2.3", steps=(("discovery", "passed"),))
+    catalogue = _catalogue_with_update(openapi_document_update_by_catalogue_id("v4.0.1-Update-1"))
+    if field == "specificationVersion":
+        catalogue[field] = value
+    else:
+        evidence = catalogue["openApiDocumentUpdate"]
+        assert isinstance(evidence, dict)
+        evidence[field] = value
+    raw_report["catalogue"] = catalogue
+
+    with pytest.raises(CertificationValidationError, match=message):
+        parse_submitted_report(raw_report)
+
+
+def _catalogue_with_update(update: OpenApiDocumentUpdate) -> JsonObject:
+    return {
+        "specificationVersion": update.specification_version,
+        "openApiDocumentUpdate": openapi_document_update_to_json(update),
+    }
 
 
 def test_parse_submitted_report_rejects_invalid_step_status() -> None:

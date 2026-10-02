@@ -285,6 +285,7 @@
             <div><strong>Scheme</strong><br>{{ draft.scheme }}</div>
             <div><strong>Specification</strong><br>{{ draft.specification }}</div>
             <div><strong>Version</strong><br>{{ draft.version }}</div>
+            {% if draft.openapi_document_update %}<div><strong>OpenAPI document update</strong><br>{{ draft.openapi_document_update }}</div>{% endif %}
         </div>
 
         {% if saved %}

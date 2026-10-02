@@ -657,6 +657,7 @@ class TestBuilderWizardUi:
         assert exported["schemaVersion"] == "1.0"
         assert exported["specification"] == {
             "family": "OBL_READ_WRITE",
+            "openApiDocumentUpdate": "Update-1",
             "profile": "FAPI1_ADVANCED",
             "version": "4.0.1",
         }
@@ -844,6 +845,7 @@ class TestBuilderWizardUi:
             "specification": {
                 "family": "OBL_READ_WRITE",
                 "version": "4.0.1",
+                "openApiDocumentUpdate": "Update-1",
                 "profile": "FAPI1_ADVANCED",
             },
             "executionMode": "development",
@@ -925,6 +927,7 @@ class TestBuilderWizardUi:
             "specification": {
                 "family": "OBL_READ_WRITE",
                 "version": "4.0.1",
+                "openApiDocumentUpdate": "Update-1",
                 "profile": "FAPI1_ADVANCED",
             },
             "executionMode": "development",
@@ -997,6 +1000,7 @@ class TestBuilderWizardUi:
             "specification": {
                 "family": "OBL_READ_WRITE",
                 "version": "4.0.1",
+                "openApiDocumentUpdate": "Update-1",
                 "profile": "FAPI1_ADVANCED",
             },
             "executionMode": "development",
@@ -1072,6 +1076,7 @@ class TestBuilderWizardUi:
             "specification": {
                 "family": "OBL_READ_WRITE",
                 "version": "4.0.1",
+                "openApiDocumentUpdate": "Update-1",
                 "profile": "FAPI2",
             },
             "securityEnvironment": {

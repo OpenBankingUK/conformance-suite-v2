@@ -11,10 +11,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Selectable Open Banking Read/Write OpenAPI ("swagger") document updates.
+  Plans choose one with `specification.openApiDocumentUpdate`. Response-schema
+  checks then validate against that update's pinned upstream snapshot from
+  `OpenBankingUK/read-write-api-specs`. Every historical update is bundled
+  using upstream terminology:
+  - `3.1.11`: `Baseline`, `Release-2` to `Release-5`
+  - `4.0.0`: `Baseline`, `Release-2`, `Update-3` to `Update-5`
+  - `4.0.1`: `Baseline`, `Update-1`
+- The builder wizard has an **OpenAPI document update** selector under
+  Version. It preselects the latest update.
+- Result JSON `catalogue` now records `specificationVersion`,
+  `endpointVersion` and `openApiDocumentUpdate` (update, label, catalogue ID,
+  upstream tag and commit). The run page shows the selected update.
+- Independent Read/Write `4.0.1` catalogues, copied from `4.0.0`, so the two
+  versions' coverage can diverge.
+
 - Automatic Docker Hub `beta-latest` pointer updates after approved beta
   publication and provenance/SBOM attestations, with manifest-digest
   verification. Docker Hub's highest published beta across release branches
   determines eligibility; older backfills and GA releases leave it unchanged.
+
+### Changed
+
+- **Breaking:** Read/Write plans must declare `specification.openApiDocumentUpdate`.
+  Existing plans keep their previous schema behaviour by selecting the latest
+  update: `3.1.11` → `Release-5`, `4.0.0` → `Update-5`. For `4.0.1`, use
+  `Update-1`; the previously bundled 4.0.1 documents match `Baseline`.
+- **Breaking:** `4.0.1` plans now validate against the `4.0.1` OpenAPI
+  documents. Previously they used the shared `v4.0` (`4.0.0`) snapshot.
+- **Breaking:** Read/Write specification version `4.0` was removed. Use `4.0.0`.
+- **Breaking:** Bundled schema document IDs are now
+  `ob-read-write/<catalogue-id>/<document>`, for example
+  `ob-read-write/v4.0.0-Update-5/account-info-openapi`. The old
+  `ob-read-write-v3.1.11-*`, `ob-read-write-v4.0-*` and
+  `ob-read-write-v4.0.1-*` IDs no longer resolve.
+- **Breaking:** Internal v1 plan specs require `catalogue.specificationVersion`
+  and now always filter cases by specification version.
 
 ## [2.0.0-beta.3] - 2026-10-01
 

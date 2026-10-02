@@ -31,6 +31,7 @@ def _canonical_plan() -> dict[str, object]:
         "specification": {
             "family": "OBL_READ_WRITE",
             "version": "4.0.1",
+            "openApiDocumentUpdate": "Update-1",
             "profile": "FAPI1_ADVANCED",
         },
         "executionMode": "development",
@@ -131,6 +132,7 @@ def test_validate_test_plan_for_run_requires_discovery_for_response_signatures(t
         "specification": {
             "family": "OBL_READ_WRITE",
             "version": "4.0.1",
+            "openApiDocumentUpdate": "Update-1",
             "profile": "FAPI1_ADVANCED",
         },
         "executionMode": "development",
