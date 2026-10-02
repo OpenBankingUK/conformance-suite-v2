@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Automatic Docker Hub `beta-latest` pointer updates after approved beta
+  publication and provenance/SBOM attestations, with manifest-digest
+  verification. Docker Hub's highest published beta across release branches
+  determines eligibility; older backfills and GA releases leave it unchanged.
 - Automatic, Environment-gated preview, beta, and GA image promotions after
   successful candidate CI runs, with manual promotion dispatch retained for
   recovery and backfill.
