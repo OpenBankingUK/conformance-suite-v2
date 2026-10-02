@@ -10,5 +10,12 @@
         <p style="margin: 3px 0 0; font-size: 0.85rem; line-height: 1.4;">
             This tool is currently in beta as part of the MVP release. Features and behaviour may change.
         </p>
+        {% if not feedback_page %}
+        <a href="{% url 'feedback-prepare' %}?source={{ request.path|urlencode }}{% if run %}&amp;kind=run&amp;context_id={{ run.run_id|urlencode }}{% elif draft %}&amp;kind=draft&amp;context_id={{ draft.draft_id|urlencode }}{% endif %}"
+           target="_blank" rel="noopener noreferrer" hx-boost="false"
+           style="display: inline-block; margin-top: 6px; padding: 5px 12px; border: 1px solid #9a6700; border-radius: 4px; color: #664d03; font-weight: 650;">
+            Give beta feedback <span style="font-weight: normal;">(opens a new tab)</span>
+        </a>
+        {% endif %}
     </div>
 </aside>

@@ -9,8 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.4] - 2026-10-02
+
 ### Added
 
+- **Give beta feedback** across the browser UI, preparing a local, credential-
+  and certificate-masked diagnostic ZIP, structured email text and an optional
+  email-client link for `standardsteam@openbanking.org.uk`. Run logs/results and
+  launch-time plans, or saved builder draft evidence, are captured when available.
+  Nothing is sent automatically; secured-network and no-mail-client workflows
+  use downloads and manual copying.
 - Automatic Docker Hub `beta-latest` pointer updates after approved beta
   publication and provenance/SBOM attestations, with manifest-digest
   verification. Docker Hub's highest published beta across release branches
