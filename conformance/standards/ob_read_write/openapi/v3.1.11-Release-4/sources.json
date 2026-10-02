@@ -1,0 +1,84 @@
+{
+  "standard": "ob-read-write",
+  "specVersion": "3.1.11",
+  "openApiDocumentUpdate": "Release-4",
+  "catalogueId": "v3.1.11-Release-4",
+  "upstreamTag": "v3.1.11r4",
+  "upstreamCommit": "3fde4d10ce3f0cc1473d84c326ec7edd024b3708",
+  "retrievedAt": "2026-10-02",
+  "hashNote": "sha256Chunks joins to the SHA-256 digest of the bundled file bytes.",
+  "sources": [
+    {
+      "file": "account-info-openapi.json",
+      "description": "Open Banking Read/Write v3.1.11 Release-4 Account and Transaction API OpenAPI snapshot.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/3fde4d10ce3f0cc1473d84c326ec7edd024b3708/dist/openapi/account-info-openapi.json",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "ref": "v3.1.11r4",
+      "commit": "3fde4d10ce3f0cc1473d84c326ec7edd024b3708",
+      "sha256Chunks": [
+        "3df012ab",
+        "762ead87",
+        "c5b64890",
+        "d606ecb7",
+        "42e5ccb5",
+        "cefc5e00",
+        "1fb35844",
+        "d4cf660b"
+      ]
+    },
+    {
+      "file": "payment-initiation-openapi.json",
+      "description": "Open Banking Read/Write v3.1.11 Release-4 Payment Initiation API OpenAPI snapshot.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/3fde4d10ce3f0cc1473d84c326ec7edd024b3708/dist/openapi/payment-initiation-openapi.json",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "ref": "v3.1.11r4",
+      "commit": "3fde4d10ce3f0cc1473d84c326ec7edd024b3708",
+      "sha256Chunks": [
+        "86540bf8",
+        "4d2a17fd",
+        "24d1ca0a",
+        "ab84839d",
+        "de33704c",
+        "f66a63d7",
+        "763d093e",
+        "10ac3e58"
+      ]
+    },
+    {
+      "file": "confirmation-funds-openapi.json",
+      "description": "Open Banking Read/Write v3.1.11 Release-4 Confirmation of Funds API OpenAPI snapshot.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/3fde4d10ce3f0cc1473d84c326ec7edd024b3708/dist/openapi/confirmation-funds-openapi.json",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "ref": "v3.1.11r4",
+      "commit": "3fde4d10ce3f0cc1473d84c326ec7edd024b3708",
+      "sha256Chunks": [
+        "4f61a297",
+        "1b248d6a",
+        "4199d119",
+        "1ee39f60",
+        "b0b92ddc",
+        "7ffb05a7",
+        "53c3107d",
+        "c9b3dce9"
+      ]
+    },
+    {
+      "file": "vrp-openapi.json",
+      "description": "Open Banking Read/Write v3.1.11 Release-4 Variable Recurring Payments API OpenAPI snapshot.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/3fde4d10ce3f0cc1473d84c326ec7edd024b3708/dist/openapi/vrp-openapi.json",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "ref": "v3.1.11r4",
+      "commit": "3fde4d10ce3f0cc1473d84c326ec7edd024b3708",
+      "sha256Chunks": [
+        "41cf4d44",
+        "8d1addcd",
+        "0ae652a5",
+        "6b823a0f",
+        "b70ec6fa",
+        "4fe800e5",
+        "dbbab73a",
+        "e72f8176"
+      ]
+    }
+  ]
+}

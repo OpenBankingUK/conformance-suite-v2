@@ -276,6 +276,22 @@
                     </select>
                 </div>
 
+                <div data-openapi-document-update-field>
+                    <label for="{{ form.openapi_document_update.id_for_label }}">OpenAPI document update</label>
+                    {{ form.openapi_document_update.errors }}
+                    <select id="{{ form.openapi_document_update.id_for_label }}" name="openapi_document_update" data-openapi-document-update-select>
+                        {% for option in openapi_document_update_options %}
+                            <option value="{{ option.value }}"
+                                    data-scheme="{{ option.scheme }}"
+                                    data-specification="{{ option.specification }}"
+                                    data-version="{{ option.version }}"
+                                    {% if option.latest %}data-latest="true"{% endif %}
+                                    {% if form.version.value == option.version and form.openapi_document_update.value == option.value %}selected{% endif %}>{{ option.label }}{% if option.latest %} (latest){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="helper">Published OpenAPI (swagger) revision used for schema validation. Core specification behaviour is unchanged between updates.</p>
+                </div>
+
             </div>
 
             <div class="actions">
@@ -295,6 +311,8 @@
         const scheme = form.querySelector("[data-scheme-select]");
         const specification = form.querySelector("[data-specification-select]");
         const version = form.querySelector("[data-version-select]");
+        const openApiDocumentUpdate = form.querySelector("[data-openapi-document-update-select]");
+        const openApiDocumentUpdateField = form.querySelector("[data-openapi-document-update-field]");
         const continueButton = form.querySelector("[data-continue-button]");
 
         const selectFirstVisible = (select) => {
@@ -331,6 +349,29 @@
                 option.disabled = !available;
             });
             selectFirstVisible(version);
+            syncOpenApiDocumentUpdates();
+        };
+
+        const syncOpenApiDocumentUpdates = () => {
+            const options = Array.from(openApiDocumentUpdate.options);
+            options.forEach((option) => {
+                const available = option.dataset.scheme === scheme.value
+                    && option.dataset.specification === specification.value
+                    && option.dataset.version === version.value;
+                option.hidden = !available;
+                option.disabled = !available;
+            });
+            const visible = options.filter((option) => !option.disabled);
+            openApiDocumentUpdateField.hidden = visible.length === 0;
+            openApiDocumentUpdate.disabled = visible.length === 0;
+            const selected = openApiDocumentUpdate.selectedOptions[0];
+            if (selected && !selected.disabled) {
+                return;
+            }
+            const latest = visible.find((option) => option.dataset.latest === "true") || visible[visible.length - 1];
+            if (latest) {
+                latest.selected = true;
+            }
         };
 
         const syncBoundary = () => {
@@ -340,7 +381,10 @@
 
         scheme.addEventListener("change", syncBoundary);
         specification.addEventListener("change", syncBoundary);
-        version.addEventListener("change", updateContinueState);
+        version.addEventListener("change", () => {
+            syncOpenApiDocumentUpdates();
+            updateContinueState();
+        });
         syncOptions();
         updateContinueState();
     })();

@@ -22,6 +22,7 @@ from conformance.catalogue import (
     TestCatalogue,
 )
 from conformance.json_types import JsonObject, JsonValue
+from conformance.openapi_documents import logical_read_write_document
 
 _STANDARDS_ROOT = Path(__file__).resolve().parents[1] / "standards" / "ob_read_write" / "v4_0"
 """Directory containing the pinned v4 standards and legacy PIS sources."""
@@ -41,10 +42,10 @@ _LEGACY_COMMIT = "1908789b52e26e0a79fc5a565e411f771006c3ce"
 _API_PATH_PREFIX = "/open-banking/v4.0/pisp"
 """Versioned PIS resource path prefix."""
 
-_SCHEMA_DOCUMENT = "ob-read-write-v4.0-payment-initiation-openapi"
-"""Bundled v4 Payment Initiation OpenAPI document identifier."""
+_SCHEMA_DOCUMENT = logical_read_write_document("payment-initiation-openapi")
+"""Logical Payment Initiation OpenAPI document, bound to the selected update at compile time."""
 
-_SPECIFICATION_VERSIONS = ("4.0", "4.0.0", "4.0.1")
+_SPECIFICATION_VERSIONS = ("4.0.0",)
 """Participant-facing versions served by the v4 PIS catalogue."""
 
 _CASE_ID_BY_SCRIPT = {

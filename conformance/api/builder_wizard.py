@@ -48,6 +48,8 @@ from conformance.catalogue_registry import supported_catalogues
 from conformance.credentials import CredentialMaterial, credential_from_inline, credential_from_path
 from conformance.json_types import JsonObject, JsonValue
 from conformance.specification_registry import (
+    latest_openapi_document_update,
+    openapi_document_update_for_boundary,
     specification_for_boundary,
     supported_specifications,
 )
@@ -221,6 +223,28 @@ class VersionOption:
     label: str
     scheme: str
     specification: str
+
+
+@dataclass(frozen=True)
+class OpenApiDocumentUpdateOption:
+    """One OpenAPI document update option rendered beneath the version selector.
+
+    Attributes:
+        value: Plan value for ``specification.openApiDocumentUpdate``.
+        label: Participant-facing label, for example ``"Release 2"``.
+        scheme: Scheme value that owns the update.
+        specification: Specification value that owns the update.
+        version: Specification version that publishes the update.
+        latest: Whether this is the most recently published update for the
+            version and therefore the default selection.
+    """
+
+    value: str
+    label: str
+    scheme: str
+    specification: str
+    version: str
+    latest: bool
 
 
 @dataclass(frozen=True)
@@ -586,6 +610,8 @@ class CatalogueBoundaryForm(forms.Form):
         specification: Specification family selector filtered by scheme.
         version: Specification-version selector filtered by scheme and
             specification.
+        openapi_document_update: OpenAPI document update selector filtered by
+            version. Blank selects the latest published update.
         resource_groups: Deprecated compatibility field ignored by the
             specification step.
     """
@@ -593,6 +619,10 @@ class CatalogueBoundaryForm(forms.Form):
     scheme: forms.ChoiceField = forms.ChoiceField(label="Scheme")
     specification: forms.ChoiceField = forms.ChoiceField(label="Specification")
     version: forms.ChoiceField = forms.ChoiceField(label="Version")
+    openapi_document_update: forms.ChoiceField = forms.ChoiceField(
+        label="OpenAPI document update",
+        required=False,
+    )
     resource_groups: forms.MultipleChoiceField = forms.MultipleChoiceField(required=False)
 
     def __init__(
@@ -641,6 +671,12 @@ class CatalogueBoundaryForm(forms.Form):
         cast(forms.ChoiceField, self.fields["version"]).choices = [
             (option.value, option.label) for option in version_options(boundaries=self._boundaries)
         ]
+        cast(forms.ChoiceField, self.fields["openapi_document_update"]).choices = [
+            ("", "Latest"),
+            *dict.fromkeys(
+                (option.value, option.value) for option in openapi_document_update_options(boundaries=self._boundaries)
+            ),
+        ]
         cast(forms.MultipleChoiceField, self.fields["resource_groups"]).choices = [
             (group.id, group.label) for group in self.resource_group_hierarchy.resource_groups
         ]
@@ -668,6 +704,23 @@ class CatalogueBoundaryForm(forms.Form):
                 "Choose a supported scheme, specification, and version from the available catalogue options.",
                 code="unsupported_boundary",
             )
+        update = _cleaned_optional_string(cleaned_data.get("openapi_document_update"))
+        if update is None:
+            _definition, version_definition = specification_for_boundary(scheme, specification, version)
+            latest = latest_openapi_document_update(version_definition)
+            update = latest.update if latest is not None else None
+        try:
+            openapi_document_update_for_boundary(scheme, specification, version, update)
+        except ValueError:
+            self.add_error(
+                "openapi_document_update",
+                forms.ValidationError(
+                    "Choose an OpenAPI document update published for the selected version.",
+                    code="unsupported_openapi_document_update",
+                ),
+            )
+            return cleaned_data
+        cleaned_data["openapi_document_update"] = update
         return cleaned_data
 
     @property
@@ -1616,6 +1669,43 @@ def version_options(*, boundaries: Iterable[PlanDocumentBoundary] | None = None)
     )
 
 
+def openapi_document_update_options(
+    *, boundaries: Iterable[PlanDocumentBoundary] | None = None
+) -> tuple[OpenApiDocumentUpdateOption, ...]:
+    """Return OpenAPI document update selector options for every version.
+
+    Args:
+        boundaries: Optional boundary set to derive the selector from.
+
+    Returns:
+        Update options in publication order, scoped to their owning version.
+    """
+    boundary_values = tuple(boundaries) if boundaries is not None else catalogue_boundary_options()
+    options: list[OpenApiDocumentUpdateOption] = []
+    for boundary in boundary_values:
+        try:
+            _definition, version_definition = specification_for_boundary(
+                boundary.scheme,
+                boundary.specification,
+                boundary.version,
+            )
+        except ValueError:
+            continue
+        latest = latest_openapi_document_update(version_definition)
+        options.extend(
+            OpenApiDocumentUpdateOption(
+                value=update.update,
+                label=update.label,
+                scheme=boundary.scheme,
+                specification=boundary.specification,
+                version=boundary.version,
+                latest=update == latest,
+            )
+            for update in version_definition.openapi_document_updates
+        )
+    return tuple(options)
+
+
 def endpoint_capability_value(*, endpoint_id: str, capability_id: str) -> str:
     """Return the form value for an endpoint-scoped capability.
 
@@ -2346,6 +2436,11 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
         "specification": {
             "family": "OBL_READ_WRITE",
             "version": boundary.version,
+            **(
+                {"openApiDocumentUpdate": draft.openapi_document_update}
+                if draft.openapi_document_update is not None
+                else {}
+            ),
             "profile": _canonical_security_profile(draft.security_profile),
         },
         "executionMode": draft.execution_mode,
@@ -2921,7 +3016,7 @@ def _pruned_catalogue_boundary_form_data(
     """
     available_group_ids = {group.id for group in hierarchy.resource_groups}
     pruned_data: dict[str, object] = {}
-    for key in ("scheme", "specification", "version"):
+    for key in ("scheme", "specification", "version", "openapi_document_update"):
         values = _raw_values(data, key)
         if values:
             pruned_data[key] = values[0]
@@ -3771,6 +3866,7 @@ def _plan_document_with_config(document: PlanDocumentV2, config: Mapping[str, Js
         execution_mode=document.execution_mode,
         endpoints=document.endpoints,
         dynamic_client_registration=document.dynamic_client_registration,
+        openapi_document_update=document.openapi_document_update,
     )
 
 

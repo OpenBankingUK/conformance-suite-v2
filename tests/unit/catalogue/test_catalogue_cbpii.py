@@ -50,6 +50,7 @@ def _spec(
             for endpoint in endpoints
         ),
         runtime_inputs=_runtime_inputs(),
+        openapi_document_update="Update-5",
     )
 
 
@@ -162,6 +163,7 @@ def test_compile_requires_cbpii_debtor_account_config() -> None:
         security_profile=spec.security_profile,
         implemented_endpoints=spec.implemented_endpoints,
         runtime_inputs={"resourceBaseUrl": "https://rs.example.com"},
+        openapi_document_update="Update-5",
     )
 
     with pytest.raises(CatalogueError, match="Required runtime input 'debtorAccountSchemeName' is missing"):

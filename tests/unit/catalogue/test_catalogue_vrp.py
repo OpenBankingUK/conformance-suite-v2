@@ -74,7 +74,12 @@ def _compiled_v4_vrp_plan() -> CompiledTestPlan:
     document = parse_test_plan_document(
         {
             "schemaVersion": "1.0",
-            "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI1_ADVANCED"},
+            "specification": {
+                "family": "OBL_READ_WRITE",
+                "version": "4.0.1",
+                "profile": "FAPI1_ADVANCED",
+                "openApiDocumentUpdate": "Update-1",
+            },
             "securityEnvironment": {"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"},
             "resourceGroups": [
                 {
@@ -128,6 +133,7 @@ def _spec(
         security_profile="fapi1-advanced",
         implemented_endpoints=endpoints,
         runtime_inputs=merged_runtime_inputs,
+        openapi_document_update="Update-5",
     )
 
 
@@ -150,8 +156,12 @@ def _vrp_legacy_script_ids(manifest_path: str) -> tuple[str, ...]:
 
 
 def test_vrp_and_cvrp_catalogues_have_expected_keys_and_version() -> None:
-    assert VRP_LEGACY_FCS_CATALOGUE.key == CatalogueKey(standard="open-banking", version="v4.0", api="vrp")
-    assert CVRP_LEGACY_FCS_CATALOGUE.key == CatalogueKey(standard="open-banking", version="v4.0", api="cvrp")
+    assert VRP_LEGACY_FCS_CATALOGUE.key == CatalogueKey(
+        standard="open-banking", version="v4.0", api="vrp", specification_version="4.0.0"
+    )
+    assert CVRP_LEGACY_FCS_CATALOGUE.key == CatalogueKey(
+        standard="open-banking", version="v4.0", api="cvrp", specification_version="4.0.0"
+    )
     assert VRP_LEGACY_FCS_CATALOGUE.catalogue_version == "2026.07.legacy-fcs-vrp-cvrp.1"
     assert CVRP_LEGACY_FCS_CATALOGUE.catalogue_version == "2026.07.legacy-fcs-vrp-cvrp.1"
 
@@ -437,13 +447,13 @@ def test_v4_vrp_json_response_schema_checks_are_executable() -> None:
 
     assert schema_cases["vrp-consent-create-awaiting-authorisation-v4"][0].rule == {
         "source": "bundled_openapi",
-        "document": "ob-read-write-v4.0-vrp-openapi",
+        "document": "ob-read-write/v4.0.1-Update-1/vrp-openapi",
         "schemaRef": "#/components/schemas/OBDomesticVRPConsentResponse",
         "legacyAssertionIds": ["legacy-schema-check"],
     }
     assert schema_cases["vrp-consent-funds-confirmation"][0].rule == {
         "source": "bundled_openapi",
-        "document": "ob-read-write-v4.0-vrp-openapi",
+        "document": "ob-read-write/v4.0.1-Update-1/vrp-openapi",
         "schemaRef": "#/components/schemas/OBVRPFundsConfirmationResponse",
         "legacyAssertionIds": ["legacy-schema-check"],
     }
@@ -484,7 +494,12 @@ def test_canonical_vrp_business_data_supplies_runtime_inputs() -> None:
     document = parse_test_plan_document(
         {
             "schemaVersion": "1.0",
-            "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI1_ADVANCED"},
+            "specification": {
+                "family": "OBL_READ_WRITE",
+                "version": "4.0.1",
+                "profile": "FAPI1_ADVANCED",
+                "openApiDocumentUpdate": "Update-1",
+            },
             "securityEnvironment": {"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"},
             "resourceGroups": [
                 {

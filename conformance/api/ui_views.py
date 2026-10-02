@@ -33,6 +33,7 @@ from conformance.api.builder_wizard import (
     merge_discovery_config,
     merge_security_config,
     model_bank_config_from_plan_config,
+    openapi_document_update_options,
     plan_document_from_draft,
     plan_document_to_export_json,
     refresh_security_environment,
@@ -177,6 +178,7 @@ def builder_catalogue_boundary(request: HttpRequest, draft_id: str) -> HttpRespo
                 scheme=selected_boundary.scheme,
                 specification=selected_boundary.specification,
                 version=selected_boundary.version,
+                openapi_document_update=cast(str | None, form.cleaned_data.get("openapi_document_update")),
             ).with_scope_selection(
                 resource_group_ids=pruned_scope.selected_resource_group_ids,
                 endpoint_ids=pruned_scope.selected_endpoint_ids,
@@ -583,6 +585,7 @@ def builder_import(request: HttpRequest) -> HttpResponse:
             scheme=parsed_document.scheme,
             specification=parsed_document.specification,
             version=parsed_document.version,
+            openapi_document_update=parsed_document.openapi_document_update,
         )
         .with_scope_selection(
             resource_group_ids=resource_group_ids,
@@ -876,6 +879,8 @@ def _boundary_form_initial(draft: BuilderDraft) -> dict[str, object]:
         initial["specification"] = draft.specification
     if draft.version is not None:
         initial["version"] = draft.version
+    if draft.openapi_document_update is not None:
+        initial["openapi_document_update"] = draft.openapi_document_update
     initial["resource_groups"] = list(draft.resource_group_ids)
     return initial
 
@@ -944,6 +949,7 @@ def _builder_catalogue_boundary_context(
         "saved": saved,
         "specification_options": specification_options(),
         "version_options": version_options(),
+        "openapi_document_update_options": openapi_document_update_options(),
         "catalogue_boundary_blocker": catalogue_boundary_continue_blocker(form.selected_boundary),
     }
     return context
@@ -2214,6 +2220,15 @@ def _catalogue_trace_summary(result: JsonObject | None) -> dict[str, object] | N
         "api": catalogue.get("api") if isinstance(catalogue.get("api"), str) else "-",
         "catalogueVersion": (
             catalogue.get("catalogueVersion") if isinstance(catalogue.get("catalogueVersion"), str) else "-"
+        ),
+        "endpointVersion": (
+            catalogue.get("endpointVersion") if isinstance(catalogue.get("endpointVersion"), str) else None
+        ),
+        "openApiDocumentUpdate": (
+            openapi_document_update.get("displayName")
+            if isinstance(openapi_document_update := catalogue.get("openApiDocumentUpdate"), dict)
+            and isinstance(openapi_document_update.get("displayName"), str)
+            else None
         ),
         "generatedCount": len(generated_cases) if isinstance(generated_cases, list) else 0,
         "endpointCount": len(selected_endpoints) if isinstance(selected_endpoints, list) else 0,

@@ -24,7 +24,12 @@ VALID_CONFIG = {
 
 VALID_TEST_PLAN = {
     "schemaVersion": "1.0",
-    "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI1_ADVANCED"},
+    "specification": {
+        "family": "OBL_READ_WRITE",
+        "version": "4.0.1",
+        "profile": "FAPI1_ADVANCED",
+        "openApiDocumentUpdate": "Update-1",
+    },
     "securityEnvironment": {
         "discoveryUrl": "https://example.com/.well-known/openid-configuration",
         "resourceBaseUrl": "https://resource.example.com",

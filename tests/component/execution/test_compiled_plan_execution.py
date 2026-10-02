@@ -34,7 +34,7 @@ def test_run_compiled_test_plan_attaches_catalogue_traceability(tmp_path: Path) 
     )
     from conformance.executor import run_compiled_test_plan
 
-    catalogue_key = CatalogueKey(standard="open-banking", version="v4.0", api="ais")
+    catalogue_key = CatalogueKey(standard="open-banking", version="v4.0", api="ais", specification_version="4.0.0")
     catalogue = TestCatalogue(
         key=catalogue_key,
         catalogue_version="2026.7.0",
@@ -87,6 +87,7 @@ def test_run_compiled_test_plan_attaches_catalogue_traceability(tmp_path: Path) 
             ),
         ),
         runtime_inputs={"resourceBaseUrl": "https://resource.example.com"},
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(catalogue, spec)
 
@@ -128,8 +129,10 @@ def test_run_compiled_test_plan_attaches_catalogue_traceability(tmp_path: Path) 
     assert run_started.payload["catalogue"] == {
         "standard": "open-banking",
         "version": "v4.0",
+        "specificationVersion": "4.0.0",
         "api": "ais",
         "catalogueVersion": "2026.7.0",
+        "openApiDocumentUpdate": "Update-5",
     }
 
 
@@ -155,7 +158,7 @@ def test_run_compiled_test_plan_sends_catalogue_request_headers(tmp_path: Path) 
     )
     from conformance.executor import run_compiled_test_plan
 
-    catalogue_key = CatalogueKey(standard="open-banking", version="v4.0", api="pis")
+    catalogue_key = CatalogueKey(standard="open-banking", version="v4.0", api="pis", specification_version="4.0.0")
     catalogue = TestCatalogue(
         key=catalogue_key,
         catalogue_version="2026.7.0",
@@ -207,6 +210,7 @@ def test_run_compiled_test_plan_sends_catalogue_request_headers(tmp_path: Path) 
             ),
         ),
         runtime_inputs={"resourceBaseUrl": "https://resource.example.com"},
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(catalogue, spec)
     observed_headers: dict[str, str] = {}

@@ -398,6 +398,7 @@ def test_cli_compiles_v311_canonical_plan(monkeypatch: pytest.MonkeyPatch, tmp_p
                 "specification": {
                     "family": "OBL_READ_WRITE",
                     "version": "3.1.11",
+                    "openApiDocumentUpdate": "Release-5",
                     "profile": "FAPI1_ADVANCED",
                 },
                 "executionMode": "development",
@@ -450,6 +451,7 @@ def test_cli_compiles_v311_canonical_plan(monkeypatch: pytest.MonkeyPatch, tmp_p
         "open-banking-uk",
         "3.1.11",
         "read-write",
+        "3.1.11",
     )
     assert all(
         "/v4.0/" not in request.path

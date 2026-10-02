@@ -202,7 +202,7 @@ def test_v40_pis_catalogue_executes_every_legacy_row_exactly_once() -> None:
             cast("JsonObject", definitions[assertion_id])["expect"] for assertion_id in last_if_all_ids
         ]
         if row.get("schemaCheck") is True:
-            assert assertion.rule["schemaDocument"] == "ob-read-write-v4.0-payment-initiation-openapi"
+            assert assertion.rule["schemaDocument"] == "ob-read-write/payment-initiation-openapi"
             statuses = {
                 status
                 for assertion_id in (*all_ids, *one_of_ids, *last_if_all_ids)
@@ -254,7 +254,7 @@ def test_v40_pis_full_selection_compiles_all_strict_parity_rows() -> None:
                 for endpoint_ref in endpoint_refs
             ),
             runtime_inputs=_RUNTIME_INPUTS,
-            specification_version="4.0.1",
+            openapi_document_update="Update-5",
         ),
     )
 
