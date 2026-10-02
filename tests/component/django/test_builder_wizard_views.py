@@ -668,16 +668,17 @@ class TestBuilderWizardUi:
         assert review_response.status_code == 200
         content = review_response.content.decode("utf-8")
         assert "Review generated test plan" in content
-        assert "Save plan JSON" in content
+        assert 'form="review-plan-form"' in content
+        assert "Save plan JSON" not in content
         assert "Masked test plan summary" not in content
         assert "accessToken" not in content
         assert "fixture-account-id" not in content
         draft_id = _draft_id_from_builder_redirect(business_response["Location"])
         # Downloads and launch leave the boosted wizard via full navigation.
         assert '<main hx-boost="true">' in content
-        assert f'href="/builder/{draft_id}/export.json" hx-boost="false"' in content
-        assert f'action="/builder/{draft_id}/export.json" hx-boost="false"' in content
-        assert f'action="/builder/{draft_id}/launch/" hx-boost="false"' in content
+        assert f'action="/builder/{draft_id}/review/json/" hx-boost="false"' in content
+        assert f'formaction="/builder/{draft_id}/export.json"' in content
+        assert f'formaction="/builder/{draft_id}/launch/"' in content
 
         safe_export = client.get(f"/builder/{draft_id}/export.json")
 
@@ -1212,19 +1213,66 @@ class TestBuilderWizardUi:
             "NOT_A_GROUP",
         ]
 
-        save_response = client.post(
-            f"/builder/{draft_id}/review/json/",
-            data={"plan_json": json.dumps(_valid_import_plan())},
-        )
+        launch = client.post(f"/builder/{draft_id}/launch/", data={"plan_json": json.dumps(_valid_import_plan())})
         fixed_content = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
-        launch = client.post(f"/builder/{draft_id}/launch/")
 
-        assert save_response.status_code == 302
-        assert save_response["Location"] == f"/builder/{draft_id}/review/"
-        assert "Import warnings" not in fixed_content
-        assert "Ready to launch from this reviewed plan." in fixed_content
         assert launch.status_code == 302
         mock_start_run.assert_called_once()
+        assert "Import warnings" not in fixed_content
+        assert "Ready to launch from this reviewed plan." in fixed_content
+
+    @patch("conformance.api.ui_views.start_run")
+    def test_launch_runs_the_plan_json_box_without_a_separate_save(self, mock_start_run: Mock) -> None:
+        """An unsaved invalid edit in the review box blocks launch, as the box is the plan that runs."""
+        client = Client()
+        response = client.post("/builder/import/", data={"plan_json": json.dumps(_valid_import_plan())})
+        draft_id = _draft_id_from_builder_redirect(response["Location"])
+        edited = _valid_import_plan()
+        edited["executionMode"] = "not-a-mode"
+
+        launch = client.post(f"/builder/{draft_id}/launch/", data={"plan_json": json.dumps(edited)})
+
+        assert launch.status_code == 400
+        mock_start_run.assert_not_called()
+        content = launch.content.decode("utf-8")
+        assert "Resolve review blockers before launch." in content
+        assert "not-a-mode" in content
+
+    def test_export_uses_the_plan_json_box(self) -> None:
+        """Export from the review form applies the box's JSON before exporting it."""
+        client = Client()
+        response = client.post("/builder/import/", data={"plan_json": json.dumps(_valid_import_plan())})
+        draft_id = _draft_id_from_builder_redirect(response["Location"])
+        edited = _valid_import_plan()
+        edited["unexpected"] = "from-the-box"
+
+        exported = client.post(f"/builder/{draft_id}/export.json", data={"plan_json": json.dumps(edited)})
+
+        assert exported.status_code == 200
+        assert exported.json()["unexpected"] == "from-the-box"
+
+    def test_edit_step_buttons_apply_the_plan_json_box_first(self) -> None:
+        """Builder-step navigation keeps box edits and only redirects to allowed internal steps."""
+        client = Client()
+        response = client.post("/builder/import/", data={"plan_json": json.dumps(_valid_import_plan())})
+        draft_id = _draft_id_from_builder_redirect(response["Location"])
+        edited = _valid_import_plan()
+        edited["unexpected"] = True
+
+        to_scope = client.post(
+            f"/builder/{draft_id}/review/json/",
+            data={"plan_json": json.dumps(edited), "next": "scope"},
+        )
+        hostile = client.post(
+            f"/builder/{draft_id}/review/json/",
+            data={"plan_json": json.dumps(edited), "next": "https://evil.example"},
+        )
+        review = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
+
+        assert to_scope.status_code == 302
+        assert to_scope["Location"] == f"/builder/{draft_id}/scope/"
+        assert hostile["Location"] == f"/builder/{draft_id}/review/"
+        assert "unexpected is not a recognised test-plan field." in review
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
     @patch("conformance.api.ui_views.start_run")
@@ -1280,12 +1328,12 @@ class TestBuilderWizardUi:
         assert exported["unexpected"] == {"kept": True}
 
     def test_review_json_editor_rejects_non_object_text(self) -> None:
-        """Invalid review JSON is shown back with an error and the draft is unchanged."""
+        """Invalid box JSON is shown back with an error, nothing launches, and the draft is unchanged."""
         client = Client()
         response = client.post("/builder/import/", data={"plan_json": json.dumps(_valid_import_plan())})
         draft_id = _draft_id_from_builder_redirect(response["Location"])
 
-        rejected = client.post(f"/builder/{draft_id}/review/json/", data={"plan_json": "{broken"})
+        rejected = client.post(f"/builder/{draft_id}/launch/", data={"plan_json": "{broken"})
         review = client.get(f"/builder/{draft_id}/review/")
 
         assert rejected.status_code == 400

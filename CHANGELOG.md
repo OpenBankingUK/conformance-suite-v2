@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rejecting it. The review page lists import warnings for missing, invalid,
   unrecognised, and skipped fields. Fix them in the builder steps or in the review
   page's **Plan JSON** editor, now the single, unmasked and editable view of
-  the plan (with a secrets notice). Launch still requires the plan to pass
+  the plan (with a secrets notice). Launch, export, and the Edit-step buttons
+  use the editor's contents directly, with no separate save. Launch still requires the plan to pass
   normal validation. The "Masked test plan summary" box and the "Edit raw JSON
   as new draft" form are replaced by this editor.
 

@@ -153,41 +153,30 @@
             <div class="message warning">Certification plan ineligible.</div>
         {% endif %}
 
-        <div class="actions">
-            <a class="button secondary" href="{% url 'builder-catalogue-boundary' draft.draft_id %}">Edit specification</a>
-            <a class="button secondary" href="{% url 'builder-discovery-config' draft.draft_id %}">Edit discovery</a>
-            <a class="button secondary" href="{% url 'builder-security-config' draft.draft_id %}">Edit security</a>
-            <a class="button secondary" href="{% url 'builder-scope' draft.draft_id %}">Edit scope</a>
+        {# One form drives every review action so the plan JSON box below is always what is applied, exported, or launched. Downloads and the run page use full navigation: attachments cannot be swapped, and the run page binds document-level listeners. #}
+        <form id="review-plan-form" class="actions" method="post" action="{% url 'builder-review-json' draft.draft_id %}" hx-boost="false">
+            {% csrf_token %}
+            <button class="secondary" type="submit" name="next" value="catalogue">Edit specification</button>
+            <button class="secondary" type="submit" name="next" value="discovery">Edit discovery</button>
+            <button class="secondary" type="submit" name="next" value="security">Edit security</button>
+            <button class="secondary" type="submit" name="next" value="scope">Edit scope</button>
             {% if draft.specification != "dynamic-client-registration" %}
-                <a class="button secondary" href="{% url 'builder-config' draft.draft_id %}">Edit business data</a>
+                <button class="secondary" type="submit" name="next" value="config">Edit business data</button>
             {% endif %}
-            {# Downloads and the run page use full navigation: attachments cannot be swapped, and the run page binds document-level listeners. #}
-            <a class="button secondary" href="{% url 'builder-export' draft.draft_id %}" hx-boost="false">Export safe JSON</a>
-            <form method="post" action="{% url 'builder-export' draft.draft_id %}" hx-boost="false">
-                {% csrf_token %}
-                <button class="secondary" type="submit" name="include_secrets" value="1">Export with secrets</button>
-            </form>
-            <form method="post" action="{% url 'builder-launch' draft.draft_id %}" hx-boost="false">
-                {% csrf_token %}
-                <button type="submit" {% if not review.launch_supported %}disabled{% endif %}>Launch run</button>
-            </form>
-        </div>
+            <button class="secondary" type="submit" formaction="{% url 'builder-export' draft.draft_id %}">Export safe JSON</button>
+            <button class="secondary" type="submit" formaction="{% url 'builder-export' draft.draft_id %}" name="include_secrets" value="1">Export with secrets</button>
+            <button type="submit" formaction="{% url 'builder-launch' draft.draft_id %}">Launch run</button>
+        </form>
         <p class="helper">{{ review.sensitive_export_warning }}</p>
     </section>
 
     <section class="panel" aria-labelledby="plan-json-heading">
         <h2 id="plan-json-heading">Plan JSON</h2>
-        <p class="helper">The full plan JSON, including imported fields the builder cannot show. Saving reloads the draft with the same rules as import.</p>
+        <p class="helper">The full plan JSON, including imported fields the builder cannot show. This is the plan that is launched, exported, and opened in the builder steps above; edits are applied with the same rules as import.</p>
         <div class="message warning">Secrets are shown unmasked, including tokens and inline private keys. Do not share your screen while reviewing.</div>
         {% if plan_json_error %}<div class="message error">{{ plan_json_error }}</div>{% endif %}
-        <form method="post" action="{% url 'builder-review-json' draft.draft_id %}">
-            {% csrf_token %}
-            <label for="id_review_plan_json">Plan JSON</label>
-            <textarea id="id_review_plan_json" name="plan_json" spellcheck="false" autocomplete="off">{{ plan_json_text }}</textarea>
-            <div class="actions">
-                <button class="secondary" type="submit">Save plan JSON</button>
-            </div>
-        </form>
+        <label for="id_review_plan_json">Plan JSON</label>
+        <textarea id="id_review_plan_json" name="plan_json" form="review-plan-form" spellcheck="false" autocomplete="off">{{ plan_json_text }}</textarea>
     </section>
 
     <section class="panel" aria-labelledby="generated-tests-heading">

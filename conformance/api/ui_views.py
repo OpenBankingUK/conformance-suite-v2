@@ -587,26 +587,45 @@ def builder_import(request: HttpRequest) -> HttpResponse:
     return redirect("builder-review", draft_id=draft.draft_id)
 
 
-@require_POST
-def builder_review_json(request: HttpRequest, draft_id: str) -> HttpResponse:
-    """Replace a draft with plan JSON edited on the review page.
+_REVIEW_PLAN_JSON_NEXT_STEPS: dict[str, str] = {
+    "review": "builder-review",
+    "catalogue": "builder-catalogue-boundary",
+    "discovery": "builder-discovery-config",
+    "security": "builder-security-config",
+    "scope": "builder-scope",
+    "config": "builder-config",
+}
+"""Allowed post-apply destinations for review-page plan JSON, keyed by form value.
 
-    The edited JSON is recovered with the same lenient rules as import, so the
-    participant can fix fields the guided builder cannot represent.
+A fixed map of internal URL names keeps the ``next`` field from becoming an
+open redirect.
+"""
+
+
+def _apply_review_plan_json(
+    request: HttpRequest,
+    draft_store: SessionBuilderDraftStore,
+    draft: BuilderDraft,
+) -> BuilderDraft | HttpResponse:
+    """Apply the review page's plan JSON box to the draft before acting on it.
+
+    The review page's plan JSON is the single source of truth for the plan, so
+    launch, export, and builder-step navigation first reload the draft from the
+    submitted text with the same lenient rules as import. Unchanged text leaves
+    the draft untouched.
 
     Args:
-        request: The incoming browser POST request.
-        draft_id: Session-scoped draft id from the route.
+        request: Review-page POST carrying an optional ``plan_json`` field.
+        draft_store: Session draft store.
+        draft: Current draft.
 
     Returns:
-        Redirect to the review page, the review page with a ``400`` error when
-        the text is not a JSON object, or ``404`` when the draft is unknown.
+        The draft to act on, or the review page with a ``400`` error when the
+        submitted text is not a JSON object.
     """
-    draft_store = SessionBuilderDraftStore(request.session)
-    draft = draft_store.get(draft_id)
-    if draft is None:
-        return HttpResponseNotFound("Builder draft not found")
-    plan_text = request.POST.get("plan_json", "")
+    if "plan_json" not in request.POST:
+        return draft
+    plan_text = request.POST["plan_json"]
     try:
         raw_plan = parse_plan_import_text(plan_text)
     except PlanImportError as error:
@@ -615,9 +634,36 @@ def builder_review_json(request: HttpRequest, draft_id: str) -> HttpResponse:
             _builder_review_context(draft=draft, plan_json_error=str(error), plan_json_text=plan_text),
             status=400,
         )
+    if raw_plan == plan_json_from_draft(draft):
+        return draft
     fresh_draft = replace(BuilderDraft.create(), draft_id=draft.draft_id, created_at=draft.created_at)
-    draft_store.save(recover_draft_from_plan_json(raw_plan, draft=fresh_draft))
-    return redirect("builder-review", draft_id=draft.draft_id)
+    updated = recover_draft_from_plan_json(raw_plan, draft=fresh_draft)
+    draft_store.save(updated)
+    return updated
+
+
+@require_POST
+def builder_review_json(request: HttpRequest, draft_id: str) -> HttpResponse:
+    """Apply review-page plan JSON, then open the review page or a builder step.
+
+    Args:
+        request: The incoming browser POST request with ``plan_json`` and an
+            optional ``next`` step from :data:`_REVIEW_PLAN_JSON_NEXT_STEPS`.
+        draft_id: Session-scoped draft id from the route.
+
+    Returns:
+        Redirect to the requested step, the review page with a ``400`` error
+        when the text is not a JSON object, or ``404`` when the draft is unknown.
+    """
+    draft_store = SessionBuilderDraftStore(request.session)
+    draft = draft_store.get(draft_id)
+    if draft is None:
+        return HttpResponseNotFound("Builder draft not found")
+    applied = _apply_review_plan_json(request, draft_store, draft)
+    if isinstance(applied, HttpResponse):
+        return applied
+    next_step = _REVIEW_PLAN_JSON_NEXT_STEPS.get(request.POST.get("next", ""), "builder-review")
+    return redirect(next_step, draft_id=draft.draft_id)
 
 
 @require_GET
@@ -641,6 +687,8 @@ def builder_review(request: HttpRequest, draft_id: str) -> HttpResponse:
 def builder_export(request: HttpRequest, draft_id: str) -> HttpResponse:
     """Download a reviewed builder draft as v2 plan JSON.
 
+    A POST from the review page applies its plan JSON box to the draft first.
+
     Args:
         request: The incoming browser GET or POST request.
         draft_id: Session-scoped draft id from the route.
@@ -649,9 +697,15 @@ def builder_export(request: HttpRequest, draft_id: str) -> HttpResponse:
         JSON attachment containing a safe GET export by default, a secret-bearing
         POST export when explicitly requested, or an error response.
     """
-    draft = SessionBuilderDraftStore(request.session).get(draft_id)
+    draft_store = SessionBuilderDraftStore(request.session)
+    draft = draft_store.get(draft_id)
     if draft is None:
         return HttpResponseNotFound("Builder draft not found")
+    if request.method == "POST":
+        applied = _apply_review_plan_json(request, draft_store, draft)
+        if isinstance(applied, HttpResponse):
+            return applied
+        draft = applied
     state = _builder_review_state(draft)
     if state.document is None or state.compiled_plan is None:
         return JsonResponse({"error": state.error or "Builder draft cannot be exported"}, status=400)
@@ -683,7 +737,10 @@ def builder_export(request: HttpRequest, draft_id: str) -> HttpResponse:
 
 @require_POST
 def builder_launch(request: HttpRequest, draft_id: str) -> HttpResponse:
-    """Launch a conformance run from the reviewed builder draft.
+    """Launch a conformance run from the review page's plan JSON.
+
+    Submitted plan JSON is applied to the draft first, then the run uses the
+    normal load validation, so unsaved edits are what runs.
 
     Args:
         request: The incoming browser POST request.
@@ -693,9 +750,14 @@ def builder_launch(request: HttpRequest, draft_id: str) -> HttpResponse:
         Redirect to run detail on success, or the review page with launch
         blockers/conflict details.
     """
-    draft = SessionBuilderDraftStore(request.session).get(draft_id)
+    draft_store = SessionBuilderDraftStore(request.session)
+    draft = draft_store.get(draft_id)
     if draft is None:
         return HttpResponseNotFound("Builder draft not found")
+    applied = _apply_review_plan_json(request, draft_store, draft)
+    if isinstance(applied, HttpResponse):
+        return applied
+    draft = applied
     state = _builder_review_state(draft)
     if not state.launch_supported or state.document is None:
         return _review_response(

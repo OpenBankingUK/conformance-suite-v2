@@ -284,7 +284,8 @@ The wizard follows the PRD order:
    advanced JSON fallbacks.
 7. Review the generated plan at `/builder/<draft>/review/`, including summary
    counts, import warnings, launch blockers, the unmasked, editable plan JSON
-   (`POST /builder/<draft>/review/json/`), which is the single view of the plan, and
+   (the single view of the plan: launch, export, and the Edit-step buttons all
+   submit it and apply it to the draft first, with no separate save), and
    collapsed generated-test rows.
 8. Download safe JSON from `/builder/<draft>/export.json`, explicitly request
    local secret-bearing JSON with a POST `include_secrets=1`, or launch through
