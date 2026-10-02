@@ -101,7 +101,9 @@ class TestMain:
         ("tags", "eligible"),
         [
             ("latest\nbeta-latest\n2.0.0-beta.9\n", True),
-            ("2.1.0-beta.1\n", False),
+            ("2.1.0-beta.1\n", True),
+            ("2.0.0-beta.11\n", False),
+            ("2.0.0\n", False),
         ],
     )
     def test_beta_alias_is_separate_from_initial_tags(

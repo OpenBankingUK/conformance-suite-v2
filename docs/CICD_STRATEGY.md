@@ -419,7 +419,7 @@ dispatch of the `promote-*` workflows is reserved for recovery or backfill.
 |---|---|---|
 | `vX.Y.Z` | `v1.2.0` | Stable release |
 | `X.Y.Z-beta.N` in `pyproject.toml` | `2.0.0-beta.1` | Beta image |
-| `beta-latest` (Docker Hub only) | `beta-latest` | Mutable highest-beta pointer |
+| `2.0.0-beta-latest` (Docker Hub only) | `2.0.0-beta-latest` | Temporary MVP beta pointer |
 
 ```bash
 git tag -a v1.2.0 -m "Release 1.2.0"
@@ -470,7 +470,8 @@ Beta releases allow pre-release images to be distributed before a final stable t
 3. Approve the Environment deployment. The workflow publishes the exact
    artifacts as immutable
    `X.Y.Z-beta.N`, completes provenance and both platform SBOM attestations,
-   then updates `beta-latest` if this is the highest published beta version.
+   then updates `2.0.0-beta-latest` if this is the highest published 2.0.0 beta
+   and the formal `2.0.0` version has not been published.
    It does not create or move GA `latest`.
 4. Increment `N` in a new approved change for each subsequent beta.
 
@@ -478,13 +479,16 @@ Manual **Promote beta image** dispatch is available from `main` only for
 recovery/backfill.
 ```
 
-The developer does not set `beta-latest` in `pyproject.toml` or run another
+The developer does not set `2.0.0-beta-latest` in `pyproject.toml` or run another
 workflow. Both automatic and manual beta promotions maintain it through the
 same Environment-approved publication path. Docker Hub's complete published
-tag inventory is the source of truth: compare exact beta versions numerically
-across all release branches, not by merge time, branch, or publication time.
+tag inventory is the source of truth: compare exact `2.0.0-beta.N` versions
+numerically, not by merge time, branch, or publication time.
 An older backfill publishes its exact version but leaves the pointer unchanged;
-preview and GA releases never move it.
+preview, other release series, and GA releases never move it. Once Docker Hub
+contains `2.0.0`, the pointer is frozen at its last MVP beta, superseded by the
+formal release. It is never repointed to GA. The former `beta-latest` tag is no
+longer maintained; this change does not delete existing registry tags.
 
 The pointer copies the exact attested multi-architecture manifest by digest,
 without rebuilding, and promotion verifies that its digest matches the version
@@ -495,7 +499,7 @@ Duplicate-version protection still applies; this change introduces no separate
 seed or repair workflow. The alias is first created on the next eligible beta
 promotion, not retroactively for existing images.
 
-Docker Hub tag-immutability rules must allow `beta-latest` (and GA `latest`)
+Docker Hub tag-immutability rules must allow `2.0.0-beta-latest` (and GA `latest`)
 to move while protecting exact version tags. Only the serialized promotion
 pipeline should write these aliases; independent registry writers are outside
 its concurrency protection. Release branches must incorporate updated trusted
