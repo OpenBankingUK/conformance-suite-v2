@@ -309,6 +309,7 @@ def test_plan_import_issue_session_decoding_rejects_malformed_values() -> None:
         (" " * (PLAN_IMPORT_MAX_BYTES + 1), "Paste plan JSON"),
         ('{"a": "' + "x" * PLAN_IMPORT_MAX_BYTES + '"}', "1 MB or smaller"),
     ],
+    ids=["blank", "invalid-json", "non-object", "oversized-blank", "oversized-json"],
 )
 def test_parse_plan_import_text_rejects_unrecoverable_input(text: str, message: str) -> None:
     """Only input with nothing to recover is rejected."""
