@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Automatic Docker Hub `beta-latest` pointer updates after approved beta
+  publication and provenance/SBOM attestations, with manifest-digest
+  verification. Docker Hub's highest published beta across release branches
+  determines eligibility; older backfills and GA releases leave it unchanged.
+
 ## [2.0.0-beta.3] - 2026-10-01
 
 ### Changed
