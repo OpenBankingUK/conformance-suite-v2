@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from conformance.execution_log import BufferedExecutionLogger
-from conformance.json_types import JsonObject
+from conformance.json_types import JsonObject, JsonValue
 
 RunStatus = Literal["pending", "running", "completed", "failed"]
 """Lifecycle states for a conformance run."""
@@ -322,6 +322,29 @@ class RunStore:
                 return None
             execution_logger = record.execution_logger
         return execution_logger.to_ndjson_bytes()
+
+    def feedback_snapshot(self, run_id: str) -> dict[str, JsonValue] | None:
+        """Detach run evidence under the lifecycle lock, excluding PSU actions.
+
+        Log events are captured while lifecycle transitions are blocked so final
+        status/results and logs belong to the same capture. Exporters must apply
+        mandatory masking because developer-mode evidence can contain secrets.
+        """
+        with self._lock:
+            record = self._runs.get(run_id)
+            if record is None:
+                return None
+            return {
+                "run-status.json": record.to_status_json(),
+                "result.json": _copy_json_object(record.result),
+                "test-plan.json": _copy_json_object(record.plan_snapshot),
+                "validation.json": _copy_json_object(record.validation_result),
+                "execution-log.ndjson": [
+                    copy.deepcopy(event.to_json_object()) for event in record.execution_logger.events()
+                ]
+                if record.execution_logger is not None
+                else None,
+            }
 
     def mark_running(self, run_id: str) -> None:
         """Transition a pending run to running state.

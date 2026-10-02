@@ -1,6 +1,6 @@
-# Functional Conformance Suite v2 beta.3
+# Functional Conformance Suite v2 beta.4
 
-**Beta only — not for certification.** FCS v2 `2.0.0-beta.3` is an MVP for
+**Beta only — not for certification.** FCS v2 `2.0.0-beta.4` is an MVP for
 evaluating the new Open Banking UK Functional Conformance Suite and providing
 feedback. It is **not approved for certification**; runs and reports from this
 beta must not be submitted as certification evidence, even if a plan or result
@@ -22,7 +22,7 @@ announced separately — you do not need to migrate or do anything in advance.
 With Docker installed and running, start the beta on your own computer:
 
 ```bash
-docker run --rm -p 127.0.0.1:8443:8443 openbanking/conformance-suite-v2:2.0.0-beta.3
+docker run --rm -p 127.0.0.1:8443:8443 openbanking/conformance-suite-v2:2.0.0-beta.4
 ```
 
 Open `https://127.0.0.1:8443/` in your browser. Accept the warning for the
@@ -41,7 +41,56 @@ does not persist browser sessions, results, or logs across runs.
 For the complete beta UI walkthrough and optional persistence or certificate
 mounts, see the [Docker deployment guide](docs/DOCKER_GUIDE.md). CLI, REST,
 Compose, and file-based credential configuration below are advanced reference,
-not the primary beta.3 participant workflow.
+not the primary beta.4 participant workflow.
+
+## Give beta feedback
+
+Choose **Give beta feedback** in the beta banner on any browser page. It opens
+a new tab without interrupting run monitoring, PSU actions or builder edits.
+Select **Bug**, **Suggestion**, **Issue** or **Other**, describe what happened,
+and choose **Prepare message and diagnostic ZIP**. The recipient is
+`standardsteam@openbanking.org.uk`.
+
+Nothing is uploaded or sent automatically. Download and review the ZIP, copy the
+complete subject/body, and **manually attach the ZIP** to your email. The optional
+**Open email client** link creates only a short report reference; email links cannot attach
+files reliably. No mail client is required: selectable text and `feedback.txt`
+work without JavaScript. On VMs or secured networks, transfer reviewed files
+using your organisation's approved process and send via webmail or another
+device; do not bypass data-sharing or network restrictions.
+
+Each bundle includes a versioned `context.json` (tool version, source page URL
+without query parameters/fragments, capture time and supplied environment notes),
+`manifest.json` (inventory, masking policy and unavailable-evidence reasons), and
+`feedback.txt`. Run pages add status, execution logs, results, the launch-time
+test plan and validation when available. Active runs contain a point-in-time
+snapshot, not future results. Saved builder drafts add a canonical safe test plan
+when convertible, otherwise a clearly labelled `builder-draft.json` with the
+conversion error. **Unsaved browser edits are not captured**, and a diagnostic
+test plan is not a guarantee of executable configuration. Page-only feedback
+does not attach another run or draft.
+
+The feedback form asks for a category, summary and description, with optional
+reproduction steps and environment notes. Sharing warnings and attachment
+instructions stay on the feedback page; the email contains the feedback and
+diagnostic context without those instructions or empty optional sections.
+
+Credential/certificate masking is mandatory even for developer-mode evidence.
+It covers recognized credential fields, HTTP authorization/cookie headers, PEM,
+JWT/JWS/JWE, credential-bearing URL parameters/userinfo and recognized free-text
+credential forms. **Identifiers, URLs and local file paths are retained**.
+Arbitrary narrative or business data may still be sensitive: review every file
+before sharing. Bundles never read credential files or collect sessions, request
+cookies, environment variables or host/container logs.
+
+Prepared reports are session-owned, process-local and expire after 30 minutes.
+The tool retains at most three per browser session and twenty globally, with
+a 64 MiB stored-ZIP limit; oldest reports may be evicted sooner. Each bundle is
+limited to 16 MiB of uncompressed content and fails explicitly if too large.
+Reports are lost on server restart. Download promptly; if a report becomes
+unavailable, prepare a new one. Multi-worker deployments require sticky routing
+to the process holding both the run and report, like the existing in-memory run
+store.
 
 ## Alternative: run from source
 
@@ -108,7 +157,7 @@ The supported workflow is:
 
 The UI shows generated tests, counts, source traceability, runtime/auth
 requirements, launch blockers, and internal certification-status labels after
-preview. **Those labels do not make beta.3 runs valid for certification.**
+preview. **Those labels do not make beta.4 runs valid for certification.**
 Generated tests are read-only: participants cannot select exact generated
 tests. Lower-level request and assertion details stay collapsed under audit
 details.
