@@ -7,6 +7,10 @@
 - Docker for container builds
 - GNU Make
 
+Docker builds use digest-pinned Docker Hardened Images from `dhi.io`.
+Authenticate before building with `docker login dhi.io`, using a Docker
+account with access to those images. CI already uses organisation credentials.
+
 ## Getting started
 
 ```bash
@@ -30,6 +34,14 @@ the legacy FCS callback URI continue to reach the local application.
 
 `make dev-unmasked` can write credentials and tokens in clear text to
 developer-visible logs. Use it only for local debugging.
+
+`make docker` runs the distroless image as UID/GID `65532`, with a read-only
+root filesystem, private writable `/tmp`, and a named `/data` volume.
+The entrypoint generates and persists the Django secret and local TLS identity;
+explicitly exported `DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS` override
+its defaults. Open `https://127.0.0.1:8443/` and accept the local self-signed
+certificate warning. The published port binds only to localhost. See
+[Docker guide](DOCKER_GUIDE.md) for Compose and certificate mounts.
 
 ## Local checks
 

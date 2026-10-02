@@ -1,4 +1,32 @@
-# Docker image tags
+# Docker deployment and image tags
+
+## Local hardened runtime
+
+Authenticate with `docker login dhi.io` before building the Docker Hardened
+Image bases, then run `make docker` or `docker compose up --build`.
+The image runs as non-root UID/GID `65532` without a shell, serves HTTPS on
+port `8443`, and generates its Django secret and self-signed TLS identity.
+The local profile publishes only `127.0.0.1:8443`; open
+`https://127.0.0.1:8443/` and accept the local certificate warning.
+
+Compose and `make docker` use a read-only root filesystem, dropped
+capabilities, no-new-privileges, a private writable `/tmp`, and a named
+`/data` volume. The volume persists the secret, TLS identity, and browser
+sessions. `/data/results` and `/data/logs` are writable locations for
+explicitly configured artifact output paths; existing participant-selected
+paths are not rewritten.
+
+For a read-only certificate mount, use:
+
+```bash
+CERTS_DIR=/path/to/your/certs docker compose -f compose.yaml -f compose.certs.yaml up --build
+```
+
+Container paths, not host paths, must be used in participant configuration.
+An operator-supplied command replaces the default server command, so CLI
+execution remains available. The runtime has no shell; use exec-form commands.
+
+## Published image tags
 
 Published images are available from Docker Hub at
 `docker.io/openbanking/conformance-suite-v2`:

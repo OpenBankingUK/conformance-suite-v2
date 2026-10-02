@@ -23,7 +23,7 @@ def _get_allowed_hosts() -> list[str]:
 
 
 # Reserved hostname sent by the container HEALTHCHECK (see Dockerfile).
-# The healthcheck runs inside the container against ``http://localhost:8443/``
+# The healthcheck runs inside the container against ``https://localhost:8443/``
 # but sends an explicit ``Host: healthcheck.local`` header so the probe does
 # not depend on operators including ``localhost`` in ``DJANGO_ALLOWED_HOSTS``.
 # This token is reserved for the in-container probe and is unconditionally

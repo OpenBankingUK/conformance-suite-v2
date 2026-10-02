@@ -38,6 +38,7 @@ db.sqlite3
 .secrets.baseline
 docs/
 CHANGELOG.md
+scripts/
 
 # ─── CI-only scan inputs and policy ────────────────────────────────────────
 trusted/
