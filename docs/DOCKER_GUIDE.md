@@ -40,17 +40,22 @@ Exact version tags are immutable and remain preferable for reproducible runs.
 See [`CICD_STRATEGY.md`](CICD_STRATEGY.md) for the full versioning and
 Environment-approved promotion model.
 
-`latest` refers only to the current GA release. For convenient beta evaluation,
-`beta-latest` tracks the highest published beta version across release branches,
-updated automatically after approved publication and provenance/SBOM
-attestations succeed. Beta images are for evaluation, not certification.
+`latest` refers only to the current GA release. For convenient MVP beta
+evaluation, `2.0.0-beta-latest` tracks the highest published `2.0.0-beta.N`
+version, updated automatically after approved publication and
+provenance/SBOM attestations succeed. It stops updating once the formal
+`2.0.0` image is published and remains a superseded beta, never a GA image.
+Other release series do not move it. Beta images are for evaluation, not
+certification.
 
 ```bash
-docker pull docker.io/openbanking/conformance-suite-v2:beta-latest
+docker pull docker.io/openbanking/conformance-suite-v2:2.0.0-beta-latest
 ```
 
 Pull explicitly before starting a new container: a moving tag does not refresh
-a cached image or an already running container. The alias is first created by
-an eligible future beta promotion; existing beta images are not automatically
-retagged when this feature is deployed. Older beta backfills, preview releases,
-and GA releases leave `beta-latest` unchanged.
+a cached image or an already running container. The alias is seeded from the
+`2.0.0-beta.4` manifest; future eligible beta promotions maintain it. Existing
+beta images are not automatically retagged when this feature is deployed.
+
+The former `beta-latest` tag is no longer maintained. Existing registry tags are
+not deleted by this change.

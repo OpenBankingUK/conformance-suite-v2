@@ -18,6 +18,7 @@ import httpx
 from scripts.list_docker_hub_tags import list_tags
 from scripts.release_metadata import (
     IMAGE_NAME,
+    MVP_BETA_TAG,
     ReleaseChannel,
     ReleaseMetadataError,
     classify_raw_version,
@@ -35,10 +36,10 @@ def _inspect_digest(reference: str) -> str:
 
 
 def update_beta_latest(raw_version: str, published_digest: str) -> dict[str, str | bool]:
-    """Copy the highest published beta's manifest by digest and verify identity."""
+    """Copy the highest MVP beta's manifest before GA and verify digest identity."""
     metadata = classify_raw_version(raw_version)
     if metadata.channel is not ReleaseChannel.BETA:
-        raise ReleaseMetadataError("Only beta promotions may update beta-latest.")
+        raise ReleaseMetadataError(f"Only beta promotions may update {MVP_BETA_TAG}.")
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", published_digest):
         raise ReleaseMetadataError("Published manifest digest must be a lowercase SHA-256 digest.")
 
@@ -46,7 +47,11 @@ def update_beta_latest(raw_version: str, published_digest: str) -> dict[str, str
     if raw_version not in tags:
         raise ReleaseMetadataError(f"Exact beta version {raw_version!r} is not visible in Docker Hub.")
     if not should_update_beta_latest(metadata, tags):
-        return {"updated": False, "notice": f"Older backfill {raw_version}: beta-latest left unchanged."}
+        return {
+            "updated": False,
+            "notice": f"{raw_version} is not eligible: {MVP_BETA_TAG} left unchanged "
+            "(older backfill, another release series, or formal MVP release already published).",
+        }
 
     if _inspect_digest(f"{IMAGE_NAME}:{raw_version}") != published_digest:
         raise ReleaseMetadataError("Exact beta version no longer matches the attested manifest digest.")
@@ -58,15 +63,15 @@ def update_beta_latest(raw_version: str, published_digest: str) -> dict[str, str
             "imagetools",
             "create",
             "--tag",
-            f"{IMAGE_NAME}:beta-latest",
+            f"{IMAGE_NAME}:{MVP_BETA_TAG}",
             f"{IMAGE_NAME}@{published_digest}",
         ],
         check=True,
         stdout=sys.stderr,
     )
-    if _inspect_digest(f"{IMAGE_NAME}:beta-latest") != published_digest:
-        raise ReleaseMetadataError("beta-latest does not match the attested multi-architecture manifest digest.")
-    return {"updated": True, "notice": f"beta-latest now points to {raw_version} at {published_digest}."}
+    if _inspect_digest(f"{IMAGE_NAME}:{MVP_BETA_TAG}") != published_digest:
+        raise ReleaseMetadataError(f"{MVP_BETA_TAG} does not match the attested multi-architecture manifest digest.")
+    return {"updated": True, "notice": f"{MVP_BETA_TAG} now points to {raw_version} at {published_digest}."}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -81,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(error, subprocess.CalledProcessError) and error.stderr:
             sys.stderr.write(error.stderr.decode(errors="replace"))
         sys.stderr.write(
-            f"error: beta-latest update failed after exact-version publication; "
+            f"error: {MVP_BETA_TAG} update failed after exact-version publication; "
             f"the version may already be published: {error}\n"
         )
         return 1

@@ -9,12 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Renamed the temporary MVP beta pointer from `beta-latest` to
+  `2.0.0-beta-latest`, selecting only the highest published 2.0.0 beta and
+  freezing updates once formal `2.0.0` is published. The old registry tag is
+  no longer maintained and is not deleted automatically.
+
 ### Added
 
-- Automatic Docker Hub `beta-latest` pointer updates after approved beta
+- Automatic Docker Hub `2.0.0-beta-latest` pointer updates after approved beta
   publication and provenance/SBOM attestations, with manifest-digest
-  verification. Docker Hub's highest published beta across release branches
-  determines eligibility; older backfills and GA releases leave it unchanged.
+  verification. Only the highest published 2.0.0 beta is eligible; older
+  backfills, other release series, and GA releases leave it unchanged.
 - Automatic, Environment-gated preview, beta, and GA image promotions after
   successful candidate CI runs, with manual promotion dispatch retained for
   recovery and backfill.
