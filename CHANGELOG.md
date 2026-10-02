@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Renamed the temporary MVP beta pointer from `beta-latest` to
+  `2.0.0-beta-latest`, selecting only the highest published 2.0.0 beta and
+  freezing updates once formal `2.0.0` is published. The old registry tag is
+  no longer maintained and is not deleted automatically.
+
 ## [2.0.0-beta.4] - 2026-10-02
 
 ### Added

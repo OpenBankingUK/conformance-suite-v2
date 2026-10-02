@@ -29,15 +29,17 @@ pytestmark = pytest.mark.unit
         ("2.0.0-beta.1", [], True),
         ("2.0.0-beta.10", ["2.0.0-beta.9"], True),
         ("2.0.0-beta.9", ["2.0.0-beta.10"], False),
-        ("2.1.0-beta.1", ["2.0.0-beta.10"], True),
-        ("2.0.0-beta.11", ["2.1.0-beta.1"], False),
+        ("2.1.0-beta.1", ["2.0.0-beta.10"], False),
+        ("2.0.0-beta.11", ["2.1.0-beta.1"], True),
+        ("2.0.0-beta.11", ["2.0.0-beta.10", "2.0.0"], False),
+        ("2.0.0-beta.11", ["1.9.0", "2.0.0-beta-latest"], True),
         ("2.0.0-beta.1", ["2.0.0-beta.1", "latest", "beta-latest", "3.0.0", "4.0.0-dev.1"], True),
         ("2.0.0", [], False),
         ("2.0.0-dev.1", [], False),
     ],
 )
 def test_beta_latest_policy(version: str, tags: list[str], expected: bool) -> None:
-    """Only the highest numeric beta across all Docker Hub releases may move the alias."""
+    """Only the highest numeric MVP beta before formal publication may move the alias."""
     assert should_update_beta_latest(classify_raw_version(version), tags) is expected
 
 

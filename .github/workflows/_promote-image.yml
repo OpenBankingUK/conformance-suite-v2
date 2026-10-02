@@ -555,7 +555,7 @@ jobs:
           push-to-registry: true
           create-storage-record: false
 
-      - name: Update beta-latest after publication and attestations
+      - name: Update 2.0.0-beta-latest after publication and attestations
         if: inputs.channel == 'beta'
         env:
           RAW_VERSION: ${{ steps.validate.outputs.raw_version }}
