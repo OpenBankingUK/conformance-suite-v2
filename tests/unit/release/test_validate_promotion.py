@@ -71,6 +71,7 @@ class TestMain:
         assert exit_code == 0
         result = json.loads(capsys.readouterr().out)
         assert result["expected_tags"] == ["2.0.0-dev.1"]
+        assert result["update_beta_latest"] is False
 
     def test_ga_manifest_expects_latest_tag(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         """A valid GA manifest's expected tags include the version and latest."""
@@ -94,6 +95,64 @@ class TestMain:
         assert exit_code == 0
         result = json.loads(capsys.readouterr().out)
         assert result["expected_tags"] == ["2.0.0", "latest"]
+        assert result["update_beta_latest"] is False
+
+    @pytest.mark.parametrize(
+        ("tags", "eligible"),
+        [
+            ("latest\nbeta-latest\n2.0.0-beta.9\n", True),
+            ("2.1.0-beta.1\n", False),
+        ],
+    )
+    def test_beta_alias_is_separate_from_initial_tags(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], tags: str, eligible: bool
+    ) -> None:
+        """Beta publication leaves the alias for the post-attestation update."""
+        manifest_path = _write_manifest(tmp_path, raw_version="2.0.0-beta.10", channel="beta")
+        published_path = tmp_path / "published.txt"
+        published_path.write_text(tags)
+        assert (
+            main(
+                [
+                    "--manifest",
+                    str(manifest_path),
+                    "--source-sha",
+                    "a" * 40,
+                    "--branch",
+                    "release/2.0.0",
+                    "--channel",
+                    "beta",
+                    "--published-versions-file",
+                    str(published_path),
+                ]
+            )
+            == 0
+        )
+        result = json.loads(capsys.readouterr().out)
+        assert result["expected_tags"] == ["2.0.0-beta.10"]
+        assert result["update_beta_latest"] is eligible
+
+    def test_supplied_missing_inventory_fails(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """A missing registry inventory must not silently disable publication guards."""
+        manifest_path = _write_manifest(tmp_path)
+        assert (
+            main(
+                [
+                    "--manifest",
+                    str(manifest_path),
+                    "--source-sha",
+                    "a" * 40,
+                    "--branch",
+                    "preview/new-cert-flow",
+                    "--channel",
+                    "preview",
+                    "--published-versions-file",
+                    str(tmp_path / "missing.txt"),
+                ]
+            )
+            == 1
+        )
+        assert "error:" in capsys.readouterr().err
 
     def test_ga_manifest_without_tag_is_rejected(self, tmp_path: Path) -> None:
         """A GA promotion request missing --tag is rejected."""

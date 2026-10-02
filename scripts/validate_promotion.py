@@ -31,7 +31,9 @@ from scripts.release_metadata import (
     ReleaseChannel,
     ReleaseMetadataError,
     classify_raw_version,
+    publication_tags,
     require_not_already_published,
+    should_update_beta_latest,
     validate_branch_compatibility,
     validate_release_tag,
 )
@@ -117,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
             validate_release_tag(metadata, args.tag)
 
         published_versions: list[str] = []
-        if args.published_versions_file is not None and args.published_versions_file.exists():
+        if args.published_versions_file is not None:
             published_versions = [
                 line.strip()
                 for line in args.published_versions_file.read_text(encoding="utf-8").splitlines()
@@ -135,11 +137,8 @@ def main(argv: list[str] | None = None) -> int:
                 "channel": metadata.channel.value,
                 "image_name": manifest["image_name"],
                 "platform_digests": manifest["platform_digests"],
-                "expected_tags": list(
-                    (metadata.raw_version, "latest")
-                    if metadata.channel is ReleaseChannel.GA
-                    else (metadata.raw_version,)
-                ),
+                "expected_tags": list(publication_tags(metadata)),
+                "update_beta_latest": should_update_beta_latest(metadata, published_versions),
             }
         )
         + "\n"

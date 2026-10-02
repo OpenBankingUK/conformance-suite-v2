@@ -66,9 +66,21 @@ credentials that grant access before pulling.
 
 Replace `<version>` with an exact published tag, for example `2.0.0-beta.3`.
 See [`CICD_STRATEGY.md`](CICD_STRATEGY.md) for the full preview/beta/GA
-versioning and promotion model. Never rely on `latest` for anything other than
-the current GA release, and never use a mutable channel-named tag — none is
-published.
+versioning and promotion model. `latest` refers only to the current GA release.
+For convenient beta evaluation, `beta-latest` tracks the highest published beta
+version across release branches, updated automatically after approved promotion
+and attestations succeed. Exact version tags remain preferable for reproducible
+runs. Neither beta tag is suitable for certification.
+
+```bash
+docker pull docker.io/openbanking/conformance-suite-v2:beta-latest
+docker run --rm -p 127.0.0.1:8443:8443 docker.io/openbanking/conformance-suite-v2:beta-latest
+```
+
+Pull explicitly before starting a new container: a moving tag does not refresh a
+cached image or an already running container. The alias is first created by an
+eligible future beta promotion; existing beta images are not automatically
+retagged when this feature is deployed.
 
 ## Advanced: persistent local run
 

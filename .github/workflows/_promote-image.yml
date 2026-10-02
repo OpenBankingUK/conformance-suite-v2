@@ -393,6 +393,7 @@ jobs:
             scripts/docker_smoke_test.sh \
             scripts/release_metadata.py \
             scripts/validate_release.py \
+            scripts/update_beta_latest.py \
             scripts/validate_docker_base.py \
             scripts/vulnerability_gate.py \
             .github/actions/vulnerability-scan/action.yml \
@@ -553,3 +554,15 @@ jobs:
           sbom-path: artifacts/candidate-linux-arm64/sbom-linux-arm64.spdx.json
           push-to-registry: true
           create-storage-record: false
+
+      - name: Update beta-latest after publication and attestations
+        if: inputs.channel == 'beta'
+        env:
+          RAW_VERSION: ${{ steps.validate.outputs.raw_version }}
+          PUBLISHED_DIGEST: ${{ steps.publish.outputs.published_digest }}
+        run: |
+          set -euo pipefail
+          result="$(uv run python -m scripts.update_beta_latest \
+            --version "$RAW_VERSION" --digest "$PUBLISHED_DIGEST")"
+          echo "$result"
+          jq -r '.notice' <<<"$result" >> "$GITHUB_STEP_SUMMARY"
