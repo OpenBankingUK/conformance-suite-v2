@@ -26,6 +26,12 @@ from packaging.version import InvalidVersion, Version
 IMAGE_NAME = "docker.io/openbanking/conformance-suite-v2"
 """Fully qualified Docker Hub image name (without tag) images are published under."""
 
+MVP_RELEASE = "2.0.0"
+"""Release series served by the temporary MVP beta pointer."""
+
+MVP_BETA_TAG = f"{MVP_RELEASE}-beta-latest"
+"""Mutable MVP beta tag, frozen once the formal release is published."""
+
 
 class ReleaseChannel(str, Enum):
     """Publication channel implied by a raw version string's suffix."""
@@ -225,18 +231,19 @@ def require_not_already_published(raw_version: str, published_versions: Iterable
 
 
 def publication_tags(metadata: ReleaseMetadata) -> tuple[str, ...]:
-    """Return initial publication tags; beta-latest moves only after attestations."""
+    """Return initial publication tags; the MVP beta pointer moves after attestations."""
     return (metadata.raw_version, "latest") if metadata.channel is ReleaseChannel.GA else (metadata.raw_version,)
 
 
 def should_update_beta_latest(metadata: ReleaseMetadata, published_tags: Iterable[str]) -> bool:
-    """Select the highest Docker Hub beta across branches, ignoring non-beta tags."""
-    if metadata.channel is not ReleaseChannel.BETA:
+    """Select the highest MVP beta until Docker Hub contains the formal release."""
+    tags = set(published_tags)
+    if metadata.channel is not ReleaseChannel.BETA or metadata.base_release != MVP_RELEASE or MVP_RELEASE in tags:
         return False
     return all(
         metadata.comparison_version >= classify_raw_version(tag).comparison_version
-        for tag in published_tags
-        if _BETA_PATTERN.fullmatch(tag)
+        for tag in tags
+        if _BETA_PATTERN.fullmatch(tag) and classify_raw_version(tag).base_release == MVP_RELEASE
     )
 
 
