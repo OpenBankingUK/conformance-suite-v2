@@ -1,9 +1,11 @@
 """Ordered guided-builder steps, step-bar state, and safe step navigation.
 
 The builder wizard has two flow shapes. Specifications that use Read/Write
-resource groups collect the security environment before scope and business
-data; direct-endpoint specifications such as Open Banking DCR 3.4 choose
-endpoints straight after the specification. This module is the single place
+resource groups choose scope first, because the selected tests decide which
+connection and security values are required to run, then collect connection
+and security (including OpenID discovery) and business data; direct-endpoint
+specifications such as Open Banking DCR 3.4 choose endpoints straight after
+the specification and keep discovery as its own step. This module is the single place
 that defines those orders, decides which steps a participant may jump to, and
 maps a submitted ``next`` value to an internal route so it can never become an
 open redirect.
@@ -82,12 +84,16 @@ class StepBarItem:
 _CATALOGUE = BuilderStepDefinition("catalogue", "Specification", "builder-catalogue-boundary")
 _DISCOVERY = BuilderStepDefinition("discovery", "Discovery", "builder-discovery-config")
 _SECURITY = BuilderStepDefinition("security", "Security", "builder-security-config")
+_CONNECTION_SECURITY = BuilderStepDefinition("security", "Connection & security", "builder-security-config")
 _SCOPE = BuilderStepDefinition("scope", "Scope", "builder-scope")
 _CONFIG = BuilderStepDefinition("config", "Business data", "builder-config")
 _REVIEW = BuilderStepDefinition("review", "Review", "builder-review")
 
-RESOURCE_GROUP_FLOW: tuple[BuilderStepDefinition, ...] = (_CATALOGUE, _DISCOVERY, _SECURITY, _SCOPE, _CONFIG, _REVIEW)
-"""Step order for Read/Write-style specifications that use resource groups."""
+RESOURCE_GROUP_FLOW: tuple[BuilderStepDefinition, ...] = (_CATALOGUE, _SCOPE, _CONNECTION_SECURITY, _CONFIG, _REVIEW)
+"""Step order for Read/Write-style specifications that use resource groups.
+
+OpenID discovery is part of the connection and security page in this flow.
+"""
 
 DIRECT_ENDPOINT_FLOW: tuple[BuilderStepDefinition, ...] = (_CATALOGUE, _SCOPE, _DISCOVERY, _SECURITY, _REVIEW)
 """Step order for direct-endpoint specifications such as Open Banking DCR 3.4."""

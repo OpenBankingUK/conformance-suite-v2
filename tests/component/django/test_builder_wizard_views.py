@@ -13,6 +13,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 
+from conformance.api.builder_draft_store import SessionBuilderDraftStore
 from conformance.api.builder_wizard import EndpointOption, catalogue_scope_hierarchy, endpoint_capability_value
 from conformance.api.run_store import run_store
 from conformance.catalogue import PlanDocumentBoundary
@@ -44,7 +45,7 @@ def _draft_id_from_builder_redirect(location: str) -> str:
     Returns:
         Draft id segment from the redirect target.
     """
-    return location.rstrip("/").rsplit("/", maxsplit=2)[-2]
+    return location.split("/")[2]
 
 
 class _FormFieldCollector(HTMLParser):
@@ -59,19 +60,26 @@ class _FormFieldCollector(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.values: dict[str, str] = {}
         self._textarea_name: str | None = None
+        self._select_name: str | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        """Capture input values and open textarea elements.
+        """Capture input values, select options and open textarea elements.
 
         Args:
             tag: Element name.
             attrs: Element attributes.
         """
         attributes = dict(attrs)
+        if tag == "option" and self._select_name is not None:
+            if self._select_name not in self.values or "selected" in attributes:
+                self.values[self._select_name] = attributes.get("value") or ""
+            return
         name = attributes.get("name")
         if name is None:
             return
-        if tag == "input" and attributes.get("type") not in {"checkbox", "radio", "submit"}:
+        if tag == "select":
+            self._select_name = name
+        elif tag == "input" and attributes.get("type") not in {"checkbox", "radio", "submit"}:
             self.values[name] = attributes.get("value") or ""
         elif tag == "textarea":
             self._textarea_name = name
@@ -87,13 +95,15 @@ class _FormFieldCollector(HTMLParser):
             self.values[self._textarea_name] += data
 
     def handle_endtag(self, tag: str) -> None:
-        """Close the current textarea element.
+        """Close the current textarea or select element.
 
         Args:
             tag: Element name.
         """
         if tag == "textarea":
             self._textarea_name = None
+        elif tag == "select":
+            self._select_name = None
 
 
 def _valid_import_plan() -> dict[str, Any]:
@@ -192,7 +202,10 @@ def _scope_endpoint(*, selected_resource_group_id: str, path: str) -> EndpointOp
 
 
 def _scope_location_after_security(client: Client) -> str:
-    """Create a draft and return its scope URL after security settings are saved.
+    """Create a Read/Write draft and return its scope URL.
+
+    Scope now follows the specification directly; connection and security
+    settings are entered afterwards, once scope decides what is required.
 
     Args:
         client: Django test client that owns the builder session.
@@ -209,15 +222,23 @@ def _scope_location_after_security(client: Client) -> str:
             "version": "4.0.1",
         },
     )
-    discovery_response = client.post(
-        catalogue_response["Location"],
-        data={"discovery_url": "https://example.com/.well-known/openid-configuration"},
-    )
-    security_response = client.post(
-        discovery_response["Location"],
-        data=_valid_security_form_data(),
-    )
-    return str(security_response["Location"])
+    return str(catalogue_response["Location"])
+
+
+def _save_security(client: Client, draft_id: str, **overrides: str) -> str:
+    """Save the connection and security step and return where it continues.
+
+    Args:
+        client: Django test client that owns the builder session.
+        draft_id: Builder draft id.
+        overrides: Field values to override in the default valid submission.
+
+    Returns:
+        Business data location the step continues to.
+    """
+    response = client.post(f"/builder/{draft_id}/config/security/", data=_valid_security_form_data(**overrides))
+    assert response.status_code == 302
+    return str(response["Location"])
 
 
 def _assert_requirement_badge(content: str, label: str, badge: str) -> None:
@@ -232,6 +253,18 @@ def _assert_requirement_badge(content: str, label: str, badge: str) -> None:
     field_header_label = f">{label}</label>"
     badge_markup = f'class="requirement-badge {badge.lower()}">{badge}</span>'
     assert expected in content or (field_header_label in content and badge_markup in content)
+
+
+def _assert_status_badge(content: str, label: str, status: str, text: str) -> None:
+    """Assert that a field label carries a scope-aware requirement badge.
+
+    Args:
+        content: Rendered HTML response body.
+        label: Field label text expected before the badge.
+        status: Badge CSS status class.
+        text: Badge text.
+    """
+    assert f'{label} <span class="requirement-badge {status}">{text}</span>' in content, (label, text)
 
 
 @pytest.mark.django_db
@@ -299,7 +332,7 @@ class TestBuilderWizardUi:
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
     def test_builder_pages_show_required_and_optional_field_badges(self, mock_fetch_discovery: Mock) -> None:
-        """Builder pages label representative user-entered fields by requiredness."""
+        """Builder pages label user-entered fields by what the selected scope needs to run."""
         mock_fetch_discovery.return_value = {}
         client = Client()
         create_response = client.post("/builder/new/")
@@ -317,42 +350,22 @@ class TestBuilderWizardUi:
                 "version": "4.0.1",
             },
         )
-        discovery_response = client.get(saved_catalogue_response["Location"])
-        assert discovery_response.status_code == 200
-        discovery_content = discovery_response.content.decode("utf-8")
-        assert "requirement-badge" not in discovery_content
-        assert "leave it blank and fill values manually" in discovery_content
-
-        saved_discovery_response = client.post(
-            saved_catalogue_response["Location"],
-            data={"discovery_url": ""},
-        )
-        mock_fetch_discovery.assert_not_called()
-        security_response = client.get(saved_discovery_response["Location"])
-        assert security_response.status_code == 200
-        security_content = security_response.content.decode("utf-8")
-        _assert_requirement_badge(security_content, "Client ID", "Conditional")
-        _assert_requirement_badge(security_content, "Authorization endpoint", "Conditional")
-        _assert_requirement_badge(security_content, "Resource server base URL", "Conditional")
-        _assert_requirement_badge(security_content, "Signing key ID", "Conditional")
-        assert "These fields are included only when they can affect execution" in security_content
-        assert "Type: HTTPS URL" in security_content
-        assert "FAPI signing fields are conditional" in security_content
-        assert "mTLS client certificate and private key are conditional" in security_content
-
-        saved_security_response = client.post(
-            saved_discovery_response["Location"],
-            data={},
-        )
-        scope_response = client.get(saved_security_response["Location"])
+        draft_id = _draft_id_from_builder_redirect(saved_catalogue_response["Location"])
+        scope_response = client.get(saved_catalogue_response["Location"])
         assert scope_response.status_code == 200
         assert "Endpoint labels follow the specification" in scope_response.content.decode("utf-8")
+
+        unscoped_security = client.get(f"/builder/{draft_id}/config/security/").content.decode("utf-8")
+        _assert_status_badge(unscoped_security, "Client ID", "depends_on_scope", "Depends on scope")
+        _assert_status_badge(unscoped_security, "Discovery URL", "depends_on_scope", "Depends on scope")
+        assert "Select a scope first to see which values the selected tests need to run" in unscoped_security
+
         endpoint = _scope_endpoint(
             selected_resource_group_id="account-and-transaction",
             path="/open-banking/v4.0/aisp/transactions",
         )
         saved_scope_response = client.post(
-            saved_security_response["Location"],
+            saved_catalogue_response["Location"],
             data={
                 "resource_groups": ["account-and-transaction"],
                 "endpoints": [endpoint.id],
@@ -364,7 +377,29 @@ class TestBuilderWizardUi:
                 ],
             },
         )
-        business_response = client.get(saved_scope_response["Location"])
+        assert saved_scope_response["Location"] == f"/builder/{draft_id}/config/security/"
+        security_content = client.get(saved_scope_response["Location"]).content.decode("utf-8")
+        for label in (
+            "Discovery URL",
+            "Client ID",
+            "Redirect URI",
+            "Authorization endpoint",
+            "Token endpoint",
+            "Token endpoint auth method",
+            "Resource server base URL",
+            "Signing key ID",
+            "Signing certificate",
+        ):
+            _assert_status_badge(security_content, label, "required", "Required to run")
+        _assert_status_badge(security_content, "mTLS client certificate", "optional", "Optional")
+        _assert_status_badge(security_content, "CA bundle", "optional", "Optional")
+        assert "Required to run because the selected tests request OAuth 2.0 access tokens" in security_content
+        assert "Type: HTTPS URL" in security_content
+        assert "Required to run only when the token endpoint auth method is tls_client_auth" in security_content
+
+        saved_security_response = client.post(saved_scope_response["Location"], data={})
+        assert saved_security_response["Location"] == f"/builder/{draft_id}/config/"
+        business_response = client.get(saved_security_response["Location"])
         assert business_response.status_code == 200
         business_content = business_response.content.decode("utf-8")
         _assert_requirement_badge(business_content, "Consented account identifier", "Required")
@@ -372,12 +407,35 @@ class TestBuilderWizardUi:
         assert "Advanced AIS resource IDs JSON" in business_content
 
         saved_business_response = client.post(
-            saved_scope_response["Location"], data={"ais_consented_account_id": "account-123"}
+            saved_security_response["Location"], data={"ais_consented_account_id": "account-123"}
         )
         assert saved_business_response.status_code == 302
         assert saved_business_response["Location"].endswith("/review/")
-        draft_id = _draft_id_from_builder_redirect(saved_business_response["Location"])
+        review = client.get(saved_business_response["Location"]).content.decode("utf-8")
+        assert 'data-builder-step="security" data-builder-step-state="attention"' in review
+        assert "Client ID: required to run because" in review
         assert client.get(f"/builder/{draft_id}/config/runtime/").status_code == 404
+
+    @patch("conformance.api.ui_views._fetch_discovery_metadata")
+    def test_security_badges_require_mtls_only_for_tls_client_auth(self, mock_fetch_discovery: Mock) -> None:
+        """mTLS paths become required to run once the token endpoint auth method is tls_client_auth."""
+        mock_fetch_discovery.return_value = {}
+        client = Client()
+        scope_location = _scope_location_after_security(client)
+        endpoint = _scope_endpoint(
+            selected_resource_group_id="account-and-transaction",
+            path="/open-banking/v4.0/aisp/accounts",
+        )
+        security_location = client.post(
+            scope_location,
+            data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]},
+        )["Location"]
+
+        client.post(security_location, data={"signing_token_endpoint_auth_method": "tls_client_auth"})
+        content = client.get(security_location).content.decode("utf-8")
+
+        _assert_status_badge(content, "mTLS client certificate", "required", "Required to run")
+        _assert_status_badge(content, "mTLS client private key", "required", "Required to run")
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
     def test_builder_business_page_marks_ais_account_id_required_for_account_scope(
@@ -387,33 +445,18 @@ class TestBuilderWizardUi:
         """AIS account-scoped endpoint selections show the account id as required."""
         mock_fetch_discovery.return_value = {}
         client = Client()
-        create_response = client.post("/builder/new/")
-        saved_catalogue_response = client.post(
-            create_response["Location"],
-            data={
-                "scheme": "open-banking-uk",
-                "specification": "read-write",
-                "version": "4.0.1",
-            },
-        )
-        saved_discovery_response = client.post(
-            saved_catalogue_response["Location"],
-            data={"discovery_url": ""},
-        )
-        saved_security_response = client.post(
-            saved_discovery_response["Location"],
-            data={},
-        )
+        scope_location = _scope_location_after_security(client)
+        draft_id = _draft_id_from_builder_redirect(scope_location)
         endpoint = _scope_endpoint(
             selected_resource_group_id="account-and-transaction",
             path="/open-banking/v4.0/aisp/accounts/{AccountId}/balances",
         )
-        saved_scope_response = client.post(
-            saved_security_response["Location"],
+        client.post(
+            scope_location,
             data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]},
         )
 
-        business_response = client.get(saved_scope_response["Location"])
+        business_response = client.get(f"/builder/{draft_id}/config/")
         business_content = business_response.content.decode("utf-8")
 
         assert business_response.status_code == 200
@@ -422,8 +465,8 @@ class TestBuilderWizardUi:
         _assert_requirement_badge(business_content, "Transaction from date", "Optional")
         _assert_requirement_badge(business_content, "Transaction to date", "Optional")
 
-    def test_catalogue_boundary_post_continues_to_discovery(self) -> None:
-        """The first wizard step saves the specification and moves to discovery."""
+    def test_catalogue_boundary_post_continues_to_scope(self) -> None:
+        """The first wizard step saves the specification and moves to scope."""
         client = Client()
         create_response = client.post("/builder/new/")
         draft_id = _draft_id_from_builder_redirect(create_response["Location"])
@@ -438,12 +481,17 @@ class TestBuilderWizardUi:
         )
 
         assert response.status_code == 302
-        assert response["Location"] == f"/builder/{draft_id}/config/discovery/"
-        discovery_response = client.get(response["Location"])
-        assert discovery_response.status_code == 200
-        content = discovery_response.content.decode("utf-8")
-        assert '<span class="builder-step-number">2</span>Discovery</span>' in content
-        assert "Optionally enter the `.well-known/openid-configuration` URL" in content
+        assert response["Location"] == f"/builder/{draft_id}/scope/"
+        content = client.get(response["Location"]).content.decode("utf-8")
+        assert '<span class="builder-step-number">2</span>Scope</span>' in content
+        assert re.findall(r'data-builder-step="([a-z]+)"', content) == [
+            "catalogue",
+            "scope",
+            "security",
+            "config",
+            "review",
+        ]
+        assert "Continue to connection &amp; security" in content
 
     def test_dcr_boundary_continues_to_direct_endpoint_scope(self) -> None:
         """DCR continues to locked POST and optional management endpoints."""
@@ -499,8 +547,8 @@ class TestBuilderWizardUi:
             assert response["Location"] == f"/builder/{draft_id}/catalogue/"
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
-    def test_security_step_continues_to_resource_group_scope(self, mock_fetch_discovery: Mock) -> None:
-        """Security details are collected before resource groups and endpoint selections."""
+    def test_security_step_saves_discovery_and_continues_to_business_data(self, mock_fetch_discovery: Mock) -> None:
+        """The merged page saves the discovery URL, fills empty OAuth endpoints and moves to business data."""
         mock_fetch_discovery.return_value = {
             "issuer": "https://example.com",
             "authorization_endpoint": "https://example.com/authorize",
@@ -508,34 +556,34 @@ class TestBuilderWizardUi:
             "jwks_uri": "https://example.com/jwks",
         }
         client = Client()
-        create_response = client.post("/builder/new/")
-        catalogue_response = client.post(
-            create_response["Location"],
-            data={
-                "scheme": "open-banking-uk",
-                "specification": "read-write",
-                "version": "4.0.1",
-            },
-        )
-        discovery_response = client.post(
-            catalogue_response["Location"],
-            data={"discovery_url": "https://example.com/.well-known/openid-configuration"},
-        )
+        scope_location = _scope_location_after_security(client)
+        draft_id = _draft_id_from_builder_redirect(scope_location)
 
         security_response = client.post(
-            discovery_response["Location"],
-            data=_valid_security_form_data(),
+            f"/builder/{draft_id}/config/security/",
+            data=_valid_security_form_data(
+                discovery_url="https://example.com/.well-known/openid-configuration",
+                oauth_issuer="https://typed.example.com",
+            ),
         )
 
         assert security_response.status_code == 302
-        assert security_response["Location"].endswith("/scope/")
-        scope_response = client.get(security_response["Location"])
-        assert scope_response.status_code == 200
-        content = scope_response.content.decode("utf-8")
-        assert '<span class="builder-step-number">4</span>Scope</span>' in content
-        assert "account-and-transaction" in content
-        assert "payment-initiation" in content
-        assert "GET /aisp/transactions" not in content
+        assert security_response["Location"] == f"/builder/{draft_id}/config/"
+        mock_fetch_discovery.assert_called_once()
+        draft = SessionBuilderDraftStore(client.session).get(draft_id)
+        assert draft is not None
+        assert draft.config["discoveryUrl"] == "https://example.com/.well-known/openid-configuration"
+        oauth = draft.config["oauth"]
+        assert isinstance(oauth, dict)
+        assert oauth["tokenEndpoint"] == "https://example.com/token"
+        assert oauth["authorizationEndpoint"] == "https://example.com/authorize"
+        assert oauth["issuer"] == "https://typed.example.com"
+
+        client.post(
+            f"/builder/{draft_id}/config/security/",
+            data=_valid_security_form_data(discovery_url="https://example.com/.well-known/openid-configuration"),
+        )
+        mock_fetch_discovery.assert_called_once()
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
     def test_scope_step_filters_endpoints_and_features_via_dynamic_fragment(self, mock_fetch_discovery: Mock) -> None:
@@ -670,11 +718,11 @@ class TestBuilderWizardUi:
         mock_fetch_discovery.return_value = {}
         client = Client()
         scope_location = _scope_location_after_security(client)
+        draft_id = _draft_id_from_builder_redirect(scope_location)
         scope = client.post(scope_location, data={"resource_groups": ["account-and-transaction"]})
         assert scope.status_code == 302
-        config = client.post(scope["Location"], data={"ais_consented_account_id": "account-123"})
+        config = client.post(_save_security(client, draft_id), data={"ais_consented_account_id": "account-123"})
         assert config.status_code == 302
-        draft_id = _draft_id_from_builder_redirect(scope_location)
         export = client.get(f"/builder/{draft_id}/export.json")
         assert export.status_code == 200
         plan = export.json()
@@ -712,9 +760,10 @@ class TestBuilderWizardUi:
             },
         )
 
+        draft_id = _draft_id_from_builder_redirect(scope_location)
         assert response.status_code == 302
-        assert response["Location"] == f"/builder/{_draft_id_from_builder_redirect(scope_location)}/config/"
-        saved_response = client.get(response["Location"])
+        assert response["Location"] == f"/builder/{draft_id}/config/security/"
+        saved_response = client.get(f"/builder/{draft_id}/config/")
         assert saved_response.status_code == 200
         content = saved_response.content.decode("utf-8")
         assert "Business test data" in content
@@ -743,7 +792,8 @@ class TestBuilderWizardUi:
         )
 
         assert response.status_code == 302
-        content_response = client.get(response["Location"])
+        business_location = _save_security(client, _draft_id_from_builder_redirect(scope_location))
+        content_response = client.get(business_location)
         assert content_response.status_code == 200
         content = content_response.content.decode("utf-8")
         assert "Confirmation of Funds" in content
@@ -755,7 +805,7 @@ class TestBuilderWizardUi:
         assert "No business data inputs required" not in content
 
         saved_response = client.post(
-            response["Location"],
+            business_location,
             data={
                 "cbpii_debtor_account_scheme_name": "UK.OBIE.SortCodeAccountNumber",
                 "cbpii_debtor_account_identification": "12345678901234",
@@ -797,7 +847,8 @@ class TestBuilderWizardUi:
         )
 
         assert response.status_code == 302
-        content_response = client.get(response["Location"])
+        business_location = response["Location"].replace("/config/security/", "/config/")
+        content_response = client.get(business_location)
         assert content_response.status_code == 200
         content = content_response.content.decode("utf-8")
         assert "Payment Initiation" in content
@@ -805,9 +856,9 @@ class TestBuilderWizardUi:
         assert "Instructed amount" in content
         assert "No business data inputs required" not in content
 
-        empty_response = client.post(response["Location"], data={})
+        empty_response = client.post(business_location, data={})
         assert empty_response.status_code == 302
-        invalid_content = client.get(response["Location"].replace("/config/", "/review/")).content.decode("utf-8")
+        invalid_content = client.get(business_location.replace("/config/", "/review/")).content.decode("utf-8")
         assert "Domestic creditor account is required for selected PIS endpoints." in invalid_content
         assert "Instructed amount is required for selected PIS endpoints." in invalid_content
 
@@ -830,7 +881,9 @@ class TestBuilderWizardUi:
             scope_location,
             data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]},
         )
-        business_response = client.post(scope_response["Location"], data={"ais_consented_account_id": "account-123"})
+        assert scope_response.status_code == 302
+        business_location = _save_security(client, _draft_id_from_builder_redirect(scope_location))
+        business_response = client.post(business_location, data={"ais_consented_account_id": "account-123"})
 
         assert business_response.status_code == 302
         assert business_response["Location"].endswith("/review/")
@@ -882,21 +935,20 @@ class TestBuilderWizardUi:
             "request_object_signing_alg_values_supported": ["PS256"],
         }
         client = Client()
-        create_response = client.post("/builder/new/")
-        catalogue_response = client.post(
-            create_response["Location"],
-            data={
-                "scheme": "open-banking-uk",
-                "specification": "read-write",
-                "version": "4.0.1",
-            },
+        scope_location = _scope_location_after_security(client)
+        draft_id = _draft_id_from_builder_redirect(scope_location)
+        endpoint = _scope_endpoint(
+            selected_resource_group_id="account-and-transaction",
+            path="/open-banking/v4.0/aisp/accounts",
         )
-        discovery_response = client.post(
-            catalogue_response["Location"],
-            data={"discovery_url": "https://auth.example.com/.well-known/openid-configuration"},
+        client.post(scope_location, data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]})
+        security_location = f"/builder/{draft_id}/config/security/"
+        client.post(
+            security_location,
+            data={"discovery_url": "https://auth.example.com/.well-known/openid-configuration", "next": "security"},
         )
 
-        security_response = client.get(discovery_response["Location"])
+        security_response = client.get(security_location)
 
         assert security_response.status_code == 200
         content = security_response.content.decode("utf-8")
@@ -907,8 +959,9 @@ class TestBuilderWizardUi:
         assert 'value="https://auth.example.com/token"' in content
 
         security_save = client.post(
-            discovery_response["Location"],
+            security_location,
             data={
+                "discovery_url": "https://auth.example.com/.well-known/openid-configuration",
                 "oauth_client_id": "client-123",
                 "oauth_redirect_uri": "https://client.example.com/callback",
                 "oauth_authorization_endpoint": "https://auth.example.com/authorize",
@@ -919,16 +972,8 @@ class TestBuilderWizardUi:
                 "resource_server_base_url": "https://resource.example.com",
             },
         )
-        endpoint = _scope_endpoint(
-            selected_resource_group_id="account-and-transaction",
-            path="/open-banking/v4.0/aisp/accounts",
-        )
-        scope_response = client.post(
-            security_save["Location"],
-            data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]},
-        )
-        business_response = client.post(scope_response["Location"], data={"ais_consented_account_id": "account-123"})
-        draft_id = _draft_id_from_builder_redirect(business_response["Location"])
+        client.post(security_save["Location"], data={"ais_consented_account_id": "account-123"})
+        mock_fetch_discovery.assert_called_once()
 
         exported = client.get(f"/builder/{draft_id}/export.json").json()["securityEnvironment"]
 
@@ -956,12 +1001,15 @@ class TestBuilderWizardUi:
                 "version": "4.0.1",
             },
         )
-        discovery_response = client.post(
-            catalogue_response["Location"],
+        draft_id = _draft_id_from_builder_redirect(catalogue_response["Location"])
+        security_location = f"/builder/{draft_id}/config/security/"
+        saved = client.post(
+            security_location,
             data={"discovery_url": "https://auth.example.com/.well-known/openid-configuration"},
         )
+        assert saved.status_code == 302
 
-        security_response = client.get(discovery_response["Location"])
+        security_response = client.get(security_location)
 
         assert security_response.status_code == 200
         content = security_response.content.decode("utf-8")
@@ -981,7 +1029,9 @@ class TestBuilderWizardUi:
                 "version": "4.0.1",
             },
         )
-        form_response = client.get(catalogue_response["Location"])
+        draft_id = _draft_id_from_builder_redirect(catalogue_response["Location"])
+        security_location = f"/builder/{draft_id}/config/security/"
+        form_response = client.get(security_location)
         assert form_response.status_code == 200
         assert "Timeout seconds" not in form_response.content.decode("utf-8")
 
@@ -1013,7 +1063,7 @@ class TestBuilderWizardUi:
             )
 
             discovery_response = client.post(
-                catalogue_response["Location"],
+                security_location,
                 data={"discovery_url": "https://auth.example.com/.well-known/openid-configuration"},
             )
 
@@ -1026,7 +1076,7 @@ class TestBuilderWizardUi:
         model_bank_client.fetch_jwks.assert_not_called()
         model_bank_client.close.assert_called_once_with()
 
-        security_response = client.get(discovery_response["Location"])
+        security_response = client.get(security_location)
         assert security_response.status_code == 200
         content = security_response.content.decode("utf-8")
         assert "Token endpoint auth methods supported" in content
@@ -1160,9 +1210,10 @@ class TestBuilderWizardUi:
             data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]},
         )
 
-        business_page = client.get(scope_response["Location"])
+        assert scope_response["Location"] == f"/builder/{draft_id}/config/security/"
+        business_page = client.get(f"/builder/{draft_id}/config/")
         business_response = client.post(
-            scope_response["Location"],
+            f"/builder/{draft_id}/config/",
             data={
                 "ais_consented_account_id": "account-123",
                 "ais_transaction_from_date": "2026-01-01T00:00:00Z",
@@ -1474,9 +1525,12 @@ class TestBuilderWizardUi:
         response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
         draft_id = _draft_id_from_builder_redirect(response["Location"])
 
+        security_page = client.get(f"/builder/{draft_id}/config/security/").content.decode("utf-8")
         discovery = client.post(
-            f"/builder/{draft_id}/config/discovery/",
-            data={"discovery_url": "https://example.com/.well-known/openid-configuration"},
+            f"/builder/{draft_id}/config/security/",
+            data=_rendered_form_data(
+                security_page, discovery_url="https://example.com/.well-known/openid-configuration"
+            ),
         )
         content = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
         launch = client.post(f"/builder/{draft_id}/launch/")

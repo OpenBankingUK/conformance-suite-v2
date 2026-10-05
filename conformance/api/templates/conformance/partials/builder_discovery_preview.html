@@ -7,7 +7,7 @@
         {% else %}
             <div class="config-card">
                 <h3>Discovery metadata</h3>
-                <p class="helper">Fetched from <code>{{ preview.source_url }}</code>. This check is not saved; continue to store the URL and metadata.</p>
+                <p class="helper">Fetched from <code>{{ preview.source_url }}</code>.{% if prefill %} Empty OAuth endpoint fields were filled from this metadata.{% endif %} This check is not saved; leave the page to store the URL and values.</p>
                 {% if preview.fields %}
                     <dl class="metadata-list">
                         {% for row in preview.fields %}
@@ -22,3 +22,6 @@
         {% endif %}
     {% endif %}
 </section>
+{% for field in prefill %}
+<input id="id_{{ field.name }}" name="{{ field.name }}" type="{{ field.input_type }}" value="{{ field.value }}" autocomplete="off"{% if field.input_type == "url" %} inputmode="url"{% endif %} hx-swap-oob="true">
+{% endfor %}

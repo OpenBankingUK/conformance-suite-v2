@@ -243,11 +243,13 @@ is configured separately as part of the security environment.
 Canonical sections such as `securityEnvironment`, `businessTestData`, and
 runtime `inputs` derive exact runtime inputs like `resourceBaseUrl`,
 `consentedAccountId`, and debtor account fields so the browser does not duplicate
-them as a separate runtime-input step. The browser collects values in PRD order:
-specification, discovery URL, OAuth/FAPI/security details, resource
-groups, endpoints/capabilities, and business test data. Discovery metadata can
-prefill security fields, but only values accepted on the security page become
-part of the exported plan JSON. Runtime inputs remain supported by canonical
+them as a separate runtime-input step. For Read/Write the browser collects
+values in this order: specification, resource groups/endpoints/capabilities,
+connection and security (discovery URL, OAuth/FAPI/security details), and
+business test data. Scope comes before security because the selected tests
+decide which security values are needed to run. Discovery metadata can prefill
+empty OAuth fields, but only values saved on the security page become part of
+the exported plan JSON. Runtime inputs remain supported by canonical
 plans submitted through import, REST, and CLI execution; the compiler's
 traceability snapshot records only that sensitive values were provided.
 
@@ -293,23 +295,13 @@ Do not re-expose those internals as participant configuration.
 The browser root menu at `/` exposes the multi-step builder and canonical JSON
 import flow. The legacy single-page `/plan/` builder is no longer mounted.
 
-The wizard follows the PRD order:
+The Read/Write wizard follows this order:
 
 1. POST `/builder/new/` to create a session-backed draft.
 2. Select scheme, specification, and version at `/builder/<draft>/catalogue/`.
    The registry derives the matching security profile. Registered future
    boundaries without an executable catalogue render a generic blocked state.
-3. Enter the `.well-known/openid-configuration` URL at
-   `/builder/<draft>/config/discovery/`. The server attempts discovery metadata
-   lookup, records non-secret helper metadata in the draft, and allows manual
-   continuation when the lookup fails. **Check discovery URL** posts to
-   `/builder/<draft>/config/discovery/preview/`, which runs the same validation
-   and fetch and renders the metadata inline without saving anything.
-4. Enter OAuth/FAPI/security, mTLS, and resource-server settings at
-   `/builder/<draft>/config/security/`. Discovery-derived values are editable
-   prefilled fields; the token-endpoint-auth-method selector remains the tool's
-   supported list while discovery-supported methods are shown as metadata.
-5. Select scope at `/builder/<draft>/scope/`. Read/Write uses resource groups,
+3. Select scope at `/builder/<draft>/scope/`. Read/Write uses resource groups,
    endpoints, and optional capabilities. DCR shows direct POST/GET/PUT/DELETE
    operations with POST locked and management methods optional. The
    server-rendered fragment at
@@ -330,23 +322,39 @@ The wizard follows the PRD order:
    no endpoint (`resource_groups_without_endpoints()`), is saved and reported
    as a scope issue at review; `/config/` then shows no fields and links to
    scope.
-6. Enter business/request defaults at `/builder/<draft>/config/`. DCR skips this
+4. Enter connection and security settings at `/builder/<draft>/config/security/`:
+   the `.well-known/openid-configuration` URL, OAuth/FAPI signing, mTLS, and
+   the resource-server base URL. For Read/Write, `/config/discovery/` redirects
+   here. Saving fetches discovery metadata again only when the URL changed or
+   the previous fetch failed, stores non-secret helper metadata on the draft,
+   and fills empty OAuth endpoint, response type and algorithm fields from it.
+   The inline **Check** button posts to `/builder/<draft>/config/discovery/preview/`,
+   which validates and fetches without saving and fills empty OAuth inputs with
+   HTMX out-of-band swaps; fields the participant typed are never overwritten.
+   Field badges come from `security_field_requirements()` in
+   `builder_wizard.py`, which uses `compiled_plan_run_config_requirements()`
+   (`conformance/run_config_requirements.py`) on the draft's compiled scope:
+   **Required to run** (with the reason), **Optional**, or **Depends on
+   scope** when no endpoints are selected. The mTLS certificate and key are
+   required to run only when the token endpoint auth method is
+   `tls_client_auth`. DCR keeps its separate discovery page before security.
+5. Enter business/request defaults at `/builder/<draft>/config/`. DCR skips this
    page. AIS, PIS,
    CBPII, and VRP fields render only when selected endpoints need that domain.
    Known account, amount, date, and frequency shapes use friendly fields with
    advanced JSON fallbacks.
-7. Review the generated plan at `/builder/<draft>/review/`, including summary
+6. Review the generated plan at `/builder/<draft>/review/`, including summary
    counts, import warnings, launch blockers, the unmasked, editable plan JSON
    (the single view of the plan: launch, export, and the step-bar buttons all
    submit it and apply it to the draft first, with no separate save), and
    collapsed generated-test rows.
-8. Download safe JSON from `/builder/<draft>/export.json`, explicitly request
+7. Download safe JSON from `/builder/<draft>/export.json`, explicitly request
    local secret-bearing JSON with a POST `include_secrets=1`, or launch through
    `/builder/<draft>/launch/`.
 
 Every step page and review render a step bar from
 `conformance/api/builder_steps.py`, the single definition of both flow orders
-(Read/Write: specification, discovery, security, scope, business data, review;
+(Read/Write: specification, scope, connection & security, business data, review;
 direct endpoint/DCR: specification, scope, discovery, security, review). A
 supported specification is the only navigation gate: until one is chosen every
 later step (and typed URL) redirects to `/catalogue/`; afterwards every step is
@@ -369,7 +377,12 @@ dropped, never stored or echoed, and reported with a Django `messages`
 warning. `conformance/api/builder_step_status.py` replays the saved values
 (plus retained invalid values) through the strict forms to produce per-step
 issues, and derives the step bar's `complete`/`attention`/`not_started`
-progress from them. Review lists those issues per step with a **Fix** button
+progress from them. For Read/Write, the connection and security step also
+reports each value the selected scope needs to run but that is missing
+(`draft_run_config_requirements` and `_run_config_issues`); the same check runs
+in shared plan validation (`_run_config_issues` in
+`conformance/test_plan_validation.py`), so imported, REST and CLI plans are held
+to it too. Review lists those issues per step with a **Fix** button
 and treats them as launch blockers, so lenient saving never relaxes launch
 validation. The review JSON jump still renders a discard `<dialog>` when the
 submitted plan JSON is not a JSON object.

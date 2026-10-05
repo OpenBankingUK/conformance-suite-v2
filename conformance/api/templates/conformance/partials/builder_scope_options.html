@@ -31,7 +31,7 @@
 
     <section aria-labelledby="resource-groups-heading">
         <h3 id="resource-groups-heading">Resource groups</h3>
-        <p class="helper">Select one or more groups that use the security environment from the previous step.</p>
+        <p class="helper">Select one or more groups to test. The selected groups decide which connection and security values are required to run.</p>
         <div class="resource-grid">
             {% for group in hierarchy.resource_groups %}
                 <label class="resource-card{% if group.selected %} selected{% endif %}">

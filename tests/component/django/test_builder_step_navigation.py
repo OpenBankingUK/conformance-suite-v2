@@ -84,12 +84,14 @@ class TestStepBar:
         content = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
 
         assert 'aria-label="Builder steps"' in content
-        assert '<span class="builder-step-number">6</span>Review</span>' in content
-        for step_id in ("catalogue", "discovery", "security", "scope", "config"):
+        assert '<span class="builder-step-number">5</span>Review</span>' in content
+        for step_id in ("catalogue", "scope", "security", "config"):
             assert f'name="next" value="{step_id}" form="review-plan-form" formnovalidate' in content
+        assert 'value="discovery"' not in content
         assert _step_state(content, "catalogue") == "complete"
-        assert _step_state(content, "discovery") == "complete"
         assert _step_state(content, "scope") == "complete"
+        # The import has no OAuth client or FAPI signing values, which AIS needs to run.
+        assert _step_state(content, "security") == "attention"
         assert "Edit specification" not in content
 
     def test_new_draft_locks_steps_until_a_specification_is_selected(self) -> None:
@@ -99,13 +101,13 @@ class TestStepBar:
         content = client.get(f"/builder/{draft_id}/catalogue/").content.decode("utf-8")
 
         assert 'id="builder-step-form"' in content
-        assert content.count('data-builder-step-state="locked"') == 5
-        assert content.count('class="builder-step-pill" aria-disabled="true"') == 5
-        assert content.count('role="tooltip"') == 5
-        assert content.count("Select a specification first to unlock this step.") == 5
-        assert 'aria-describedby="builder-step-locked-tip-discovery"' in content
-        assert 'id="builder-step-locked-tip-discovery"' in content
-        assert 'name="next" value="discovery"' not in content
+        assert content.count('data-builder-step-state="locked"') == 4
+        assert content.count('class="builder-step-pill" aria-disabled="true"') == 4
+        assert content.count('role="tooltip"') == 4
+        assert content.count("Select a specification first to unlock this step.") == 4
+        assert 'aria-describedby="builder-step-locked-tip-security"' in content
+        assert 'id="builder-step-locked-tip-security"' in content
+        assert 'name="next" value="security"' not in content
 
     def test_selecting_a_specification_opens_every_step(self) -> None:
         client = Client()
@@ -116,9 +118,9 @@ class TestStepBar:
         assert 'data-builder-step-state="locked"' not in content
         assert 'role="tooltip"' not in content
         assert _step_state(content, "catalogue") == "complete"
-        assert _step_state(content, "discovery") == "not_started"
+        assert _step_state(content, "security") == "not_started"
         assert _step_state(content, "config") == "not_started"
-        for step_id in ("catalogue", "discovery", "security", "config", "review"):
+        for step_id in ("catalogue", "security", "config", "review"):
             assert f'name="next" value="{step_id}"' in content
 
     def test_leaving_scope_empty_flags_it_and_leaves_unvisited_steps_untouched(self) -> None:
@@ -130,7 +132,7 @@ class TestStepBar:
 
         assert _step_state(content, "scope") == "attention"
         assert _step_state(content, "config") == "not_started"
-        assert _step_state(content, "discovery") == "not_started"
+        assert _step_state(content, "security") == "not_started"
 
     def test_leaving_business_data_without_scope_does_not_mark_it_complete(self) -> None:
         client = Client()
@@ -187,7 +189,7 @@ class TestStepBarLayout:
             r'<li class="builder-step-divider" aria-hidden="true"></li>\s*<li[^>]*data-builder-step="review"', content
         )
 
-    @pytest.mark.parametrize("step", ["catalogue", "config/discovery", "config/security", "scope", "config", "review"])
+    @pytest.mark.parametrize("step", ["catalogue", "config/security", "scope", "config", "review"])
     def test_every_step_shares_one_page_width(self, step: str) -> None:
         client = Client()
         draft_id = _imported_draft_id(client)
@@ -259,7 +261,7 @@ class TestStepJumps:
         new_url = "https://changed.example.com/.well-known/openid-configuration"
 
         response = client.post(
-            f"/builder/{draft_id}/config/discovery/", data={"discovery_url": new_url, "next": "scope"}
+            f"/builder/{draft_id}/config/security/", data={"discovery_url": new_url, "next": "scope"}
         )
 
         assert response.status_code == 302
@@ -271,7 +273,7 @@ class TestStepJumps:
         draft_id = _imported_draft_id(client)
 
         response = client.post(
-            f"/builder/{draft_id}/config/discovery/",
+            f"/builder/{draft_id}/config/security/",
             data={"discovery_url": "http://insecure.example.com/", "next": "review"},
         )
 
@@ -282,21 +284,31 @@ class TestStepJumps:
         assert draft.invalid_field_values["discovery"] == {"discovery_url": "http://insecure.example.com/"}
 
         review = client.get(response["Location"]).content.decode("utf-8")
-        assert _step_state(review, "discovery") == "attention"
-        assert 'data-step-issues="discovery"' in review
+        assert _step_state(review, "security") == "attention"
+        assert 'data-step-issues="security"' in review
+        assert "Discovery URL: discoveryUrl must be an HTTPS URL" in review
         assert 'name="launch_confirmation"' not in review or "disabled" in review
 
-        revisited = client.get(f"/builder/{draft_id}/config/discovery/").content.decode("utf-8")
+        revisited = client.get(f"/builder/{draft_id}/config/security/").content.decode("utf-8")
         assert 'value="http://insecure.example.com/"' in revisited
         assert "errorlist" in revisited
+
+    def test_read_write_discovery_url_redirects_to_the_merged_security_page(self) -> None:
+        client = Client()
+        draft_id = _imported_draft_id(client)
+
+        response = client.get(f"/builder/{draft_id}/config/discovery/")
+
+        assert response.status_code == 302
+        assert response["Location"] == f"/builder/{draft_id}/config/security/"
 
     def test_correcting_an_invalid_value_clears_the_flag(self) -> None:
         client = Client()
         draft_id = _imported_draft_id(client)
-        client.post(f"/builder/{draft_id}/config/discovery/", data={"discovery_url": "http://insecure.example.com/"})
+        client.post(f"/builder/{draft_id}/config/security/", data={"discovery_url": "http://insecure.example.com/"})
 
         with patch("conformance.api.ui_views._fetch_discovery_metadata", return_value={}):
-            client.post(f"/builder/{draft_id}/config/discovery/", data={"discovery_url": _DISCOVERY_URL})
+            client.post(f"/builder/{draft_id}/config/security/", data={"discovery_url": _DISCOVERY_URL})
 
         assert not _draft(client, draft_id).invalid_field_values.get("discovery")
 
@@ -350,7 +362,7 @@ class TestStepJumps:
         response = client.post(f"/builder/{draft_id}/catalogue/", data=_read_write_boundary(next=next_value))
 
         assert response.status_code == 302
-        assert response["Location"] == f"/builder/{draft_id}/config/discovery/"
+        assert response["Location"] == f"/builder/{draft_id}/scope/"
 
     def test_new_plan_can_jump_straight_to_review_once_specification_is_chosen(self) -> None:
         client = Client()
@@ -421,11 +433,9 @@ class TestBack:
         draft_id = _imported_draft_id(client)
         new_url = "https://changed.example.com/.well-known/openid-configuration"
 
-        response = client.post(
-            f"/builder/{draft_id}/config/discovery/", data={"discovery_url": new_url, "next": "back"}
-        )
+        response = client.post(f"/builder/{draft_id}/config/security/", data={"discovery_url": new_url, "next": "back"})
 
-        assert response["Location"] == f"/builder/{draft_id}/catalogue/"
+        assert response["Location"] == f"/builder/{draft_id}/scope/"
         assert _draft(client, draft_id).config["discoveryUrl"] == new_url
 
     def test_back_button_submits_the_page_form(self) -> None:
@@ -434,7 +444,7 @@ class TestBack:
 
         content = client.get(f"/builder/{draft_id}/config/security/").content.decode("utf-8")
 
-        assert 'name="next" value="back" formnovalidate data-back-button>Back to discovery</button>' in content
+        assert 'name="next" value="back" formnovalidate data-back-button>Back to scope</button>' in content
         assert 'id="builder-back-dialog"' not in content
 
     def test_invalid_back_keeps_the_value_without_a_discard_dialog(self) -> None:
@@ -442,16 +452,16 @@ class TestBack:
         draft_id = _imported_draft_id(client)
 
         response = client.post(
-            f"/builder/{draft_id}/config/discovery/",
+            f"/builder/{draft_id}/config/security/",
             data={"discovery_url": "http://insecure.example.com/", "next": "back"},
         )
 
         assert response.status_code == 302
-        assert response["Location"] == f"/builder/{draft_id}/catalogue/"
+        assert response["Location"] == f"/builder/{draft_id}/scope/"
         assert _draft(client, draft_id).invalid_field_values["discovery"]
         page = client.get(response["Location"]).content.decode("utf-8")
         assert 'id="builder-back-dialog"' not in page
-        assert _step_state(page, "discovery") == "attention"
+        assert _step_state(page, "security") == "attention"
 
     def test_empty_scope_saves_and_continues(self) -> None:
         client = Client()
@@ -460,7 +470,7 @@ class TestBack:
         response = client.post(f"/builder/{draft_id}/scope/", data={})
 
         assert response.status_code == 302
-        assert response["Location"] == f"/builder/{draft_id}/config/"
+        assert response["Location"] == f"/builder/{draft_id}/config/security/"
         assert _draft(client, draft_id).resource_group_ids == ()
 
     def test_clearing_imported_scope_flags_scope_at_review(self) -> None:
@@ -563,7 +573,7 @@ class TestImportWithoutSpecification:
         draft_id = str(response["Location"]).split("/")[2]
 
         assert response["Location"] == f"/builder/{draft_id}/catalogue/"
-        for path in ("config/discovery/", "scope/", "config/", "review/"):
+        for path in ("config/security/", "scope/", "config/", "review/"):
             assert client.get(f"/builder/{draft_id}/{path}")["Location"] == f"/builder/{draft_id}/catalogue/"
         page = client.get(response["Location"]).content.decode("utf-8")
         assert "data-start-new-plan" in page

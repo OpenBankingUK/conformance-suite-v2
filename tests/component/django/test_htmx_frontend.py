@@ -67,20 +67,21 @@ def _completed_run() -> RunRecord:
 
 
 def _discovery_location(client: Client) -> str:
-    """Create a draft with a catalogue boundary and return its discovery URL.
+    """Create a Read/Write draft and return the page that holds its discovery URL.
 
     Args:
         client: Django test client that owns the builder session.
 
     Returns:
-        Discovery step location for the new draft.
+        Connection and security step location for the new draft.
     """
     create_response = client.post("/builder/new/")
-    boundary_response = client.post(
+    client.post(
         create_response["Location"],
         data={"scheme": "open-banking-uk", "specification": "read-write", "version": "4.0.1"},
     )
-    return str(boundary_response["Location"])
+    draft_id = str(create_response["Location"]).split("/")[2]
+    return f"/builder/{draft_id}/config/security/"
 
 
 class TestStaticAssets:
@@ -204,8 +205,8 @@ class TestBuilderPages:
         assert "AbortController" not in content
         assert "fetch(" not in content
 
-    def test_discovery_page_is_boosted_with_check_button(self) -> None:
-        """The discovery step is boosted and offers an inline discovery check."""
+    def test_security_page_is_boosted_with_discovery_check_button(self) -> None:
+        """The connection and security step is boosted and offers an inline discovery check."""
         client = Client()
         location = _discovery_location(client)
         draft_id = location.split("/")[2]
@@ -242,6 +243,37 @@ class TestBuilderPages:
         mock_fetch.assert_called_once_with({"discoveryUrl": DISCOVERY_URL})
         page = client.get(location).content.decode("utf-8")
         assert DISCOVERY_URL not in page
+
+    @patch("conformance.api.ui_views._fetch_discovery_metadata")
+    def test_discovery_check_prefills_only_empty_oauth_fields(self, mock_fetch: Mock) -> None:
+        """The check fills empty OAuth inputs out of band and leaves typed values alone."""
+        mock_fetch.return_value = {
+            "issuer": "https://issuer.example.com",
+            "token_endpoint": "https://issuer.example.com/token",
+            "authorization_endpoint": "https://issuer.example.com/authorize",
+            "sourceUrl": DISCOVERY_URL,
+        }
+        client = Client()
+        draft_id = _discovery_location(client).split("/")[2]
+
+        response = client.post(
+            f"/builder/{draft_id}/config/discovery/preview/",
+            data={
+                "discovery_url": DISCOVERY_URL,
+                "oauth_issuer": "https://typed.example.com",
+                "oauth_token_endpoint": "",
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        content = response.content.decode("utf-8")
+        assert (
+            '<input id="id_oauth_token_endpoint" name="oauth_token_endpoint" type="url" '
+            'value="https://issuer.example.com/token"'
+        ) in content
+        assert 'id="id_oauth_authorization_endpoint"' in content
+        assert 'id="id_oauth_issuer"' not in content
+        assert content.count('hx-swap-oob="true"') == 2
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
     def test_discovery_preview_reports_fetch_error(self, mock_fetch: Mock) -> None:

@@ -36,9 +36,8 @@ def test_flow_order_follows_the_specification() -> None:
     assert builder_flow(BuilderDraft.create()) == RESOURCE_GROUP_FLOW
     assert [step.step_id for step in builder_flow(_read_write_draft())] == [
         "catalogue",
-        "discovery",
-        "security",
         "scope",
+        "security",
         "config",
         "review",
     ]
@@ -51,9 +50,8 @@ def test_every_step_is_locked_until_a_specification_is_selected() -> None:
 
     assert [(item.step_id, item.state) for item in items] == [
         ("catalogue", "current"),
-        ("discovery", "locked"),
-        ("security", "locked"),
         ("scope", "locked"),
+        ("security", "locked"),
         ("config", "locked"),
         ("review", "locked"),
     ]
@@ -64,25 +62,24 @@ def test_selected_specification_opens_every_step_with_its_saved_status() -> None
     items = step_bar(
         _read_write_draft(),
         "security",
-        {"catalogue": "complete", "discovery": "attention", "security": "complete"},
+        {"catalogue": "complete", "scope": "attention", "security": "complete"},
     )
 
     assert [(item.step_id, item.state) for item in items] == [
         ("catalogue", "complete"),
-        ("discovery", "attention"),
+        ("scope", "attention"),
         ("security", "current"),
-        ("scope", "not_started"),
         ("config", "not_started"),
         ("review", "not_started"),
     ]
-    assert [item.number for item in items] == [1, 2, 3, 4, 5, 6]
-    assert [item.clickable for item in items] == [True, True, False, True, True, True]
+    assert [item.number for item in items] == [1, 2, 3, 4, 5]
+    assert [item.clickable for item in items] == [True, True, False, True, True]
 
 
 def test_first_blocking_step_only_gates_on_the_specification() -> None:
     assert first_blocking_step(BuilderDraft.create(), "catalogue") is None
     assert first_blocking_step(BuilderDraft.create(), "review") is not None
-    for target in ("discovery", "security", "scope", "config", "review"):
+    for target in ("security", "scope", "config", "review"):
         assert first_blocking_step(_read_write_draft(), target) is None
 
 
@@ -110,6 +107,7 @@ def test_resolve_next_rejects_values_outside_the_step_allow_list(raw_value: str 
 def test_resolve_next_rejects_locked_steps_and_steps_outside_the_flow() -> None:
     assert resolve_next("review", BuilderDraft.create()) is None
     assert resolve_next("config", _dcr_draft()) is None
+    assert resolve_next("discovery", _read_write_draft()) is None
     resolved = resolve_next("review", _read_write_draft())
     assert resolved is not None
     assert resolved.url_name == "builder-review"
@@ -119,11 +117,12 @@ def test_navigates_backward_compares_flow_positions() -> None:
     draft = _read_write_draft()
     flow = {step.step_id: step for step in builder_flow(draft)}
 
-    assert navigates_backward(draft, "scope", flow["discovery"])
-    assert not navigates_backward(draft, "scope", flow["config"])
+    assert navigates_backward(draft, "security", flow["scope"])
+    assert not navigates_backward(draft, "scope", flow["security"])
     assert not navigates_backward(draft, "scope", flow["scope"])
     assert not navigates_backward(draft, "config", flow["review"])
-    assert not navigates_backward(_dcr_draft(), "config", flow["discovery"])
+    dcr_flow = {step.step_id: step for step in builder_flow(_dcr_draft())}
+    assert not navigates_backward(_dcr_draft(), "config", dcr_flow["discovery"])
 
 
 def test_invalid_field_values_round_trip_through_the_session() -> None:

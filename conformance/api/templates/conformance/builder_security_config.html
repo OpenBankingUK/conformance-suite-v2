@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>OAuth and security configuration</title>
+    <title>{% if dcr_mode %}OAuth and security configuration{% else %}Connection and security{% endif %}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
     {% include "conformance/partials/htmx_script.html" %}
@@ -29,6 +29,10 @@
         .requirement-badge.required { border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
         .requirement-badge.optional { border: 1px solid var(--border); background: #f2f4f7; color: var(--muted); }
         .requirement-badge.conditional { border: 1px solid #fedf89; background: #fffcf5; color: var(--warning); }
+        .requirement-badge.depends_on_scope { border: 1px dashed var(--border); background: #ffffff; color: var(--muted); }
+        .inline-action { display: flex; gap: 8px; align-items: stretch; }
+        .inline-action input { flex: 1 1 auto; }
+        .inline-action button { flex: none; }
         input, select, textarea { width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }
         input[type="checkbox"] { width: auto; min-height: auto; margin-right: 8px; }
         textarea { min-height: 120px; resize: vertical; font: 0.9rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
@@ -64,7 +68,7 @@
 <main hx-boost="true">
     <header>
         <div>
-            <h1>OAuth and security configuration</h1>
+            <h1>{% if dcr_mode %}OAuth and security configuration{% else %}Connection and security{% endif %}</h1>
         </div>
         <a class="button secondary builder-menu-link" href="{% url 'home' %}">Main menu</a>
     </header>
@@ -72,7 +76,13 @@
 
     <section class="panel" aria-labelledby="security-heading">
         <h2 id="security-heading">OAuth/FAPI and communication settings</h2>
+        {% if dcr_mode %}
         <p class="helper">These fields are included only when they can affect execution. Requirement badges describe run impact; discovery metadata may prefill values, but it does not make a field required.</p>
+        {% elif draft_has_scope %}
+        <p class="helper">Badges show what the tests selected on the scope step need: <strong>Required to run</strong> values must be filled in before the plan can be launched. Discovery metadata can fill the OAuth endpoints for you.</p>
+        {% else %}
+        <p class="helper">Select a scope first to see which values the selected tests need to run. You can still fill these in now.</p>
+        {% endif %}
 
         {% if discovery_metadata.fetch_error %}
             <div class="message warning">Discovery metadata is unavailable for {{ discovery_metadata.source_url }}: {{ discovery_metadata.fetch_error }}. Continue manually.</div>
@@ -93,6 +103,27 @@
         <form method="post" id="builder-step-form" enctype="multipart/form-data" action="{% url 'builder-security-config' draft.draft_id %}">
             {% csrf_token %}
             {% if not dcr_mode %}
+            <section class="config-card" aria-labelledby="discovery-heading">
+                <h3 id="discovery-heading">OpenID discovery</h3>
+                <div class="field-row">
+                    <label for="{{ discovery_form.discovery_url.id_for_label }}">Discovery URL {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.discovery_url.status label=security_requirements.discovery_url.label only %}</label>
+                    {{ discovery_form.discovery_url.errors }}
+                    <div class="inline-action">
+                        <input id="{{ discovery_form.discovery_url.id_for_label }}" name="discovery_url" type="url" value="{{ discovery_form.discovery_url.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
+                        <button type="button"
+                                class="secondary"
+                                hx-post="{% url 'builder-discovery-preview' draft.draft_id %}"
+                                hx-include="closest form"
+                                hx-target="#discovery-preview"
+                                hx-swap="outerHTML"
+                                hx-sync="this:replace"
+                                hx-disabled-elt="this">Check</button>
+                    </div>
+                    <div class="helper">{{ security_requirements.discovery_url.description }} Type: {{ security_requirements.discovery_url.type_hint }}. {{ security_requirements.discovery_url.requirement }} Checking fills empty OAuth endpoint fields below.</div>
+                </div>
+                {% include "conformance/partials/builder_discovery_preview.html" %}
+            </section>
+
             <section class="config-card" aria-labelledby="oauth-heading">
                 <h3 id="oauth-heading">OAuth/client</h3>
                 <div class="grid field-row">
@@ -169,7 +200,7 @@
             {% if not dcr_mode %}
             <section class="config-card" aria-labelledby="signing-heading">
                 <h3 id="signing-heading">FAPI signing and Open Banking signatures</h3>
-                <p class="helper">FAPI signing fields are conditional: if you configure signing, complete every signing field in this section.</p>
+                <p class="helper">The runner uses these to sign client assertions, PSU request objects and detached JWS payloads. Complete every signing field together, along with the token endpoint auth method above.</p>
                 <div class="grid field-row">
                     <div class="grid-solo">
                         <label for="{{ form.signing_kid.id_for_label }}">Signing key ID {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_kid.status label=security_requirements.signing_kid.label only %}</label>
@@ -287,7 +318,7 @@
 
             <section class="config-card" aria-labelledby="tls-heading">
                 <h3 id="tls-heading">TLS/certificates</h3>
-                <p class="helper">{% if dcr_mode %}mTLS client certificate and private key references are required for DCR. The CA bundle is optional.{% else %}mTLS client certificate and private key are conditional: provide both paths together, or leave both blank.{% endif %}</p>
+                <p class="helper">{% if dcr_mode %}mTLS client certificate and private key references are required for DCR. The CA bundle is optional.{% else %}Provide the mTLS client certificate and private key together; they are required to run when the token endpoint auth method is tls_client_auth.{% endif %}</p>
                 <div class="grid field-row">
                     <div>
                         {% include "conformance/partials/builder_credential_field.html" with credential=credentials.tls_ca_bundle title="CA bundle" only %}
@@ -303,7 +334,7 @@
 
             <div class="actions">
                 {% include "conformance/partials/builder_back_button.html" %}
-                <button type="submit">{% if dcr_mode %}Continue to review{% else %}Continue to resource groups{% endif %}</button>
+                <button type="submit">{% if dcr_mode %}Continue to review{% else %}Continue to business data{% endif %}</button>
             </div>
         </form>
     </section>

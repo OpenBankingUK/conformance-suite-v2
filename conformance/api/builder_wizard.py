@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Collection, Iterable, Mapping, MutableMapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
@@ -51,7 +51,14 @@ from conformance.endpoint_requirements import (
     endpoint_requirement_key,
     read_write_endpoint_requirement,
 )
+from conformance.executor import compiled_plan_run_config_requirements
 from conformance.json_types import JsonObject, JsonValue
+from conformance.run_config_requirements import (
+    RUN_CONFIG_REASONS,
+    RunConfigKey,
+    RunConfigRequirement,
+    required_run_config_keys,
+)
 from conformance.specification_registry import (
     latest_openapi_document_update,
     openapi_document_update_for_boundary,
@@ -127,7 +134,7 @@ _SECURITY_CONFIG_KEYS = frozenset(
 )
 """Config keys owned by the OAuth/FAPI/security step."""
 
-SecurityRequirementStatus = Literal["required", "conditional", "optional"]
+SecurityRequirementStatus = Literal["required", "conditional", "optional", "depends_on_scope"]
 """User-facing field requirement status values for builder security fields."""
 
 
@@ -456,6 +463,14 @@ EMPTY_CONFIG_VISIBILITY = ConfigVisibility(
 """Grouped-config visibility when a draft's scope cannot be resolved: show no domain fields."""
 
 _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
+    SecurityFieldMetadata(
+        name="discovery_url",
+        status="optional",
+        label="Optional",
+        type_hint="HTTPS URL ending in /.well-known/openid-configuration",
+        description="OpenID Provider discovery document; its metadata can fill the OAuth endpoints below.",
+        requirement="Needed when selected tests fetch discovery metadata or validate response signatures.",
+    ),
     SecurityFieldMetadata(
         name="oauth_client_id",
         status="conditional",
@@ -2355,6 +2370,8 @@ class CredentialRow:
 def security_credential_rows(
     form: SecurityConfigForm,
     stored: Mapping[str, CredentialMaterial | None],
+    *,
+    field_metadata: Mapping[str, SecurityFieldMetadata] | None = None,
 ) -> dict[str, CredentialRow]:
     """Return per-credential render rows keyed by field-name stem.
 
@@ -2364,11 +2381,13 @@ def security_credential_rows(
     Args:
         form: Bound or unbound security config form.
         stored: Stored credential material keyed by field-name stem.
+        field_metadata: Requirement metadata by field name; defaults to the
+            scope-independent metadata.
 
     Returns:
         Render rows keyed by credential field-name stem.
     """
-    metadata = security_field_metadata()
+    metadata = field_metadata if field_metadata is not None else security_field_metadata()
     return {
         spec.name: CredentialRow(
             state=credential_state(spec, stored.get(spec.name)),
@@ -3113,6 +3132,111 @@ def security_field_metadata() -> dict[str, SecurityFieldMetadata]:
         Mapping of security form field names to participant-facing metadata.
     """
     return dict(_SECURITY_FIELD_METADATA_BY_NAME)
+
+
+RUN_CONFIG_FIELD_NAMES: Mapping[RunConfigKey, str] = {
+    "discoveryUrl": "discovery_url",
+    "oauth.clientId": "oauth_client_id",
+    "oauth.redirectUri": "oauth_redirect_uri",
+    "oauth.authorizationEndpoint": "oauth_authorization_endpoint",
+    "oauth.issuer": "oauth_issuer",
+    "oauth.tokenEndpoint": "oauth_token_endpoint",
+    "resourceBaseUrl": "resource_server_base_url",
+    "fapiSigning.signingCertificate": "signing_certificate_path",
+    "fapiSigning.signingPrivateKey": "signing_private_key_path",  # pragma: allowlist secret - form field name
+    "fapiSigning.kid": "signing_kid",
+    "fapiSigning.clientAssertionIssuer": "signing_client_assertion_issuer",
+    "fapiSigning.clientAssertionSubject": "signing_client_assertion_subject",
+    "fapiSigning.tokenEndpointAuthMethod": "signing_token_endpoint_auth_method",
+    "tls.clientCertificate": "tls_client_certificate_path",
+    "tls.clientPrivateKey": "tls_client_private_key_path",  # pragma: allowlist secret - form field name
+}
+"""Connection and security form field that supplies each runner config value."""
+
+_MTLS_FIELD_NAMES = frozenset({"tls_client_certificate_path", "tls_client_private_key_path"})
+"""mTLS client credential fields, needed only for ``tls_client_auth``."""
+
+
+def run_config_requirements_for_document(document: PlanDocumentV2) -> frozenset[RunConfigRequirement] | None:
+    """Return the connection and security values a plan's selected scope needs to run.
+
+    The scope is compiled with placeholder business data, the same preview
+    used for scope-derived business-field requiredness, and the runner
+    requirements are read from the compiled steps (OAuth 2.0 token and PSU
+    consent steps, FAPI request-object and client-assertion signing,
+    detached JWS, discovery and protected resource calls).
+
+    Args:
+        document: Parsed canonical test-plan document.
+
+    Returns:
+        Required values, or ``None`` when no endpoints are selected yet.
+    """
+    if not any(resource_group.endpoints or resource_group.select_all for resource_group in document.resource_groups):
+        return None
+    boundary_requirements = _runtime_requirements_for_boundary(
+        PlanDocumentBoundary(document.scheme, document.specification, document.version)
+    )
+    preview_document = plan_document_with_runtime_placeholders(document, boundary_requirements.values())
+    compiled_plan = compile_test_plan_document(preview_document, supported_catalogues())
+    return compiled_plan_run_config_requirements(compiled_plan)
+
+
+def security_field_requirements(
+    requirements: frozenset[RunConfigRequirement] | None,
+    *,
+    config: Mapping[str, JsonValue],
+    security_environment: Mapping[str, JsonValue] | None = None,
+) -> dict[str, SecurityFieldMetadata]:
+    """Return Read/Write connection and security field metadata for the selected scope.
+
+    Args:
+        requirements: Values the selected scope needs to run, or ``None`` when
+            no scope is selected yet.
+        config: Draft config, used for the token endpoint auth method.
+        security_environment: Draft canonical security environment.
+
+    Returns:
+        Field metadata keyed by form field name, marked "Required to run",
+        "Optional", or "Depends on scope".
+    """
+    metadata = dict(_SECURITY_FIELD_METADATA_BY_NAME)
+    scope_fields = set(RUN_CONFIG_FIELD_NAMES.values())
+    if requirements is None:
+        for name in scope_fields:
+            metadata[name] = replace(
+                metadata[name],
+                status="depends_on_scope",
+                label="Depends on scope",
+                requirement="Whether this is required to run depends on the tests selected on the scope step.",
+            )
+        return metadata
+    required = required_run_config_keys(requirements, config, security_environment=security_environment)
+    required_fields = {RUN_CONFIG_FIELD_NAMES[key]: key for key in required}
+    for name in scope_fields:
+        if name in required_fields:
+            reason = RUN_CONFIG_REASONS[required_fields[name]]
+            metadata[name] = replace(
+                metadata[name],
+                status="required",
+                label="Required to run",
+                requirement=f"Required to run because {reason}.",
+            )
+        elif name in _MTLS_FIELD_NAMES and "fapiSigning" in requirements:
+            metadata[name] = replace(
+                metadata[name],
+                status="optional",
+                label="Optional",
+                requirement="Required to run only when the token endpoint auth method is tls_client_auth.",
+            )
+        else:
+            metadata[name] = replace(
+                metadata[name],
+                status="optional",
+                label="Optional",
+                requirement="The selected tests do not use this value.",
+            )
+    return metadata
 
 
 def plan_document_to_export_json(

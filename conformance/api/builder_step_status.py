@@ -25,6 +25,7 @@ from conformance.api.builder_steps import (
     specification_selected,
 )
 from conformance.api.builder_wizard import (
+    RUN_CONFIG_FIELD_NAMES,
     BusinessConfigForm,
     DiscoveryConfigForm,
     SecurityConfigForm,
@@ -35,6 +36,7 @@ from conformance.api.builder_wizard import (
     model_bank_config_from_plan_config,
     plan_document_from_draft,
     resource_groups_without_endpoints,
+    run_config_requirements_for_document,
     security_config_form_initial,
     stored_security_credentials,
 )
@@ -42,6 +44,7 @@ from conformance.catalogue import CatalogueError, PlanDocumentBoundary
 from conformance.credentials import CredentialMaterial
 from conformance.json_types import JsonValue
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
+from conformance.run_config_requirements import RUN_CONFIG_REASONS, RunConfigRequirement, missing_run_config
 
 type StepIssues = Mapping[BuilderStepId, tuple[str, ...]]
 """Participant-facing issue messages keyed by builder step."""
@@ -290,8 +293,59 @@ def _discovery_issues(draft: BuilderDraft) -> tuple[str, ...]:
     return () if form.is_valid() else _form_messages(form)
 
 
+def draft_run_config_requirements(draft: BuilderDraft) -> frozenset[RunConfigRequirement] | None:
+    """Return the connection and security values a Read/Write draft's scope needs to run.
+
+    Args:
+        draft: Builder draft.
+
+    Returns:
+        Required values, or ``None`` for DCR drafts and drafts whose scope is
+        not selected or cannot be resolved yet.
+    """
+    if is_dcr_draft(draft):
+        return None
+    try:
+        return run_config_requirements_for_document(plan_document_from_draft(draft))
+    except CatalogueError, ValueError:
+        return None
+
+
+def _run_config_issues(draft: BuilderDraft, form: SecurityConfigForm) -> tuple[str, ...]:
+    """Return connection and security values the selected scope needs but the draft lacks.
+
+    Args:
+        draft: Builder draft.
+        form: Replayed security form, used for field labels.
+
+    Returns:
+        ``"<label>: required to run because ..."`` messages; empty before a
+        scope is selected. Fields already reported as invalid are skipped.
+    """
+    requirements = draft_run_config_requirements(draft)
+    if not requirements:
+        return ()
+    invalid_fields = {
+        *draft.invalid_field_values.get("security", {}),
+        *draft.invalid_field_values.get("discovery", {}),
+    }
+    ignore = tuple(key for key, name in RUN_CONFIG_FIELD_NAMES.items() if name in invalid_fields)
+    messages: list[str] = []
+    for missing in missing_run_config(
+        requirements, draft.config, security_environment=draft.security_environment, ignore=ignore
+    ):
+        name = RUN_CONFIG_FIELD_NAMES[missing.key]
+        label = form[name].label if name in form.fields else "Discovery URL"
+        messages.append(f"{label}: required to run because {RUN_CONFIG_REASONS[missing.key]}.")
+    return tuple(messages)
+
+
 def _security_issues(draft: BuilderDraft) -> tuple[str, ...]:
     """Return security issues.
+
+    For Read/Write drafts this is the connection and security step, so it
+    also reports discovery issues and the values the selected scope needs to
+    run.
 
     Args:
         draft: Builder draft.
@@ -300,12 +354,17 @@ def _security_issues(draft: BuilderDraft) -> tuple[str, ...]:
         Issue messages for the security step.
     """
     form = security_form_for_draft(draft, data=_replay_data(security_form_initial(draft), draft, "security"))
-    if not form.is_valid():
-        return _form_messages(form)
     if is_dcr_draft(draft):
-        return ()
-    error = model_config_error(draft.config)
-    return () if error is None else (error,)
+        return () if form.is_valid() else _form_messages(form)
+    issues = [*_discovery_issues(draft)]
+    if not form.is_valid():
+        issues.extend(_form_messages(form))
+    else:
+        error = model_config_error(draft.config)
+        if error is not None:
+            issues.append(error)
+    issues.extend(message for message in _run_config_issues(draft, form) if message not in issues)
+    return tuple(issues)
 
 
 def builder_step_issues(draft: BuilderDraft) -> dict[BuilderStepId, tuple[str, ...]]:
@@ -366,6 +425,8 @@ def _step_started(draft: BuilderDraft, step: BuilderStepId) -> bool:
             blank_config = BuilderDraft.create().config
             return discovery_config_form_initial(draft.config) != discovery_config_form_initial(blank_config)
         case "security":
+            if "discovery" not in {step.step_id for step in builder_flow(draft)} and _step_started(draft, "discovery"):
+                return True
             reference = _with_boundary_of(
                 replace(BuilderDraft.create(), discovery_metadata=draft.discovery_metadata), draft
             )

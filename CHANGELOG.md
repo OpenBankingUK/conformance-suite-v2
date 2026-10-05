@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Read/Write builder now asks for scope before connection and security:
+  specification → scope → connection & security → business data → review. The
+  discovery URL moved onto the connection and security page, with an inline
+  **Check** that fills empty OAuth fields from discovery metadata. Each field
+  shows **Required to run** (with the reason), **Optional**, or **Depends on
+  scope** based on the selected endpoints, and the step shows needing attention
+  (!) when a value the selected tests need is missing.
+- Test plan validation now reports a missing OAuth client, OAuth endpoint, FAPI
+  signing, discovery or resource-server value that the selected tests need to
+  run, naming the `securityEnvironment` key and the reason. This applies to
+  builder, import, REST and CLI plans. The mTLS client certificate and key are
+  required only when the token endpoint auth method is `tls_client_auth`.
+
 - Builder endpoint labels now use a codified, source-linked Read/Write
   Mandatory/Conditional/Optional matrix for 4.0.1, 4.0.0 and 3.1.11 rather than
   catalogue "Baseline" coverage. Mandatory covered endpoints and selected

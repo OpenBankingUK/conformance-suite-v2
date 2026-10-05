@@ -26,6 +26,7 @@ from conformance.api.builder_step_status import (
     business_config_form_for_draft,
     discovery_form_for_draft,
     draft_boundary,
+    draft_run_config_requirements,
     is_dcr_draft,
     security_form_for_draft,
     security_form_initial,
@@ -66,8 +67,10 @@ from conformance.api.builder_wizard import (
     plan_json_from_draft,
     refresh_security_environment,
     scope_selection_defaults,
+    security_config_form_initial,
     security_credential_rows,
     security_field_metadata,
+    security_field_requirements,
     specification_options,
     stored_security_credentials,
     version_options,
@@ -478,6 +481,9 @@ def builder_discovery_config(request: HttpRequest, draft_id: str) -> HttpRespons
         return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
     if (blocked := _blocked_step_redirect(draft, "discovery")) is not None:
         return blocked
+    if not is_dcr_draft(draft):
+        # Read/Write drafts set discovery on the connection and security page.
+        return redirect("builder-security-config", draft_id=draft.draft_id)
 
     if request.method == "POST":
         bound = _lenient_bind(lambda data, _files: discovery_form_for_draft(draft, data=data, lenient=True), request)
@@ -556,7 +562,34 @@ def builder_discovery_preview(request: HttpRequest, draft_id: str) -> HttpRespon
     return render(
         request,
         "conformance/partials/builder_discovery_preview.html",
-        {"preview_checked": True, "preview": _discovery_metadata_context(metadata)},
+        {
+            "preview_checked": True,
+            "preview": _discovery_metadata_context(metadata),
+            "prefill": () if is_dcr_draft(draft) else _discovery_prefill_fields(request.POST, metadata),
+        },
+    )
+
+
+def _discovery_prefill_fields(submitted: QueryDict, metadata: Mapping[str, JsonValue]) -> tuple[dict[str, str], ...]:
+    """Return out-of-band input replacements for empty OAuth fields that discovery can fill.
+
+    Args:
+        submitted: Connection and security form data sent with the check.
+        metadata: Freshly fetched discovery metadata.
+
+    Returns:
+        ``name``, ``value``, and ``input_type`` for each empty field with a
+        discovery-derived value; fields the participant filled are untouched.
+    """
+    defaults = _discovery_defaults(BuilderDraft.create().with_discovery_metadata(discovery_metadata=metadata))
+    return tuple(
+        {
+            "name": name,
+            "value": value,
+            "input_type": "url" if name in _DISCOVERY_URL_FIELDS else "text",
+        }
+        for name, value in defaults.items()
+        if not submitted.get(name, "").strip()
     )
 
 
@@ -586,8 +619,23 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
         dynamic_client_registration=draft.dynamic_client_registration,
     )
     if request.method == "POST":
+        previous_draft = draft
+        discovery_saves: tuple[BuilderStepId, ...] = ()
+        if not is_dcr_draft(draft):
+            discovery_bound = _lenient_bind(
+                lambda data, _files: discovery_form_for_draft(previous_draft, data=data, lenient=True), request
+            )
+            if discovery_bound.form.is_valid() and discovery_bound.form.config is not None:
+                draft = _draft_with_discovery_saved(draft, discovery_bound.form.config, discovery_bound.invalid_values)
+                discovery_saves = ("discovery",)
+        metadata_draft = draft
         bound = _lenient_bind(
-            lambda data, files: security_form_for_draft(draft, data=data, files=files, lenient=True),
+            lambda data, files: security_form_for_draft(
+                metadata_draft,
+                data=data if is_dcr_draft(metadata_draft) else _with_discovery_defaults(data, metadata_draft),
+                files=files,
+                lenient=True,
+            ),
             request,
         )
         form = bound.form
@@ -610,7 +658,9 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
                     execution_mode=draft.execution_mode,
                 )
             updated_draft = updated_draft.with_invalid_field_values("security", bound.invalid_values)
-            return _save_step_and_redirect(request, draft_store, draft, updated_draft, "security")
+            return _save_step_and_redirect(
+                request, draft_store, previous_draft, updated_draft, "security", also_saves=discovery_saves
+            )
         return _render_builder_step(
             request,
             "conformance/builder_security_config.html",
@@ -631,6 +681,90 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
         _builder_security_config_context(draft=draft, form=form, stored_credentials=stored_credentials),
         draft=draft,
         step="security",
+    )
+
+
+_DISCOVERY_PREFILL_FIELDS = (
+    "oauth_authorization_endpoint",
+    "oauth_issuer",
+    "oauth_token_endpoint",
+    "oauth_response_type",
+    "oauth_request_object_signing_alg",
+)
+"""OAuth fields that OpenID discovery metadata can fill when left empty."""
+
+_DISCOVERY_URL_FIELDS = frozenset({"oauth_authorization_endpoint", "oauth_issuer", "oauth_token_endpoint"})
+"""Discovery-filled fields rendered as URL inputs."""
+
+
+def _discovery_defaults(draft: BuilderDraft) -> dict[str, str]:
+    """Return OAuth field values derived only from the draft's discovery metadata.
+
+    Args:
+        draft: Builder draft.
+
+    Returns:
+        Non-empty discovery-derived values keyed by security form field name.
+    """
+    defaults = security_config_form_initial({}, draft.discovery_metadata)
+    return {name: value for name in _DISCOVERY_PREFILL_FIELDS if isinstance(value := defaults.get(name), str) and value}
+
+
+def _with_discovery_defaults(data: Mapping[str, object], draft: BuilderDraft) -> Mapping[str, object]:
+    """Fill empty OAuth endpoint fields from OpenID discovery metadata.
+
+    The page shows discovery-derived values in empty fields, so saving it
+    stores what the participant saw.
+
+    Args:
+        data: Submitted security form data.
+        draft: Draft holding the current discovery metadata.
+
+    Returns:
+        Form data with empty discovery-derived fields filled.
+    """
+    filled: dict[str, object] | QueryDict = data.copy() if isinstance(data, QueryDict) else dict(data)
+    for name, value in _discovery_defaults(draft).items():
+        current = data.get(name)
+        if not isinstance(current, str) or not current.strip():
+            filled[name] = value
+    return filled
+
+
+def _draft_with_discovery_saved(
+    draft: BuilderDraft, discovery_config: Mapping[str, JsonValue], invalid_values: Mapping[str, str]
+) -> BuilderDraft:
+    """Return a draft with the connection and security page's discovery URL saved.
+
+    Metadata is fetched again only when the URL changed or the last fetch
+    failed, so leaving the page does not re-fetch every time.
+
+    Args:
+        draft: Draft before the save.
+        discovery_config: Cleaned discovery config section.
+        invalid_values: Rejected discovery values as typed.
+
+    Returns:
+        Draft with the discovery config, metadata, and invalid values saved.
+    """
+    updated_config = merge_discovery_config(draft.config, discovery_config)
+    discovery_url = _metadata_string(updated_config, "discoveryUrl")
+    if "discovery_url" in invalid_values:
+        metadata = dict(draft.discovery_metadata)
+    elif not discovery_url:
+        metadata = {}
+    elif (
+        discovery_url == _metadata_string(draft.config, "discoveryUrl")
+        and draft.discovery_metadata
+        and "fetchError" not in draft.discovery_metadata
+    ):
+        metadata = dict(draft.discovery_metadata)
+    else:
+        metadata = _fetch_discovery_metadata(updated_config)
+    return (
+        draft.with_config(config=updated_config)
+        .with_discovery_metadata(discovery_metadata=metadata)
+        .with_invalid_field_values("discovery", dict(invalid_values))
     )
 
 
@@ -816,6 +950,8 @@ def _save_step_and_redirect(
     previous: BuilderDraft,
     updated: BuilderDraft,
     step: BuilderStepId,
+    *,
+    also_saves: tuple[BuilderStepId, ...] = (),
 ) -> HttpResponse:
     """Persist a step save and redirect.
 
@@ -829,11 +965,16 @@ def _save_step_and_redirect(
         previous: Draft before the save.
         updated: Draft with the step's changes applied.
         step: Step that was saved.
+        also_saves: Other steps whose data the same page saves, such as
+            discovery on the Read/Write connection and security page.
 
     Returns:
         Redirect to the page chosen by :func:`_step_save_target`.
     """
-    reconciled = reconcile_draft_after_builder_save(previous, updated, step=step).with_steps_saved(step)
+    reconciled = updated
+    for saved in (*also_saves, step):
+        reconciled = reconcile_draft_after_builder_save(previous, reconciled, step=saved)
+    reconciled = reconciled.with_steps_saved(*also_saves, step)
     draft_store.save(reconciled)
     return _redirect_after_step_save(request, reconciled, step)
 
@@ -1560,13 +1701,33 @@ def _builder_security_config_context(
     Returns:
         Template context for the security config wizard page.
     """
+    dcr_mode = is_dcr_draft(draft)
+    run_requirements = draft_run_config_requirements(draft)
+    requirements = (
+        security_field_metadata()
+        if dcr_mode
+        else security_field_requirements(
+            run_requirements, config=draft.config, security_environment=draft.security_environment
+        )
+    )
+    discovery_form = (
+        None
+        if dcr_mode
+        else discovery_form_for_draft(
+            draft,
+            data=_retained_invalid_data(draft, "discovery", discovery_config_form_initial(draft.config)),
+            lenient=True,
+        )
+    )
     return {
         "draft": draft,
         "form": form,
+        "discovery_form": discovery_form,
         "discovery_metadata": _discovery_metadata_context(draft.discovery_metadata),
-        "security_requirements": security_field_metadata(),
-        "dcr_mode": is_dcr_draft(draft),
-        "credentials": security_credential_rows(form, stored_credentials),
+        "security_requirements": requirements,
+        "dcr_mode": dcr_mode,
+        "draft_has_scope": run_requirements is not None,
+        "credentials": security_credential_rows(form, stored_credentials, field_metadata=requirements),
     }
 
 

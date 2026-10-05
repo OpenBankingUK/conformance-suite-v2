@@ -8,6 +8,8 @@ import pytest
 
 from conformance.api.builder_draft_store import BuilderDraft
 from conformance.api.builder_step_status import builder_step_issues, builder_step_progress
+from conformance.api.builder_wizard import catalogue_scope_hierarchy
+from conformance.catalogue import PlanDocumentBoundary
 
 pytestmark = pytest.mark.unit
 
@@ -17,6 +19,24 @@ _DISCOVERY_URL = "https://aspsp.example.com/.well-known/openid-configuration"
 def _read_write_draft() -> BuilderDraft:
     return BuilderDraft.create().with_catalogue_boundary(
         scheme="open-banking-uk", specification="read-write", version="4.0.1"
+    )
+
+
+def _ais_scoped_draft() -> BuilderDraft:
+    hierarchy = catalogue_scope_hierarchy(
+        PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1"),
+        selected_resource_group_ids=("account-and-transaction",),
+    )
+    endpoint = next(
+        endpoint
+        for group in hierarchy.resource_groups
+        for endpoint in group.endpoints
+        if endpoint.path == "/open-banking/v4.0/aisp/accounts"
+    )
+    return _read_write_draft().with_scope_selection(
+        resource_group_ids=("account-and-transaction",),
+        endpoint_ids=(endpoint.id,),
+        endpoint_capability_ids={},
     )
 
 
@@ -38,9 +58,8 @@ def test_selected_specification_is_complete_and_other_steps_not_started() -> Non
 
     assert progress == {
         "catalogue": "complete",
-        "discovery": "not_started",
-        "security": "not_started",
         "scope": "not_started",
+        "security": "not_started",
         "config": "not_started",
     }
 
@@ -54,17 +73,41 @@ def test_valid_saved_value_marks_the_step_complete() -> None:
     draft = _read_write_draft()
     draft = draft.with_config(config={**draft.config, "discoveryUrl": _DISCOVERY_URL})
 
-    assert builder_step_issues(draft)["discovery"] == ()
-    assert builder_step_progress(draft)["discovery"] == "complete"
+    assert builder_step_issues(draft)["security"] == ()
+    assert builder_step_progress(draft)["security"] == "complete"
 
 
-def test_retained_invalid_value_marks_the_step_for_attention() -> None:
+def test_retained_invalid_discovery_value_marks_the_security_step_for_attention() -> None:
     draft = _read_write_draft().with_invalid_field_values("discovery", {"discovery_url": "http://insecure/"})
 
-    issues = builder_step_issues(draft)["discovery"]
+    issues = builder_step_issues(draft)["security"]
 
-    assert issues == ("Discovery URL: discoveryUrl must be an HTTPS URL",)
-    assert builder_step_progress(draft)["discovery"] == "attention"
+    assert "Discovery URL: discoveryUrl must be an HTTPS URL" in issues
+    assert builder_step_progress(draft)["security"] == "attention"
+
+
+def test_selected_scope_reports_connection_values_required_to_run() -> None:
+    draft = _ais_scoped_draft()
+
+    issues = builder_step_issues(draft)["security"]
+
+    assert any(issue.startswith("Client ID: required to run because") for issue in issues)
+    assert any(issue.startswith("Discovery URL: required to run because") for issue in issues)
+    assert any(issue.startswith("Resource server base URL: required to run because") for issue in issues)
+    assert not any("mTLS" in issue for issue in issues)
+    assert builder_step_progress(draft)["security"] == "not_started"
+
+
+def test_saved_security_step_missing_run_values_needs_attention() -> None:
+    draft = _ais_scoped_draft().with_steps_saved("security")
+
+    assert builder_step_progress(draft)["security"] == "attention"
+
+
+def test_unscoped_security_step_reports_no_run_requirements() -> None:
+    draft = _read_write_draft().with_steps_saved("security")
+
+    assert builder_step_issues(draft)["security"] == ()
 
 
 def test_missing_required_values_are_issues_without_starting_the_step() -> None:

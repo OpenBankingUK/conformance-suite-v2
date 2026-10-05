@@ -276,7 +276,7 @@
         {% if direct_endpoints %}
             <p class="helper">Select the Dynamic Client Registration management operations implemented by the participant. Token traffic is generated and is not selectable.</p>
         {% else %}
-            <p class="helper">Select the resource groups that share the security environment from the previous step, then select implemented endpoints and optional capabilities within those groups.</p>
+            <p class="helper">Select the resource groups to test, then select implemented endpoints and optional capabilities within those groups.</p>
             <p class="helper">Endpoint labels follow the specification's implementation requirements. Mandatory endpoints are locked within selected groups; dependent endpoints are locked when their resource POST is selected. Conditional and optional endpoints remain selectable. Required endpoint features describe tests for an implemented endpoint, not whether the specification requires that endpoint.</p>
         {% endif %}
 
@@ -310,7 +310,7 @@
 
             <div class="actions">
                 {% include "conformance/partials/builder_back_button.html" %}
-                <button type="submit">{% if direct_endpoints %}Continue to DCR configuration{% else %}Continue to business data{% endif %}</button>
+                <button type="submit">{% if direct_endpoints %}Continue to DCR configuration{% else %}Continue to connection &amp; security{% endif %}</button>
             </div>
         </form>
     </section>
