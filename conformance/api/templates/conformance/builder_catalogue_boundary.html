@@ -287,7 +287,7 @@
                                     data-specification="{{ option.specification }}"
                                     data-version="{{ option.version }}"
                                     {% if option.latest %}data-latest="true"{% endif %}
-                                    {% if form.version.value == option.version and form.openapi_document_update.value == option.value %}selected{% endif %}>{{ option.label }}{% if option.latest %} (latest){% endif %}</option>
+                                    {% if form.openapi_document_update.value %}{% if form.version.value == option.version and form.openapi_document_update.value == option.value %}selected{% endif %}{% elif option.latest and form.version.value == option.version %}selected{% endif %}>{{ option.label }}{% if option.latest %} (latest){% endif %}</option>
                         {% endfor %}
                     </select>
                     <p class="helper">Published OpenAPI (swagger) revision used for schema validation. Core specification behaviour is unchanged between updates.</p>
@@ -315,6 +315,10 @@
         const openApiDocumentUpdate = form.querySelector("[data-openapi-document-update-select]");
         const openApiDocumentUpdateField = form.querySelector("[data-openapi-document-update-field]");
         const continueButton = form.querySelector("[data-continue-button]");
+        let openApiDocumentUpdateChosen = false;
+        openApiDocumentUpdate.addEventListener("change", () => {
+            openApiDocumentUpdateChosen = true;
+        });
 
         const selectFirstVisible = (select) => {
             const selected = select.selectedOptions[0];
@@ -366,7 +370,7 @@
             openApiDocumentUpdateField.hidden = visible.length === 0;
             openApiDocumentUpdate.disabled = visible.length === 0;
             const selected = openApiDocumentUpdate.selectedOptions[0];
-            if (selected && !selected.disabled) {
+            if (selected && !selected.disabled && (selected.defaultSelected || openApiDocumentUpdateChosen)) {
                 return;
             }
             const latest = visible.find((option) => option.dataset.latest === "true") || visible[visible.length - 1];

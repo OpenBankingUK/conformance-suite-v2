@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from html.parser import HTMLParser
 from typing import Any
@@ -234,6 +235,36 @@ def _assert_requirement_badge(content: str, label: str, badge: str) -> None:
 @pytest.mark.django_db
 class TestBuilderWizardUi:
     """Browser coverage for the canonical multi-page builder flow."""
+
+    @staticmethod
+    def _selected_openapi_document_updates(content: str) -> list[tuple[str, str]]:
+        select = re.search(r'<select[^>]*name="openapi_document_update".*?</select>', content, re.DOTALL)
+        assert select is not None
+        return re.findall(
+            r'<option value="([^"]+)"[^>]*data-version="([^"]+)"[^>]*\sselected>', select.group(0), re.DOTALL
+        )
+
+    def test_new_builder_preselects_latest_openapi_document_update(self) -> None:
+        """A fresh draft renders the latest published update as the selected option."""
+        client = Client()
+        location = client.post("/builder/new/")["Location"]
+
+        content = client.get(location).content.decode("utf-8")
+
+        assert self._selected_openapi_document_updates(content) == [("Update-1", "4.0.1")]
+
+    def test_imported_plan_keeps_its_saved_openapi_document_update_selected(self) -> None:
+        """A saved non-latest update stays selected instead of the latest default."""
+        client = Client()
+        plan = _valid_import_plan()
+        plan["specification"]["openApiDocumentUpdate"] = "Baseline"
+        draft_id = _draft_id_from_builder_redirect(
+            client.post("/builder/import/", data={"plan_json": json.dumps(plan)})["Location"]
+        )
+
+        content = client.get(f"/builder/{draft_id}/catalogue/").content.decode("utf-8")
+
+        assert self._selected_openapi_document_updates(content) == [("Baseline", "4.0.1")]
 
     def test_new_builder_starts_with_specification_only(self) -> None:
         """POST /builder/new/ renders specification-only step one."""

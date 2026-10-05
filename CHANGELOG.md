@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   errors, a dialog offers **Discard & go back** or **Stay**.
 - The run screen's **New plan** button is now a **Main menu** link, so
   participants choose between creating and importing a plan.
+- The builder's specification step now preselects the latest OpenAPI document
+  update for the chosen version instead of the earliest. A saved or imported
+  update is still kept.
 
 ## [2.0.0-beta.7] - 2026-10-05
 
