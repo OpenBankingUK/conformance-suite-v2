@@ -89,6 +89,7 @@ from conformance.psu_authorization import (
 )
 from conformance.response_signature import ResponseSignatureValidationError, validate_ob_response_signature
 from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
+from conformance.run_config_requirements import RunConfigRequirement
 from conformance.signing_credentials import SigningCredentialError, load_signing_credentials
 from conformance.signing_service import (
     ClientAssertionSigningInput,
@@ -692,6 +693,100 @@ def compiled_plan_synthetic_inline_steps(
         Synthetic runtime steps inserted immediately after ``request_step``.
     """
     return _catalogue_inline_authorization_steps(compiled_plan, request_step)
+
+
+_CONFIG_OAUTH_PLACEHOLDER_PATTERN = re.compile(r"\$\{config\.oauth\.([A-Za-z]+)\}")
+"""``${config.oauth.<field>}`` placeholder in generated runtime steps."""
+
+_CONFIG_OAUTH_REQUIREMENTS: Mapping[str, RunConfigRequirement] = {
+    "clientId": "oauth.clientId",
+    "redirectUri": "oauth.redirectUri",
+    "authorizationEndpoint": "oauth.authorizationEndpoint",
+    "issuer": "oauth.issuer",
+    "tokenEndpoint": "oauth.tokenEndpoint",
+}
+"""OAuth placeholders that have no runner default; responseType and the
+request-object alg fall back to defaults, so they are never required."""
+
+
+def compiled_plan_run_config_requirements(compiled_plan: CompiledTestPlan) -> frozenset[RunConfigRequirement]:
+    """Return the participant config a compiled Read/Write plan needs to execute.
+
+    Mirrors :func:`_compiled_plan_to_manifest` without resolving runtime
+    inputs: OAuth 2.0 client-credentials and authorisation-code token steps,
+    PSU authorisation steps (FAPI JAR request objects), detached JWS
+    (``x-jws-signature``) on write requests, protected-resource URLs, OpenID
+    discovery fetches, and response-signature checks.
+
+    Args:
+        compiled_plan: Compiled catalogue plan.
+
+    Returns:
+        Runner dependencies the plan's generated steps read from config.
+    """
+    requirements: set[RunConfigRequirement] = set()
+    runtime_steps: list[V1Step] = list(_catalogue_synthetic_token_steps(compiled_plan))
+    for test_case in compiled_plan.test_cases:
+        if test_case.response_signature_required:
+            requirements.add("discoveryUrl")
+        for request_step in test_case.request_steps:
+            if request_step.step_id == _AIS_ACCOUNT_ACCESS_TOKEN_STEP_ID:
+                runtime_steps.extend(
+                    _ais_authorization_code_token_step(profile=profile)
+                    for profile in _compiled_plan_ais_permission_profiles(compiled_plan)
+                )
+                continue
+            if request_step.path == "/.well-known/openid-configuration":
+                requirements.add("discoveryUrl")
+            else:
+                requirements.add("resourceBaseUrl")
+            if _catalogue_detached_jws_policy(request_step) is not None:
+                requirements.add("fapiSigning")
+            if _catalogue_token_endpoint_auth_policy(request_step) is not None:
+                requirements.add("fapiSigning")
+            if request_step.step_id == _AIS_CONSENT_CREATE_STEP_ID:
+                runtime_steps.extend(
+                    _ais_psu_authorization_step(profile=profile)
+                    for profile in _compiled_plan_ais_permission_profiles(compiled_plan)
+                )
+                continue
+            runtime_steps.extend(compiled_plan_synthetic_inline_steps(compiled_plan, request_step))
+    for step in runtime_steps:
+        requirements.update(_runtime_step_config_requirements(step))
+    return frozenset(requirements)
+
+
+def _runtime_step_config_requirements(step: V1Step) -> set[RunConfigRequirement]:
+    """Return config dependencies of one generated token or PSU step.
+
+    Args:
+        step: Synthetic runtime step generated for a compiled plan.
+
+    Returns:
+        OAuth placeholders it references, plus the FAPI signing group when it
+        signs a client assertion, request object, or detached JWS.
+    """
+    requirements: set[RunConfigRequirement] = set()
+    if isinstance(step, PsuAuthorizationStep):
+        texts: list[str | None] = [step.authorization_endpoint, step.client_id, step.redirect_uri]
+        if step.request_object is not None:
+            requirements.add("fapiSigning")
+            if isinstance(step.request_object, GeneratedRequestObject):
+                texts.append(step.request_object.audience)
+    else:
+        texts = [step.request.url]
+        if isinstance(step.request.body, FormBody):
+            texts.extend(step.request.body.fields.values())
+        if step.token_endpoint_auth_policy is not None or step.request.detached_jws is not None:
+            requirements.add("fapiSigning")
+    for text in texts:
+        if text is None:
+            continue
+        for field_name in _CONFIG_OAUTH_PLACEHOLDER_PATTERN.findall(text):
+            requirement = _CONFIG_OAUTH_REQUIREMENTS.get(field_name)
+            if requirement is not None:
+                requirements.add(requirement)
+    return requirements
 
 
 def _catalogue_synthetic_token_steps(compiled_plan: CompiledTestPlan) -> tuple[ManifestStep, ...]:

@@ -23,6 +23,7 @@ from conformance.catalogue import (
     plan_document_to_json_object,
 )
 from conformance.catalogue_registry import supported_catalogues
+from conformance.executor import compiled_plan_run_config_requirements
 from conformance.json_types import JsonObject, JsonValue
 from conformance.model_bank_config import ConfigError, ModelBankConfig, parse_model_bank_config
 from conformance.plan_configuration import (
@@ -30,6 +31,7 @@ from conformance.plan_configuration import (
     parse_dcr_plan_configuration,
     validate_dcr_file_references,
 )
+from conformance.run_config_requirements import RunConfigKey, missing_run_config
 
 ValidationLayer = Literal["schema", "semantic", "security", "business", "execution"]
 """Validation layers reported for JSON-first test-plan checks."""
@@ -853,9 +855,11 @@ def _compiled_plan_issues(
         issues.append(TestPlanValidationIssue("semantic", severity, reason))
     if not compiled_plan.test_cases:
         issues.append(TestPlanValidationIssue("semantic", "error", "Test plan does not select any executable tests."))
+    already_reported: set[RunConfigKey] = set()
     if any(test_case.response_signature_required for test_case in compiled_plan.test_cases) and not _has_discovery_url(
         document
     ):
+        already_reported.add("discoveryUrl")
         issues.append(
             TestPlanValidationIssue(
                 "security",
@@ -863,7 +867,41 @@ def _compiled_plan_issues(
                 "securityEnvironment.discoveryUrl is required because the selected run validates response signatures.",
             )
         )
+    issues.extend(_run_config_issues(document, compiled_plan, already_reported=already_reported))
     return tuple(issues)
+
+
+def _run_config_issues(
+    document: PlanDocumentV2,
+    compiled_plan: CompiledTestPlan,
+    *,
+    already_reported: set[RunConfigKey],
+) -> tuple[TestPlanValidationIssue, ...]:
+    """Return blocking issues for connection/security config the run cannot start without.
+
+    The executor reads OAuth 2.0 client values, the FAPI signing group, and the
+    discovery URL from config while it runs, so a plan missing them would only
+    fail part-way through. Checking here makes builder review, API, and CLI
+    launches reject such plans up front.
+
+    Args:
+        document: Parsed test-plan document.
+        compiled_plan: Compiled catalogue plan.
+        already_reported: Config values another check has already reported.
+
+    Returns:
+        One ``security`` error per missing value. The resource base URL is left
+        to the compiler's required-runtime-input check.
+    """
+    if document.specification == "dynamic-client-registration":
+        return ()
+    missing = missing_run_config(
+        compiled_plan_run_config_requirements(compiled_plan),
+        document.config,
+        security_environment=document.security_environment,
+        ignore={*already_reported, "resourceBaseUrl"},
+    )
+    return tuple(TestPlanValidationIssue("security", "error", item.message) for item in missing)
 
 
 def _has_discovery_url(document: PlanDocumentV2) -> bool:

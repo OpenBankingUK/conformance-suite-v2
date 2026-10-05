@@ -18,6 +18,7 @@ from conformance.api.run_store import run_store
 from conformance.catalogue import PlanDocumentBoundary
 from conformance.http import JsonHttpResponse
 from conformance.ozone_client import DiscoveryDocument
+from tests.support.run_config import RUN_READY_SECURITY_ENVIRONMENT
 
 pytestmark = pytest.mark.component
 
@@ -111,6 +112,7 @@ def _valid_import_plan() -> dict[str, Any]:
         },
         "executionMode": "development",
         "securityEnvironment": {
+            **RUN_READY_SECURITY_ENVIRONMENT,
             "discoveryUrl": "https://example.com/.well-known/openid-configuration",
             "resourceBaseUrl": "https://resource.example.com",
         },
@@ -1048,6 +1050,7 @@ class TestBuilderWizardUi:
             },
             "executionMode": "development",
             "securityEnvironment": {
+                **RUN_READY_SECURITY_ENVIRONMENT,
                 "discoveryUrl": "https://example.com/.well-known/openid-configuration",
                 "resourceBaseUrl": "https://resource.example.com",
             },
@@ -1130,6 +1133,7 @@ class TestBuilderWizardUi:
             },
             "executionMode": "development",
             "securityEnvironment": {
+                **RUN_READY_SECURITY_ENVIRONMENT,
                 "discoveryUrl": "https://example.com/.well-known/openid-configuration",
                 "resourceBaseUrl": "https://resource.example.com",
             },
@@ -1203,6 +1207,7 @@ class TestBuilderWizardUi:
             },
             "executionMode": "development",
             "securityEnvironment": {
+                **RUN_READY_SECURITY_ENVIRONMENT,
                 "discoveryUrl": "https://example.com/.well-known/openid-configuration",
                 "resourceBaseUrl": "https://resource.example.com",
             },

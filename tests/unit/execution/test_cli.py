@@ -9,6 +9,7 @@ import pytest
 from conformance import cli
 from conformance.catalogue import CatalogueKey, CompiledTestPlan
 from conformance.results import SmokeCheckResult
+from tests.support.run_config import RUN_READY_SECURITY_ENVIRONMENT
 
 pytestmark = pytest.mark.unit
 
@@ -403,6 +404,7 @@ def test_cli_compiles_v311_canonical_plan(monkeypatch: pytest.MonkeyPatch, tmp_p
                 },
                 "executionMode": "development",
                 "securityEnvironment": {
+                    **RUN_READY_SECURITY_ENVIRONMENT,
                     "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
                     "resourceBaseUrl": "https://resource.example.com",
                 },
