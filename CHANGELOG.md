@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Automatic and manual image promotion run summaries now show the exact release
+  version, proposed Docker tags and source commit before approval, including
+  conditional `2.0.0-beta-latest` eligibility.
 - Automatic Docker Hub `2.0.0-beta-latest` pointer updates after approved beta
   publication and provenance/SBOM attestations, with manifest-digest
   verification. Only the highest published 2.0.0 beta is eligible; older
