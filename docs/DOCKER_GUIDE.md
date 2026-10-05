@@ -1,11 +1,11 @@
 # Docker deployment guide
 
-**FCS v2 `2.0.0-beta.5` is an evaluation beta, not a certification release.**
+**FCS v2 `2.0.0-beta.6` is an evaluation beta, not a certification release.**
 Use it to try the new Functional Conformance Suite and provide feedback. Do
 not use beta runs or reports as certification evidence, even if the builder
 or a result displays certification-related labels.
 
-The primary beta.5 workflow is the local browser UI: run the Docker image,
+The primary beta.6 workflow is the local browser UI: run the Docker image,
 build a test plan, and paste credentials into the builder. The image runs
 non-root and requires no manually supplied Django secret. The persistence,
 certificate mount, Compose, and CLI options later in this guide are advanced
@@ -46,7 +46,7 @@ warning for the locally generated self-signed HTTPS certificate. Keep the
    keep it. **Export safe JSON** at plan review removes secret values and
    requires you to re-enter them after import. **Export with secrets** includes
    sensitive values: avoid it unless necessary and protect any copy you make.
-   Neither export nor the result is certification evidence in beta.5.
+   Neither export nor the result is certification evidence in beta.6.
 
 Stop with Ctrl+C. With this disposable command, browser sessions, generated
 results, logs, and the local certificate are lost when the container exits;
@@ -66,7 +66,7 @@ If the repository requires authentication, log in to Docker Hub with
 credentials that grant access before pulling.
 
 For reproducible runs, replace `2.0.0-beta-latest` in the commands in this guide
-with an exact published tag, for example `2.0.0-beta.5`.
+with an exact published tag, for example `2.0.0-beta.6` once published.
 See [`CICD_STRATEGY.md`](CICD_STRATEGY.md) for the full preview/beta/GA
 versioning and promotion model. `latest` refers only to the current GA release.
 For convenient MVP beta evaluation, `2.0.0-beta-latest` tracks the highest
@@ -83,13 +83,11 @@ docker run --pull=always --rm -p 127.0.0.1:8443:8443 docker.io/openbanking/confo
 
 Use `--pull=always` when starting a new container, as shown above, or pull
 explicitly beforehand: a moving tag alone does not refresh a cached image or an
-already running container. The alias is first created by an
-eligible future beta promotion; existing beta images are not automatically
-retagged when this feature is deployed.
+already running container. The alias is maintained by eligible beta promotions;
+existing beta images are not automatically retagged when documentation changes.
 
 The former `beta-latest` tag is no longer maintained. Existing registry tags are
-not deleted by this change; switch pull commands to `2.0.0-beta-latest` once the
-next eligible promotion creates it.
+not deleted by this change; switch pull commands to `2.0.0-beta-latest`.
 
 ## Advanced: persistent local run
 
