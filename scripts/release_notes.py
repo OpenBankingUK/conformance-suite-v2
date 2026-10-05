@@ -10,8 +10,9 @@ The body keeps three sections separate:
 3. GitHub's generated pull-request notes since the previous same-channel tag.
 
 GA releases must carry a ``CHANGELOG.md`` section; betas only warn. The same
-rule runs in pull-request CI so a missing GA entry is caught before merge
-rather than after publication.
+rule runs in CI on pull requests that change ``[project].version`` (that is,
+prepare a release), so a missing GA entry is caught before merge rather than
+after publication.
 
 Usage::
 
@@ -206,6 +207,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     check = commands.add_parser("check-changelog", help="Require (GA) or warn about (beta) a changelog section.")
     check.add_argument("--pyproject", type=Path, default=Path("pyproject.toml"))
     check.add_argument("--version", default=None, help="Raw version to check instead of reading --pyproject.")
+    check.add_argument(
+        "--base-pyproject",
+        type=Path,
+        default=None,
+        help="Pull request base pyproject.toml; the check is skipped when the version is unchanged.",
+    )
     check.add_argument("--changelog", type=Path, default=Path("CHANGELOG.md"))
 
     previous = commands.add_parser("previous-tag", help="Print the previous same-channel release tag, if any.")
@@ -234,6 +241,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "check-changelog":
             raw_version = args.version or read_pyproject_raw_version(args.pyproject)
+            if args.base_pyproject is not None and read_pyproject_raw_version(args.base_pyproject) == raw_version:
+                sys.stdout.write(f"[project].version is unchanged ({raw_version}); no release is prepared.\n")
+                return 0
             warning = check_changelog(raw_version, args.changelog.read_text(encoding="utf-8"))
             if warning:
                 sys.stdout.write(f"::warning::{warning}\n")
