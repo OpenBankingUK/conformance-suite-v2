@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.6] - 2026-10-05
+
+### Changed
+
+- Participant Docker instructions now recommend `2.0.0-beta-latest` across
+  browser, persistent, certificate-mounted, CLI, and Compose examples, with
+  pull-on-launch options to avoid stale cached images. Exact-version guidance
+  for reproducible runs and beta non-certification warnings remain in place.
+
 ## [2.0.0-beta.5] - 2026-10-03
 
 ### Added
