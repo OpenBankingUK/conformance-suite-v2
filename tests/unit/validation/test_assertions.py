@@ -643,7 +643,7 @@ def test_evaluate_response_schema_passes_for_valid_bundled_openapi_payload() -> 
         {
             "type": "response_schema",
             "source": "bundled_openapi",
-            "document": "ob-read-write-v4.0-account-info-openapi",
+            "document": "ob-read-write/v4.0.0-Update-5/account-info-openapi",
             "schemaRef": "#/components/schemas/OBReadAccount6",
         }
     )
@@ -660,15 +660,15 @@ def test_evaluate_response_schema_passes_for_valid_bundled_openapi_payload() -> 
 
     assert result.passed is True
     assert result.message == (
-        "Response body matches schema #/components/schemas/OBReadAccount6 from ob-read-write-v4.0-account-info-openapi"
+        "Response body matches schema #/components/schemas/OBReadAccount6 from ob-read-write/v4.0.0-Update-5/account-info-openapi"
     )
 
 
 @pytest.mark.parametrize(
     "document",
     [
-        "ob-read-write-v4.0-account-info-openapi",
-        "ob-read-write-v4.0.1-account-info-openapi",
+        "ob-read-write/v4.0.0-Update-5/account-info-openapi",
+        "ob-read-write/v4.0.1-Baseline/account-info-openapi",
     ],
 )
 def test_evaluate_response_schema_accepts_namespaced_account_identification_code(document: str) -> None:
@@ -714,8 +714,8 @@ def test_evaluate_response_schema_accepts_namespaced_account_identification_code
 @pytest.mark.parametrize(
     "document",
     [
-        "ob-read-write-v4.0-payment-initiation-openapi",
-        "ob-read-write-v4.0.1-payment-initiation-openapi",
+        "ob-read-write/v4.0.0-Update-5/payment-initiation-openapi",
+        "ob-read-write/v4.0.1-Baseline/payment-initiation-openapi",
     ],
 )
 def test_evaluate_response_schema_passes_for_valid_pis_standing_order_response(document: str) -> None:
@@ -765,7 +765,7 @@ def test_evaluate_response_schema_rejects_bare_account_identification_code() -> 
         {
             "type": "response_schema",
             "source": "bundled_openapi",
-            "document": "ob-read-write-v4.0-account-info-openapi",
+            "document": "ob-read-write/v4.0.0-Update-5/account-info-openapi",
             "schemaRef": "#/components/schemas/OBReadAccount6",
         }
     )
@@ -802,7 +802,7 @@ def test_evaluate_response_schema_fails_for_bundled_schema_mismatch() -> None:
         {
             "type": "response_schema",
             "source": "bundled_openapi",
-            "document": "ob-read-write-v4.0-account-info-openapi",
+            "document": "ob-read-write/v4.0.0-Update-5/account-info-openapi",
             "schemaRef": "#/components/schemas/OBReadAccount6",
         }
     )
@@ -824,7 +824,7 @@ def test_evaluate_response_schema_uses_body_path_for_inline_schema() -> None:
         {
             "type": "response_schema",
             "source": "bundled_openapi",
-            "document": "ob-read-write-v4.0-account-info-openapi",
+            "document": "ob-read-write/v4.0.0-Update-5/account-info-openapi",
             "bodyPath": "Data",
             "schema": {
                 "type": "object",
@@ -847,7 +847,7 @@ def test_evaluate_response_schema_uses_body_path_for_inline_schema() -> None:
 
     assert result.passed is True
     assert result.message == (
-        "Response body path Data matches schema inline schema from ob-read-write-v4.0-account-info-openapi"
+        "Response body path Data matches schema inline schema from ob-read-write/v4.0.0-Update-5/account-info-openapi"
     )
 
 
@@ -856,7 +856,7 @@ def test_evaluate_response_schema_fails_when_body_path_is_missing() -> None:
         {
             "type": "response_schema",
             "source": "bundled_openapi",
-            "document": "ob-read-write-v4.0-account-info-openapi",
+            "document": "ob-read-write/v4.0.0-Update-5/account-info-openapi",
             "bodyPath": "Data.Account",
             "schema": {
                 "type": "array",
@@ -879,7 +879,7 @@ def test_evaluate_response_schema_reports_unknown_schema_ref_as_assertion_failur
         ResponseSchemaAssertion(
             type="response_schema",
             source="bundled_openapi",
-            document="ob-read-write-v4.0-account-info-openapi",
+            document="ob-read-write/v4.0.0-Update-5/account-info-openapi",
             schema_ref="#/components/schemas/DoesNotExist",
         ),
         status_code=200,

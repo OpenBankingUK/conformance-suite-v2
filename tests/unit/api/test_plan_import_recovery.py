@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Mapping
 from typing import Any
 
 import pytest
@@ -20,6 +21,7 @@ from conformance.api.plan_import_recovery import (
     reconcile_draft_after_builder_save,
     recover_draft_from_plan_json,
 )
+from conformance.json_types import JsonValue
 from conformance.test_plan_validation import redact_sensitive_plan_json, validate_test_plan_for_load
 
 pytestmark = pytest.mark.unit
@@ -29,7 +31,12 @@ def _rw_plan() -> dict[str, Any]:
     """Return a valid Read/Write schemaVersion 1.0 test plan."""
     return {
         "schemaVersion": "1.0",
-        "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI1_ADVANCED"},
+        "specification": {
+            "family": "OBL_READ_WRITE",
+            "version": "4.0.1",
+            "openApiDocumentUpdate": "Update-1",
+            "profile": "FAPI1_ADVANCED",
+        },
         "executionMode": "development",
         "securityEnvironment": {
             "discoveryUrl": "https://example.com/.well-known/openid-configuration",
@@ -250,6 +257,79 @@ def test_reconcile_scope_save_drops_scope_overlay() -> None:
 
     assert "resourceGroups" not in reconciled.unrepresented_plan_fields
     assert all(not issue.path.startswith("resourceGroups") for issue in reconciled.import_issues)
+
+
+def _specification_update(plan: Mapping[str, JsonValue]) -> JsonValue:
+    specification = plan["specification"]
+    assert isinstance(specification, dict)
+    return specification.get("openApiDocumentUpdate")
+
+
+def test_missing_openapi_document_update_selects_latest_with_warning() -> None:
+    """Plans written before updates were selectable load with the latest update flagged."""
+    plan = _rw_plan()
+    del plan["specification"]["openApiDocumentUpdate"]
+
+    draft = _recover(plan)
+    composed = plan_json_from_draft(draft)
+
+    issue = _issue(draft, "specification.openApiDocumentUpdate")
+    assert issue.kind == "missing"
+    assert "Update-1" in issue.message
+    assert draft.version == "4.0.1"
+    assert draft.openapi_document_update == "Update-1"
+    assert draft.resource_group_ids == ("account-and-transaction",)
+    assert _specification_update(composed) == "Update-1"
+    assert validate_test_plan_for_load(composed).valid
+
+
+@pytest.mark.parametrize("raw_update", ["Update-9", 4])
+def test_invalid_openapi_document_update_keeps_boundary_and_blocks_launch(raw_update: object) -> None:
+    """An unknown update is preserved for validation without losing the specification or scope."""
+    plan = _rw_plan()
+    plan["specification"]["openApiDocumentUpdate"] = raw_update
+
+    draft = _recover(plan)
+    composed = plan_json_from_draft(draft)
+
+    assert _issue(draft, "specification.openApiDocumentUpdate").kind == "invalid"
+    assert draft.version == "4.0.1"
+    assert draft.resource_group_ids == ("account-and-transaction",)
+    assert _specification_update(composed) == raw_update
+    assert not validate_test_plan_for_load(composed).valid
+
+
+def test_reconcile_catalogue_save_hands_invalid_openapi_document_update_to_builder() -> None:
+    """Saving the specification step replaces an invalid imported update even when the version is unchanged."""
+    plan = _rw_plan()
+    plan["specification"]["openApiDocumentUpdate"] = "Update-9"
+    previous = _recover(plan)
+    updated = previous.with_catalogue_boundary(
+        scheme="open-banking-uk",
+        specification="read-write",
+        version="4.0.1",
+        openapi_document_update="Baseline",
+    )
+
+    reconciled = reconcile_draft_after_builder_save(previous, updated, step="catalogue")
+    composed = plan_json_from_draft(reconciled)
+
+    assert "specification" not in reconciled.unrepresented_plan_fields
+    assert all(issue.path != "specification.openApiDocumentUpdate" for issue in reconciled.import_issues)
+    assert _specification_update(composed) == "Baseline"
+    assert validate_test_plan_for_load(composed).valid
+
+
+def test_openapi_document_update_on_dcr_is_rejected() -> None:
+    """DCR publishes no selectable updates, so a supplied update invalidates the specification, not dropped."""
+    plan = _dcr_plan()
+    plan["specification"]["openApiDocumentUpdate"] = "Baseline"
+
+    draft = _recover(plan)
+
+    assert _issue(draft, "specification").kind == "invalid"
+    assert _specification_update(plan_json_from_draft(draft)) == "Baseline"
+    assert not validate_test_plan_for_load(plan_json_from_draft(draft)).valid
 
 
 def test_reconcile_catalogue_save_loads_pending_scope() -> None:

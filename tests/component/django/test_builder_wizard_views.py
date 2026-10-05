@@ -102,7 +102,12 @@ def _valid_import_plan() -> dict[str, Any]:
     """
     return {
         "schemaVersion": "1.0",
-        "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI1_ADVANCED"},
+        "specification": {
+            "family": "OBL_READ_WRITE",
+            "version": "4.0.1",
+            "openApiDocumentUpdate": "Update-1",
+            "profile": "FAPI1_ADVANCED",
+        },
         "executionMode": "development",
         "securityEnvironment": {
             "discoveryUrl": "https://example.com/.well-known/openid-configuration",
@@ -687,6 +692,7 @@ class TestBuilderWizardUi:
         assert exported["schemaVersion"] == "1.0"
         assert exported["specification"] == {
             "family": "OBL_READ_WRITE",
+            "openApiDocumentUpdate": "Update-1",
             "profile": "FAPI1_ADVANCED",
             "version": "4.0.1",
         }
@@ -874,6 +880,7 @@ class TestBuilderWizardUi:
             "specification": {
                 "family": "OBL_READ_WRITE",
                 "version": "4.0.1",
+                "openApiDocumentUpdate": "Update-1",
                 "profile": "FAPI1_ADVANCED",
             },
             "executionMode": "development",
@@ -955,6 +962,7 @@ class TestBuilderWizardUi:
             "specification": {
                 "family": "OBL_READ_WRITE",
                 "version": "4.0.1",
+                "openApiDocumentUpdate": "Update-1",
                 "profile": "FAPI1_ADVANCED",
             },
             "executionMode": "development",
@@ -1027,6 +1035,7 @@ class TestBuilderWizardUi:
             "specification": {
                 "family": "OBL_READ_WRITE",
                 "version": "4.0.1",
+                "openApiDocumentUpdate": "Update-1",
                 "profile": "FAPI1_ADVANCED",
             },
             "executionMode": "development",
@@ -1114,7 +1123,12 @@ class TestBuilderWizardUi:
         """An unsupported profile is reported and blocks launch instead of failing import."""
         client = Client()
         plan_document = _valid_import_plan()
-        plan_document["specification"] = {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI2"}
+        plan_document["specification"] = {
+            "family": "OBL_READ_WRITE",
+            "version": "4.0.1",
+            "openApiDocumentUpdate": "Update-1",
+            "profile": "FAPI2",
+        }
 
         response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
         draft_id = _draft_id_from_builder_redirect(response["Location"])

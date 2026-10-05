@@ -38,6 +38,11 @@ from conformance.catalogue import (
     validate_canonical_security_environment,
 )
 from conformance.json_types import JsonObject, JsonValue
+from conformance.specification_registry import (
+    latest_openapi_document_update,
+    openapi_document_update_for_boundary,
+    specification_for_boundary,
+)
 from conformance.test_plan_validation import CANONICAL_TEST_PLAN_JSON_SCHEMA, json_schema_error
 
 PLAN_IMPORT_MAX_BYTES = 1_048_576
@@ -180,6 +185,9 @@ _DCR_CONFLICTS: tuple[tuple[str, str], ...] = (
     ("signingCertificatePath", "signingCertificatePem"),
 )
 """Mutually exclusive pairs in ``dynamicClientRegistration``."""
+
+_OPENAPI_UPDATE_KEY = "openApiDocumentUpdate"
+"""Canonical ``specification`` key selecting the Read/Write OpenAPI document update."""
 
 _DISCOVERY_OWNED_KEYS: frozenset[str] = frozenset({"discoveryUrl", "timeoutSeconds", "followUp"})
 """``securityEnvironment`` keys edited by the discovery builder step."""
@@ -351,6 +359,7 @@ def reconcile_draft_after_builder_save(
     issues = list(updated.import_issues)
     draft = updated
     if step == "catalogue":
+        _drop_overlay_openapi_document_update(overlay)
         previous_boundary = (previous.scheme, previous.specification, previous.version)
         current_boundary = (updated.scheme, updated.specification, updated.version)
         if previous_boundary != current_boundary:
@@ -390,6 +399,20 @@ def reconcile_draft_after_builder_save(
     return draft.with_unrepresented_plan_fields(unrepresented_plan_fields=overlay).with_import_issues(
         import_issues=remaining
     )
+
+
+def _drop_overlay_openapi_document_update(overlay: JsonObject) -> None:
+    """Hand the imported OpenAPI document update over to the specification step.
+
+    Args:
+        overlay: Mutable unrepresented-field overlay.
+    """
+    specification = overlay.get("specification")
+    if not isinstance(specification, dict) or _OPENAPI_UPDATE_KEY not in specification:
+        return
+    del specification[_OPENAPI_UPDATE_KEY]
+    if not specification:
+        del overlay["specification"]
 
 
 def _recover_schema_version(raw_plan: Mapping[str, JsonValue], recovery: _Recovery) -> None:
@@ -448,7 +471,15 @@ def _recover_specification(
             message="specification must be a JSON object. Choose a specification in the builder.",
         )
         return draft, None
-    if _schema_error(_object_properties(CANONICAL_TEST_PLAN_JSON_SCHEMA).get("specification"), raw_specification):
+    # The OpenAPI document update is recovered on its own so plans written
+    # before updates were selectable (or naming an unknown update) still load
+    # their specification boundary instead of losing it entirely.
+    base_specification = {key: value for key, value in raw_specification.items() if key != _OPENAPI_UPDATE_KEY}
+    latest_update = _latest_openapi_document_update(base_specification)
+    schema_candidate: JsonValue = (
+        {**base_specification, _OPENAPI_UPDATE_KEY: latest_update} if latest_update is not None else raw_specification
+    )
+    if _schema_error(_object_properties(CANONICAL_TEST_PLAN_JSON_SCHEMA).get("specification"), schema_candidate):
         recovery.keep(
             ("specification",),
             raw_specification,
@@ -460,11 +491,37 @@ def _recover_specification(
         )
         return draft, None
     try:
-        boundary, uses_resource_groups, _profile = parse_canonical_specification(raw_specification)
+        boundary, uses_resource_groups, _profile = parse_canonical_specification(base_specification)
+    except (CatalogueError, ValueError) as error:
+        recovery.keep(
+            ("specification",),
+            raw_specification,
+            kind="invalid",
+            message=f"{_sentence(error)} Choose a specification in the builder.",
+        )
+        return draft, None
+    update_ref = ("specification", _OPENAPI_UPDATE_KEY)
+    update_path = ".".join(update_ref)
+    raw_update = raw_specification.get(_OPENAPI_UPDATE_KEY)
+    selected_update: str | None = None
+    update_error: str | None = None
+    if _OPENAPI_UPDATE_KEY in raw_specification:
+        if not isinstance(raw_update, str):
+            update_error = f"{update_path} must be a string."
+        else:
+            try:
+                openapi_document_update_for_boundary(
+                    boundary.scheme, boundary.specification, boundary.version, raw_update
+                )
+                selected_update = raw_update
+            except ValueError as error:
+                update_error = _sentence(error)
+    try:
         draft = draft.with_catalogue_boundary(
             scheme=boundary.scheme,
             specification=boundary.specification,
             version=boundary.version,
+            openapi_document_update=selected_update,
         )
     except (CatalogueError, ValueError) as error:
         recovery.keep(
@@ -474,7 +531,45 @@ def _recover_specification(
             message=f"{_sentence(error)} Choose a specification in the builder.",
         )
         return draft, None
+    if update_error is not None:
+        recovery.keep(
+            update_ref,
+            raw_update,
+            kind="invalid",
+            message=f"{update_error} Choose an OpenAPI document update in the builder.",
+        )
+    elif _OPENAPI_UPDATE_KEY not in raw_specification and draft.openapi_document_update is not None:
+        recovery.note(
+            path=update_path,
+            ref=update_ref,
+            kind="missing",
+            message=(
+                f"{update_path} is missing. The latest update, {draft.openapi_document_update}, was selected; "
+                "choose an earlier one in the builder if you test against an older OpenAPI document."
+            ),
+        )
     return draft, uses_resource_groups
+
+
+def _latest_openapi_document_update(raw_specification: Mapping[str, JsonValue]) -> str | None:
+    """Return the latest OpenAPI document update for a raw specification, if resolvable.
+
+    Args:
+        raw_specification: Raw ``specification`` object without ``openApiDocumentUpdate``.
+
+    Returns:
+        Latest published update value, or ``None`` when the boundary cannot be
+        parsed or the version publishes no selectable updates.
+    """
+    try:
+        boundary, _uses_resource_groups, _profile = parse_canonical_specification(raw_specification)
+        _definition, version_definition = specification_for_boundary(
+            boundary.scheme, boundary.specification, boundary.version
+        )
+    except CatalogueError, ValueError:
+        return None
+    latest = latest_openapi_document_update(version_definition)
+    return latest.update if latest is not None else None
 
 
 def _sentence(error: Exception) -> str:

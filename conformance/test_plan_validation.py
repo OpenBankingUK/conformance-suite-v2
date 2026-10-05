@@ -56,11 +56,12 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
             "oneOf": [
                 {
                     "type": "object",
-                    "required": ["family", "version"],
+                    "required": ["family", "version", "openApiDocumentUpdate"],
                     "additionalProperties": False,
                     "properties": {
                         "family": {"const": "OBL_READ_WRITE"},
                         "version": {"type": "string", "minLength": 1},
+                        "openApiDocumentUpdate": {"type": "string", "minLength": 1},
                         "profile": {"enum": ["FAPI1_ADVANCED", "FAPI2", "ALL", "fapi1-advanced", "fapi2", "all"]},
                         "securityProfile": {
                             "enum": ["FAPI1_ADVANCED", "FAPI2", "ALL", "fapi1-advanced", "fapi2", "all"]

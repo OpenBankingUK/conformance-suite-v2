@@ -22,8 +22,11 @@ from conformance.catalogues.common import open_banking_request_headers_for
 from conformance.catalogues.read_write_v40_pis import ResponseSchemaRefs, build_v40_pis_catalogue
 from conformance.catalogues.read_write_v311 import build_v311_catalogue
 from conformance.json_types import JsonObject, JsonValue
+from conformance.openapi_documents import logical_read_write_document
 
-PIS_PAYMENT_CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="pis")
+PIS_PAYMENT_CATALOGUE_KEY = CatalogueKey(
+    standard="open-banking", version="v4.0", api="pis", specification_version="4.0.0"
+)
 """Catalogue boundary for PIS payment coverage imported from legacy FCS manifests."""
 
 PIS_PAYMENT_CATALOGUE_VERSION = "2026.09.legacy-fcs-pis.2"
@@ -145,7 +148,7 @@ _PIS_INTERNATIONAL_SCHEDULED_PAYMENT_AUTH_ID = "pis-international-scheduled-paym
 _PIS_V31_SPECIFICATION_VERSIONS = ("3.1", "3.1.11")
 """User-facing Read/Write versions that can execute legacy v3.1-only PIS cases."""
 
-_PIS_V40_SPECIFICATION_VERSIONS = ("4.0", "4.0.0", "4.0.1")
+_PIS_V40_SPECIFICATION_VERSIONS = ("4.0.0",)
 """User-facing Read/Write versions that can execute legacy v4 PIS cases."""
 
 _PIS_PSU_AUTH_TOKEN_IDS_BY_CASE_ID = {
@@ -1019,7 +1022,7 @@ def _schema_assertion(
         description=description,
         rule={
             "source": "bundled_openapi",
-            "document": "ob-read-write-v4.0-payment-initiation-openapi",
+            "document": logical_read_write_document("payment-initiation-openapi"),
             "schemaRef": schema_ref,
             "legacyAssertionIds": list(legacy_assertion_ids),
         },

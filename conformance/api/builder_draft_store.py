@@ -13,7 +13,12 @@ from django.contrib.sessions.backends.base import SessionBase
 
 from conformance.catalogue import PlanExecutionMode, SecurityProfile
 from conformance.json_types import JsonObject, JsonValue
-from conformance.specification_registry import derived_security_profile_for_boundary
+from conformance.specification_registry import (
+    derived_security_profile_for_boundary,
+    latest_openapi_document_update,
+    openapi_document_update_for_boundary,
+    specification_for_boundary,
+)
 
 _LOGGER = logging.getLogger(__name__)
 """Logger for malformed browser wizard draft state."""
@@ -122,6 +127,9 @@ class BuilderDraft:
             to prefill later config steps without exporting raw metadata.
         created_at: UTC ISO timestamp for draft creation.
         updated_at: UTC ISO timestamp for the latest draft write.
+        openapi_document_update: Selected Read/Write OpenAPI document update
+            (for example ``"Update-1"``), or ``None`` for specifications that
+            do not publish selectable updates or before step one is saved.
         unrepresented_plan_fields: Canonical-shaped test-plan JSON overlay for
             values the builder cannot represent (invalid values, unknown keys,
             scope that could not be resolved). It is merged over the
@@ -150,6 +158,7 @@ class BuilderDraft:
     updated_at: str
     unrepresented_plan_fields: Mapping[str, JsonValue] = field(default_factory=dict)
     import_issues: tuple[PlanImportIssue, ...] = ()
+    openapi_document_update: str | None = None
 
     @classmethod
     def create(cls) -> BuilderDraft:
@@ -221,6 +230,7 @@ class BuilderDraft:
             discovery_metadata=_json_object(raw_value.get("discoveryMetadata")),
             created_at=created_at,
             updated_at=updated_at,
+            openapi_document_update=_optional_string(raw_value.get("openApiDocumentUpdate")),
             unrepresented_plan_fields=_json_object(raw_value.get("unrepresentedPlanFields")),
             import_issues=_import_issues(raw_value.get("importIssues")),
         )
@@ -231,6 +241,7 @@ class BuilderDraft:
         scheme: str,
         specification: str,
         version: str,
+        openapi_document_update: str | None = None,
     ) -> BuilderDraft:
         """Return a copy with the specification boundary and derived profile saved.
 
@@ -238,6 +249,8 @@ class BuilderDraft:
             scheme: Selected standards scheme.
             specification: Selected standards specification family.
             version: Selected specification version.
+            openapi_document_update: Selected OpenAPI document update. When
+                omitted, the latest published update for the version is used.
 
         Returns:
             Updated draft with a refreshed ``updated_at`` timestamp.
@@ -247,6 +260,11 @@ class BuilderDraft:
                 exactly one security profile.
         """
         security_profile = derived_security_profile_for_boundary(scheme, specification, version)
+        _definition, version_definition = specification_for_boundary(scheme, specification, version)
+        if openapi_document_update is None:
+            latest = latest_openapi_document_update(version_definition)
+            openapi_document_update = latest.update if latest is not None else None
+        selected_update = openapi_document_update_for_boundary(scheme, specification, version, openapi_document_update)
         return replace(
             self,
             scheme=scheme,
@@ -254,6 +272,7 @@ class BuilderDraft:
             version=version,
             security_profile=security_profile,
             updated_at=_utc_timestamp(),
+            openapi_document_update=selected_update.update if selected_update is not None else None,
         )
 
     def with_scope_selection(
@@ -406,6 +425,7 @@ class BuilderDraft:
             "metadata": _json_object(self.metadata),
             "executionMode": self.execution_mode,
             "discoveryMetadata": _json_object(self.discovery_metadata),
+            "openApiDocumentUpdate": self.openapi_document_update,
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
             "unrepresentedPlanFields": _json_object(self.unrepresented_plan_fields),

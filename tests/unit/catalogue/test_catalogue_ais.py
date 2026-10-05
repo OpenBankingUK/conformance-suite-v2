@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from conformance.catalogue import CatalogueKey, ImplementedEndpoint, TestPlanSpec, compile_test_plan
@@ -220,13 +222,19 @@ def _spec(
     runtime_inputs: dict[str, JsonValue] | None = None,
     specification_version: str | None = None,
 ) -> TestPlanSpec:
+    effective_specification_version = (
+        specification_version or AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY.specification_version
+    )
     return TestPlanSpec(
         schema_version="v1",
-        catalogue_key=AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY,
+        catalogue_key=replace(
+            AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY,
+            specification_version=effective_specification_version,
+        ),
         security_profile="fapi1-advanced",
         implemented_endpoints=endpoints,
         runtime_inputs={} if runtime_inputs is None else runtime_inputs,
-        specification_version=specification_version,
+        openapi_document_update={"4.0.0": "Update-5", "4.0.1": "Update-1"}.get(effective_specification_version),
     )
 
 
@@ -255,7 +263,9 @@ def _legacy_script_ids(version: str) -> tuple[str, ...]:
 def test_ais_catalogue_key_version_and_id_uniqueness() -> None:
     catalogue = get_ais_accounts_transactions_catalogue()
 
-    assert catalogue.key == CatalogueKey(standard="open-banking", version="v4.0", api="ais")
+    assert catalogue.key == CatalogueKey(
+        standard="open-banking", version="v4.0", api="ais", specification_version="4.0.0"
+    )
     assert catalogue.catalogue_version == AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_VERSION
     case_ids = [case.test_case_id for case in catalogue.test_cases]
     assert len(case_ids) == len(set(case_ids))
@@ -596,7 +606,6 @@ def test_compile_v4_filters_ais_v3_only_variants_and_keeps_schema_checks() -> No
                 ),
             ),
             runtime_inputs={"resourceBaseUrl": "https://rs.example.com", "consentedAccountId": "account-123"},
-            specification_version="4.0.1",
         ),
     )
 
