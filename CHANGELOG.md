@@ -14,6 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic and manual image promotion run summaries now show the exact release
   version, proposed Docker tags and source commit before approval, including
   conditional `2.0.0-beta-latest` eligibility.
+- Every approved beta and GA image publication now ends with a Git tag
+  (`vX.Y.Z-beta.N` or `vX.Y.Z`) at the published commit and an immutable
+  GitHub Release (a prerelease for betas). The release notes contain the
+  version's `CHANGELOG.md` section, the `docker pull` command and image digest,
+  and GitHub-generated pull-request notes since the previous release on the
+  same channel. Re-running the finalize step is safe and never republishes the
+  image.
+- CI now fails pull requests and pushes to `main` when a GA version has no
+  `CHANGELOG.md` section, and warns when a beta version on a release branch
+  has none.
+- Compare links for each released version at the end of `CHANGELOG.md`.
+
+### Changed
+
+- `.github/workflows/_finalize-ga-release.yml` is replaced by
+  `.github/workflows/_finalize-release.yml`, which handles both beta and GA
+  publications. The manual **Promote beta image** recovery workflow now also
+  creates the tag and GitHub prerelease.
 
 ## [2.0.0-beta.6] - 2026-10-05
 
@@ -346,3 +364,11 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Browser safe exports for v2 plan documents preserve reusable structure while emptying secret-bearing runtime/config strings by default.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
+
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.6...HEAD
+[2.0.0-beta.6]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.5...v2.0.0-beta.6
+[2.0.0-beta.5]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.4...v2.0.0-beta.5
+[2.0.0-beta.4]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.3...v2.0.0-beta.4
+[2.0.0-beta.3]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.2...v2.0.0-beta.3
+[2.0.0-beta.2]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.1...v2.0.0-beta.2
+[2.0.0-beta.1]: https://github.com/OpenBankingUK/conformance-suite-v2/releases/tag/v2.0.0-beta.1
