@@ -447,10 +447,12 @@ complete in one call and never edited. Its notes keep three sections separate:
 `CHANGELOG.md` is the canonical, concise, user-facing summary of notable
 changes per release, not a commit log. Each version has a compare link at the
 end of the file (Keep a Changelog), and the generated PR notes provide full
-traceability. A GA version **must** have a `CHANGELOG.md` section: the `Check`
+traceability. A GA version **must** have a `CHANGELOG.md` section: CI's `Plan`
 job fails pull requests and pushes to `main` without one, and the finalizer
 refuses to render GA notes without it. A beta without a section emits a CI
-warning, and its Release uses the generated PR notes only.
+warning, and its Release uses the generated PR notes only. The check runs only
+when the tree has the hardened Docker contract (Section 4.1), so the
+placeholder version on `main` before the 2.0.0 merge is not checked.
 
 If tag or Release creation fails after publication, re-run the failed
 finalize job (or dispatch the matching `promote-*` recovery workflow). Every

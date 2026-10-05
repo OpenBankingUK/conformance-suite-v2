@@ -47,14 +47,6 @@ jobs:
         # file is scanned for secrets.
         run: make check SECRET_SCAN_EXCLUDE_PATHSPEC=
 
-      - name: Check release CHANGELOG entry
-        # GA versions must have a curated CHANGELOG.md section before merge, as
-        # it becomes the GitHub Release summary; betas only warn.
-        if: >-
-          (github.event_name == 'pull_request' && (github.base_ref == 'main' || startsWith(github.base_ref, 'release/'))) ||
-          (github.event_name == 'push' && (github.ref_name == 'main' || startsWith(github.ref_name, 'release/')))
-        run: uv run python -m scripts.release_notes check-changelog --pyproject pyproject.toml --changelog CHANGELOG.md
-
   plan:
     name: Plan
     runs-on: ubuntu-latest
@@ -95,6 +87,26 @@ jobs:
             echo "is_hardened=$is_hardened"
             echo "is_candidate=$is_candidate"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Set up uv
+        if: steps.classify.outputs.is_hardened == 'true'
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Check release CHANGELOG entry
+        # A releasable GA version must have a curated CHANGELOG.md section
+        # before merge, as it becomes the GitHub Release summary; betas only
+        # warn. Trees without the hardened Docker contract never produce a
+        # publishable candidate, so their placeholder version is not checked.
+        if: >-
+          steps.classify.outputs.is_hardened == 'true' && (
+            (github.event_name == 'pull_request' && (github.base_ref == 'main' || startsWith(github.base_ref, 'release/'))) ||
+            (github.event_name == 'push' && (github.ref_name == 'main' || startsWith(github.ref_name, 'release/')))
+          )
+        run: |
+          uv sync --frozen --no-install-project
+          uv run python -m scripts.release_notes check-changelog --pyproject pyproject.toml --changelog CHANGELOG.md
 
   docker-build:
     name: Docker Build

@@ -29,9 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and GitHub-generated pull-request notes since the previous release on the
   same channel. Re-running the finalize step is safe and never republishes the
   image.
-- CI now fails pull requests and pushes to `main` when a GA version has no
-  `CHANGELOG.md` section, and warns when a beta version on a release branch
-  has none.
+- CI now fails pull requests and pushes to `main` when a releasable GA version
+  has no `CHANGELOG.md` section, and warns when a beta version on a release
+  branch has none. Trees without the hardened Docker contract, such as the
+  placeholder `0.1.0` version on `main`, are not checked.
 - Automatic and manual image promotion run summaries now show the exact release
   version, proposed Docker tags and source commit before approval, including
   conditional `2.0.0-beta-latest` eligibility.
