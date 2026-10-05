@@ -34,6 +34,7 @@
         h2 { font-size: 1.1rem; }
         h3 { font-size: 1rem; }
         .panel, .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
+        .panel + .panel { margin-top: 16px; }
         .card { background: #fbfcfe; }
         .muted, .helper { color: var(--muted); }
         .helper { font-size: 0.9rem; }
@@ -102,18 +103,17 @@
     <header>
         <div>
             <h1>Review generated test plan</h1>
-            <div class="muted">Generated tests are read-only; use the steps above to edit scope or config.</div>
         </div>
-        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+        <a class="button secondary builder-menu-link" href="{% url 'home' %}">Main menu</a>
     </header>
     {# Step-bar jumps submit review-plan-form, so plan JSON edits are applied before leaving review. #}
     {% include "conformance/partials/builder_step_bar.html" with step_form_id="review-plan-form" %}
 
     <section class="panel" aria-labelledby="review-heading">
         <h2 id="review-heading">Plan summary</h2>
-        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
+        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span>. Generated tests are read-only; use the steps above to edit scope or config.</p>
 
-        {% if review.error %}<div class="message error">{{ review.error }}</div>{% endif %}
+        {% if review_error %}<div class="message error">{{ review_error }}</div>{% endif %}
         {% include "conformance/partials/builder_import_issues.html" %}
         {% if launch_error %}
             <div class="message error">

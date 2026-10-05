@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   kept as typed and flagged on its page and at review instead of blocking the
   page. Pasted or uploaded credential material that fails validation is never
   kept; a message says it was not saved and why.
+- Builder step bar polish: steps keep the same position on every page (one
+  shared page width and header), pills are smaller with a fixed height in every
+  state, a divider sets **Review** apart, and **Main menu** is a compact
+  secondary button. Stale "Next you will…" banners are removed, the draft id is
+  shown on review only, Business data shows requirement badges beside labels and
+  a styled empty state when no scope is selected, and review shows each blocker
+  once (an empty scope no longer also shows the raw `resourceGroups` error).
 - Review is the single validation gate: it lists each step's issues with a
   **Fix** button for that step, and launch stays blocked until they are
   resolved. Business data is empty until scope is selected and follows the

@@ -32,7 +32,7 @@
         }
 
         main {
-            width: min(880px, calc(100% - 32px));
+            width: min(1180px, calc(100% - 32px));
             margin: 0 auto;
             padding: 32px 0 48px;
         }
@@ -153,6 +153,12 @@
             color: var(--accent);
         }
 
+        .message.warning {
+            border: 1px solid #fedf89;
+            background: #fffcf5;
+            color: #a15c07;
+        }
+
         .errorlist {
             list-style: none;
             border: 1px solid #fecdca;
@@ -217,19 +223,17 @@
         <div>
             <h1>Choose specification</h1>
         </div>
-        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+        <a class="button secondary builder-menu-link" href="{% url 'home' %}">Main menu</a>
     </header>
     {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 
     <section class="panel" aria-labelledby="catalogue-boundary-heading">
         <h2 id="catalogue-boundary-heading">Scheme, specification, and version</h2>
         <p class="helper">Select the Open Banking catalogue boundary first. Once a supported specification is chosen you can move between every step in any order; anything you enter is saved when you leave a page, and review lists whatever still needs completing before launch.</p>
-        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         {% if saved %}
             <div class="message success">Specification saved.</div>
         {% endif %}
-        <div class="message info">Next you will define the single security environment used by this executable test plan.</div>
         {% if catalogue_boundary_blocker %}
             <div class="message info">{{ catalogue_boundary_blocker }}</div>
         {% endif %}

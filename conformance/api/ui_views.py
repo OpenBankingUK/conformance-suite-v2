@@ -1720,12 +1720,16 @@ def _builder_review_context(
     """
     state = _builder_review_state(draft)
     step_issue_groups = _step_issue_groups(draft)
+    grouped_issues = {issue for group in step_issue_groups for issue in group.issues}
+    # The compile error is also a blocker; show it once, preferring its step group so it keeps a Fix link.
+    review_error = state.error if state.error not in grouped_issues else None
     context: dict[str, object] = {
         "draft": draft,
         "step_bar": step_bar(draft, "review", builder_step_progress(draft)),
         "step_issue_groups": step_issue_groups,
+        "review_error": review_error,
         "other_blockers": tuple(
-            blocker for blocker in state.blockers if not any(blocker in group.issues for group in step_issue_groups)
+            blocker for blocker in state.blockers if blocker not in grouped_issues and blocker != review_error
         ),
         "review": state,
         "review_counts": _builder_review_counts(state),
@@ -1807,9 +1811,15 @@ def _builder_review_state(draft: BuilderDraft) -> _BuilderReviewState:
     state = _builder_document_review_state(draft)
     plan_json = plan_json_from_draft(draft)
     blockers = list(state.blockers)
-    for issues in builder_step_issues(draft).values():
+    step_issues = builder_step_issues(draft)
+    for issues in step_issues.values():
         blockers.extend(issue for issue in issues if issue not in blockers)
     error = state.error
+    if error is not None and step_issues.get("scope"):
+        # Generation cannot succeed until scope is fixed; the scope issues already explain why.
+        if error in blockers:
+            blockers.remove(error)
+        error = None
     if draft_boundary(draft) is None:
         error = None
         blockers = ["Choose a specification in the builder or the plan JSON before launch."]

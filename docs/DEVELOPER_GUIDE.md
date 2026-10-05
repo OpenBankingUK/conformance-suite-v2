@@ -353,6 +353,11 @@ later step (and typed URL) redirects to `/catalogue/`; afterwards every step is
 open in any order. Step-bar buttons and **Back** submit the page form with
 `next=<step id>` (or `next=back`), redirected via `resolve_next`, which accepts
 only fixed step ids; anything else falls back to the following step.
+Every builder page uses the same `main` width (`min(1180px, calc(100% - 32px))`)
+and header, and the step pills have one fixed height in every state, so the
+bar never moves between steps; a divider sets **Review** apart from the editing
+steps. When scope has issues, review reports them instead of the raw plan
+validation error they cause.
 
 Leaving a step always saves it. Step views bind their form leniently
 (`_lenient_bind` in `ui_views.py`, `lenient=True` on the config forms): required

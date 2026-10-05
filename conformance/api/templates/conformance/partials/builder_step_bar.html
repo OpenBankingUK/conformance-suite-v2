@@ -6,52 +6,63 @@ has no issues, a warning when it needs attention, or its number when not
 started. Only the specification gates navigation; review lists every issue.
 {% endcomment %}
 <style>
+    /* Every pill has the same fixed height in every state, and every builder page shares one width, so steps never move. */
     .builder-step-bar {
-        margin: 0 0 18px;
+        margin: 0 0 20px;
     }
 
     .builder-step-bar ol {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
+        align-items: center;
+        gap: 6px;
         margin: 0;
         padding: 0;
         list-style: none;
     }
 
-    .builder-step-bar button,
-    .builder-step-bar .builder-step-current {
+    .builder-step-bar li {
+        display: flex;
+        align-items: center;
+    }
+
+    .builder-step-bar .builder-step-pill {
+        box-sizing: border-box;
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        min-height: 36px;
-        padding: 6px 12px;
+        height: 32px;
+        min-height: 0;
+        margin: 0;
+        padding: 0 12px 0 6px;
         border: 1px solid var(--border, #ccd3dc);
         border-radius: 999px;
         background: var(--panel, #ffffff);
         color: var(--text, #1b1f24);
         font: inherit;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
         font-weight: 600;
+        line-height: 1;
+        white-space: nowrap;
     }
 
-    .builder-step-bar button {
+    .builder-step-bar button.builder-step-pill {
         cursor: pointer;
     }
 
-    .builder-step-bar button:hover,
-    .builder-step-bar button:focus-visible {
+    .builder-step-bar button.builder-step-pill:hover,
+    .builder-step-bar button.builder-step-pill:focus-visible {
         border-color: var(--accent, #0b6bcb);
         color: var(--accent, #0b6bcb);
     }
 
-    .builder-step-bar .builder-step-current {
+    .builder-step-bar .builder-step-pill[aria-current="step"] {
         border-color: var(--accent, #0b6bcb);
         background: var(--accent, #0b6bcb);
         color: #ffffff;
     }
 
-    .builder-step-bar button:disabled {
+    .builder-step-bar button.builder-step-pill:disabled {
         cursor: not-allowed;
         color: var(--muted, #667085);
         background: transparent;
@@ -61,25 +72,42 @@ started. Only the specification gates navigation; review lists every issue.
     .builder-step-bar .builder-step-number {
         display: inline-grid;
         place-items: center;
-        min-width: 1.4em;
-        height: 1.4em;
+        width: 20px;
+        height: 20px;
         border-radius: 999px;
         background: rgba(0, 0, 0, 0.08);
-        font-size: 0.8rem;
+        font-size: 0.75rem;
     }
 
-    .builder-step-bar .builder-step-complete .builder-step-number {
+    .builder-step-bar [aria-current="step"] .builder-step-number {
+        background: rgba(255, 255, 255, 0.25);
+    }
+
+    .builder-step-bar .builder-step-state-complete .builder-step-number {
         background: var(--success, #1f7a4d);
         color: #ffffff;
     }
 
-    .builder-step-bar .builder-step-attention .builder-step-number {
+    .builder-step-bar .builder-step-state-attention .builder-step-number {
         background: var(--warning, #b54708);
         color: #ffffff;
     }
 
+    .builder-step-bar .builder-step-divider {
+        width: 1px;
+        height: 20px;
+        margin: 0 6px;
+        background: var(--border, #ccd3dc);
+    }
+
     .builder-step-messages {
         margin: 0 0 12px;
+    }
+
+    header .builder-menu-link {
+        min-height: 0;
+        padding: 6px 12px;
+        font-size: 0.85rem;
     }
 
     .visually-hidden {
@@ -94,13 +122,14 @@ started. Only the specification gates navigation; review lists every issue.
 <nav class="builder-step-bar" aria-label="Builder steps">
     <ol>
         {% for item in step_bar %}
-            <li class="builder-step-{{ item.state }}" data-builder-step="{{ item.step_id }}" data-builder-step-state="{{ item.state }}">
+            {% if item.step_id == "review" %}<li class="builder-step-divider" aria-hidden="true"></li>{% endif %}
+            <li class="builder-step-state-{{ item.state }}" data-builder-step="{{ item.step_id }}" data-builder-step-state="{{ item.state }}">
                 {% if item.state == "current" %}
-                    <span class="builder-step-current" aria-current="step"><span class="builder-step-number">{{ item.number }}</span>{{ item.label }}</span>
+                    <span class="builder-step-pill" aria-current="step"><span class="builder-step-number">{{ item.number }}</span>{{ item.label }}</span>
                 {% elif item.clickable %}
-                    <button type="submit" name="next" value="{{ item.step_id }}" form="{{ step_form_id }}" formnovalidate><span class="builder-step-number" aria-hidden="true">{% if item.state == "complete" %}&#10003;{% elif item.state == "attention" %}!{% else %}{{ item.number }}{% endif %}</span>{{ item.label }}<span class="visually-hidden">{% if item.state == "complete" %} (complete){% elif item.state == "attention" %} (needs attention){% else %} (not started){% endif %}</span></button>
+                    <button type="submit" class="builder-step-pill" name="next" value="{{ item.step_id }}" form="{{ step_form_id }}" formnovalidate><span class="builder-step-number" aria-hidden="true">{% if item.state == "complete" %}&#10003;{% elif item.state == "attention" %}!{% else %}{{ item.number }}{% endif %}</span>{{ item.label }}<span class="visually-hidden">{% if item.state == "complete" %} (complete){% elif item.state == "attention" %} (needs attention){% else %} (not started){% endif %}</span></button>
                 {% else %}
-                    <button type="button" disabled><span class="builder-step-number">{{ item.number }}</span>{{ item.label }}<span class="visually-hidden"> (locked until a specification is selected)</span></button>
+                    <button type="button" class="builder-step-pill" disabled><span class="builder-step-number">{{ item.number }}</span>{{ item.label }}<span class="visually-hidden"> (locked until a specification is selected)</span></button>
                 {% endif %}
             </li>
         {% endfor %}

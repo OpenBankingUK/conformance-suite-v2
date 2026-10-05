@@ -10,7 +10,7 @@
         :root { color-scheme: light; --bg: #f7f8fa; --panel: #ffffff; --border: #ccd3dc; --text: #1b1f24; --muted: #667085; --accent: #0b6bcb; --danger: #b42318; --warning: #a15c07; }
         * { box-sizing: border-box; }
         body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.5; }
-        main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+        main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
         header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
         h1, h2, h3 { margin: 0; line-height: 1.2; }
         h1 { font-size: 1.75rem; }
@@ -26,8 +26,9 @@
         .field-row { margin-top: 12px; }
         label { display: block; font-weight: 650; margin-bottom: 8px; }
         .field { display: flex; flex-direction: column; }
-        .field-heading { min-height: 54px; margin-bottom: 8px; }
-        .field-heading label { margin-bottom: 4px; }
+        /* Label and badge share a line; the heading grows so inputs in the same grid row stay aligned. */
+        .field-heading { display: flex; flex: 1 0 auto; flex-wrap: wrap; align-items: center; align-content: flex-end; gap: 4px 8px; margin-bottom: 8px; }
+        .field-heading label { margin-bottom: 0; }
         .requirement-badge { display: inline-flex; align-items: center; width: fit-content; border-radius: 999px; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; vertical-align: middle; }
         .requirement-badge.required { border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
         .requirement-badge.optional { border: 1px solid var(--border); background: #f2f4f7; color: var(--muted); }
@@ -37,11 +38,13 @@
         summary { cursor: pointer; font-weight: 650; color: var(--accent); }
         .message, .errorlist { border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; }
         .message.warning { border: 1px solid #fedf89; background: #fffcf5; color: var(--warning); }
+        .message.info { border: 1px solid #bfdbfe; background: #eff6ff; color: var(--accent); }
+        .message.info a { color: inherit; font-weight: 650; }
         .errorlist { list-style: none; border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
         .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
         button, .button { min-height: 38px; border: 1px solid var(--accent); border-radius: 6px; padding: 8px 14px; background: var(--accent); color: #ffffff; font: inherit; font-weight: 650; text-decoration: none; cursor: pointer; }
         .button.secondary, button.secondary { background: #ffffff; color: var(--accent); }
-        @media (max-width: 840px) { header, .grid, .grid.three { display: block; } .grid > div + div { margin-top: 12px; } .field-heading { min-height: 0; } }
+        @media (max-width: 840px) { header, .grid, .grid.three { display: block; } .grid > div + div { margin-top: 12px; } }
     </style>
 </head>
 <body>
@@ -52,14 +55,13 @@
         <div>
             <h1>Business test data</h1>
         </div>
-        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+        <a class="button secondary builder-menu-link" href="{% url 'home' %}">Main menu</a>
     </header>
     {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 
     <section class="panel" aria-labelledby="business-heading">
         <h2 id="business-heading">Business and request defaults</h2>
         <p class="helper">These fields are generated from the selected resource groups and endpoints. Security settings have already been collected.</p>
-        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         {% if scope_missing %}
             <div class="message info" data-scope-missing>Select scope to see business data fields. Business data fields are shown for the resource groups and endpoints chosen on the <a href="{% url 'builder-scope' draft.draft_id %}">Scope</a> step.</div>
@@ -388,7 +390,7 @@
                 </section>
             {% endif %}
 
-            {% if not config_visibility.show_business_defaults %}
+            {% if not config_visibility.show_business_defaults and not scope_missing %}
                 <section class="config-card">
                     <h3>No business data inputs required</h3>
                     <p class="helper">Default request payloads and stable business fixture values are supplied by the catalogue when the run is prepared.</p>

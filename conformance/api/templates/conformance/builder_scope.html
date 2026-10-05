@@ -33,7 +33,7 @@
         }
 
         main {
-            width: min(1120px, calc(100% - 32px));
+            width: min(1180px, calc(100% - 32px));
             margin: 0 auto;
             padding: 32px 0 48px;
         }
@@ -267,7 +267,7 @@
         <div>
             <h1>Select test plan scope</h1>
         </div>
-        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+        <a class="button secondary builder-menu-link" href="{% url 'home' %}">Main menu</a>
     </header>
     {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 
@@ -279,7 +279,6 @@
             <p class="helper">Select the resource groups that share the security environment from the previous step, then select implemented endpoints and optional capabilities within those groups.</p>
             <p class="helper">Endpoint labels follow the specification's implementation requirements. Mandatory endpoints are locked within selected groups; dependent endpoints are locked when their resource POST is selected. Conditional and optional endpoints remain selectable. Required endpoint features describe tests for an implemented endpoint, not whether the specification requires that endpoint.</p>
         {% endif %}
-        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         <div class="boundary-summary" aria-label="Selected catalogue boundary">
             <div><strong>Scheme</strong><br>{{ draft.scheme }}</div>
@@ -291,7 +290,6 @@
         {% if saved %}
             <div class="message success">Endpoints and scoped features saved.</div>
         {% endif %}
-        <div class="message info">{% if direct_endpoints %}Next you will configure discovery and DCR security references.{% else %}Next you will enter resource-group-specific business test data.{% endif %}</div>
 
         <form method="post"
               id="builder-step-form"

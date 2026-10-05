@@ -283,7 +283,7 @@ class TestBuilderWizardUi:
         assert "Choose specification" in content
         assert 'aria-label="Beta release notice"' in content
         assert (
-            '<span class="builder-step-current" aria-current="step"><span class="builder-step-number">1</span>Specification</span>'
+            '<span class="builder-step-pill" aria-current="step"><span class="builder-step-number">1</span>Specification</span>'
             in content
         )
         assert 'name="security_profile"' not in content

@@ -126,6 +126,65 @@ class TestStepBar:
         assert _step_state(content, "config") == "not_started"
 
 
+class TestStepBarLayout:
+    """Every builder page shares one layout so the step bar never moves."""
+
+    def test_review_is_set_apart_by_a_divider(self) -> None:
+        client = Client()
+        draft_id = _draft_at_scope(client)
+
+        content = client.get(f"/builder/{draft_id}/scope/").content.decode("utf-8")
+
+        assert content.count("builder-step-divider") == 2  # one CSS rule, one divider
+        assert re.search(
+            r'<li class="builder-step-divider" aria-hidden="true"></li>\s*<li[^>]*data-builder-step="review"', content
+        )
+
+    @pytest.mark.parametrize("step", ["catalogue", "config/discovery", "config/security", "scope", "config", "review"])
+    def test_every_step_shares_one_page_width(self, step: str) -> None:
+        client = Client()
+        draft_id = _imported_draft_id(client)
+
+        with patch("conformance.api.ui_views._fetch_discovery_metadata", return_value=None):
+            content = client.get(f"/builder/{draft_id}/{step}/").content.decode("utf-8")
+
+        assert "width: min(1180px, calc(100% - 32px));" in content
+        assert 'class="button secondary builder-menu-link"' in content
+
+    def test_draft_id_is_shown_on_review_only(self) -> None:
+        client = Client()
+        draft_id = _imported_draft_id(client)
+
+        scope = client.get(f"/builder/{draft_id}/scope/").content.decode("utf-8")
+        review = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
+
+        assert f'<span class="step-id">{draft_id}</span>' not in scope
+        assert f'<span class="step-id">{draft_id}</span>' in review
+        assert "Next you will" not in scope
+
+    def test_review_shows_a_compile_error_once(self) -> None:
+        client = Client()
+        plan = _import_plan()
+        del plan["securityEnvironment"]["resourceBaseUrl"]
+        response = client.post("/builder/import/", data={"plan_json": json.dumps(plan)})
+        draft_id = str(response["Location"]).split("/")[2]
+
+        review = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
+
+        assert review.count("Required runtime input &#x27;resourceBaseUrl&#x27; is missing") == 1
+
+    def test_empty_scope_review_shows_the_scope_issue_instead_of_the_raw_validation_error(self) -> None:
+        client = Client()
+        draft_id = _draft_at_scope(client)
+
+        review = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
+        launch = client.post(f"/builder/{draft_id}/launch/")
+
+        assert 'data-step-issues="scope"' in review
+        assert "testPlan.resourceGroups must contain" not in review
+        assert launch.status_code == 400
+
+
 class TestStepJumps:
     """Step-bar jumps always save the page first, then leave it."""
 
@@ -384,6 +443,7 @@ class TestScopeAndBusinessData:
         assert "data-scope-missing" in content
         assert 'name="ais_consented_account_id"' not in content
         assert 'name="pis_creditor_account_scheme_name"' not in content
+        assert "No business data inputs required" not in content
 
     def test_business_data_hides_every_field_when_scope_cannot_be_resolved(self) -> None:
         client = Client()
