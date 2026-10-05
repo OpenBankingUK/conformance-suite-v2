@@ -47,6 +47,14 @@ jobs:
         # file is scanned for secrets.
         run: make check SECRET_SCAN_EXCLUDE_PATHSPEC=
 
+      - name: Check release CHANGELOG entry
+        # GA versions must have a curated CHANGELOG.md section before merge, as
+        # it becomes the GitHub Release summary; betas only warn.
+        if: >-
+          (github.event_name == 'pull_request' && (github.base_ref == 'main' || startsWith(github.base_ref, 'release/'))) ||
+          (github.event_name == 'push' && (github.ref_name == 'main' || startsWith(github.ref_name, 'release/')))
+        run: uv run python -m scripts.release_notes check-changelog --pyproject pyproject.toml --changelog CHANGELOG.md
+
   plan:
     name: Plan
     runs-on: ubuntu-latest

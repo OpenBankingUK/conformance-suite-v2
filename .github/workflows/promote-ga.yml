@@ -35,13 +35,15 @@ jobs:
       DOCKER_ORG_ACCESS_TOKEN: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-  finalize-ga:
-    name: Tag release and open develop merge-back
+  finalize:
+    name: Tag, create GitHub Release, and open develop merge-back
     needs: promote
-    uses: ./.github/workflows/_finalize-ga-release.yml
+    uses: ./.github/workflows/_finalize-release.yml
     with:
+      channel: ga
       source_sha: ${{ inputs.source_sha }}
-      tag: ${{ inputs.tag }}
+      raw_version: ${{ needs.promote.outputs.raw_version }}
+      published_digest: ${{ needs.promote.outputs.published_digest }}
     permissions:
       contents: write
       pull-requests: write
