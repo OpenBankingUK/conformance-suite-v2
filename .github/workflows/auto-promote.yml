@@ -12,6 +12,12 @@ on:
 permissions:
   contents: read
 
+# Share the manual callers' lock through publication AND release finalization.
+# Never cancel a running publication, including while awaiting approval.
+concurrency:
+  group: image-promotion
+  cancel-in-progress: false
+
 jobs:
   resolve:
     name: Resolve candidate promotion
@@ -23,9 +29,9 @@ jobs:
     # Only cancel redundant *resolution* attempts for the same branch: once a
     # run has decided should_promote=true and handed off to `promote`, a GA
     # image publish can already be underway/complete, so the workflow must
-    # not be cancellable past this point or a published GA image could be
-    # left without its vX.Y.Z tag and merge-back PR (see _finalize-ga-release
-    # for the idempotent recovery this relies on).
+    # not be cancellable past this point or a published image could be left
+    # without its Git tag, GitHub Release, or (GA) merge-back PR (see
+    # _finalize-release for the idempotent recovery this relies on).
     concurrency:
       group: auto-promote-resolve-${{ github.event.workflow_run.head_branch }}
       cancel-in-progress: true
@@ -178,14 +184,19 @@ jobs:
       DOCKER_ORG_ACCESS_TOKEN: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-  finalize-ga:
-    name: Tag release and open develop merge-back
+  finalize:
+    name: Tag and create GitHub Release
     needs: [resolve, promote]
-    if: needs.resolve.outputs.should_promote == 'true' && needs.resolve.outputs.channel == 'ga'
-    uses: ./.github/workflows/_finalize-ga-release.yml
+    if: >-
+      needs.resolve.outputs.should_promote == 'true' &&
+      (needs.resolve.outputs.channel == 'ga' || needs.resolve.outputs.channel == 'beta')
+    uses: ./.github/workflows/_finalize-release.yml
     with:
+      channel: ${{ needs.resolve.outputs.channel }}
       source_sha: ${{ github.event.workflow_run.head_sha }}
-      tag: ${{ needs.resolve.outputs.tag }}
+      raw_version: ${{ needs.promote.outputs.raw_version }}
+      published_digest: ${{ needs.promote.outputs.published_digest }}
+      beta_latest_updated: ${{ needs.promote.outputs.beta_latest_updated }}
     permissions:
       contents: write
       pull-requests: write

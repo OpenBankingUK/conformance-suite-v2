@@ -9,8 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Automatic and manual preview, beta, and GA promotions share a caller-level
+  concurrency lock through publication and Git tag/GitHub Release finalization,
+  preventing overlapping release boundaries without nested reusable-workflow locks.
+
 ### Changed
 
+- `.github/workflows/_finalize-ga-release.yml` is replaced by
+  `.github/workflows/_finalize-release.yml`, which handles both beta and GA
+  publications. The manual **Promote beta image** recovery workflow now also
+  creates the tag and GitHub prerelease.
 - Renamed the temporary MVP beta pointer from `beta-latest` to
   `2.0.0-beta-latest`, selecting only the highest published 2.0.0 beta and
   freezing updates once formal `2.0.0` is published. The old registry tag is
@@ -18,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Every approved beta and GA image publication now ends with a Git tag
+  (`vX.Y.Z-beta.N` or `vX.Y.Z`) at the published commit and an immutable
+  GitHub Release (a prerelease for betas). The release notes contain the
+  version's `CHANGELOG.md` section, the `docker pull` command and image digest,
+  and GitHub-generated pull-request notes since the previous release on the
+  same channel. Re-running the finalize step is safe and never republishes the
+  image.
+- CI now fails pull requests to `main` or `release/**` that change
+  `[project].version` to a GA version without a `CHANGELOG.md` section, and
+  warns when a changed beta version has none. Pull requests that leave the
+  version unchanged are not checked.
 - Automatic and manual image promotion run summaries now show the exact release
   version, proposed Docker tags and source commit before approval, including
   conditional `2.0.0-beta-latest` eligibility.

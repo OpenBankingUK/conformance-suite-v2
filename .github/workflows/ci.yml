@@ -47,6 +47,25 @@ jobs:
         # file is scanned for secrets.
         run: make check SECRET_SCAN_EXCLUDE_PATHSPEC=
 
+      - name: Check release CHANGELOG entry
+        # A PR that changes [project].version prepares a release. Its curated
+        # CHANGELOG.md section becomes the GitHub Release summary, so GA
+        # versions must have one before merge; betas only warn. PRs that leave
+        # the version unchanged prepare no release and are not checked.
+        if: >-
+          github.event_name == 'pull_request' &&
+          (github.base_ref == 'main' || startsWith(github.base_ref, 'release/'))
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "refs/heads/$BASE_REF"
+          git show FETCH_HEAD:pyproject.toml > "$RUNNER_TEMP/base-pyproject.toml"
+          uv run python -m scripts.release_notes check-changelog \
+            --pyproject pyproject.toml \
+            --base-pyproject "$RUNNER_TEMP/base-pyproject.toml" \
+            --changelog CHANGELOG.md
+
   plan:
     name: Plan
     runs-on: ubuntu-latest

@@ -45,13 +45,22 @@ on:
         required: true
       SNYK_TOKEN:
         required: true
+    outputs:
+      raw_version:
+        description: "Exact version published to Docker Hub."
+        value: ${{ jobs.promote.outputs.raw_version }}
+      published_digest:
+        description: "Published multi-architecture manifest digest."
+        value: ${{ jobs.promote.outputs.published_digest }}
+      beta_latest_updated:
+        description: "Whether the MVP beta pointer now targets this image."
+        value: ${{ jobs.promote.outputs.beta_latest_updated }}
 
 permissions:
   contents: read
 
-concurrency:
-  group: image-promotion
-  cancel-in-progress: false
+# The root callers hold image-promotion through publication and finalization.
+# Do not reacquire their concurrency group here: a reusable call would deadlock.
 
 env:
   IMAGE_NAME: docker.io/openbanking/conformance-suite-v2
@@ -279,6 +288,10 @@ jobs:
     needs: [locate, rescan]
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment_name }}
+    outputs:
+      raw_version: ${{ steps.validate.outputs.raw_version }}
+      published_digest: ${{ steps.publish.outputs.published_digest }}
+      beta_latest_updated: ${{ steps.beta_latest.outputs.updated || 'false' }}
 
     permissions:
       contents: read
@@ -584,6 +597,7 @@ jobs:
           create-storage-record: false
 
       - name: Update 2.0.0-beta-latest after publication and attestations
+        id: beta_latest
         if: inputs.channel == 'beta'
         env:
           RAW_VERSION: ${{ steps.validate.outputs.raw_version }}
@@ -594,3 +608,4 @@ jobs:
             --version "$RAW_VERSION" --digest "$PUBLISHED_DIGEST")"
           echo "$result"
           jq -r '.notice' <<<"$result" >> "$GITHUB_STEP_SUMMARY"
+          echo "updated=$(jq -r '.updated' <<<"$result")" >> "$GITHUB_OUTPUT"
