@@ -898,6 +898,65 @@ def _catalogue_error_layer(message: str) -> ValidationLayer:
     return "semantic"
 
 
+def json_schema_error(schema: Mapping[str, JsonValue], value: JsonValue) -> str | None:
+    """Return the first JSON Schema error for a value against a canonical sub-schema.
+
+    Used by lenient browser import to check individual test-plan fields against
+    :data:`CANONICAL_TEST_PLAN_JSON_SCHEMA` property definitions.
+
+    Args:
+        schema: JSON Schema (draft 2020-12) object.
+        value: Value to validate.
+
+    Returns:
+        Error message, or ``None`` when the value is valid.
+    """
+    for error in Draft202012Validator(schema).iter_errors(value):
+        return str(error.message)
+    return None
+
+
+def redact_sensitive_plan_json(value: Mapping[str, JsonValue]) -> JsonObject:
+    """Return a copy of raw plan JSON with secret-bearing values blanked.
+
+    Applies the same key-name heuristics as safe test-plan snapshots, for plan
+    JSON that cannot be parsed into a document (for example unrepresented
+    fields kept from a lenient browser import). Because such JSON has not been
+    validated, any value under a sensitive key is blanked whatever its type,
+    except ``{"value": ...}`` runtime-input objects, which keep their shape.
+
+    Args:
+        value: Raw test-plan JSON object or fragment.
+
+    Returns:
+        Redacted JSON object.
+    """
+    return {key: _redact_unvalidated_value(key, item) for key, item in value.items()}
+
+
+def _redact_unvalidated_value(key: str, value: JsonValue) -> JsonValue:
+    """Return one unvalidated JSON value with sensitive content blanked.
+
+    Args:
+        key: Field key associated with ``value``.
+        value: JSON value to redact.
+
+    Returns:
+        Redacted JSON value.
+    """
+    if _is_sensitive_key(key):
+        if isinstance(value, dict) and "value" in value:
+            redacted = redact_sensitive_plan_json(value)
+            redacted["value"] = ""
+            return redacted
+        return ""
+    if isinstance(value, dict):
+        return redact_sensitive_plan_json(value)
+    if isinstance(value, list):
+        return [_redact_unvalidated_value(key, item) for item in value]
+    return value
+
+
 def _safe_json_object(value: Mapping[str, JsonValue], sensitive_input_ids: set[str]) -> JsonObject:
     """Return a recursively redacted copy of a JSON object.
 

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Automatic and manual preview, beta, and GA promotions share a caller-level
+  concurrency lock through publication and Git tag/GitHub Release finalization,
+  preventing overlapping release boundaries without nested reusable-workflow locks.
+
 ### Added
 
 - Selectable Open Banking Read/Write OpenAPI ("swagger") document updates.
@@ -26,18 +32,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   upstream tag and commit). The run page shows the selected update.
 - Independent Read/Write `4.0.1` catalogues, copied from `4.0.0`, so the two
   versions' coverage can diverge.
-
-- Automatic Docker Hub `beta-latest` pointer updates after approved beta
-  publication and provenance/SBOM attestations, with manifest-digest
-  verification. Docker Hub's highest published beta across release branches
-  determines eligibility; older backfills and GA releases leave it unchanged.
+- Automatic and manual image promotion run summaries now show the exact release
+  version, proposed Docker tags and source commit before approval, including
+  conditional `2.0.0-beta-latest` eligibility.
+- Every approved beta and GA image publication now ends with a Git tag
+  (`vX.Y.Z-beta.N` or `vX.Y.Z`) at the published commit and an immutable
+  GitHub Release (a prerelease for betas). The release notes contain the
+  version's `CHANGELOG.md` section, the `docker pull` command and image digest,
+  and GitHub-generated pull-request notes since the previous release on the
+  same channel. Re-running the finalize step is safe and never republishes the
+  image.
+- CI now fails pull requests to `main` or `release/**` that change
+  `[project].version` to a GA version without a `CHANGELOG.md` section, and
+  warns when a changed beta version has none. Pull requests that leave the
+  version unchanged are not checked.
+- Compare links for each released version at the end of `CHANGELOG.md`.
 
 ### Changed
 
+- `.github/workflows/_finalize-ga-release.yml` is replaced by
+  `.github/workflows/_finalize-release.yml`, which handles both beta and GA
+  publications. The manual **Promote beta image** recovery workflow now also
+  creates the tag and GitHub prerelease.
 - **Breaking:** Read/Write plans must declare `specification.openApiDocumentUpdate`.
   Existing plans keep their previous schema behaviour by selecting the latest
   update: `3.1.11` → `Release-5`, `4.0.0` → `Update-5`. For `4.0.1`, use
   `Update-1`; the previously bundled 4.0.1 documents match `Baseline`.
+  **Import test plan** still loads plans without it, selecting the latest
+  update and showing an import warning; REST and CLI runs reject them.
 - **Breaking:** `4.0.1` plans now validate against the `4.0.1` OpenAPI
   documents. Previously they used the shared `v4.0` (`4.0.0`) snapshot.
 - **Breaking:** Read/Write specification version `4.0` was removed. Use `4.0.0`.
@@ -48,6 +70,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ob-read-write-v4.0.1-*` IDs no longer resolve.
 - **Breaking:** Internal v1 plan specs require `catalogue.specificationVersion`
   and now always filter cases by specification version.
+
+## [2.0.0-beta.6] - 2026-10-05
+
+### Changed
+
+- Participant Docker instructions now recommend `2.0.0-beta-latest` across
+  browser, persistent, certificate-mounted, CLI, and Compose examples, with
+  pull-on-launch options to avoid stale cached images. Exact-version guidance
+  for reproducible runs and beta non-certification warnings remain in place.
+
+## [2.0.0-beta.5] - 2026-10-03
+
+### Added
+
+- Lenient browser test-plan import. **Import test plan** now accepts an uploaded
+  `.json` file as well as pasted JSON, and loads as much of an incomplete or
+  partly invalid plan as possible into an editable builder draft instead of
+  rejecting it. The review page lists import warnings for missing, invalid,
+  unrecognised, and skipped fields. Fix them in the builder steps or in the review
+  page's **Plan JSON** editor, now the single, unmasked and editable view of
+  the plan (with a secrets notice). Launch, export, and the Edit-step buttons
+  use the editor's contents directly, with no separate save. Launch still
+  requires the plan to pass normal validation. The "Masked test plan summary" box and the "Edit raw JSON
+  as new draft" form are replaced by this editor.
+
+### Changed
+
+- Renamed the temporary MVP beta pointer from `beta-latest` to
+  `2.0.0-beta-latest`, selecting only the highest published 2.0.0 beta and
+  freezing updates once formal `2.0.0` is published. The old registry tag is
+  no longer maintained and is not deleted automatically.
+
+## [2.0.0-beta.4] - 2026-10-02
+
+### Added
+
+- **Give beta feedback** across the browser UI, preparing a local, credential-
+  and certificate-masked diagnostic ZIP, structured email text and an optional
+  email-client link for `standardsteam@openbanking.org.uk`. Run logs/results and
+  launch-time plans, or saved builder draft evidence, are captured when available.
+  Nothing is sent automatically; secured-network and no-mail-client workflows
+  use downloads and manual copying.
+- Automatic Docker Hub `beta-latest` pointer updates after approved beta
+  publication and provenance/SBOM attestations, with manifest-digest
+  verification. Docker Hub's highest published beta across release branches
+  determines eligibility; older backfills and GA releases leave it unchanged.
 
 ## [2.0.0-beta.3] - 2026-10-01
 
@@ -334,3 +402,11 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Browser safe exports for v2 plan documents preserve reusable structure while emptying secret-bearing runtime/config strings by default.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
+
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.6...HEAD
+[2.0.0-beta.6]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.5...v2.0.0-beta.6
+[2.0.0-beta.5]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.4...v2.0.0-beta.5
+[2.0.0-beta.4]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.3...v2.0.0-beta.4
+[2.0.0-beta.3]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.2...v2.0.0-beta.3
+[2.0.0-beta.2]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.1...v2.0.0-beta.2
+[2.0.0-beta.1]: https://github.com/OpenBankingUK/conformance-suite-v2/releases/tag/v2.0.0-beta.1

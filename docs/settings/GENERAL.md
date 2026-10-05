@@ -2,7 +2,7 @@
 
 > **Repository**: `OpenBankingUK/conformance-suite-v2`
 > **Page**: Settings → General
-> **Last reviewed**: 30 April 2026
+> **Last reviewed**: 5 October 2026
 
 ---
 
@@ -39,6 +39,9 @@ release history.
 **Rationale**: Stable GitHub releases and Docker image version tags are
 intended to be immutable audit records. If a bad release is published, issue a
 new hotfix version rather than deleting or re-tagging the old one.
+The release finalizer creates each GitHub Release in one call and leaves an
+existing Release unchanged during recovery. This setting does not
+retroactively make previously published Releases immutable.
 
 ---
 

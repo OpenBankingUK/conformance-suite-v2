@@ -29,7 +29,13 @@ def _tag_response(tags: list[str]) -> httpx.Response:
     )
 
 
-@pytest.mark.parametrize("tags", [["2.0.0-beta.10"], ["2.0.0-beta.9", "2.0.0-beta.10", "beta-latest"]])
+@pytest.mark.parametrize(
+    "tags",
+    [
+        ["2.0.0-beta.10"],
+        ["2.0.0-beta.9", "2.0.0-beta.10", "beta-latest", "2.0.0-beta-latest", "2.1.0-beta.1"],
+    ],
+)
 def test_updates_by_digest_and_verifies_alias(tags: list[str], capsys: pytest.CaptureFixture[str]) -> None:
     """The public CLI copies the complete index and reports verified identity."""
     with (
@@ -45,21 +51,41 @@ def test_updates_by_digest_and_verifies_alias(tags: list[str], capsys: pytest.Ca
     assert _DIGEST in result["notice"]
     assert [call.args[0] for call in docker.call_args_list] == [
         ["docker", "buildx", "imagetools", "inspect", f"{IMAGE_NAME}:2.0.0-beta.10", "--raw"],
-        ["docker", "buildx", "imagetools", "create", "--tag", f"{IMAGE_NAME}:beta-latest", f"{IMAGE_NAME}@{_DIGEST}"],
-        ["docker", "buildx", "imagetools", "inspect", f"{IMAGE_NAME}:beta-latest", "--raw"],
+        [
+            "docker",
+            "buildx",
+            "imagetools",
+            "create",
+            "--tag",
+            f"{IMAGE_NAME}:2.0.0-beta-latest",
+            f"{IMAGE_NAME}@{_DIGEST}",
+        ],
+        ["docker", "buildx", "imagetools", "inspect", f"{IMAGE_NAME}:2.0.0-beta-latest", "--raw"],
     ]
 
 
-def test_older_backfill_never_writes_alias(capsys: pytest.CaptureFixture[str]) -> None:
-    """Refreshed registry inventory prevents cross-branch backwards movement."""
+@pytest.mark.parametrize("blocking_tag", ["2.0.0-beta.11", "2.0.0"])
+def test_ineligible_beta_never_writes_alias(blocking_tag: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """Registry inventory prevents backwards movement and freezes the alias after GA."""
     with (
         patch(
             "scripts.list_docker_hub_tags.httpx.get",
-            return_value=_tag_response(["2.0.0-beta.10", "2.1.0-beta.1"]),
+            return_value=_tag_response(["2.0.0-beta.10", blocking_tag]),
         ),
         patch("scripts.update_beta_latest.subprocess.run") as docker,
     ):
         assert main(_ARGS) == 0
+    assert json.loads(capsys.readouterr().out)["updated"] is False
+    docker.assert_not_called()
+
+
+def test_other_release_series_skips_alias(capsys: pytest.CaptureFixture[str]) -> None:
+    """A future beta promotion succeeds without touching the temporary MVP pointer."""
+    with (
+        patch("scripts.list_docker_hub_tags.httpx.get", return_value=_tag_response(["2.1.0-beta.1"])),
+        patch("scripts.update_beta_latest.subprocess.run") as docker,
+    ):
+        assert main(["--version", "2.1.0-beta.1", "--digest", _DIGEST]) == 0
     assert json.loads(capsys.readouterr().out)["updated"] is False
     docker.assert_not_called()
 
@@ -138,7 +164,7 @@ def test_invalid_digest_never_contacts_registry(capsys: pytest.CaptureFixture[st
 def test_workflow_updates_only_after_all_attestations() -> None:
     """The beta-only update is wired after every attestation and uses published outputs."""
     workflow = (Path(__file__).resolve().parents[3] / ".github/workflows/_promote-image.yml").read_text()
-    update = workflow.index("- name: Update beta-latest")
+    update = workflow.index("- name: Update 2.0.0-beta-latest")
     for step in ("Attest build provenance", "Attest amd64 SBOM", "Attest arm64 SBOM"):
         assert workflow.index(f"- name: {step}") < update
     assert "if: inputs.channel == 'beta'" in workflow[update:]

@@ -13,6 +13,11 @@ on:
 permissions:
   contents: read
 
+# Preview publication shares the beta/GA callers' full-lifecycle lock.
+concurrency:
+  group: image-promotion
+  cancel-in-progress: false
+
 jobs:
   validate-branch:
     name: Validate branch pattern

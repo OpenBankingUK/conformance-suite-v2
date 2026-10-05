@@ -6,6 +6,7 @@ from django.shortcuts import render
 from django.urls import include, path
 
 from conformance.api.callback_views import callback_view
+from conformance.api.feedback_views import feedback_download, feedback_prepare, feedback_report
 from conformance.api.ui_views import (
     builder_catalogue_boundary,
     builder_config,
@@ -16,6 +17,7 @@ from conformance.api.ui_views import (
     builder_launch,
     builder_new,
     builder_review,
+    builder_review_json,
     builder_scope,
     builder_scope_options,
     builder_security_config,
@@ -66,6 +68,9 @@ def not_found(request: HttpRequest, unmatched_path: str) -> HttpResponse:
 urlpatterns = [
     path("", home, name="home"),
     path("health/", health, name="health"),
+    path("feedback/", feedback_prepare, name="feedback-prepare"),
+    path("feedback/<str:report_id>/", feedback_report, name="feedback-report"),
+    path("feedback/<str:report_id>/bundle.zip", feedback_download, name="feedback-download"),
     path("builder/new/", builder_new, name="builder-new"),
     path("builder/import/", builder_import, name="builder-import"),
     path("builder/<str:draft_id>/catalogue/", builder_catalogue_boundary, name="builder-catalogue-boundary"),
@@ -80,6 +85,7 @@ urlpatterns = [
     ),
     path("builder/<str:draft_id>/config/security/", builder_security_config, name="builder-security-config"),
     path("builder/<str:draft_id>/review/", builder_review, name="builder-review"),
+    path("builder/<str:draft_id>/review/json/", builder_review_json, name="builder-review-json"),
     path("builder/<str:draft_id>/export.json", builder_export, name="builder-export"),
     path("builder/<str:draft_id>/launch/", builder_launch, name="builder-launch"),
     path("runs/<str:run_id>/", run_detail, name="ui-run-detail"),

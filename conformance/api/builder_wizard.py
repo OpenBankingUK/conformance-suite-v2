@@ -2325,6 +2325,9 @@ def model_bank_config_from_plan_config(config: Mapping[str, JsonValue]) -> JsonO
 def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonValue] | None = None) -> PlanDocumentV2:
     """Build a parsed canonical test plan document from a wizard draft.
 
+    Only builder-represented values are used; the draft's unrepresented plan
+    fields are ignored (see :func:`plan_json_from_draft`).
+
     Args:
         draft: Session-backed builder draft.
         config: Optional config object to use instead of ``draft.config``.
@@ -2332,6 +2335,148 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
     Returns:
         Parsed schemaVersion ``1.0`` plan document suitable for compile, export,
         or launch.
+
+    Raises:
+        CatalogueError: If the draft is incomplete or contains stale scope ids.
+    """
+    document = parse_test_plan_document(builder_plan_json_from_draft(draft, config=config))
+    if not isinstance(document, PlanDocumentV2):
+        raise CatalogueError("Builder drafts must produce a canonical test plan document")
+    return document
+
+
+def plan_json_from_draft(draft: BuilderDraft) -> JsonObject:
+    """Return the full canonical test-plan JSON a draft represents.
+
+    The plan JSON is the shared source of truth for guided editing, direct JSON
+    editing on review, export, and launch. It is the builder-generated JSON
+    with the draft's unrepresented plan fields merged over it, so invalid or
+    unknown values loaded from imported JSON are preserved (never silently
+    replaced by builder defaults) and normal test-plan validation keeps failing
+    until they are fixed.
+
+    Args:
+        draft: Session-backed builder draft.
+
+    Returns:
+        Unvalidated schemaVersion ``1.0`` test-plan JSON object.
+    """
+    return merge_plan_json_overlay(builder_plan_json_from_draft_or_skeleton(draft), draft.unrepresented_plan_fields)
+
+
+def builder_plan_json_from_draft_or_skeleton(draft: BuilderDraft) -> JsonObject:
+    """Return builder-generated plan JSON, falling back to a partial skeleton.
+
+    Args:
+        draft: Session-backed builder draft.
+
+    Returns:
+        Builder-generated canonical JSON, or, when the draft has no
+        specification boundary or holds stale scope ids, the sections the
+        builder can still represent without scope.
+    """
+    try:
+        return builder_plan_json_from_draft(draft)
+    except CatalogueError, ValueError:
+        return _skeleton_plan_json_from_draft(draft)
+
+
+def merge_plan_json_overlay(base: Mapping[str, JsonValue], overlay: Mapping[str, JsonValue]) -> JsonObject:
+    """Deep-merge an unrepresented-field overlay over builder plan JSON.
+
+    Objects merge key by key, arrays are concatenated (overlay items appended,
+    for example resource groups the builder could not resolve), and any other
+    overlay value replaces the builder value.
+
+    Args:
+        base: Builder-generated plan JSON.
+        overlay: Unrepresented plan fields.
+
+    Returns:
+        New merged JSON object.
+    """
+    merged = _copy_json_mapping(base)
+    for key, overlay_value in overlay.items():
+        base_value = merged.get(key)
+        if isinstance(base_value, dict) and isinstance(overlay_value, dict):
+            merged[key] = merge_plan_json_overlay(base_value, overlay_value)
+        elif isinstance(base_value, list) and isinstance(overlay_value, list):
+            merged[key] = [*base_value, *(_copy_json_value(item) for item in overlay_value)]
+        else:
+            merged[key] = _copy_json_value(overlay_value)
+    return merged
+
+
+def _canonical_specification_json(boundary: PlanDocumentBoundary, security_profile: str) -> JsonObject:
+    """Return the canonical ``specification`` JSON for a draft boundary.
+
+    Args:
+        boundary: Selected specification boundary.
+        security_profile: Internal compiler security profile.
+
+    Returns:
+        ``OBL_DCR`` or ``OBL_READ_WRITE`` specification object.
+    """
+    if not boundary_requires_resource_groups(boundary):
+        return {
+            "family": "OBL_DCR",
+            "scheme": boundary.scheme,
+            "name": boundary.specification,
+            "version": boundary.version,
+        }
+    return {
+        "family": "OBL_READ_WRITE",
+        "version": boundary.version,
+        "profile": _canonical_security_profile(security_profile),
+    }
+
+
+def _skeleton_plan_json_from_draft(draft: BuilderDraft) -> JsonObject:
+    """Return the scope-independent plan JSON the builder can represent.
+
+    Args:
+        draft: Builder draft without a usable boundary or scope.
+
+    Returns:
+        Partial canonical JSON for review, direct editing, and validation.
+    """
+    config_object = _copy_json_mapping(draft.config)
+    raw_plan: JsonObject = {"schemaVersion": "1.0"}
+    boundary: PlanDocumentBoundary | None = None
+    if draft.scheme is not None and draft.specification is not None and draft.version is not None:
+        boundary = PlanDocumentBoundary(draft.scheme, draft.specification, draft.version)
+        try:
+            raw_plan["specification"] = _canonical_specification_json(boundary, draft.security_profile)
+        except CatalogueError, ValueError:
+            boundary = None
+    raw_plan["executionMode"] = draft.execution_mode
+    raw_plan["securityEnvironment"] = _merged_plan_context(
+        draft.security_environment,
+        security_environment_from_plan_config(config_object),
+    )
+    uses_resource_groups = boundary is None or boundary_requires_resource_groups(boundary)
+    if uses_resource_groups:
+        business_test_data = _merged_plan_context(
+            draft.business_test_data,
+            business_test_data_from_plan_config(config_object),
+        )
+        if boundary is not None or business_test_data:
+            raw_plan["businessTestData"] = business_test_data
+    if not uses_resource_groups or (boundary is None and draft.dynamic_client_registration):
+        raw_plan["dynamicClientRegistration"] = _copy_json_mapping(draft.dynamic_client_registration)
+    raw_plan["metadata"] = _copy_json_mapping(draft.metadata)
+    return raw_plan
+
+
+def builder_plan_json_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonValue] | None = None) -> JsonObject:
+    """Build unvalidated canonical test-plan JSON from builder-represented values.
+
+    Args:
+        draft: Session-backed builder draft.
+        config: Optional config object to use instead of ``draft.config``.
+
+    Returns:
+        Raw schemaVersion ``1.0`` plan JSON generated by the builder.
 
     Raises:
         CatalogueError: If the draft is incomplete or contains stale scope ids.
@@ -2381,10 +2526,7 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
             "dynamicClientRegistration": _copy_json_mapping(draft.dynamic_client_registration),
             "metadata": _copy_json_mapping(draft.metadata),
         }
-        document = parse_test_plan_document(dcr_raw_plan)
-        if not isinstance(document, PlanDocumentV2):
-            raise CatalogueError("Builder drafts must produce a canonical test plan document")
-        return document
+        return dcr_raw_plan
     selected_group_ids = _normalized_resource_group_ids_for_hierarchy(draft.resource_group_ids, hierarchy=hierarchy)
     selected_endpoint_ids = set(draft.endpoint_ids)
     known_group_ids = {group.id for group in hierarchy.resource_groups}
@@ -2449,10 +2591,7 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
         "businessTestData": business_test_data,
         "metadata": _copy_json_mapping(draft.metadata),
     }
-    document = parse_test_plan_document(raw_plan)
-    if not isinstance(document, PlanDocumentV2):
-        raise CatalogueError("Builder drafts must produce a canonical test plan document")
-    return document
+    return raw_plan
 
 
 def _canonical_security_profile(security_profile: str) -> str:

@@ -1,0 +1,203 @@
+name: Finalize release
+
+# Runs only after an Environment-approved promotion has published the exact
+# candidate image. It records that publication on GitHub: an annotated Git tag
+# at the promoted source commit and an immutable GitHub Release whose notes
+# combine the curated CHANGELOG.md section, the published image digest, and
+# GitHub's generated pull-request notes. GA also opens the develop merge-back
+# PR. Every step is idempotent so a failed run can be re-run without
+# republishing the image (see docs/CICD_STRATEGY.md 5.1).
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        required: true
+        type: string
+        description: "beta or ga."
+      source_sha:
+        required: true
+        type: string
+        description: "Exact commit successfully published as an image."
+      raw_version:
+        required: true
+        type: string
+        description: "Exact published version; the Git tag is v<raw_version>."
+      published_digest:
+        required: true
+        type: string
+        description: "Published multi-architecture manifest digest."
+      beta_latest_updated:
+        required: false
+        type: string
+        default: "false"
+        description: "Whether the MVP beta pointer now targets this image."
+
+permissions:
+  contents: read
+
+jobs:
+  finalize:
+    name: Create release tag and GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      CHANNEL: ${{ inputs.channel }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      RAW_VERSION: ${{ inputs.raw_version }}
+      PUBLISHED_DIGEST: ${{ inputs.published_digest }}
+      BETA_LATEST_UPDATED: ${{ inputs.beta_latest_updated }}
+      RELEASE_TAG: v${{ inputs.raw_version }}
+
+    steps:
+      - name: Checkout trusted main branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate finalize inputs
+        run: |
+          set -euo pipefail
+          if ! [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::source_sha must be a full lowercase 40-character Git SHA." >&2
+            exit 1
+          fi
+          case "$CHANNEL" in
+            ga) tag_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' ;;
+            beta) tag_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-beta\.[1-9][0-9]*$' ;;
+            *)
+              echo "::error::Only beta and ga publications are finalized, got '$CHANNEL'." >&2
+              exit 1
+              ;;
+          esac
+          if ! [[ "$RELEASE_TAG" =~ $tag_pattern ]]; then
+            echo "::error::Release tag $RELEASE_TAG does not match the $CHANNEL tag format." >&2
+            exit 1
+          fi
+          if ! [[ "$PUBLISHED_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::published_digest must be a lowercase SHA-256 digest." >&2
+            exit 1
+          fi
+
+      - name: Create the release tag at the promoted source commit
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$SOURCE_SHA"
+          git cat-file -e "$SOURCE_SHA^{commit}"
+
+          tag_refs="$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}")"
+          tag_target_sha="$(
+            awk -v ref="refs/tags/$RELEASE_TAG" \
+              '$2 == ref "^{}" { peeled = $1 } $2 == ref { direct = $1 }
+               END { if (peeled != "") print peeled; else if (direct != "") print direct }' \
+              <<<"$tag_refs"
+          )"
+          if [[ -n "$tag_target_sha" ]]; then
+            if [[ "$tag_target_sha" != "$SOURCE_SHA" ]]; then
+              echo "::error::Git tag $RELEASE_TAG already points to $tag_target_sha, not $SOURCE_SHA." >&2
+              exit 1
+            fi
+            echo "Git tag $RELEASE_TAG already points to the promoted source commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$RELEASE_TAG" "$SOURCE_SHA" -m "Release $RELEASE_TAG"
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
+
+      - name: Check for an existing GitHub Release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null 2>&1; then
+            echo "GitHub Release $RELEASE_TAG already exists; releases are immutable, so it is left unchanged."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up uv
+        if: steps.existing.outputs.exists != 'true'
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install release-tooling dependencies
+        if: steps.existing.outputs.exists != 'true'
+        run: uv sync --frozen --no-install-project
+
+      - name: Render release notes
+        # Reads CHANGELOG.md from the released commit without executing it;
+        # rendering uses trusted main's tooling.
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          notes_dir="$RUNNER_TEMP/release-notes"
+          mkdir -p "$notes_dir"
+          git show "$SOURCE_SHA:CHANGELOG.md" > "$notes_dir/CHANGELOG.md"
+          uv run python -m scripts.release_notes check-changelog \
+            --version "$RAW_VERSION" --changelog "$notes_dir/CHANGELOG.md"
+
+          git fetch --tags --force origin
+          git tag -l 'v*' > "$notes_dir/tags.txt"
+          previous_tag="$(uv run python -m scripts.release_notes previous-tag \
+            --tag "$RELEASE_TAG" --tags-file "$notes_dir/tags.txt")"
+          generate_args=(-f "tag_name=$RELEASE_TAG" -f "target_commitish=$SOURCE_SHA")
+          if [[ -n "$previous_tag" ]]; then
+            echo "Generating pull-request notes since $previous_tag."
+            generate_args+=(-f "previous_tag_name=$previous_tag")
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            "${generate_args[@]}" --jq '.body' > "$notes_dir/generated.md"
+
+          uv run python -m scripts.release_notes render \
+            --version "$RAW_VERSION" \
+            --digest "$PUBLISHED_DIGEST" \
+            --changelog "$notes_dir/CHANGELOG.md" \
+            --generated-notes "$notes_dir/generated.md" \
+            --beta-latest-updated "$BETA_LATEST_UPDATED" \
+            > "$notes_dir/notes.md"
+          cat "$notes_dir/notes.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create the GitHub Release
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_args=(--verify-tag --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes/notes.md")
+          if [[ "$CHANNEL" == "beta" ]]; then
+            release_args+=(--prerelease --latest=false)
+          else
+            release_args+=(--latest)
+          fi
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" "${release_args[@]}"
+
+      - name: Open a pull request merging main back into develop
+        if: inputs.channel == 'ga'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch origin main develop
+          if git diff --quiet origin/develop origin/main --; then
+            echo "develop is already up to date with main; nothing to open."
+            exit 0
+          fi
+          existing="$(gh pr list --base develop --head main --state open --json number --jq '.[0].number // empty')"
+          if [[ -n "$existing" ]]; then
+            echo "Merge-back PR #$existing already open."
+            exit 0
+          fi
+          gh pr create \
+            --base develop \
+            --head main \
+            --title "Merge GA release $RELEASE_TAG back into develop" \
+            --body "Automated merge-back after promoting $RELEASE_TAG to GA. Review and merge to keep develop current with the released state of main."

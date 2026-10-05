@@ -45,13 +45,22 @@ on:
         required: true
       SNYK_TOKEN:
         required: true
+    outputs:
+      raw_version:
+        description: "Exact version published to Docker Hub."
+        value: ${{ jobs.promote.outputs.raw_version }}
+      published_digest:
+        description: "Published multi-architecture manifest digest."
+        value: ${{ jobs.promote.outputs.published_digest }}
+      beta_latest_updated:
+        description: "Whether the MVP beta pointer now targets this image."
+        value: ${{ jobs.promote.outputs.beta_latest_updated }}
 
 permissions:
   contents: read
 
-concurrency:
-  group: image-promotion
-  cancel-in-progress: false
+# The root callers hold image-promotion through publication and finalization.
+# Do not reacquire their concurrency group here: a reusable call would deadlock.
 
 env:
   IMAGE_NAME: docker.io/openbanking/conformance-suite-v2
@@ -142,6 +151,34 @@ jobs:
             exit 1
           fi
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Download the promotion manifest for approval details
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.locate.outputs.run_id }}
+          name: promotion-manifest
+          path: ${{ runner.temp }}/approval-manifest
+
+      - name: Summarize the release proposed for approval
+        env:
+          APPROVAL_ENVIRONMENT: ${{ inputs.environment_name }}
+        run: |
+          set -euo pipefail
+          uv run python -m scripts.list_docker_hub_tags > published-versions.txt
+          args=(
+            --manifest "$RUNNER_TEMP/approval-manifest/promotion-manifest.json"
+            --source-sha "$INPUT_SOURCE_SHA"
+            --branch "$INPUT_BRANCH"
+            --channel "$INPUT_CHANNEL"
+            --published-versions-file published-versions.txt
+            --summary-file "$GITHUB_STEP_SUMMARY"
+            --environment-name "$APPROVAL_ENVIRONMENT"
+          )
+          if [[ -n "$INPUT_TAG" ]]; then
+            args+=(--tag "$INPUT_TAG")
+          fi
+          uv run python -m scripts.validate_promotion "${args[@]}"
 
   rescan:
     # Re-scans the exact candidate archives with today's vulnerability data
@@ -251,6 +288,10 @@ jobs:
     needs: [locate, rescan]
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment_name }}
+    outputs:
+      raw_version: ${{ steps.validate.outputs.raw_version }}
+      published_digest: ${{ steps.publish.outputs.published_digest }}
+      beta_latest_updated: ${{ steps.beta_latest.outputs.updated || 'false' }}
 
     permissions:
       contents: read
@@ -555,7 +596,8 @@ jobs:
           push-to-registry: true
           create-storage-record: false
 
-      - name: Update beta-latest after publication and attestations
+      - name: Update 2.0.0-beta-latest after publication and attestations
+        id: beta_latest
         if: inputs.channel == 'beta'
         env:
           RAW_VERSION: ${{ steps.validate.outputs.raw_version }}
@@ -566,3 +608,4 @@ jobs:
             --version "$RAW_VERSION" --digest "$PUBLISHED_DIGEST")"
           echo "$result"
           jq -r '.notice' <<<"$result" >> "$GITHUB_STEP_SUMMARY"
+          echo "updated=$(jq -r '.updated' <<<"$result")" >> "$GITHUB_OUTPUT"
