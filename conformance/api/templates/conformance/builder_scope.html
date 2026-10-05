@@ -266,10 +266,10 @@
     <header>
         <div>
             <h1>Select test plan scope</h1>
-            <div class="muted">{% if direct_endpoints %}Step 2: direct endpoint selection{% else %}Steps 4 and 5: resource groups, endpoints, and capabilities{% endif %}</div>
         </div>
         <a class="button secondary" href="{% url 'home' %}">Main menu</a>
     </header>
+    {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 
     <section class="panel" aria-labelledby="scope-heading">
         <h2 id="scope-heading">{% if direct_endpoints %}Registration endpoints{% else %}Resource groups, endpoints, and scoped features{% endif %}</h2>
@@ -294,6 +294,7 @@
         <div class="message info">{% if direct_endpoints %}Next you will configure discovery and DCR security references.{% else %}Next you will enter resource-group-specific business test data.{% endif %}</div>
 
         <form method="post"
+              id="builder-step-form"
               action="{% url 'builder-scope' draft.draft_id %}"
               data-scope-form>
             {% csrf_token %}
@@ -310,11 +311,12 @@
             </div>
 
             <div class="actions">
-                <a class="button secondary" href="{% if direct_endpoints %}{% url 'builder-catalogue-boundary' draft.draft_id %}{% else %}{% url 'builder-security-config' draft.draft_id %}{% endif %}">{% if direct_endpoints %}Back to specification{% else %}Back to security{% endif %}</a>
+                {% include "conformance/partials/builder_back_button.html" %}
                 <button type="submit">{% if direct_endpoints %}Continue to DCR configuration{% else %}Continue to business data{% endif %}</button>
             </div>
         </form>
     </section>
+    {% include "conformance/partials/builder_back_dialog.html" %}
 </main>
 <script>
     (() => {

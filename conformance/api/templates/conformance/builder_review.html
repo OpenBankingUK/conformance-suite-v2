@@ -102,10 +102,12 @@
     <header>
         <div>
             <h1>Review generated test plan</h1>
-            <div class="muted">Step 7: review/export. Generated tests are read-only; edit scope or config to change them.</div>
+            <div class="muted">Generated tests are read-only; use the steps above to edit scope or config.</div>
         </div>
         <a class="button secondary" href="{% url 'home' %}">Main menu</a>
     </header>
+    {# Step-bar jumps submit review-plan-form, so plan JSON edits are applied before leaving review. #}
+    {% include "conformance/partials/builder_step_bar.html" with step_form_id="review-plan-form" %}
 
     <section class="panel" aria-labelledby="review-heading">
         <h2 id="review-heading">Plan summary</h2>
@@ -156,13 +158,6 @@
         {# One form drives every review action so the plan JSON box below is always what is applied, exported, or launched. Downloads and the run page use full navigation: attachments cannot be swapped, and the run page binds document-level listeners. #}
         <form id="review-plan-form" class="actions" method="post" action="{% url 'builder-review-json' draft.draft_id %}" hx-boost="false">
             {% csrf_token %}
-            <button class="secondary" type="submit" name="next" value="catalogue">Edit specification</button>
-            <button class="secondary" type="submit" name="next" value="discovery">Edit discovery</button>
-            <button class="secondary" type="submit" name="next" value="security">Edit security</button>
-            <button class="secondary" type="submit" name="next" value="scope">Edit scope</button>
-            {% if draft.specification != "dynamic-client-registration" %}
-                <button class="secondary" type="submit" name="next" value="config">Edit business data</button>
-            {% endif %}
             <button class="secondary" type="submit" formaction="{% url 'builder-export' draft.draft_id %}">Export safe JSON</button>
             <button class="secondary" type="submit" formaction="{% url 'builder-export' draft.draft_id %}" name="include_secrets" value="1">Export with secrets</button>
             <button type="submit" formaction="{% url 'builder-launch' draft.draft_id %}">Launch run</button>

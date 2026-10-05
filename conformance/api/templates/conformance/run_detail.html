@@ -436,10 +436,7 @@
         {% if run.status == "completed" or run.status == "failed" %}
             <a class="button" href="{% url 'home' %}">Home page</a>
         {% else %}
-            <form method="post" action="{% url 'builder-new' %}">
-                {% csrf_token %}
-                <button class="button" type="submit">New plan</button>
-            </form>
+            <a class="button" href="{% url 'home' %}">Main menu</a>
         {% endif %}
     </header>
 

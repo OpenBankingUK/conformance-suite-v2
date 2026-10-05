@@ -38,6 +38,12 @@ type PlanImportIssueKind = Literal["missing", "invalid", "unknown", "skipped", "
 _PLAN_IMPORT_ISSUE_KINDS: frozenset[str] = frozenset(get_args(PlanImportIssueKind.__value__))
 """Accepted import-issue kinds when decoding session state."""
 
+type BuilderStepId = Literal["catalogue", "scope", "discovery", "security", "config"]
+"""Guided builder wizard step that the participant saves (review is not a saved step)."""
+
+BUILDER_STEP_IDS: tuple[BuilderStepId, ...] = get_args(BuilderStepId.__value__)
+"""Every saved builder step id, in declaration order."""
+
 
 @dataclass(frozen=True)
 class PlanImportIssue:
@@ -137,6 +143,9 @@ class BuilderDraft:
             replaced; normal launch validation fails until they are fixed.
         import_issues: Field-level problems reported by the latest plan JSON
             load, shown as review warnings.
+        completed_steps: Builder steps saved successfully since they were last
+            invalidated. Drives which steps the builder step bar lets the
+            participant jump to; empty for drafts saved before tracking existed.
     """
 
     draft_id: str
@@ -159,6 +168,7 @@ class BuilderDraft:
     unrepresented_plan_fields: Mapping[str, JsonValue] = field(default_factory=dict)
     import_issues: tuple[PlanImportIssue, ...] = ()
     openapi_document_update: str | None = None
+    completed_steps: tuple[BuilderStepId, ...] = ()
 
     @classmethod
     def create(cls) -> BuilderDraft:
@@ -233,6 +243,7 @@ class BuilderDraft:
             openapi_document_update=_optional_string(raw_value.get("openApiDocumentUpdate")),
             unrepresented_plan_fields=_json_object(raw_value.get("unrepresentedPlanFields")),
             import_issues=_import_issues(raw_value.get("importIssues")),
+            completed_steps=_completed_steps(raw_value.get("completedSteps")),
         )
 
     def with_catalogue_boundary(
@@ -400,6 +411,33 @@ class BuilderDraft:
         """
         return replace(self, import_issues=tuple(import_issues), updated_at=_utc_timestamp())
 
+    def with_completed_steps(self, completed_steps: tuple[BuilderStepId, ...]) -> BuilderDraft:
+        """Return a copy with the set of completed builder steps replaced.
+
+        Args:
+            completed_steps: Steps to record as complete; duplicates are dropped
+                and the result is kept in canonical step order.
+
+        Returns:
+            Updated draft. ``updated_at`` is unchanged because completion is
+            navigation state, not plan content.
+        """
+        return replace(
+            self,
+            completed_steps=tuple(step for step in BUILDER_STEP_IDS if step in completed_steps),
+        )
+
+    def with_completed_step(self, step: BuilderStepId) -> BuilderDraft:
+        """Return a copy with one builder step recorded as complete.
+
+        Args:
+            step: Step that was just saved successfully.
+
+        Returns:
+            Updated draft.
+        """
+        return self.with_completed_steps((*self.completed_steps, step))
+
     def to_session_object(self) -> JsonObject:
         """Serialise this draft into a Django-session-safe JSON object.
 
@@ -430,6 +468,7 @@ class BuilderDraft:
             "updatedAt": self.updated_at,
             "unrepresentedPlanFields": _json_object(self.unrepresented_plan_fields),
             "importIssues": [issue.to_session_object() for issue in self.import_issues],
+            "completedSteps": list(self.completed_steps),
         }
 
 
@@ -537,6 +576,19 @@ def _string_tuple(value: object) -> tuple[str, ...]:
             return ()
         values.append(item)
     return tuple(values)
+
+
+def _completed_steps(value: object) -> tuple[BuilderStepId, ...]:
+    """Return completed builder steps decoded from session JSON.
+
+    Args:
+        value: Raw value decoded from the Django session.
+
+    Returns:
+        Known step ids in canonical order; unknown values are ignored.
+    """
+    raw_steps = _string_tuple(value)
+    return tuple(step for step in BUILDER_STEP_IDS if step in raw_steps)
 
 
 def _string_tuple_mapping(value: object) -> dict[str, tuple[str, ...]]:

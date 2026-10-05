@@ -183,7 +183,15 @@ class TestBuilderPages:
         client = Client()
         discovery_location = _discovery_location(client)
         draft_id = discovery_location.split("/")[2]
-        client.post(discovery_location, data={"discovery_url": ""})
+        security_location = client.post(discovery_location, data={"discovery_url": ""})["Location"]
+        client.post(
+            security_location,
+            data={
+                "oauth_client_id": "client-123",
+                "oauth_redirect_uri": "https://client.example.com/callback",
+                "resource_server_base_url": "https://resource.example.com",
+            },
+        )
 
         content = client.get(f"/builder/{draft_id}/scope/").content.decode("utf-8")
 

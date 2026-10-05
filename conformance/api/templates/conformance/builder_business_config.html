@@ -51,10 +51,10 @@
     <header>
         <div>
             <h1>Business test data</h1>
-            <div class="muted">Step 6: business data</div>
         </div>
         <a class="button secondary" href="{% url 'home' %}">Main menu</a>
     </header>
+    {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 
     <section class="panel" aria-labelledby="business-heading">
         <h2 id="business-heading">Business and request defaults</h2>
@@ -64,7 +64,7 @@
         {% if review_error %}<div class="message warning">{{ review_error }}</div>{% endif %}
         {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
 
-        <form method="post" action="{% url 'builder-config' draft.draft_id %}">
+        <form method="post" id="builder-step-form" action="{% url 'builder-config' draft.draft_id %}">
             {% csrf_token %}
 
             {% if config_visibility.show_ais %}
@@ -394,11 +394,12 @@
             {% endif %}
 
             <div class="actions">
-                <a class="button secondary" href="{% url 'builder-scope' draft.draft_id %}">Back to scope</a>
+                {% include "conformance/partials/builder_back_button.html" %}
                 <button type="submit">Review generated plan</button>
             </div>
         </form>
     </section>
+    {% include "conformance/partials/builder_back_dialog.html" %}
 </main>
 </body>
 </html>

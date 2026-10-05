@@ -155,6 +155,9 @@ The supported workflow is:
 8. Provide resource-group-specific business data. Domain-specific fields appear
    only for the selected endpoint scope.
 9. Review the generated schemaVersion `1.0` test plan and launch the run.
+   The step bar at the top of every builder page lets you jump back to any
+   completed step and straight back to review; the current page is validated
+   and saved first, and a page with errors cannot be left.
    **Export safe JSON** omits secret values, so you will need to enter them
    again when importing it. **Export with secrets** contains sensitive
    material; use only if necessary and store it securely.

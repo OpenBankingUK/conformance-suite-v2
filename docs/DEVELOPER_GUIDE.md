@@ -322,12 +322,28 @@ The wizard follows the PRD order:
    advanced JSON fallbacks.
 7. Review the generated plan at `/builder/<draft>/review/`, including summary
    counts, import warnings, launch blockers, the unmasked, editable plan JSON
-   (the single view of the plan: launch, export, and the Edit-step buttons all
+   (the single view of the plan: launch, export, and the step-bar buttons all
    submit it and apply it to the draft first, with no separate save), and
    collapsed generated-test rows.
 8. Download safe JSON from `/builder/<draft>/export.json`, explicitly request
    local secret-bearing JSON with a POST `include_secrets=1`, or launch through
    `/builder/<draft>/launch/`.
+
+Every step page and review render a step bar from
+`conformance/api/builder_steps.py`, the single definition of both flow orders
+(Read/Write: specification, discovery, security, scope, business data, review;
+direct endpoint/DCR: specification, scope, discovery, security, review). The
+draft records `completed_steps`; a step is available once every earlier step is
+complete, and every step view plus review redirects to the first incomplete
+earlier step, so typed URLs cannot skip ahead. Step-bar buttons and **Back**
+submit the page form with `next=<step id>` (or `next=back`). A valid page is
+saved and marked complete, then redirected via `resolve_next`, which accepts
+only fixed step ids for available steps; anything else falls back to the
+following step. An invalid page re-renders with errors and saves nothing; an
+invalid **Back** also renders a discard-changes `<dialog>` whose discard link
+GETs the previous step. Changing the scheme or specification clears later
+completed steps; a version change clears scope and business data only when it
+pruned the saved scope. Import and review-JSON apply mark every step complete.
 
 Imported plans enter through `/builder/import/` (pasted JSON or an uploaded
 `.json` file, up to 1 MB) and go straight to the same review page. Import is

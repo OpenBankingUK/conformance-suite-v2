@@ -251,7 +251,10 @@ class TestBuilderWizardUi:
         content = step_response.content.decode("utf-8")
         assert "Choose specification" in content
         assert 'aria-label="Beta release notice"' in content
-        assert "Step 1: specification" in content
+        assert (
+            '<span class="builder-step-current" aria-current="step"><span class="builder-step-number">1</span>Specification</span>'
+            in content
+        )
         assert 'name="security_profile"' not in content
         assert "FAPI 2" not in content
         assert "Open Banking UK" in content
@@ -406,7 +409,7 @@ class TestBuilderWizardUi:
         discovery_response = client.get(response["Location"])
         assert discovery_response.status_code == 200
         content = discovery_response.content.decode("utf-8")
-        assert "Step 2: security environment discovery" in content
+        assert '<span class="builder-step-number">2</span>Discovery</span>' in content
         assert "Optionally enter the `.well-known/openid-configuration` URL" in content
 
     def test_dcr_boundary_continues_to_direct_endpoint_scope(self) -> None:
@@ -433,8 +436,8 @@ class TestBuilderWizardUi:
         assert "Required and locked" in content
         assert "POST /token" not in content
 
-    def test_scope_allows_security_environment_to_be_empty_before_resource_groups(self) -> None:
-        """The scope step can be opened before optional security fields are filled."""
+    def test_locked_step_url_redirects_to_first_incomplete_step(self) -> None:
+        """Typing a later step's URL cannot skip the discovery and security steps."""
         client = Client()
         create_response = client.post("/builder/new/")
         draft_id = _draft_id_from_builder_redirect(create_response["Location"])
@@ -447,10 +450,13 @@ class TestBuilderWizardUi:
             },
         )
 
-        response = client.get(f"/builder/{draft_id}/scope/")
-
-        assert response.status_code == 200
-        assert "Select test plan endpoints" in response.content.decode("utf-8")
+        for locked_path in ("scope/", "config/security/", "review/"):
+            response = client.get(f"/builder/{draft_id}/{locked_path}")
+            assert response.status_code == 302
+            assert response["Location"] == f"/builder/{draft_id}/config/discovery/"
+        response = client.post(f"/builder/{draft_id}/scope/", data={"resource_groups": ["AIS"]})
+        assert response.status_code == 302
+        assert response["Location"] == f"/builder/{draft_id}/config/discovery/"
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
     def test_security_step_continues_to_resource_group_scope(self, mock_fetch_discovery: Mock) -> None:
@@ -486,7 +492,7 @@ class TestBuilderWizardUi:
         scope_response = client.get(security_response["Location"])
         assert scope_response.status_code == 200
         content = scope_response.content.decode("utf-8")
-        assert "Steps 4 and 5: resource groups, endpoints, and capabilities" in content
+        assert '<span class="builder-step-number">4</span>Scope</span>' in content
         assert "account-and-transaction" in content
         assert "payment-initiation" in content
         assert "GET /aisp/transactions" not in content

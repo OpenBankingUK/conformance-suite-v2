@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The builder shows a step bar at the top of every step and the review page.
+  Participants can jump to any step whose earlier steps are complete, so an
+  imported plan can be edited one step at a time and returned straight to
+  review. Each jump validates and saves the current page first; an invalid page
+  cannot be left. Locked steps are enforced server-side, including typed URLs,
+  and step targets come from a fixed allow-list.
+- Builder **Back** now saves valid edits before going back. If the page has
+  errors, a dialog offers **Discard & go back** or **Stay**.
+- The run screen's **New plan** button is now a **Main menu** link, so
+  participants choose between creating and importing a plan.
+
 ## [2.0.0-beta.7] - 2026-10-05
 
 ### Fixed

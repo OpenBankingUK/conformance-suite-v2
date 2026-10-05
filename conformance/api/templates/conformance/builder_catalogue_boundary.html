@@ -216,10 +216,10 @@
     <header>
         <div>
             <h1>Choose specification</h1>
-            <div class="muted">Step 1: specification</div>
         </div>
         <a class="button secondary" href="{% url 'home' %}">Main menu</a>
     </header>
+    {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 
     <section class="panel" aria-labelledby="catalogue-boundary-heading">
         <h2 id="catalogue-boundary-heading">Scheme, specification, and version</h2>
@@ -235,6 +235,7 @@
         {% endif %}
 
         <form method="post"
+              id="builder-step-form"
               action="{% url 'builder-catalogue-boundary' draft.draft_id %}"
               data-boundary-form>
             {% csrf_token %}

@@ -1,0 +1,97 @@
+{% comment %}
+Builder step bar. Clickable steps submit the page's own form (``step_form_id``)
+with ``next=<step id>`` so the current page is validated and saved before the
+jump; an invalid page re-renders with its errors and nothing is saved.
+{% endcomment %}
+<style>
+    .builder-step-bar {
+        margin: 0 0 18px;
+    }
+
+    .builder-step-bar ol {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .builder-step-bar button,
+    .builder-step-bar .builder-step-current {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 36px;
+        padding: 6px 12px;
+        border: 1px solid var(--border, #ccd3dc);
+        border-radius: 999px;
+        background: var(--panel, #ffffff);
+        color: var(--text, #1b1f24);
+        font: inherit;
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+
+    .builder-step-bar button {
+        cursor: pointer;
+    }
+
+    .builder-step-bar button:hover,
+    .builder-step-bar button:focus-visible {
+        border-color: var(--accent, #0b6bcb);
+        color: var(--accent, #0b6bcb);
+    }
+
+    .builder-step-bar .builder-step-current {
+        border-color: var(--accent, #0b6bcb);
+        background: var(--accent, #0b6bcb);
+        color: #ffffff;
+    }
+
+    .builder-step-bar button:disabled {
+        cursor: not-allowed;
+        color: var(--muted, #667085);
+        background: transparent;
+        border-style: dashed;
+    }
+
+    .builder-step-bar .builder-step-number {
+        display: inline-grid;
+        place-items: center;
+        min-width: 1.4em;
+        height: 1.4em;
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.08);
+        font-size: 0.8rem;
+    }
+
+    .builder-step-bar .builder-step-complete .builder-step-number {
+        background: var(--success, #1f7a4d);
+        color: #ffffff;
+    }
+
+    .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+</style>
+<nav class="builder-step-bar" aria-label="Builder steps">
+    <ol>
+        {% for item in step_bar %}
+            <li class="builder-step-{{ item.state }}" data-builder-step="{{ item.step_id }}" data-builder-step-state="{{ item.state }}">
+                {% if item.state == "current" %}
+                    <span class="builder-step-current" aria-current="step"><span class="builder-step-number">{{ item.number }}</span>{{ item.label }}</span>
+                {% elif item.clickable %}
+                    <button type="submit" name="next" value="{{ item.step_id }}" form="{{ step_form_id }}" formnovalidate><span class="builder-step-number">{% if item.state == "complete" %}&#10003;{% else %}{{ item.number }}{% endif %}</span>{{ item.label }}{% if item.state == "complete" %}<span class="visually-hidden"> (complete)</span>{% endif %}</button>
+                {% else %}
+                    <button type="button" disabled><span class="builder-step-number">{{ item.number }}</span>{{ item.label }}<span class="visually-hidden"> (locked until earlier steps are complete)</span></button>
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ol>
+</nav>

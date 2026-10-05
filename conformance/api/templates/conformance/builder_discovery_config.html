@@ -46,10 +46,10 @@
     <header>
         <div>
             <h1>Discovery configuration</h1>
-            <div class="muted">Step 2: security environment discovery</div>
         </div>
         <a class="button secondary" href="{% url 'home' %}">Main menu</a>
     </header>
+    {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 
     <section class="panel" aria-labelledby="discovery-heading">
         <h2 id="discovery-heading">OpenID discovery</h2>
@@ -61,7 +61,7 @@
         {% endif %}
         {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
 
-        <form method="post" action="{% url 'builder-discovery-config' draft.draft_id %}">
+        <form method="post" id="builder-step-form" action="{% url 'builder-discovery-config' draft.draft_id %}">
             {% csrf_token %}
             <section class="config-card">
                 <div class="field-row">
@@ -85,11 +85,12 @@
             </section>
 
             <div class="actions">
-                <a class="button secondary" href="{% url 'builder-catalogue-boundary' draft.draft_id %}">Back to specification</a>
+                {% include "conformance/partials/builder_back_button.html" %}
                 <button type="submit">Continue to OAuth/FAPI security</button>
             </div>
         </form>
     </section>
+    {% include "conformance/partials/builder_back_dialog.html" %}
 </main>
 </body>
 </html>

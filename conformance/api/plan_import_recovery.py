@@ -17,12 +17,12 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Literal, cast
+from typing import cast
 
 from django import forms
 from django.core.files.uploadedfile import UploadedFile
 
-from conformance.api.builder_draft_store import BuilderDraft, PlanImportIssue, PlanImportIssueKind
+from conformance.api.builder_draft_store import BuilderDraft, BuilderStepId, PlanImportIssue, PlanImportIssueKind
 from conformance.api.builder_wizard import (
     builder_plan_json_from_draft_or_skeleton,
     draft_scope_from_plan_document,
@@ -143,7 +143,7 @@ def _uploaded_plan_text(upload: UploadedFile) -> str:
         raise PlanImportError("Plan file must be UTF-8 encoded JSON.") from error
 
 
-type BuilderStep = Literal["catalogue", "scope", "discovery", "security", "config"]
+type BuilderStep = BuilderStepId
 """Builder wizard step whose save may take ownership of unrepresented fields."""
 
 _TOP_LEVEL_KEYS: frozenset[str] = frozenset(

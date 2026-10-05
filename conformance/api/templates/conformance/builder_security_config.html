@@ -65,10 +65,10 @@
     <header>
         <div>
             <h1>OAuth and security configuration</h1>
-            <div class="muted">Step 3: security details and validation</div>
         </div>
         <a class="button secondary" href="{% url 'home' %}">Main menu</a>
     </header>
+    {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 
     <section class="panel" aria-labelledby="security-heading">
         <h2 id="security-heading">OAuth/FAPI and communication settings</h2>
@@ -91,7 +91,7 @@
         {% endif %}
         {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
 
-        <form method="post" enctype="multipart/form-data" action="{% url 'builder-security-config' draft.draft_id %}">
+        <form method="post" id="builder-step-form" enctype="multipart/form-data" action="{% url 'builder-security-config' draft.draft_id %}">
             {% csrf_token %}
             {% if not dcr_mode %}
             <section class="config-card" aria-labelledby="oauth-heading">
@@ -303,11 +303,12 @@
             </section>
 
             <div class="actions">
-                <a class="button secondary" href="{% url 'builder-discovery-config' draft.draft_id %}">Back to discovery</a>
+                {% include "conformance/partials/builder_back_button.html" %}
                 <button type="submit">{% if dcr_mode %}Continue to review{% else %}Continue to resource groups{% endif %}</button>
             </div>
         </form>
     </section>
+    {% include "conformance/partials/builder_back_dialog.html" %}
 </main>
 </body>
 </html>
