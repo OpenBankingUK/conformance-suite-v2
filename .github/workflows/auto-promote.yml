@@ -12,6 +12,12 @@ on:
 permissions:
   contents: read
 
+# Share the manual callers' lock through publication AND release finalization.
+# Never cancel a running publication, including while awaiting approval.
+concurrency:
+  group: image-promotion
+  cancel-in-progress: false
+
 jobs:
   resolve:
     name: Resolve candidate promotion

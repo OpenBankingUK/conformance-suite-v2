@@ -13,6 +13,11 @@ on:
 permissions:
   contents: read
 
+# Hold the shared caller lock through approval, publication, and finalization.
+concurrency:
+  group: image-promotion
+  cancel-in-progress: false
+
 jobs:
   promote:
     name: Promote
