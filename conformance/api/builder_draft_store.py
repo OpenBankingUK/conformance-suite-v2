@@ -147,6 +147,9 @@ class BuilderDraft:
             step that failed format validation, keyed by step id then form
             field name. They are kept so leaving a page never loses input,
             shown again with their errors on that page, and listed on review.
+        saved_steps: Builder steps that have been saved (left) at least once,
+            or loaded from imported plan JSON. A saved step reports its issues
+            in the step bar even when it holds no data.
     """
 
     draft_id: str
@@ -170,6 +173,7 @@ class BuilderDraft:
     import_issues: tuple[PlanImportIssue, ...] = ()
     openapi_document_update: str | None = None
     invalid_field_values: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    saved_steps: tuple[str, ...] = ()
 
     @classmethod
     def create(cls) -> BuilderDraft:
@@ -245,6 +249,7 @@ class BuilderDraft:
             unrepresented_plan_fields=_json_object(raw_value.get("unrepresentedPlanFields")),
             import_issues=_import_issues(raw_value.get("importIssues")),
             invalid_field_values=_invalid_field_values(raw_value.get("invalidFieldValues")),
+            saved_steps=_string_tuple(raw_value.get("savedSteps")),
         )
 
     def with_catalogue_boundary(
@@ -428,6 +433,18 @@ class BuilderDraft:
             updated[step] = dict(values)
         return replace(self, invalid_field_values=updated, updated_at=_utc_timestamp())
 
+    def with_steps_saved(self, *steps: BuilderStepId) -> BuilderDraft:
+        """Return a copy recording that ``steps`` have been saved.
+
+        Args:
+            steps: Builder steps to mark as saved.
+
+        Returns:
+            Updated draft; already-saved steps keep their position.
+        """
+        saved = tuple(dict.fromkeys((*self.saved_steps, *steps)))
+        return replace(self, saved_steps=saved)
+
     def to_session_object(self) -> JsonObject:
         """Serialise this draft into a Django-session-safe JSON object.
 
@@ -459,6 +476,7 @@ class BuilderDraft:
             "unrepresentedPlanFields": _json_object(self.unrepresented_plan_fields),
             "importIssues": [issue.to_session_object() for issue in self.import_issues],
             "invalidFieldValues": {step: dict(values) for step, values in self.invalid_field_values.items()},
+            "savedSteps": list(self.saved_steps),
         }
 
 

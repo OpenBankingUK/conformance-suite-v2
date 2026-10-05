@@ -833,7 +833,7 @@ def _save_step_and_redirect(
     Returns:
         Redirect to the page chosen by :func:`_step_save_target`.
     """
-    reconciled = reconcile_draft_after_builder_save(previous, updated, step=step)
+    reconciled = reconcile_draft_after_builder_save(previous, updated, step=step).with_steps_saved(step)
     draft_store.save(reconciled)
     return _redirect_after_step_save(request, reconciled, step)
 

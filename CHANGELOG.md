@@ -37,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once (an empty scope no longer also shows the raw `resourceGroups` error).
 - Locked builder steps on a new plan show a tooltip on hover and keyboard focus
   explaining that a specification must be selected first.
+- A builder step that has been saved, or loaded from an imported plan, now shows
+  needing attention (!) in the step bar when it still has issues, even if it is
+  empty. For example, leaving Scope with no resource group, or Business data
+  with required fields empty. Steps that have never been opened still show as
+  not started.
 - Review is the single validation gate: it lists each step's issues with a
   **Fix** button for that step, and launch stays blocked until they are
   resolved. Business data is empty until scope is selected and follows the

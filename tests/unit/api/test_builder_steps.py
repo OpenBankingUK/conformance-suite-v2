@@ -137,6 +137,25 @@ def test_invalid_field_values_round_trip_through_the_session() -> None:
     assert decoded.with_invalid_field_values("discovery", {}).invalid_field_values == {}
 
 
+def test_saved_steps_round_trip_through_the_session() -> None:
+    draft = BuilderDraft.create().with_steps_saved("scope").with_steps_saved("config", "scope")
+
+    decoded = BuilderDraft.from_session_object(draft.to_session_object())
+
+    assert decoded is not None
+    assert decoded.saved_steps == ("scope", "config")
+
+
+def test_sessions_without_saved_steps_decode_as_nothing_saved() -> None:
+    session_object = dict(BuilderDraft.create().to_session_object())
+    del session_object["savedSteps"]
+
+    decoded = BuilderDraft.from_session_object(session_object)
+
+    assert decoded is not None
+    assert decoded.saved_steps == ()
+
+
 @pytest.mark.parametrize(
     "raw_value",
     [None, "x", ["discovery"], {"unknown": {"a": "b"}}, {"discovery": "x"}, {"discovery": {"a": 1}}],

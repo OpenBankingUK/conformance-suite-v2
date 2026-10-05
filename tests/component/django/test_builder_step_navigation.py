@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from typing import Any
 from unittest.mock import Mock, patch
 
@@ -120,15 +121,56 @@ class TestStepBar:
         for step_id in ("catalogue", "discovery", "security", "config", "review"):
             assert f'name="next" value="{step_id}"' in content
 
-    def test_visiting_a_step_without_entering_data_does_not_mark_it_complete(self) -> None:
+    def test_leaving_scope_empty_flags_it_and_leaves_unvisited_steps_untouched(self) -> None:
         client = Client()
         draft_id = _draft_at_scope(client)
 
         client.post(f"/builder/{draft_id}/scope/", data={"next": "back"})
         content = client.get(f"/builder/{draft_id}/catalogue/").content.decode("utf-8")
 
-        assert _step_state(content, "scope") == "not_started"
+        assert _step_state(content, "scope") == "attention"
         assert _step_state(content, "config") == "not_started"
+        assert _step_state(content, "discovery") == "not_started"
+
+    def test_leaving_business_data_without_scope_does_not_mark_it_complete(self) -> None:
+        client = Client()
+        draft_id = _draft_at_scope(client)
+
+        client.post(f"/builder/{draft_id}/config/", data={"next": "back"})
+        content = client.get(f"/builder/{draft_id}/scope/").content.decode("utf-8")
+
+        assert _step_state(content, "config") == "not_started"
+
+    def test_leaving_required_business_data_empty_flags_it(self) -> None:
+        client = Client()
+        plan = _import_plan()
+        plan["resourceGroups"][0]["endpoints"] = [
+            {"method": "GET", "path": "/open-banking/v4.0/aisp/accounts/{AccountId}"}
+        ]
+        draft_id = str(client.post("/builder/import/", data={"plan_json": json.dumps(plan)})["Location"]).split("/")[2]
+        session = client.session
+        store = SessionBuilderDraftStore(session)
+        draft = store.get(draft_id)
+        assert draft is not None
+        store.save(replace(draft, saved_steps=()))
+        session.save()
+        before = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
+        assert _step_state(before, "config") == "not_started"
+
+        client.post(f"/builder/{draft_id}/config/", data={"next": "review"})
+        review = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
+
+        assert _step_state(review, "config") == "attention"
+
+    def test_imported_plan_without_scope_flags_scope(self) -> None:
+        client = Client()
+        plan = {key: value for key, value in _import_plan().items() if key != "resourceGroups"}
+        response = client.post("/builder/import/", data={"plan_json": json.dumps(plan)})
+        draft_id = str(response["Location"]).split("/")[2]
+
+        review = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
+
+        assert _step_state(review, "scope") == "attention"
 
 
 class TestStepBarLayout:
@@ -429,7 +471,7 @@ class TestBack:
 
         assert _draft(client, draft_id).resource_group_ids == ()
         review = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
-        assert _step_state(review, "scope") == "not_started"
+        assert _step_state(review, "scope") == "attention"
         assert 'data-step-issues="scope"' in review
         assert "Select at least one resource group" in review
 

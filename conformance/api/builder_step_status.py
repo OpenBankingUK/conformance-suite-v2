@@ -338,16 +338,21 @@ def builder_step_issues(draft: BuilderDraft) -> dict[BuilderStepId, tuple[str, .
 
 
 def _step_started(draft: BuilderDraft, step: BuilderStepId) -> bool:
-    """Return whether the draft holds any participant data for a step.
+    """Return whether a step has been saved or holds any participant data.
 
     Args:
         draft: Builder draft.
         step: Step to inspect.
 
     Returns:
-        True when the step differs from a blank draft with the same boundary.
+        True when the step has been saved, or differs from a blank draft with
+        the same boundary.
     """
     if draft.invalid_field_values.get(step):
+        return True
+    if step in draft.saved_steps and (step != "config" or business_config_form_for_draft(draft) is not None):
+        # Business data has no inputs until a scope is chosen, so saving it
+        # empty then is not progress; scope reports the missing selection.
         return True
     match step:
         case "catalogue":
@@ -401,7 +406,7 @@ def builder_step_progress(
 
     Returns:
         ``complete`` (data and no issues), ``attention`` (data with issues), or
-        ``not_started`` (no data yet) per step.
+        ``not_started`` (never saved and no data yet) per step.
     """
     step_issues = builder_step_issues(draft) if issues is None else issues
     progress: dict[BuilderNavigationTarget, StepProgress] = {}

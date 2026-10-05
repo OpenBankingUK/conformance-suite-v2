@@ -22,7 +22,13 @@ from typing import cast
 from django import forms
 from django.core.files.uploadedfile import UploadedFile
 
-from conformance.api.builder_draft_store import BuilderDraft, BuilderStepId, PlanImportIssue, PlanImportIssueKind
+from conformance.api.builder_draft_store import (
+    BUILDER_STEP_IDS,
+    BuilderDraft,
+    BuilderStepId,
+    PlanImportIssue,
+    PlanImportIssueKind,
+)
 from conformance.api.builder_wizard import (
     builder_plan_json_from_draft_or_skeleton,
     draft_scope_from_plan_document,
@@ -268,7 +274,9 @@ def recover_draft_from_plan_json(raw_plan: Mapping[str, JsonValue], *, draft: Bu
 
     Returns:
         Draft holding recovered builder values, the unrepresented-field overlay,
-        and import issues for the review page.
+        and import issues for the review page. Every builder step is marked as
+        saved, so the step bar reports missing imported data as needing
+        attention rather than not started.
     """
     recovery = _Recovery()
     _recover_schema_version(raw_plan, recovery)
@@ -325,8 +333,10 @@ def recover_draft_from_plan_json(raw_plan: Mapping[str, JsonValue], *, draft: Bu
                 "Nothing usable was imported. Build the plan with the guided builder or fix the plan JSON on this page."
             ),
         )
-    return draft.with_unrepresented_plan_fields(unrepresented_plan_fields=recovery.overlay).with_import_issues(
-        import_issues=tuple(recovery.issues)
+    return (
+        draft.with_unrepresented_plan_fields(unrepresented_plan_fields=recovery.overlay)
+        .with_import_issues(import_issues=tuple(recovery.issues))
+        .with_steps_saved(*BUILDER_STEP_IDS)
     )
 
 
