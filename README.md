@@ -22,8 +22,12 @@ announced separately — you do not need to migrate or do anything in advance.
 With Docker installed and running, start the beta on your own computer:
 
 ```bash
-docker run --rm -p 127.0.0.1:8443:8443 openbanking/conformance-suite-v2:2.0.0-beta.5
+docker run --pull=always --rm -p 127.0.0.1:8443:8443 openbanking/conformance-suite-v2:2.0.0-beta-latest
 ```
+
+`2.0.0-beta-latest` tracks the newest published 2.0.0 beta. `--pull=always`
+refreshes the image each time you start a container; it does not update an
+already running container. This tag is for evaluation only, not certification.
 
 Open `https://127.0.0.1:8443/` in your browser. Accept the warning for the
 container's locally generated self-signed HTTPS certificate. The Docker

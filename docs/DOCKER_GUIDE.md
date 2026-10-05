@@ -11,15 +11,16 @@ non-root and requires no manually supplied Django secret. The persistence,
 certificate mount, Compose, and CLI options later in this guide are advanced
 reference rather than prerequisites for the beta UI.
 
-## Beta.1 quick start: browser UI
+## Beta quick start: browser UI
 
 Install and start Docker, then run:
 
 ```bash
-docker run --rm -p 127.0.0.1:8443:8443 openbanking/conformance-suite-v2:2.0.0-beta.5
+docker run --pull=always --rm -p 127.0.0.1:8443:8443 openbanking/conformance-suite-v2:2.0.0-beta-latest
 ```
 
-Docker pulls the image from Docker Hub if it is not already available locally.
+`2.0.0-beta-latest` tracks the newest published 2.0.0 beta. Docker pulls the
+current image from Docker Hub on each launch, even if an older image is cached.
 Open `https://127.0.0.1:8443/` on the same computer and accept the browser's
 warning for the locally generated self-signed HTTPS certificate. Keep the
 `127.0.0.1` Docker port binding so the UI stays local.
@@ -58,13 +59,14 @@ Published images are available from Docker Hub at
 `docker.io/openbanking/conformance-suite-v2`:
 
 ```bash
-docker pull docker.io/openbanking/conformance-suite-v2:<version>
+docker pull docker.io/openbanking/conformance-suite-v2:2.0.0-beta-latest
 ```
 
 If the repository requires authentication, log in to Docker Hub with
 credentials that grant access before pulling.
 
-Replace `<version>` with an exact published tag, for example `2.0.0-beta.5`.
+For reproducible runs, replace `2.0.0-beta-latest` in the commands in this guide
+with an exact published tag, for example `2.0.0-beta.5`.
 See [`CICD_STRATEGY.md`](CICD_STRATEGY.md) for the full preview/beta/GA
 versioning and promotion model. `latest` refers only to the current GA release.
 For convenient MVP beta evaluation, `2.0.0-beta-latest` tracks the highest
@@ -76,11 +78,12 @@ Neither beta tag is suitable for certification.
 
 ```bash
 docker pull docker.io/openbanking/conformance-suite-v2:2.0.0-beta-latest
-docker run --rm -p 127.0.0.1:8443:8443 docker.io/openbanking/conformance-suite-v2:2.0.0-beta-latest
+docker run --pull=always --rm -p 127.0.0.1:8443:8443 docker.io/openbanking/conformance-suite-v2:2.0.0-beta-latest
 ```
 
-Pull explicitly before starting a new container: a moving tag does not refresh a
-cached image or an already running container. The alias is first created by an
+Use `--pull=always` when starting a new container, as shown above, or pull
+explicitly beforehand: a moving tag alone does not refresh a cached image or an
+already running container. The alias is first created by an
 eligible future beta promotion; existing beta images are not automatically
 retagged when this feature is deployed.
 
@@ -96,15 +99,15 @@ volume at `/data` and run under the full hardened profile:
 ```bash
 docker volume create conformance-suite-data
 
-docker run --rm -p 127.0.0.1:8443:8443 \
+docker run --pull=always --rm -p 127.0.0.1:8443:8443 \
   --read-only --cap-drop=ALL --security-opt=no-new-privileges \
   --tmpfs /tmp:size=64m,mode=1777 \
   -v conformance-suite-data:/data \
-  docker.io/openbanking/conformance-suite-v2:<version>
+  docker.io/openbanking/conformance-suite-v2:2.0.0-beta-latest
 ```
 
-This is exactly what `make docker` runs locally (see the repository
-`Makefile`). What each flag buys you:
+This uses the same hardened profile as `make docker`, which builds and runs a
+local image instead (see the repository `Makefile`). What each flag buys you:
 
 | Flag | Purpose |
 | --- | --- |
@@ -135,12 +138,12 @@ Mount a read-only directory at `/certs` to supply TLS/mTLS and FAPI signing
 material without ever baking it into the image:
 
 ```bash
-docker run --rm -p 127.0.0.1:8443:8443 \
+docker run --pull=always --rm -p 127.0.0.1:8443:8443 \
   --read-only --cap-drop=ALL --security-opt=no-new-privileges \
   --tmpfs /tmp:size=64m,mode=1777 \
   -v conformance-suite-data:/data \
   -v /path/to/your/certs:/certs:ro \
-  docker.io/openbanking/conformance-suite-v2:<version>
+  docker.io/openbanking/conformance-suite-v2:2.0.0-beta-latest
 ```
 
 `/certs` is never copied, cached, or written elsewhere in the container — it
@@ -175,16 +178,18 @@ session.
 ## Advanced: Compose equivalent
 
 `compose.yaml` in the repository root provides the same durable, hardened
-profile:
+profile. Select the beta tag explicitly, since the Compose file defaults to
+the GA `latest` tag, and pull the current image on launch:
 
 ```bash
-docker compose up
+CONFORMANCE_SUITE_VERSION=2.0.0-beta-latest docker compose up --pull always
 ```
 
 To also mount certificates, layer the optional override:
 
 ```bash
-CERTS_DIR=/path/to/your/certs docker compose -f compose.yaml -f compose.certs.yaml up
+CONFORMANCE_SUITE_VERSION=2.0.0-beta-latest CERTS_DIR=/path/to/your/certs \
+  docker compose -f compose.yaml -f compose.certs.yaml up --pull always
 ```
 
 `CERTS_DIR` defaults to `./local-config/certs` (the same directory used for
@@ -225,11 +230,11 @@ the same entrypoint, so secret-key generation, `/data` preparation, and safe
 environment defaults apply identically:
 
 ```bash
-docker run --rm \
+docker run --pull=always --rm \
   -v conformance-suite-data:/data \
   -v /path/to/your/certs:/certs:ro \
   -v /path/to/your/test-plan.json:/test-plan.json:ro \
-  docker.io/openbanking/conformance-suite-v2:<version> \
+  docker.io/openbanking/conformance-suite-v2:2.0.0-beta-latest \
   python3 main.py --test-plan /test-plan.json
 ```
 
