@@ -99,7 +99,11 @@ class TestStepBar:
 
         assert 'id="builder-step-form"' in content
         assert content.count('data-builder-step-state="locked"') == 5
-        assert "(locked until a specification is selected)" in content
+        assert content.count('class="builder-step-pill" aria-disabled="true"') == 5
+        assert content.count('role="tooltip"') == 5
+        assert content.count("Select a specification first to unlock this step.") == 5
+        assert 'aria-describedby="builder-step-locked-tip-discovery"' in content
+        assert 'id="builder-step-locked-tip-discovery"' in content
         assert 'name="next" value="discovery"' not in content
 
     def test_selecting_a_specification_opens_every_step(self) -> None:
@@ -109,6 +113,7 @@ class TestStepBar:
         content = client.get(f"/builder/{draft_id}/scope/").content.decode("utf-8")
 
         assert 'data-builder-step-state="locked"' not in content
+        assert 'role="tooltip"' not in content
         assert _step_state(content, "catalogue") == "complete"
         assert _step_state(content, "discovery") == "not_started"
         assert _step_state(content, "config") == "not_started"

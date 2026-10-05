@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shown on review only, Business data shows requirement badges beside labels and
   a styled empty state when no scope is selected, and review shows each blocker
   once (an empty scope no longer also shows the raw `resourceGroups` error).
+- Locked builder steps on a new plan show a tooltip on hover and keyboard focus
+  explaining that a specification must be selected first.
 - Review is the single validation gate: it lists each step's issues with a
   **Fix** button for that step, and launch stays blocked until they are
   resolved. Business data is empty until scope is selected and follows the

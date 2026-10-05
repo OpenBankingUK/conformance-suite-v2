@@ -50,8 +50,8 @@ started. Only the specification gates navigation; review lists every issue.
         cursor: pointer;
     }
 
-    .builder-step-bar button.builder-step-pill:hover,
-    .builder-step-bar button.builder-step-pill:focus-visible {
+    .builder-step-bar button.builder-step-pill:not([aria-disabled="true"]):hover,
+    .builder-step-bar button.builder-step-pill:not([aria-disabled="true"]):focus-visible {
         border-color: var(--accent, #0b6bcb);
         color: var(--accent, #0b6bcb);
     }
@@ -62,11 +62,51 @@ started. Only the specification gates navigation; review lists every issue.
         color: #ffffff;
     }
 
-    .builder-step-bar button.builder-step-pill:disabled {
+    .builder-step-bar button.builder-step-pill[aria-disabled="true"] {
         cursor: not-allowed;
         color: var(--muted, #667085);
         background: transparent;
         border-style: dashed;
+    }
+
+    /* Locked steps explain why on hover and keyboard focus (aria-disabled keeps them focusable). */
+    .builder-step-bar li {
+        position: relative;
+    }
+
+    .builder-step-bar .builder-step-tooltip {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 50%;
+        z-index: 10;
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: #1b1f24;
+        color: #ffffff;
+        font-size: 0.8rem;
+        font-weight: 500;
+        line-height: 1.3;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        visibility: hidden;
+        transform: translateX(-50%);
+    }
+
+    .builder-step-bar .builder-step-tooltip::before {
+        content: "";
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        border: 5px solid transparent;
+        border-bottom-color: #1b1f24;
+    }
+
+    .builder-step-bar li:hover .builder-step-tooltip,
+    .builder-step-bar li:has(button:focus-visible) .builder-step-tooltip {
+        opacity: 1;
+        visibility: visible;
     }
 
     .builder-step-bar .builder-step-number {
@@ -129,7 +169,8 @@ started. Only the specification gates navigation; review lists every issue.
                 {% elif item.clickable %}
                     <button type="submit" class="builder-step-pill" name="next" value="{{ item.step_id }}" form="{{ step_form_id }}" formnovalidate><span class="builder-step-number" aria-hidden="true">{% if item.state == "complete" %}&#10003;{% elif item.state == "attention" %}!{% else %}{{ item.number }}{% endif %}</span>{{ item.label }}<span class="visually-hidden">{% if item.state == "complete" %} (complete){% elif item.state == "attention" %} (needs attention){% else %} (not started){% endif %}</span></button>
                 {% else %}
-                    <button type="button" class="builder-step-pill" disabled><span class="builder-step-number">{{ item.number }}</span>{{ item.label }}<span class="visually-hidden"> (locked until a specification is selected)</span></button>
+                    <button type="button" class="builder-step-pill" aria-disabled="true" aria-describedby="builder-step-locked-tip-{{ item.step_id }}"><span class="builder-step-number">{{ item.number }}</span>{{ item.label }}</button>
+                    <span role="tooltip" id="builder-step-locked-tip-{{ item.step_id }}" class="builder-step-tooltip">Select a specification first to unlock this step.</span>
                 {% endif %}
             </li>
         {% endfor %}
