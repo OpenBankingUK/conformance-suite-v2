@@ -29,6 +29,7 @@ from conformance.api.builder_steps import (
     step_bar,
 )
 from conformance.api.builder_wizard import (
+    EMPTY_CONFIG_VISIBILITY,
     BusinessConfigForm,
     CatalogueBoundaryForm,
     DiscoveryConfigForm,
@@ -50,6 +51,8 @@ from conformance.api.builder_wizard import (
     plan_document_to_export_json,
     plan_json_from_draft,
     refresh_security_environment,
+    resource_groups_without_endpoints,
+    scope_selection_defaults,
     security_config_form_initial,
     security_credential_rows,
     security_field_metadata,
@@ -205,6 +208,7 @@ def builder_catalogue_boundary(request: HttpRequest, draft_id: str) -> HttpRespo
                 },
                 boundary=selected_boundary,
                 prune_unavailable_choices=True,
+                enforce_endpoint_requirements=False,
             )
             pruned_scope.is_valid()
             updated_draft = draft.with_catalogue_boundary(
@@ -275,15 +279,27 @@ def builder_scope(request: HttpRequest, draft_id: str) -> HttpResponse:
                 endpoint_capability_ids=form.selected_endpoint_capability_ids,
             )
             target = _step_save_target(request, updated_draft.with_completed_step("scope"), "scope")
-            if (
-                boundary_requires_resource_groups(boundary)
-                and not updated_draft.resource_group_ids
-                and not navigates_backward(updated_draft, "scope", target)
-            ):
-                form.add_error("resource_groups", "Select at least one resource group to continue.")
+            requires_groups = boundary_requires_resource_groups(boundary)
+            groups_missing_endpoints = (
+                resource_groups_without_endpoints(
+                    boundary,
+                    resource_group_ids=updated_draft.resource_group_ids,
+                    endpoint_ids=updated_draft.endpoint_ids,
+                )
+                if requires_groups
+                else ()
+            )
+            scope_incomplete = requires_groups and (
+                not updated_draft.resource_group_ids or bool(groups_missing_endpoints)
+            )
+            if scope_incomplete and not navigates_backward(updated_draft, "scope", target):
+                if not updated_draft.resource_group_ids:
+                    form.add_error("resource_groups", "Select at least one resource group to continue.")
+                for label in groups_missing_endpoints:
+                    form.add_error("resource_groups", f"Select at least one {label} endpoint to continue.")
             else:
-                if boundary_requires_resource_groups(boundary) and not updated_draft.resource_group_ids:
-                    # Going back with an empty scope: keep it, but business data needs resource groups.
+                if scope_incomplete:
+                    # Going back with an incomplete scope: keep it, but business data needs a resolvable scope.
                     updated_draft = updated_draft.with_completed_steps(
                         tuple(s for s in updated_draft.completed_steps if s not in {"scope", "config"})
                     )
@@ -326,8 +342,26 @@ def builder_scope_options(request: HttpRequest, draft_id: str) -> HttpResponse:
     if boundary is None:
         return HttpResponseNotFound("Builder draft catalogue boundary not selected")
 
+    data = request.POST.copy()
+    expand_groups = data.getlist("expand_resource_group")
+    expand_endpoints = data.getlist("expand_endpoint")
+    if expand_groups or expand_endpoints:
+        endpoint_ids, capability_values = scope_selection_defaults(
+            boundary,
+            selected_resource_group_ids=data.getlist("resource_groups"),
+            expand_resource_group_ids=expand_groups,
+            expand_endpoint_ids=expand_endpoints,
+        )
+        existing_endpoints = data.getlist("endpoints")
+        data.setlist("endpoints", [*existing_endpoints, *(e for e in endpoint_ids if e not in existing_endpoints)])
+        existing_capabilities = data.getlist("endpoint_capabilities")
+        data.setlist(
+            "endpoint_capabilities",
+            [*existing_capabilities, *(c for c in capability_values if c not in existing_capabilities)],
+        )
+
     form = ScopeSelectionForm(
-        data=request.POST,
+        data=data,
         boundary=boundary,
         initial=_scope_form_initial(draft),
         prune_unavailable_choices=True,
@@ -364,6 +398,12 @@ def builder_config(request: HttpRequest, draft_id: str) -> HttpResponse:
         return redirect("builder-discovery-config", draft_id=draft.draft_id)
     if not draft.resource_group_ids:
         return redirect("builder-scope", draft_id=draft.draft_id)
+    if boundary is not None and resource_groups_without_endpoints(
+        boundary,
+        resource_group_ids=draft.resource_group_ids,
+        endpoint_ids=draft.endpoint_ids,
+    ):
+        return redirect("builder-scope", draft_id=draft.draft_id)
     if (blocked := _blocked_step_redirect(draft, "config")) is not None:
         return blocked
 
@@ -375,7 +415,10 @@ def builder_config(request: HttpRequest, draft_id: str) -> HttpResponse:
             "conformance/builder_business_config.html",
             _builder_business_config_context(
                 draft=draft,
-                form=BusinessConfigForm(initial=business_config_form_initial(draft.config)),
+                form=BusinessConfigForm(
+                    initial=business_config_form_initial(draft.config),
+                    config_visibility=EMPTY_CONFIG_VISIBILITY,
+                ),
                 review_error=f"Scope validation failed: {error}",
             ),
             draft=draft,

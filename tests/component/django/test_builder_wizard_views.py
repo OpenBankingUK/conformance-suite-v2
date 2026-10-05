@@ -344,9 +344,7 @@ class TestBuilderWizardUi:
         )
         scope_response = client.get(saved_security_response["Location"])
         assert scope_response.status_code == 200
-        assert "baseline and optional labels describe generated conformance coverage" in scope_response.content.decode(
-            "utf-8"
-        )
+        assert "Endpoint labels follow the specification" in scope_response.content.decode("utf-8")
         endpoint = _scope_endpoint(
             selected_resource_group_id="account-and-transaction",
             path="/open-banking/v4.0/aisp/transactions",
@@ -367,11 +365,13 @@ class TestBuilderWizardUi:
         business_response = client.get(saved_scope_response["Location"])
         assert business_response.status_code == 200
         business_content = business_response.content.decode("utf-8")
-        _assert_requirement_badge(business_content, "Consented account identifier", "Optional")
+        _assert_requirement_badge(business_content, "Consented account identifier", "Required")
         assert '<div class="field-heading">' in business_content
         assert "Advanced AIS resource IDs JSON" in business_content
 
-        saved_business_response = client.post(saved_scope_response["Location"], data={})
+        saved_business_response = client.post(
+            saved_scope_response["Location"], data={"ais_consented_account_id": "account-123"}
+        )
         assert saved_business_response.status_code == 302
         assert saved_business_response["Location"].endswith("/review/")
         draft_id = _draft_id_from_builder_redirect(saved_business_response["Location"])
@@ -562,6 +562,123 @@ class TestBuilderWizardUi:
         assert "GET /open-banking/v4.0/pisp/domestic-payments" not in content
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
+    def test_scope_fragment_uses_spec_labels_and_locks_mandatory_endpoints(self, mock_fetch_discovery: Mock) -> None:
+        """The UI exposes specification status, not catalogue coverage labels."""
+        mock_fetch_discovery.return_value = {}
+        client = Client()
+        scope_location = _scope_location_after_security(client)
+        response = client.post(
+            scope_location + "options/",
+            data={"resource_groups": ["account-and-transaction"]},
+        )
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        mandatory = _scope_endpoint(
+            selected_resource_group_id="account-and-transaction",
+            path="/open-banking/v4.0/aisp/accounts",
+        )
+        optional = _scope_endpoint(
+            selected_resource_group_id="account-and-transaction",
+            path="/open-banking/v4.0/aisp/transactions",
+        )
+        assert f'name="endpoints" value="{mandatory.id}" data-requirement-kind="M"' in content
+        checkbox = re.search(
+            rf'<input type="checkbox"\s+name="locked_endpoint"\s+value="{mandatory.id}"([^>]*)>',
+            content,
+        )
+        assert checkbox is not None
+        assert "checked" in checkbox[1]
+        assert 'disabled aria-disabled="true"' in checkbox[1]
+        assert f'value="{optional.id}"' in content
+        assert "Mandatory" in content
+        assert ">Optional" in content
+        assert ">Conditional" in content
+        assert re.search(r'<span class="chip">Baseline', content) is None
+        assert "Not classified in endpoint tables" in content
+        assert "Specification endpoint table" in content
+        assert "Deselect conditional and optional endpoints" in content
+
+    @patch("conformance.api.ui_views._fetch_discovery_metadata")
+    def test_scope_fragment_defaults_new_group_to_all_endpoints_and_features(self, mock_fetch_discovery: Mock) -> None:
+        """Ticking a resource group selects every endpoint and optional feature in it."""
+        mock_fetch_discovery.return_value = {}
+        client = Client()
+        scope_location = _scope_location_after_security(client)
+        optional = _scope_endpoint(
+            selected_resource_group_id="account-and-transaction",
+            path="/open-banking/v4.0/aisp/transactions",
+        )
+
+        response = client.post(
+            scope_location + "options/",
+            data={"resource_groups": ["account-and-transaction"], "expand_resource_group": ["account-and-transaction"]},
+        )
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        endpoint_box = re.search(
+            rf'<input type="checkbox"\s+name="endpoints"\s+value="{optional.id}"([^>]*)>',
+            content,
+        )
+        assert endpoint_box is not None
+        assert "checked" in endpoint_box[1]
+        feature_value = endpoint_capability_value(
+            endpoint_id=optional.id,
+            capability_id="ais.transactions.date-range-filtering",
+        )
+        feature_box = re.search(rf'value="{re.escape(feature_value)}"([^>]*)>', content)
+        assert feature_box is not None
+        assert "checked" in feature_box[1]
+
+    @patch("conformance.api.ui_views._fetch_discovery_metadata")
+    def test_scope_fragment_without_expansion_keeps_optional_endpoints_unselected(
+        self, mock_fetch_discovery: Mock
+    ) -> None:
+        """Refreshes for other changes do not re-add endpoints the participant removed."""
+        mock_fetch_discovery.return_value = {}
+        client = Client()
+        scope_location = _scope_location_after_security(client)
+        optional = _scope_endpoint(
+            selected_resource_group_id="account-and-transaction",
+            path="/open-banking/v4.0/aisp/transactions",
+        )
+
+        content = client.post(
+            scope_location + "options/",
+            data={"resource_groups": ["account-and-transaction"], "expand_resource_group": ["not-a-group"]},
+        ).content.decode("utf-8")
+
+        endpoint_box = re.search(
+            rf'<input type="checkbox"\s+name="endpoints"\s+value="{optional.id}"([^>]*)>',
+            content,
+        )
+        assert endpoint_box is not None
+        assert "checked" not in endpoint_box[1]
+
+    @patch("conformance.api.ui_views._fetch_discovery_metadata")
+    def test_scope_post_exports_mandatory_endpoints_even_when_omitted(self, mock_fetch_discovery: Mock) -> None:
+        """Server-side required selections persist through canonical JSON export."""
+        mock_fetch_discovery.return_value = {}
+        client = Client()
+        scope_location = _scope_location_after_security(client)
+        scope = client.post(scope_location, data={"resource_groups": ["account-and-transaction"]})
+        assert scope.status_code == 302
+        config = client.post(scope["Location"], data={"ais_consented_account_id": "account-123"})
+        assert config.status_code == 302
+        draft_id = _draft_id_from_builder_redirect(scope_location)
+        export = client.get(f"/builder/{draft_id}/export.json")
+        assert export.status_code == 200
+        plan = export.json()
+        assert len(plan["resourceGroups"]) == 1
+        assert plan["resourceGroups"][0]["id"] == "AIS"
+        assert {(e["method"], e["path"]) for e in plan["resourceGroups"][0]["endpoints"]} == {
+            ("GET", "/open-banking/v4.0/aisp/accounts"),
+            ("GET", "/open-banking/v4.0/aisp/accounts/{AccountId}"),
+            ("GET", "/open-banking/v4.0/aisp/accounts/{AccountId}/balances"),
+            ("GET", "/open-banking/v4.0/aisp/accounts/{AccountId}/transactions"),
+        }
+
+    @patch("conformance.api.ui_views._fetch_discovery_metadata")
     def test_scope_step_saves_selected_resource_endpoint_and_feature(self, mock_fetch_discovery: Mock) -> None:
         """POST /builder/<draft>/scope/ stores selected scope values and continues."""
         mock_fetch_discovery.return_value = {}
@@ -702,7 +819,7 @@ class TestBuilderWizardUi:
             scope_location,
             data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]},
         )
-        business_response = client.post(scope_response["Location"], data={})
+        business_response = client.post(scope_response["Location"], data={"ais_consented_account_id": "account-123"})
 
         assert business_response.status_code == 302
         assert business_response["Location"].endswith("/review/")
@@ -735,7 +852,7 @@ class TestBuilderWizardUi:
         }
         assert exported["resourceGroups"][0]["id"] == "AIS"
         assert exported["securityEnvironment"]["resourceBaseUrl"] == "https://resource.example.com"
-        assert "ais" not in exported["businessTestData"]
+        assert exported["businessTestData"]["ais"]["accountIds"] == ["account-123"]
         assert "inputs" not in exported["businessTestData"]
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
@@ -1369,6 +1486,11 @@ class TestBuilderWizardUi:
             f"/builder/{draft_id}/scope/",
             data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]},
         )
+        config = client.post(
+            f"/builder/{draft_id}/config/",
+            data={"ais_consented_account_id": "account-123"},
+        )
+        assert config.status_code == 302
         review = client.get(f"/builder/{draft_id}/review/")
         exported = client.get(f"/builder/{draft_id}/export.json").json()
 

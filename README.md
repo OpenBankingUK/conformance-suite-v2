@@ -263,6 +263,13 @@ CLI, and REST execution paths accept canonical schemaVersion `1.0` plans only.
 intentionally rejected. Mandatory applicable catalogue tests cannot be
 arbitrarily deselected.
 
+Specification endpoint implementation requirements are separate from required
+tests for implemented endpoints. The
+[Read/Write endpoint requirement matrix](docs/READ_WRITE_ENDPOINT_REQUIREMENTS.md)
+records Mandatory, Conditional and Optional classifications from the individual
+resource pages for v4.0.1, v4.0.0 and v3.1.11, including dependencies and source
+discrepancies.
+
 DCR plans instead use family `OBL_DCR`, specification
 `dynamic-client-registration`, version `3.4`, top-level `endpoints`, and
 `dynamicClientRegistration`; they must not contain `resourceGroups` or

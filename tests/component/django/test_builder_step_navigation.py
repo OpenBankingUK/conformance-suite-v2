@@ -10,6 +10,7 @@ import pytest
 from django.test import Client
 
 from conformance.api.builder_draft_store import BUILDER_STEP_IDS, BuilderDraft, SessionBuilderDraftStore
+from conformance.catalogue import CatalogueError
 
 pytestmark = pytest.mark.component
 
@@ -333,6 +334,84 @@ class TestBack:
         assert response.status_code == 400
         assert "Select at least one resource group to continue." in response.content.decode("utf-8")
         assert "scope" not in _draft(client, draft_id).completed_steps
+
+
+class TestScopeCompleteness:
+    """A resource group without endpoints cannot be carried into Business data."""
+
+    @patch("conformance.api.ui_views.resource_groups_without_endpoints", return_value=("Account and Transaction",))
+    def test_continue_with_group_lacking_endpoints_shows_an_error(self, _mock_missing: Mock) -> None:
+        client = Client()
+        draft_id = _draft_at_scope(client)
+
+        response = client.post(f"/builder/{draft_id}/scope/", data={"resource_groups": ["account-and-transaction"]})
+
+        assert response.status_code == 400
+        content = response.content.decode("utf-8")
+        assert "Select at least one Account and Transaction endpoint to continue." in content
+        assert "scope" not in _draft(client, draft_id).completed_steps
+
+    @patch("conformance.api.ui_views.resource_groups_without_endpoints", return_value=("Account and Transaction",))
+    def test_back_with_group_lacking_endpoints_saves_without_completing_scope(self, _mock_missing: Mock) -> None:
+        client = Client()
+        draft_id = _imported_draft_id(client)
+
+        response = client.post(
+            f"/builder/{draft_id}/scope/",
+            data={"resource_groups": ["account-and-transaction"], "next": "security"},
+        )
+
+        assert response.status_code == 302
+        draft = _draft(client, draft_id)
+        assert draft.resource_group_ids == ("account-and-transaction",)
+        assert "scope" not in draft.completed_steps
+        assert "config" not in draft.completed_steps
+
+    def test_business_data_redirects_to_scope_when_a_group_has_no_endpoints(self) -> None:
+        client = Client()
+        draft_id = _imported_draft_id(client)
+        session = client.session
+        store = SessionBuilderDraftStore(session)
+        draft = store.get(draft_id)
+        assert draft is not None
+        store.save(
+            draft.with_scope_selection(
+                resource_group_ids=("account-and-transaction",),
+                endpoint_ids=(),
+                endpoint_capability_ids={},
+            )
+        )
+        session.save()
+
+        response = client.get(f"/builder/{draft_id}/config/")
+
+        assert response.status_code == 302
+        assert response["Location"] == f"/builder/{draft_id}/scope/"
+
+    def test_business_data_hides_every_field_when_scope_cannot_be_resolved(self) -> None:
+        client = Client()
+        draft_id = _imported_draft_id(client)
+
+        with patch("conformance.api.ui_views.plan_document_from_draft", side_effect=CatalogueError("bad scope")):
+            response = client.get(f"/builder/{draft_id}/config/")
+
+        assert response.status_code == 400
+        content = response.content.decode("utf-8")
+        assert "Scope validation failed: bad scope" in content
+        assert 'name="ais_consented_account_id"' not in content
+        assert 'name="pis_creditor_account_scheme_name"' not in content
+        assert 'name="vrp_creditor_account_name"' not in content
+
+    def test_business_data_shows_only_selected_group_fields(self) -> None:
+        client = Client()
+        draft_id = _imported_draft_id(client)
+
+        content = client.get(f"/builder/{draft_id}/config/").content.decode("utf-8")
+
+        assert 'name="ais_consented_account_id"' in content
+        assert 'name="pis_creditor_account_scheme_name"' not in content
+        assert 'name="cbpii_debtor_account_name"' not in content
+        assert 'name="vrp_creditor_account_name"' not in content
 
 
 class TestLocking:

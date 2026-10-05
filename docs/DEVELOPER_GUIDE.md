@@ -315,6 +315,20 @@ The wizard follows the PRD order:
    server-rendered fragment at
    `/builder/<draft>/scope/options/` shows endpoints from the selected AIS, PIS,
    CBPII, or VRP groups and reveals capabilities only for selected endpoints.
+   `conformance/endpoint_requirements.py` codifies the
+   [reviewed specification matrix](READ_WRITE_ENDPOINT_REQUIREMENTS.md).
+   Mandatory covered endpoints are locked within selected groups, and a selected
+   resource POST locks its mandatory dependent endpoints. The server restores
+   these selections even if checkbox values are omitted. Conditional/Optional
+   endpoints remain selectable; unknown catalogue-only paths are not inferred
+   to be Optional. This is separate from required capabilities for an implemented
+   endpoint and does not change the raw JSON compiler's declared-scope contract.
+   Ticking a group (or **Select all endpoints and features**) sends
+   `expand_resource_group`, and ticking an endpoint sends `expand_endpoint`, on
+   the fragment refresh; `scope_selection_defaults()` then adds every endpoint
+   and optional feature for those items only. Continuing is blocked while any
+   selected group has no endpoint (`resource_groups_without_endpoints()`), and
+   `/config/` redirects back to scope in that state.
 6. Enter business/request defaults at `/builder/<draft>/config/`. DCR skips this
    page. AIS, PIS,
    CBPII, and VRP fields render only when selected endpoints need that domain.

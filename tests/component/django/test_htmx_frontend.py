@@ -199,7 +199,8 @@ class TestBuilderPages:
         assert f'hx-post="/builder/{draft_id}/scope/options/"' in content
         assert 'hx-trigger="change, scope-refresh"' in content
         assert 'hx-sync="this:replace"' in content
-        assert 'htmx.trigger(refresher, "scope-refresh")' in content
+        assert 'htmx.trigger(refresher, "scope-refresh", { expandAll: selectEndpoints })' in content
+        assert "expand_resource_group" in content
         assert "AbortController" not in content
         assert "fetch(" not in content
 

@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Builder endpoint labels now use a codified, source-linked Read/Write
+  Mandatory/Conditional/Optional matrix for 4.0.1, 4.0.0 and 3.1.11 rather than
+  catalogue "Baseline" coverage. Mandatory covered endpoints and selected
+  resource-POST dependencies are locked and restored server-side. Bulk deselection
+  retains mandatory endpoints and required features. Specification conditions
+  and conflicting source text remain explicit.
 - The builder shows a step bar at the top of every step and the review page.
   Participants can jump to any step whose earlier steps are complete, so an
   imported plan can be edited one step at a time and returned straight to
@@ -22,8 +28,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Clicking an earlier step in the step bar on an invalid page (including
   review with invalid plan JSON) offers the same choice. Going back does not
   mark a step complete; only moving forward from a step does.
-- The builder scope step now asks for at least one resource group before
-  continuing to business data, instead of silently returning to scope.
+- The builder scope step now asks for at least one resource group, and at
+  least one endpoint in every selected group, before continuing to business
+  data. Going back with an incomplete scope saves it but re-locks business data.
+- Ticking a resource group on the builder scope step now selects all of its
+  endpoints and optional features by default; ticking a single endpoint selects
+  its optional features. **Select all endpoints and features** does the same for
+  every selected group, and the deselect action only removes conditional and
+  optional endpoints and features.
+
+### Fixed
+
+- Builder business data no longer shows every resource group's fields when the
+  selected scope cannot be resolved; it shows only the scope error, and returns
+  to the scope step when a selected group has no endpoints.
 - The run screen's **New plan** button is now a **Main menu** link, so
   participants choose between creating and importing a plan.
 - The builder's specification step now preselects the latest OpenAPI document

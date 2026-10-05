@@ -46,6 +46,11 @@ from conformance.catalogue import (
 )
 from conformance.catalogue_registry import supported_catalogues
 from conformance.credentials import CredentialMaterial, credential_from_inline, credential_from_path
+from conformance.endpoint_requirements import (
+    EndpointRequirement,
+    endpoint_requirement_key,
+    read_write_endpoint_requirement,
+)
 from conformance.json_types import JsonObject, JsonValue
 from conformance.specification_registry import (
     latest_openapi_document_update,
@@ -291,6 +296,9 @@ class EndpointOption:
             coverage.
         selected: Whether the participant selected this endpoint.
         features: Endpoint-scoped required and optional features.
+        implementation_requirement: Specification-derived implementation status,
+            independent of test coverage; None for unclassified test-only paths.
+        required: Whether implementation is mandatory in the current scope.
     """
 
     id: str
@@ -305,6 +313,8 @@ class EndpointOption:
     baseline: bool
     selected: bool
     features: tuple[FeatureOption, ...]
+    implementation_requirement: EndpointRequirement | None = None
+    required: bool = False
 
 
 @dataclass(frozen=True)
@@ -434,6 +444,16 @@ _FULL_CONFIG_VISIBILITY = ConfigVisibility(
     pis_standing_order_frequency_required=True,
 )
 """Default grouped-config visibility used outside a scoped wizard draft."""
+
+EMPTY_CONFIG_VISIBILITY = ConfigVisibility(
+    selected_api_ids=frozenset(),
+    show_ais=False,
+    show_pis=False,
+    show_cbpii=False,
+    show_vrp=False,
+    show_business_defaults=False,
+)
+"""Grouped-config visibility when a draft's scope cannot be resolved: show no domain fields."""
 
 _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
     SecurityFieldMetadata(
@@ -755,6 +775,7 @@ class ScopeSelectionForm(forms.Form):
         initial: Mapping[str, object] | None = None,
         catalogues: Iterable[TestCatalogue] | None = None,
         prune_unavailable_choices: bool = False,
+        enforce_endpoint_requirements: bool = True,
     ) -> None:
         """Initialise the form from catalogue-derived scope options.
 
@@ -767,6 +788,8 @@ class ScopeSelectionForm(forms.Form):
                 values before field validation. This is used only for dynamic
                 preview refreshes where a just-deselected parent can still post
                 previously rendered child inputs.
+            enforce_endpoint_requirements: False only when pruning scope during
+                a specification edit, which must not expand an imported plan.
         """
         selected_resource_groups = _raw_or_initial_values(data, initial, "resource_groups")
         selected_endpoints = _raw_or_initial_values(data, initial, "endpoints")
@@ -777,6 +800,7 @@ class ScopeSelectionForm(forms.Form):
             selected_endpoint_ids=selected_endpoints,
             selected_capability_values=selected_capability_values,
             catalogues=catalogues,
+            enforce_endpoint_requirements=enforce_endpoint_requirements,
         )
         effective_initial = {
             "resource_groups": list(selected_resource_groups),
@@ -868,6 +892,10 @@ class ScopeSelectionForm(forms.Form):
                 endpoint.id for endpoint in _endpoint_options(self.hierarchy) if endpoint.id in selected_endpoint_ids
             )
             return cleaned_data
+        selected_endpoint_ids.update(endpoint.id for endpoint in endpoint_options.values() if endpoint.required)
+        cleaned_data["endpoints"] = tuple(
+            endpoint.id for endpoint in endpoint_options.values() if endpoint.id in selected_endpoint_ids
+        )
         for endpoint_id in selected_endpoint_ids:
             endpoint = endpoint_options.get(endpoint_id)
             if endpoint is not None and endpoint.resource_group_id not in selected_group_ids:
@@ -1512,6 +1540,7 @@ def catalogue_scope_hierarchy(
     selected_endpoint_ids: Iterable[str] = (),
     selected_capability_values: Iterable[str] = (),
     catalogues: Iterable[TestCatalogue] | None = None,
+    enforce_endpoint_requirements: bool = True,
 ) -> CatalogueScopeHierarchy:
     """Return resource-group, endpoint, and feature options for a boundary.
 
@@ -1523,6 +1552,8 @@ def catalogue_scope_hierarchy(
         selected_capability_values: Endpoint capability checkbox values
             currently selected by the participant.
         catalogues: Optional catalogue override used by tests.
+        enforce_endpoint_requirements: Whether to select required endpoints;
+            disabled when merely pruning an existing imported scope.
 
     Returns:
         Catalogue-derived scope hierarchy with endpoints revealed only for
@@ -1548,6 +1579,7 @@ def catalogue_scope_hierarchy(
                 baseline=required,
                 selected=required or _endpoint_id("dcr", EndpointRef(method=method, path=path)) in selected_endpoints,
                 features=(),
+                required=required,
             )
             for method, path, operation_id, required in _DCR_ENDPOINTS
         )
@@ -1568,6 +1600,8 @@ def catalogue_scope_hierarchy(
     for catalogue in candidate_catalogues:
         for endpoint in _endpoint_options_for_catalogue(
             catalogue,
+            specification_version=boundary.version,
+            enforce_endpoint_requirements=enforce_endpoint_requirements,
             selected_endpoint_ids=selected_endpoints,
             selected_capability_ids_by_endpoint=selected_capabilities,
         ):
@@ -1596,6 +1630,100 @@ def catalogue_scope_hierarchy(
         for accumulator in (accumulators[group_id] for group_id in group_order)
     )
     return CatalogueScopeHierarchy(boundary=boundary, resource_groups=resource_groups)
+
+
+def scope_selection_defaults(
+    boundary: PlanDocumentBoundary,
+    *,
+    selected_resource_group_ids: Iterable[str],
+    expand_resource_group_ids: Iterable[str] = (),
+    expand_endpoint_ids: Iterable[str] = (),
+    catalogues: Iterable[TestCatalogue] | None = None,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return endpoints and optional features selected by default for newly ticked scope items.
+
+    A newly selected resource group defaults to every endpoint in that group, and a
+    newly selected endpoint defaults to every optional feature it offers. Required
+    features are implied by endpoint selection, so they are not returned. Ids that
+    are not part of the currently selected scope are ignored.
+
+    Args:
+        boundary: Selected scheme/specification/version boundary.
+        selected_resource_group_ids: Resource groups currently selected.
+        expand_resource_group_ids: Newly selected groups to fill with defaults.
+        expand_endpoint_ids: Newly selected endpoints to fill with defaults.
+        catalogues: Optional catalogue override used by tests.
+
+    Returns:
+        Endpoint option ids and endpoint capability checkbox values to add.
+    """
+    selected_groups = tuple(selected_resource_group_ids)
+    groups_hierarchy = catalogue_scope_hierarchy(
+        boundary,
+        selected_resource_group_ids=selected_groups,
+        catalogues=catalogues,
+    )
+    expand_groups = set(expand_resource_group_ids)
+    expand_endpoints = set(expand_endpoint_ids)
+    endpoint_ids = tuple(
+        endpoint.id
+        for group in groups_hierarchy.resource_groups
+        if group.selected
+        for endpoint in group.endpoints
+        if group.id in expand_groups or endpoint.id in expand_endpoints
+    )
+    if not endpoint_ids:
+        return (), ()
+    endpoints_hierarchy = catalogue_scope_hierarchy(
+        boundary,
+        selected_resource_group_ids=selected_groups,
+        selected_endpoint_ids=endpoint_ids,
+        catalogues=catalogues,
+    )
+    defaulted = set(endpoint_ids)
+    capability_values = tuple(
+        feature.value
+        for endpoint in _endpoint_options(endpoints_hierarchy)
+        if endpoint.id in defaulted
+        for feature in endpoint.features
+        if not feature.required
+    )
+    return endpoint_ids, capability_values
+
+
+def resource_groups_without_endpoints(
+    boundary: PlanDocumentBoundary,
+    *,
+    resource_group_ids: Iterable[str],
+    endpoint_ids: Iterable[str],
+    catalogues: Iterable[TestCatalogue] | None = None,
+) -> tuple[str, ...]:
+    """Return labels of selected resource groups that have no selected endpoint.
+
+    A resource group contributes nothing to the generated test plan without at
+    least one implemented endpoint, so the guided builder must not advance with one.
+
+    Args:
+        boundary: Selected scheme/specification/version boundary.
+        resource_group_ids: Selected resource-group ids.
+        endpoint_ids: Selected endpoint option ids.
+        catalogues: Optional catalogue override used by tests.
+
+    Returns:
+        Participant-facing labels of selected groups with no selected endpoint.
+    """
+    hierarchy = catalogue_scope_hierarchy(
+        boundary,
+        selected_resource_group_ids=resource_group_ids,
+        selected_endpoint_ids=endpoint_ids,
+        catalogues=catalogues,
+        enforce_endpoint_requirements=False,
+    )
+    return tuple(
+        group.label
+        for group in hierarchy.resource_groups
+        if group.selected and not any(endpoint.selected for endpoint in group.endpoints)
+    )
 
 
 def scheme_options(*, boundaries: Iterable[PlanDocumentBoundary] | None = None) -> tuple[SchemeOption, ...]:
@@ -2950,6 +3078,8 @@ def plan_document_to_export_json(
 def _endpoint_options_for_catalogue(
     catalogue: TestCatalogue,
     *,
+    specification_version: str,
+    enforce_endpoint_requirements: bool,
     selected_endpoint_ids: set[str],
     selected_capability_ids_by_endpoint: Mapping[str, set[str]],
 ) -> tuple[EndpointOption, ...]:
@@ -2978,9 +3108,34 @@ def _endpoint_options_for_catalogue(
                 endpoint_refs.append(endpoint_ref)
 
     options: list[EndpointOption] = []
+    selected_keys = {
+        endpoint_requirement_key(endpoint_ref)
+        for endpoint_ref in endpoint_refs
+        if (
+            _endpoint_id(catalogue.key.api, endpoint_ref) in selected_endpoint_ids
+            or _legacy_endpoint_id(endpoint_ref) in selected_endpoint_ids
+        )
+    }
     resource_group_id = _resource_group_id(catalogue.key.api)
     resource_group_label = _resource_group_label(catalogue.key.api)
     for endpoint_ref in endpoint_refs:
+        requirement = (
+            read_write_endpoint_requirement(specification_version, endpoint_ref)
+            if specification_version in {"4.0.1", "4.0.0", "3.1.11"}
+            and catalogue.key.api in _CANONICAL_RESOURCE_GROUP_ID_BY_API
+            else None
+        )
+        required = (
+            enforce_endpoint_requirements
+            and requirement is not None
+            and (
+                requirement.kind == "M"
+                or (
+                    requirement.prerequisite is not None
+                    and endpoint_requirement_key(requirement.prerequisite) in selected_keys
+                )
+            )
+        )
         endpoint_id = _endpoint_id(catalogue.key.api, endpoint_ref)
         legacy_endpoint_id = _legacy_endpoint_id(endpoint_ref)
         selected_capability_ids = selected_capability_ids_by_endpoint.get(
@@ -2989,7 +3144,7 @@ def _endpoint_options_for_catalogue(
             legacy_endpoint_id,
             set(),
         )
-        selected = endpoint_id in selected_endpoint_ids or legacy_endpoint_id in selected_endpoint_ids
+        selected = required or endpoint_id in selected_endpoint_ids or legacy_endpoint_id in selected_endpoint_ids
         options.append(
             EndpointOption(
                 id=endpoint_id,
@@ -3002,6 +3157,8 @@ def _endpoint_options_for_catalogue(
                 resource_group_id=resource_group_id,
                 resource_group_label=resource_group_label,
                 baseline=_endpoint_has_baseline_coverage(catalogue, endpoint_ref),
+                implementation_requirement=requirement,
+                required=required,
                 selected=selected,
                 features=(
                     _feature_options_for_endpoint(
@@ -3050,7 +3207,7 @@ def _feature_options_for_endpoint(
             label=capability.label,
             description=capability.description,
             required=capability.required,
-            kind="Required baseline" if capability.required else "Optional feature",
+            kind="Required feature" if capability.required else "Optional feature",
             selected=capability.required or capability.capability_id in selected_capability_ids,
         )
         for capability in catalogue.capabilities
