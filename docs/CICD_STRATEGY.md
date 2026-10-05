@@ -405,13 +405,26 @@ it never merges that PR automatically.
 
 ### 4.3 Concurrency Control
 
-All workflows use `concurrency` groups to cancel in-progress runs when new commits are pushed to the same branch or PR. This avoids queue pile-up from rapid successive commits.
+CI uses branch- or PR-scoped `concurrency` groups to cancel superseded checks:
 
 ```yaml
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 ```
+
+The four root promotion workflows (`auto-promote.yml`, `promote-beta.yml`,
+`promote-ga.yml`, and `promote-preview.yml`) share a workflow-level
+`image-promotion` group with `cancel-in-progress: false`. This lock covers
+scanning, Environment approval, publication, attestations, moving-tag updates,
+and release finalization. The reusable promotion workflow does not reacquire
+the lock. A newer run never automatically cancels a running publication, even
+while it awaits approval.
+
+GitHub concurrency retains at most one running and one pending workflow per
+group; a newer pending run replaces the previous pending run, so this is not
+a FIFO queue. The automatic resolver also has a separate branch-scoped
+cancellation group, but only runs after its root workflow is admitted.
 
 ---
 
@@ -423,7 +436,8 @@ Publication starts automatically after successful CI for eligible `main`,
 `release/**`, and `preview/**` pushes; it never rebuilds from the registry.
 The only routine human action is approving the matching GitHub Environment
 deployment, which is required before Docker Hub credentials are used. Manual
-dispatch of the `promote-*` workflows is reserved for recovery or backfill.
+dispatch of the `promote-*` workflows is reserved for promotion recovery before
+publication or backfill.
 
 **GitHub Releases record publications; they never trigger them.** A Release is
 created only after the approved image, its attestations, and any moving tag
@@ -435,8 +449,12 @@ publish. The finalizer (`_finalize-release.yml`) then:
 2. creates one GitHub Release for that tag: a **prerelease** for betas and
    the **latest** release for GA. Preview images get no tag or Release.
 
-Release immutability is enabled on the repository, so the Release is created
-complete in one call and never edited. Its notes keep three sections separate:
+Release immutability is enabled on the repository (see
+[`settings/GENERAL.md`](settings/GENERAL.md)), so newly published Releases and
+their tags are protected by GitHub. Previously published Releases are not
+retroactively made immutable. The finalizer creates a Release complete in one
+call and leaves an existing Release unchanged. Its notes keep three sections
+separate:
 
 | Section | Source |
 |---|---|
@@ -455,10 +473,10 @@ its Release uses the generated PR notes only. Pull requests that leave the
 version unchanged prepare no release and are not checked.
 
 If tag or Release creation fails after publication, re-run the failed
-finalize job (or dispatch the matching `promote-*` recovery workflow). Every
-finalizer step is idempotent, an existing Release is left unchanged, and the
-image is never republished. Tag protection must allow `github-actions[bot]` to
-create `v*` tags.
+finalize job; dispatching `promote-*` is not a recovery path once the version
+has been published. Every finalizer step is idempotent, an existing Release is
+left unchanged, and the image is never republished. Tag protection must allow
+`github-actions[bot]` to create `v*` tags.
 
 **Tag formats:**
 

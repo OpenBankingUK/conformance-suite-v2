@@ -59,9 +59,8 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: image-promotion
-  cancel-in-progress: false
+# The root callers hold image-promotion through publication and finalization.
+# Do not reacquire their concurrency group here: a reusable call would deadlock.
 
 env:
   IMAGE_NAME: docker.io/openbanking/conformance-suite-v2
