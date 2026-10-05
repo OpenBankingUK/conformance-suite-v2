@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Automatic and manual image promotion run summaries now show the exact release
+  version, proposed Docker tags and source commit before approval, including
+  conditional `2.0.0-beta-latest` eligibility.
+
 ## [2.0.0-beta.6] - 2026-10-05
 
 ### Changed

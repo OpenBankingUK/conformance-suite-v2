@@ -6,7 +6,9 @@ publish. Re-derives release metadata from the manifest's own raw version
 source SHA, branch, tag (for GA), platform set, and previously published
 versions supplied by the workflow, then prints the manifest's expected tags
 as JSON so the workflow does not have to duplicate that tag-construction
-logic.
+logic. The ungated candidate-location job also uses this entrypoint with
+``--summary-file`` and ``--environment-name`` to show proposed release details
+before approval, without changing the JSON output contract.
 
 Usage::
 
@@ -24,11 +26,14 @@ import argparse
 import json
 import re
 import sys
+from html import escape
 from pathlib import Path
 
 from scripts.release_metadata import (
     IMAGE_NAME,
+    MVP_BETA_TAG,
     ReleaseChannel,
+    ReleaseMetadata,
     ReleaseMetadataError,
     classify_raw_version,
     publication_tags,
@@ -40,6 +45,46 @@ from scripts.release_metadata import (
 
 _REQUIRED_PLATFORMS = frozenset({"linux/amd64", "linux/arm64"})
 _DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def _summary_code(value: str) -> str:
+    return "<code>" + escape(value).replace("|", "&#124;").replace("\r", " ").replace("\n", " ") + "</code>"
+
+
+def _render_summary(
+    metadata: ReleaseMetadata,
+    *,
+    branch: str,
+    source_sha: str,
+    environment_name: str,
+    update_beta_latest: bool,
+) -> str:
+    tags = ", ".join(_summary_code(tag) for tag in publication_tags(metadata))
+    if metadata.channel is ReleaseChannel.BETA:
+        moving_tag = _summary_code(MVP_BETA_TAG)
+        if update_beta_latest:
+            moving_tag += " (eligible; rechecked after publication and attestations)"
+        else:
+            moving_tag += " unchanged (not eligible under current policy)"
+    elif metadata.channel is ReleaseChannel.GA:
+        moving_tag = _summary_code("latest")
+    else:
+        moving_tag = "None"
+    return (
+        "## Release proposed for approval\n\n"
+        "Proposed publication only; this summary does not mean the image has been published.\n\n"
+        "| Release detail | Value |\n"
+        "| --- | --- |\n"
+        f"| Version | {_summary_code(metadata.raw_version)} |\n"
+        f"| Image | {_summary_code(IMAGE_NAME)} |\n"
+        f"| Publication tags | {tags} |\n"
+        f"| Moving tag | {moving_tag} |\n"
+        f"| Channel | {_summary_code(metadata.channel.value)} |\n"
+        f"| Approval environment | {_summary_code(environment_name)} |\n"
+        f"| Source branch | {_summary_code(branch)} |\n"
+        f"| Source commit | {_summary_code(source_sha)} |\n\n"
+        "Tag eligibility reflects the current registry inventory. Publication is revalidated after approval.\n"
+    )
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -63,6 +108,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         default=None,
         help="Path to a newline-delimited file of already-published raw versions, if any.",
     )
+    parser.add_argument(
+        "--summary-file", type=Path, help="Append a validated pre-approval Markdown summary to this file."
+    )
+    parser.add_argument("--environment-name", help="Approval environment to show; required with --summary-file.")
     return parser.parse_args(argv)
 
 
@@ -126,6 +175,19 @@ def main(argv: list[str] | None = None) -> int:
                 if line.strip()
             ]
         require_not_already_published(metadata.raw_version, published_versions)
+        update_beta_latest = should_update_beta_latest(metadata, published_versions)
+        if args.summary_file is not None:
+            if not args.environment_name:
+                raise ReleaseMetadataError("--environment-name is required with --summary-file.")
+            summary = _render_summary(
+                metadata,
+                branch=args.branch,
+                source_sha=args.source_sha,
+                environment_name=args.environment_name,
+                update_beta_latest=update_beta_latest,
+            )
+            with args.summary_file.open("a", encoding="utf-8") as summary_file:
+                summary_file.write(summary)
     except (ReleaseMetadataError, KeyError, json.JSONDecodeError, OSError) as error:
         sys.stderr.write(f"error: {error}\n")
         return 1
@@ -138,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
                 "image_name": manifest["image_name"],
                 "platform_digests": manifest["platform_digests"],
                 "expected_tags": list(publication_tags(metadata)),
-                "update_beta_latest": should_update_beta_latest(metadata, published_versions),
+                "update_beta_latest": update_beta_latest,
             }
         )
         + "\n"

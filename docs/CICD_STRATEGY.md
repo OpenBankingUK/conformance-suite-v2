@@ -380,6 +380,18 @@ multi-architecture manifest with provenance and both platform SBOMs using
 storage record (`artifact-metadata: write`), so each published image appears on
 the organisation's Linked Artifacts page.
 
+Before the Environment approval gate, automatic and manual promotions add a
+**Release proposed for approval** table to the workflow run summary alongside
+the vulnerability reports. It shows the verified candidate's exact raw version,
+image repository, publication tags, moving tag, channel, approval environment,
+source branch and commit. For example, an eligible `2.0.0-beta.6` candidate
+shows its immutable version tag and the conditional `2.0.0-beta-latest`
+pointer. Pointer eligibility reflects the current registry inventory, not a
+publication result: it is rechecked after publication and attestations, and
+ineligible candidates show the pointer as unchanged. GA shows its exact version
+and `latest`; preview shows only its exact version tag. All existing
+post-approval validation and publication safeguards remain in place.
+
 For each successful eligible push, `auto-promote.yml` confirms the CI run
 uploaded a promotion manifest, reads only `pyproject.toml` from its source
 commit, and checks branch/channel compatibility and existing Docker Hub tags. Runs
