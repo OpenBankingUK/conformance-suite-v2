@@ -213,6 +213,37 @@ class TestMain:
         assert main(["check-changelog", "--pyproject", str(pyproject), "--changelog", str(changelog)]) == 1
         assert "GA releases require" in capsys.readouterr().err
 
+    def test_check_changelog_skips_unchanged_version(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """A PR that keeps the base version prepares no release, so a missing GA entry is allowed."""
+        pyproject = self._write(tmp_path, "pyproject.toml", '[project]\nname = "x"\nversion = "0.1.0"\n')
+        base = self._write(tmp_path, "base.toml", '[project]\nname = "x"\nversion = "0.1.0"\n')
+        changelog = self._write(tmp_path, "CHANGELOG.md", CHANGELOG)
+        args = ["check-changelog", "--pyproject", str(pyproject), "--changelog", str(changelog)]
+        assert main([*args, "--base-pyproject", str(base)]) == 0
+        assert "unchanged (0.1.0)" in capsys.readouterr().out
+        assert main(args) == 1
+
+    def test_check_changelog_enforces_changed_ga_version(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Changing the version to a GA release without a section fails."""
+        pyproject = self._write(tmp_path, "pyproject.toml", '[project]\nname = "x"\nversion = "2.0.1"\n')
+        base = self._write(tmp_path, "base.toml", '[project]\nname = "x"\nversion = "2.0.0"\n')
+        changelog = self._write(tmp_path, "CHANGELOG.md", CHANGELOG)
+        exit_code = main(
+            [
+                "check-changelog",
+                "--pyproject",
+                str(pyproject),
+                "--base-pyproject",
+                str(base),
+                "--changelog",
+                str(changelog),
+            ]
+        )
+        assert exit_code == 1
+        assert "GA releases require" in capsys.readouterr().err
+
     def test_check_changelog_warns_for_beta_version(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         """A beta without a section emits a GitHub Actions warning and succeeds."""
         changelog = self._write(tmp_path, "CHANGELOG.md", CHANGELOG)
