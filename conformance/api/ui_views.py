@@ -681,22 +681,51 @@ def _navigation_context(
     """Return step-bar and Back context for a builder page.
 
     Args:
-        request: Incoming request; an invalid POST from the Back button opens
-            the discard-changes dialog.
+        request: Incoming request; an invalid POST from Back or a step-bar
+            jump to an earlier step opens the discard-changes dialog.
         draft: Draft as currently saved (unsaved edits are never reflected).
         step: Page being rendered.
 
     Returns:
         Template context for the step bar, Back button, and Back dialog.
     """
-    back = previous_step(draft, step)
-    back_requested = request.method == "POST" and request.POST.get("next") == BACK_NEXT_VALUE
     return {
         "step_bar": step_bar(draft, step),
-        "back_step": back,
+        "back_step": previous_step(draft, step),
+        **_discard_context(request, draft, step),
+    }
+
+
+def _discard_context(request: HttpRequest, draft: BuilderDraft, step: BuilderNavigationTarget) -> dict[str, object]:
+    """Return discard-dialog context for an invalid POST that tried to go back.
+
+    Back, or a step-bar jump to an earlier step, may leave an invalid page by
+    discarding its unsaved edits. Forward jumps stay blocked until the page is
+    valid, so later steps are never unlocked by discarding.
+
+    Args:
+        request: Incoming request.
+        draft: Draft as currently saved.
+        step: Page being rendered.
+
+    Returns:
+        ``back_discard_url`` and ``back_discard_step`` for the dialog, both
+        ``None`` when the dialog should not be shown.
+    """
+    target: BuilderStepDefinition | None = None
+    if request.method == "POST":
+        raw_next = request.POST.get("next")
+        if raw_next == BACK_NEXT_VALUE:
+            target = previous_step(draft, step)
+        else:
+            requested = resolve_next(raw_next, draft)
+            if requested is not None and navigates_backward(draft, step, requested):
+                target = requested
+    return {
         "back_discard_url": (
-            reverse(back.url_name, kwargs={"draft_id": draft.draft_id}) if back is not None and back_requested else None
+            reverse(target.url_name, kwargs={"draft_id": draft.draft_id}) if target is not None else None
         ),
+        "back_discard_step": target,
     }
 
 
@@ -821,7 +850,10 @@ def _apply_review_plan_json(
     except PlanImportError as error:
         return _review_response(
             request,
-            _builder_review_context(draft=draft, plan_json_error=str(error), plan_json_text=plan_text),
+            {
+                **_builder_review_context(draft=draft, plan_json_error=str(error), plan_json_text=plan_text),
+                **_discard_context(request, draft, "review"),
+            },
             status=400,
         )
     if raw_plan == plan_json_from_draft(draft):

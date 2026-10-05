@@ -340,8 +340,9 @@ submit the page form with `next=<step id>` (or `next=back`). A valid page is
 saved and marked complete, then redirected via `resolve_next`, which accepts
 only fixed step ids for available steps; anything else falls back to the
 following step. An invalid page re-renders with errors and saves nothing; an
-invalid **Back** also renders a discard-changes `<dialog>` whose discard link
-GETs the previous step. Changing the scheme or specification clears later
+invalid **Back**, or an invalid jump to an earlier step (including from review
+with invalid plan JSON), also renders a discard-changes `<dialog>` whose
+discard link GETs that step. Invalid forward jumps offer no discard. Changing the scheme or specification clears later
 completed steps; a version change clears scope and business data only when it
 pruned the saved scope. Import and review-JSON apply mark every step complete.
 

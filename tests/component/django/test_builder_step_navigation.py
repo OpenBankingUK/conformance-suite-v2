@@ -150,6 +150,39 @@ class TestStepJumps:
         assert 'id="builder-back-dialog"' not in content
         assert _draft(client, draft_id) == before
 
+    def test_invalid_jump_to_earlier_step_offers_to_discard_changes(self) -> None:
+        client = Client()
+        draft_id = _imported_draft_id(client)
+        before = _draft(client, draft_id)
+
+        response = client.post(
+            f"/builder/{draft_id}/config/", data={"ais_resource_ids_json": "{not json", "next": "scope"}
+        )
+
+        assert response.status_code == 400
+        content = response.content.decode("utf-8")
+        assert "errorlist" in content
+        assert '<dialog class="builder-back-dialog" id="builder-back-dialog" open' in content
+        assert "Discard your changes on this page and go to scope?" in content
+        assert f'href="/builder/{draft_id}/scope/" data-back-discard>Discard &amp; go to scope</a>' in content
+        assert _draft(client, draft_id) == before
+
+        discarded = client.get(f"/builder/{draft_id}/scope/")
+        assert discarded.status_code == 200
+        assert _draft(client, draft_id) == before
+
+    def test_invalid_review_json_jump_offers_to_discard_changes(self) -> None:
+        client = Client()
+        draft_id = _imported_draft_id(client)
+        before = _draft(client, draft_id)
+
+        response = client.post(f"/builder/{draft_id}/review/json/", data={"plan_json": "not json", "next": "security"})
+
+        assert response.status_code == 400
+        content = response.content.decode("utf-8")
+        assert f'href="/builder/{draft_id}/config/security/" data-back-discard>' in content
+        assert _draft(client, draft_id) == before
+
     def test_unavailable_catalogue_is_not_saved(self) -> None:
         client = Client()
         draft_id = _imported_draft_id(client)
@@ -243,8 +276,10 @@ class TestBack:
         assert response.status_code == 400
         content = response.content.decode("utf-8")
         assert '<dialog class="builder-back-dialog" id="builder-back-dialog" open' in content
-        assert "This page has errors. Discard your changes on this page and go back?" in content
-        assert f'href="/builder/{draft_id}/catalogue/" data-back-discard>Discard &amp; go back</a>' in content
+        assert "This page has errors. Discard your changes on this page and go to specification?" in content
+        assert (
+            f'href="/builder/{draft_id}/catalogue/" data-back-discard>Discard &amp; go to specification</a>' in content
+        )
         assert '<form method="dialog">' in content
         assert "autofocus>Stay</button>" in content
         assert _draft(client, draft_id) == before

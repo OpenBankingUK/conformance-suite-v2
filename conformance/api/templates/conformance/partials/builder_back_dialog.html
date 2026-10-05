@@ -1,5 +1,5 @@
 {% comment %}
-Rendered after an invalid Back submission. It is server-rendered ``open`` so it
+Rendered after an invalid Back or earlier step-bar submission. It is server-rendered ``open`` so it
 works without JavaScript; the script upgrades it to a modal dialog for focus
 trapping and Esc-to-close, including after an HTMX swap.
 {% endcomment %}
@@ -31,12 +31,12 @@ trapping and Esc-to-close, including after an HTMX swap.
     </style>
     <dialog class="builder-back-dialog" id="builder-back-dialog" open aria-labelledby="builder-back-dialog-title">
         <h2 id="builder-back-dialog-title">Discard changes?</h2>
-        <p>This page has errors. Discard your changes on this page and go back?</p>
+        <p>This page has errors. Discard your changes on this page and go to {{ back_discard_step.label|lower }}?</p>
         <div class="actions">
             <form method="dialog">
                 <button class="secondary" type="submit" autofocus>Stay</button>
             </form>
-            <a class="button" href="{{ back_discard_url }}" data-back-discard>Discard &amp; go back</a>
+            <a class="button" href="{{ back_discard_url }}" data-back-discard>Discard &amp; go to {{ back_discard_step.label|lower }}</a>
         </div>
     </dialog>
     <script>
