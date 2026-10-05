@@ -223,7 +223,7 @@
 
     <section class="panel" aria-labelledby="catalogue-boundary-heading">
         <h2 id="catalogue-boundary-heading">Scheme, specification, and version</h2>
-        <p class="helper">Select the Open Banking catalogue boundary first. You will enter the security environment before choosing resource groups.</p>
+        <p class="helper">Select the Open Banking catalogue boundary first. Once a supported specification is chosen you can move between every step in any order; anything you enter is saved when you leave a page, and review lists whatever still needs completing before launch.</p>
         <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         {% if saved %}
@@ -295,11 +295,34 @@
 
             </div>
 
+            {% if specification_change_effects %}
+                <div class="message warning" role="alert" data-specification-change>
+                    <strong>Changing the specification affects data you have entered</strong>
+                    <ul>{% for effect in specification_change_effects %}<li>{{ effect }}</li>{% endfor %}</ul>
+                    <p>Confirm to change the specification, or choose the previous specification again to keep everything as it is.</p>
+                    <input type="hidden" name="confirm_specification_change" value="{{ specification_change_token }}">
+                </div>
+            {% endif %}
+
             <div class="actions">
                 <a class="button secondary" href="{% url 'home' %}">Cancel</a>
-                <button type="submit" data-continue-button>Continue to discovery</button>
+                {% if specification_change_effects %}
+                    <button type="submit" {% if pending_next %}name="next" value="{{ pending_next }}"{% endif %} data-continue-button>Confirm specification change</button>
+                {% else %}
+                    <button type="submit" data-continue-button>Continue to discovery</button>
+                {% endif %}
             </div>
         </form>
+        {% if imported_without_specification %}
+            {% include "conformance/partials/builder_import_issues.html" %}
+            <div class="message info" data-start-new-plan>
+                <p>The imported plan did not name a supported specification. Choose one above to load the rest of the imported plan against it, or start again from a blank plan.</p>
+                <form method="post" action="{% url 'builder-new' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="secondary">Start a new plan instead</button>
+                </form>
+            </div>
+        {% endif %}
     </section>
 </main>
 

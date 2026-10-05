@@ -1092,6 +1092,7 @@ class BusinessConfigForm(forms.Form):
         *,
         initial: Mapping[str, object] | None = None,
         config_visibility: ConfigVisibility | None = None,
+        lenient: bool = False,
     ) -> None:
         """Initialise the business defaults form.
 
@@ -1099,12 +1100,18 @@ class BusinessConfigForm(forms.Form):
             data: Optional bound form data.
             initial: Initial values decoded from the draft config.
             config_visibility: Optional scope-derived field visibility.
+            lenient: Skip required-field checks so a partially completed page
+                can be saved; format errors are still reported. Completeness
+                is checked at review instead.
         """
         self.config_visibility = config_visibility if config_visibility is not None else _FULL_CONFIG_VISIBILITY
+        self.lenient = lenient
         super().__init__(
             data=cast(MutableMapping[str, object] | None, data),
             initial=cast(MutableMapping[str, object] | None, initial),
         )
+        if lenient:
+            return
         if self.config_visibility.show_cbpii:
             self.fields["cbpii_debtor_account_scheme_name"].required = True
             self.fields["cbpii_debtor_account_identification"].required = True
@@ -1126,6 +1133,7 @@ class BusinessConfigForm(forms.Form):
         """
         base_cleaned_data = super().clean()
         cleaned_data: dict[str, object] = {} if base_cleaned_data is None else dict(base_cleaned_data)
+        self._add_json_field_errors(cleaned_data)
         if self.errors:
             return cleaned_data
         self.config = _business_config_from_fields(
@@ -1133,6 +1141,8 @@ class BusinessConfigForm(forms.Form):
             self.config_visibility,
             changed_fields=self.changed_data,
         )
+        if self.lenient:
+            return cleaned_data
         if self.config_visibility.show_ais and self.config_visibility.ais_account_id_required:
             ais_config = self.config.get("ais")
             if not _ais_config_has_account_id(ais_config):
@@ -1143,6 +1153,33 @@ class BusinessConfigForm(forms.Form):
         if self.config_visibility.show_pis:
             _add_required_pis_errors(self, cleaned_data)
         return cleaned_data
+
+    def _add_json_field_errors(self, cleaned_data: Mapping[str, object]) -> None:
+        """Attach malformed advanced-JSON errors to the field that holds them.
+
+        Field-level errors let the builder keep the rest of the page and flag
+        just the bad JSON instead of rejecting the whole submission.
+
+        Args:
+            cleaned_data: Cleaned form data.
+        """
+        for name in self.fields:
+            if not name.endswith("_json"):
+                continue
+            raw_value = _cleaned_optional_string(cleaned_data.get(name))
+            if raw_value is None:
+                continue
+            label = str(self.fields[name].label or name)
+            try:
+                loaded = json.loads(raw_value)
+            except json.JSONDecodeError as error:
+                self.add_error(name, f"{label} must be valid JSON: {error.msg}")
+                continue
+            expected_array = name == "conditional_properties_json"
+            if expected_array and not isinstance(loaded, list):
+                self.add_error(name, f"{label} must be a JSON array")
+            elif not expected_array and not isinstance(loaded, dict):
+                self.add_error(name, f"{label} must be a JSON object")
 
 
 class DiscoveryConfigForm(forms.Form):
@@ -1163,6 +1200,7 @@ class DiscoveryConfigForm(forms.Form):
         *,
         initial: Mapping[str, object] | None = None,
         discovery_required: bool = False,
+        lenient: bool = False,
     ) -> None:
         """Initialise the discovery config form.
 
@@ -1170,12 +1208,14 @@ class DiscoveryConfigForm(forms.Form):
             data: Optional bound form data.
             initial: Initial values decoded from the draft config.
             discovery_required: Whether the selected specification mandates discovery.
+            lenient: Allow an empty URL even when discovery is required, so the
+                page can be left incomplete; review reports it instead.
         """
         super().__init__(
             data=cast(MutableMapping[str, object] | None, data),
             initial=cast(MutableMapping[str, object] | None, initial),
         )
-        self.fields["discovery_url"].required = discovery_required
+        self.fields["discovery_url"].required = discovery_required and not lenient
 
     def clean_discovery_url(self) -> str:
         """Validate the submitted OpenID discovery URL.
@@ -1349,6 +1389,7 @@ class SecurityConfigForm(forms.Form):
         initial: Mapping[str, object] | None = None,
         dcr_mode: bool = False,
         stored_credentials: Mapping[str, CredentialMaterial | None] | None = None,
+        lenient: bool = False,
     ) -> None:
         """Initialise the OAuth/FAPI/security config form.
 
@@ -1361,8 +1402,12 @@ class SecurityConfigForm(forms.Form):
             stored_credentials: Credentials already held in the draft. They are
                 used to honour a "keep" action without ever re-rendering
                 stored material into the page.
+            lenient: Skip required-field and whole-group completeness checks so
+                a partially completed page can be saved; format errors are
+                still reported. Completeness is checked at review instead.
         """
         self.dcr_mode = dcr_mode
+        self.lenient = lenient
         self.stored_credentials: Mapping[str, CredentialMaterial | None] = stored_credentials or {}
         self.credentials: dict[str, CredentialMaterial | None] = {}
         super().__init__(
@@ -1384,7 +1429,7 @@ class SecurityConfigForm(forms.Form):
                 ]
             )
         cast(forms.ChoiceField, self.fields["signing_token_endpoint_auth_method"]).choices = auth_choices
-        if dcr_mode:
+        if dcr_mode and not lenient:
             # Credential fields are deliberately absent: each may be satisfied
             # by a path, pasted text, an upload, or a previously stored value,
             # so their presence is enforced on the resolved credential instead.
@@ -1421,9 +1466,13 @@ class SecurityConfigForm(forms.Form):
             "signing_token_endpoint_auth_method",
         )
         signing_credentials = ("signing_certificate", "signing_private_key")
-        if not self.dcr_mode and (
-            any(_cleaned_optional_string(cleaned_data.get(field_name)) is not None for field_name in signing_fields)
-            or any(self.credentials.get(name) is not None for name in signing_credentials)
+        if (
+            not self.lenient
+            and not self.dcr_mode
+            and (
+                any(_cleaned_optional_string(cleaned_data.get(field_name)) is not None for field_name in signing_fields)
+                or any(self.credentials.get(name) is not None for name in signing_credentials)
+            )
         ):
             message = "Complete every FAPI signing field, or leave the whole group blank."
             for field_name in signing_fields:
@@ -1433,7 +1482,7 @@ class SecurityConfigForm(forms.Form):
                 if self.credentials.get(name) is None:
                     self.add_error(SECURITY_CREDENTIAL_SPECS_BY_NAME[name].path_field, message)
 
-        if (self.credentials.get("tls_client_certificate") is None) != (
+        if not self.lenient and (self.credentials.get("tls_client_certificate") is None) != (
             self.credentials.get("tls_client_private_key") is None
         ):
             message = "mTLS client certificate and private key must be supplied together."
@@ -1441,7 +1490,7 @@ class SecurityConfigForm(forms.Form):
                 if self.credentials.get(name) is None:
                     self.add_error(SECURITY_CREDENTIAL_SPECS_BY_NAME[name].path_field, message)
 
-        if self.dcr_mode:
+        if self.dcr_mode and not self.lenient:
             for name in (
                 "signing_private_key",
                 "tls_client_certificate",
@@ -1458,14 +1507,14 @@ class SecurityConfigForm(forms.Form):
         if self.errors:
             return cleaned_data
         if self.dcr_mode:
-            _validate_dcr_form_fields(self, cleaned_data)
+            _validate_dcr_form_fields(self, cleaned_data, require_audience=not self.lenient)
             if self.errors:
                 return cleaned_data
             self.config = {}
             self.security_environment = _dcr_security_environment_from_fields(cleaned_data, self.credentials)
             self.dynamic_client_registration = _dcr_config_from_fields(cleaned_data, self.credentials)
             self.metadata = _dcr_metadata_from_fields(cleaned_data)
-            self.execution_mode = cast(PlanExecutionMode, cleaned_data["dcr_execution_mode"])
+            self.execution_mode = cast(PlanExecutionMode | None, cleaned_data.get("dcr_execution_mode") or None)
         else:
             self.config = _security_config_from_fields(cleaned_data, self.credentials)
         return cleaned_data
@@ -3875,7 +3924,9 @@ def _dcr_metadata_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
     return metadata
 
 
-def _validate_dcr_form_fields(form: SecurityConfigForm, cleaned_data: Mapping[str, object]) -> None:
+def _validate_dcr_form_fields(
+    form: SecurityConfigForm, cleaned_data: Mapping[str, object], *, require_audience: bool = True
+) -> None:
     """Add DCR URL and subject-DN errors to a security form.
 
     Credential fields are validated separately, because each may be satisfied
@@ -3884,9 +3935,12 @@ def _validate_dcr_form_fields(form: SecurityConfigForm, cleaned_data: Mapping[st
     Args:
         form: Bound DCR security form to update.
         cleaned_data: Cleaned form values to validate.
+        require_audience: Whether an empty registration audience is an error.
     """
     audience = _cleaned_optional_string(cleaned_data.get("dcr_registration_audience"))
-    if audience is None or re.fullmatch(r"[0-9A-Za-z]{1,18}", audience) is None:
+    if (audience is None and require_audience) or (
+        audience is not None and re.fullmatch(r"[0-9A-Za-z]{1,18}", audience) is None
+    ):
         form.add_error(
             "dcr_registration_audience",
             "Enter the 1 to 18 character Base62 ASPSP identifier required by Open Banking DCR.",

@@ -467,8 +467,8 @@ class TestBuilderWizardUi:
         assert "Required and locked" in content
         assert "POST /token" not in content
 
-    def test_locked_step_url_redirects_to_first_incomplete_step(self) -> None:
-        """Typing a later step's URL cannot skip the discovery and security steps."""
+    def test_every_step_url_opens_once_a_specification_is_selected(self) -> None:
+        """Only the specification gates navigation; later steps open in any order."""
         client = Client()
         create_response = client.post("/builder/new/")
         draft_id = _draft_id_from_builder_redirect(create_response["Location"])
@@ -481,13 +481,20 @@ class TestBuilderWizardUi:
             },
         )
 
-        for locked_path in ("scope/", "config/security/", "review/"):
+        for open_path in ("scope/", "config/security/", "config/", "review/"):
+            response = client.get(f"/builder/{draft_id}/{open_path}")
+            assert response.status_code == 200, open_path
+
+    def test_step_urls_redirect_to_specification_until_one_is_selected(self) -> None:
+        """Without a specification every later step sends the user back to choose one."""
+        client = Client()
+        create_response = client.post("/builder/new/")
+        draft_id = _draft_id_from_builder_redirect(create_response["Location"])
+
+        for locked_path in ("scope/", "config/discovery/", "config/security/", "config/", "review/"):
             response = client.get(f"/builder/{draft_id}/{locked_path}")
             assert response.status_code == 302
-            assert response["Location"] == f"/builder/{draft_id}/config/discovery/"
-        response = client.post(f"/builder/{draft_id}/scope/", data={"resource_groups": ["AIS"]})
-        assert response.status_code == 302
-        assert response["Location"] == f"/builder/{draft_id}/config/discovery/"
+            assert response["Location"] == f"/builder/{draft_id}/catalogue/"
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
     def test_security_step_continues_to_resource_group_scope(self, mock_fetch_discovery: Mock) -> None:
@@ -794,9 +801,9 @@ class TestBuilderWizardUi:
         assert "Instructed amount" in content
         assert "No business data inputs required" not in content
 
-        invalid_response = client.post(response["Location"], data={})
-        assert invalid_response.status_code == 400
-        invalid_content = invalid_response.content.decode("utf-8")
+        empty_response = client.post(response["Location"], data={})
+        assert empty_response.status_code == 302
+        invalid_content = client.get(response["Location"].replace("/config/", "/review/")).content.decode("utf-8")
         assert "Domestic creditor account is required for selected PIS endpoints." in invalid_content
         assert "Instructed amount is required for selected PIS endpoints." in invalid_content
 
@@ -1255,17 +1262,18 @@ class TestBuilderWizardUi:
 
         response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
         draft_id = _draft_id_from_builder_redirect(response["Location"])
-        review = client.get(f"/builder/{draft_id}/review/")
+        specification = client.get(response["Location"])
         launch = client.post(f"/builder/{draft_id}/launch/")
 
         assert response.status_code == 302
-        content = review.content.decode("utf-8")
+        assert response["Location"] == f"/builder/{draft_id}/catalogue/"
+        content = specification.content.decode("utf-8")
+        assert "data-start-new-plan" in content
         assert "Import warnings" in content
         assert "schemaVersion &quot;v2&quot; is not supported" in content
         assert "scheme is not a recognised test-plan field." in content
         assert "specification must be a JSON object" in content
-        assert "Choose a specification in the builder or the plan JSON before launch." in content
-        assert review["Cache-Control"] == "no-store"
+        assert specification["Cache-Control"] == "no-store"
         assert launch.status_code == 400
         mock_start_run.assert_not_called()
 
@@ -1286,10 +1294,11 @@ class TestBuilderWizardUi:
 
         response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
         draft_id = _draft_id_from_builder_redirect(response["Location"])
-        content = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
+        content = client.get(response["Location"]).content.decode("utf-8")
         launch = client.post(f"/builder/{draft_id}/launch/")
 
         assert response.status_code == 302
+        assert response["Location"] == f"/builder/{draft_id}/catalogue/"
         assert "profile must be one of: FAPI1_ADVANCED" in content
         assert "resourceGroups could not be loaded because the specification is missing or invalid" in content
         assert launch.status_code == 400

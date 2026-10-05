@@ -7,21 +7,31 @@ endpoints straight after the specification. This module is the single place
 that defines those orders, decides which steps a participant may jump to, and
 maps a submitted ``next`` value to an internal route so it can never become an
 open redirect.
+
+Navigation has a single gate: a supported specification must be selected
+before any later step opens, because every later page depends on it. After
+that the participant may move freely between steps; leaving a page always
+saves what was entered, and completeness is reported per step and enforced
+only at review and export.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-from conformance.api.builder_draft_store import BUILDER_STEP_IDS, BuilderDraft, BuilderStepId
-from conformance.api.builder_wizard import boundary_requires_resource_groups
+from conformance.api.builder_draft_store import BuilderDraft, BuilderStepId
+from conformance.api.builder_wizard import boundary_requires_resource_groups, catalogue_boundary_continue_blocker
 from conformance.catalogue import PlanDocumentBoundary
 
 type BuilderNavigationTarget = BuilderStepId | Literal["review"]
 """Builder page the step bar can navigate to: a saved step or the review page."""
 
-type StepState = Literal["current", "complete", "available", "locked"]
+type StepProgress = Literal["complete", "attention", "not_started"]
+"""Saved-data status of one builder step: no issues, needs attention, or empty."""
+
+type StepState = Literal["current", "complete", "attention", "not_started", "locked"]
 """Step-bar presentation state for one builder step."""
 
 BACK_NEXT_VALUE = "back"
@@ -64,9 +74,9 @@ class StepBarItem:
         """Return whether the participant may jump to this step.
 
         Returns:
-            True for completed or available steps other than the current page.
+            True for every unlocked step other than the current page.
         """
-        return self.state in {"complete", "available"}
+        return self.state not in {"current", "locked"}
 
 
 _CATALOGUE = BuilderStepDefinition("catalogue", "Specification", "builder-catalogue-boundary")
@@ -130,25 +140,36 @@ def navigates_backward(draft: BuilderDraft, current: BuilderNavigationTarget, ta
     return order.index(target.step_id) < order.index(current)
 
 
+def specification_selected(draft: BuilderDraft) -> bool:
+    """Return whether the draft has a supported specification selected.
+
+    Args:
+        draft: Builder draft.
+
+    Returns:
+        True when the saved boundary is supported for building a plan.
+    """
+    boundary = _draft_boundary(draft)
+    return boundary is not None and catalogue_boundary_continue_blocker(boundary) is None
+
+
 def first_blocking_step(draft: BuilderDraft, target: BuilderNavigationTarget) -> BuilderStepDefinition | None:
-    """Return the earliest incomplete step that must be saved before ``target``.
+    """Return the step that must be saved before ``target`` can be opened.
+
+    The specification is the only prerequisite: every other page depends on
+    it, while incomplete later pages never block navigation.
 
     Args:
         draft: Builder draft.
         target: Page the participant is trying to open.
 
     Returns:
-        First incomplete earlier step, or ``None`` when ``target`` may be opened.
-        A target outside the current flow is blocked by the first incomplete
-        step in the flow, if any.
+        The specification step when ``target`` is a later page and no
+        supported specification is selected, otherwise ``None``.
     """
-    flow = builder_flow(draft)
-    for step in flow:
-        if step.step_id == target:
-            return None
-        if step.step_id != "review" and step.step_id not in draft.completed_steps:
-            return step
-    return None
+    if target == "catalogue" or specification_selected(draft):
+        return None
+    return _CATALOGUE
 
 
 def step_is_available(draft: BuilderDraft, target: BuilderNavigationTarget) -> bool:
@@ -159,22 +180,29 @@ def step_is_available(draft: BuilderDraft, target: BuilderNavigationTarget) -> b
         target: Page the participant is trying to open.
 
     Returns:
-        True when ``target`` is in the draft's flow and every earlier step is
-        complete.
+        True when ``target`` is in the draft's flow and not blocked by the
+        specification gate.
     """
     return any(step.step_id == target for step in builder_flow(draft)) and first_blocking_step(draft, target) is None
 
 
-def step_bar(draft: BuilderDraft, current: BuilderNavigationTarget) -> tuple[StepBarItem, ...]:
+def step_bar(
+    draft: BuilderDraft,
+    current: BuilderNavigationTarget,
+    progress: Mapping[BuilderNavigationTarget, StepProgress] | None = None,
+) -> tuple[StepBarItem, ...]:
     """Return step-bar entries for a builder page.
 
     Args:
         draft: Builder draft as currently saved.
         current: Page being rendered.
+        progress: Saved-data status per step; steps without an entry are shown
+            as not started.
 
     Returns:
         One entry per page in the draft's flow.
     """
+    statuses = progress or {}
     items: list[StepBarItem] = []
     for number, step in enumerate(builder_flow(draft), start=1):
         state: StepState
@@ -182,10 +210,8 @@ def step_bar(draft: BuilderDraft, current: BuilderNavigationTarget) -> tuple[Ste
             state = "current"
         elif not step_is_available(draft, step.step_id):
             state = "locked"
-        elif step.step_id in draft.completed_steps:
-            state = "complete"
         else:
-            state = "available"
+            state = statuses.get(step.step_id, "not_started")
         items.append(StepBarItem(number=number, step_id=step.step_id, label=step.label, state=state))
     return tuple(items)
 
@@ -244,37 +270,3 @@ def resolve_next(raw_value: str | None, draft: BuilderDraft) -> BuilderStepDefin
         if step.step_id == raw_value:
             return step if step_is_available(draft, step.step_id) else None
     return None
-
-
-def completed_steps_after_catalogue_save(previous: BuilderDraft, updated: BuilderDraft) -> tuple[BuilderStepId, ...]:
-    """Return completed steps after the specification step is saved.
-
-    Changing the scheme or specification (or anything that changes the flow
-    shape) invalidates every later step because their forms depend on it. A
-    version-only change keeps later steps unless pruning unavailable choices
-    changed the saved scope, in which case scope and business data must be
-    revisited.
-
-    Args:
-        previous: Draft before the save.
-        updated: Draft after the save, including any pruned scope.
-
-    Returns:
-        Completed step ids for the updated draft.
-    """
-    if (previous.scheme, previous.specification) != (updated.scheme, updated.specification) or builder_flow(
-        previous
-    ) != builder_flow(updated):
-        return ("catalogue",)
-    invalidated: set[BuilderStepId] = set()
-    if (previous.resource_group_ids, previous.endpoint_ids, dict(previous.endpoint_capability_ids)) != (
-        updated.resource_group_ids,
-        updated.endpoint_ids,
-        dict(updated.endpoint_capability_ids),
-    ):
-        invalidated = {"scope", "config"}
-    return tuple(
-        step
-        for step in BUILDER_STEP_IDS
-        if step == "catalogue" or (step in previous.completed_steps and step not in invalidated)
-    )

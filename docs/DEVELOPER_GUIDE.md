@@ -326,9 +326,10 @@ The wizard follows the PRD order:
    Ticking a group (or **Select all endpoints and features**) sends
    `expand_resource_group`, and ticking an endpoint sends `expand_endpoint`, on
    the fragment refresh; `scope_selection_defaults()` then adds every endpoint
-   and optional feature for those items only. Continuing is blocked while any
-   selected group has no endpoint (`resource_groups_without_endpoints()`), and
-   `/config/` redirects back to scope in that state.
+   and optional feature for those items only. An empty scope, or a group with
+   no endpoint (`resource_groups_without_endpoints()`), is saved and reported
+   as a scope issue at review; `/config/` then shows no fields and links to
+   scope.
 6. Enter business/request defaults at `/builder/<draft>/config/`. DCR skips this
    page. AIS, PIS,
    CBPII, and VRP fields render only when selected endpoints need that domain.
@@ -346,22 +347,37 @@ The wizard follows the PRD order:
 Every step page and review render a step bar from
 `conformance/api/builder_steps.py`, the single definition of both flow orders
 (Read/Write: specification, discovery, security, scope, business data, review;
-direct endpoint/DCR: specification, scope, discovery, security, review). The
-draft records `completed_steps`; a step is available once every earlier step is
-complete, and every step view plus review redirects to the first incomplete
-earlier step, so typed URLs cannot skip ahead. Step-bar buttons and **Back**
-submit the page form with `next=<step id>` (or `next=back`). A valid page is
-saved and marked complete, then redirected via `resolve_next`, which accepts
-only fixed step ids for available steps; anything else falls back to the
-following step. An invalid page re-renders with errors and saves nothing; an
-invalid **Back**, or an invalid jump to an earlier step (including from review
-with invalid plan JSON), also renders a discard-changes `<dialog>` whose
-discard link GETs that step. Invalid forward jumps offer no discard. Changing the scheme or specification clears later
-completed steps; a version change clears scope and business data only when it
-pruned the saved scope. Import and review-JSON apply mark every step complete.
+direct endpoint/DCR: specification, scope, discovery, security, review). A
+supported specification is the only navigation gate: until one is chosen every
+later step (and typed URL) redirects to `/catalogue/`; afterwards every step is
+open in any order. Step-bar buttons and **Back** submit the page form with
+`next=<step id>` (or `next=back`), redirected via `resolve_next`, which accepts
+only fixed step ids; anything else falls back to the following step.
+
+Leaving a step always saves it. Step views bind their form leniently
+(`_lenient_bind` in `ui_views.py`, `lenient=True` on the config forms): required
+and whole-group checks are skipped, a non-secret field that fails format
+validation is reverted to its saved value and its raw text is kept in the
+draft's `invalid_field_values[step]`, then shown back with its error on the
+next visit. Pasted or uploaded credential material that fails validation is
+dropped, never stored or echoed, and reported with a Django `messages`
+warning. `conformance/api/builder_step_status.py` replays the saved values
+(plus retained invalid values) through the strict forms to produce per-step
+issues, and derives the step bar's `complete`/`attention`/`not_started`
+progress from them. Review lists those issues per step with a **Fix** button
+and treats them as launch blockers, so lenient saving never relaxes launch
+validation. The review JSON jump still renders a discard `<dialog>` when the
+submitted plan JSON is not a JSON object.
+
+Changing the specification on `/catalogue/` when it would switch flow or prune
+saved scope re-renders with the affected items and a confirmation token
+(`confirm_specification_change`); the change is saved only when the token
+matches the newly chosen boundary.
 
 Imported plans enter through `/builder/import/` (pasted JSON or an uploaded
-`.json` file, up to 1 MB) and go straight to the same review page. Import is
+`.json` file, up to 1 MB) and go straight to the same review page, or to the specification step (with the
+import warnings and **Start a new plan instead**) when no supported
+specification was loaded. Import is
 lenient (`conformance/api/plan_import_recovery.py`): only empty input, invalid
 JSON, or a non-object root is rejected. Every other document is recovered field
 by field against the schemaVersion `1.0` shape. Values the builder can represent

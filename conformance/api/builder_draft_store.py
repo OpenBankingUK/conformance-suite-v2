@@ -143,9 +143,10 @@ class BuilderDraft:
             replaced; normal launch validation fails until they are fixed.
         import_issues: Field-level problems reported by the latest plan JSON
             load, shown as review warnings.
-        completed_steps: Builder steps saved successfully since they were last
-            invalidated. Drives which steps the builder step bar lets the
-            participant jump to; empty for drafts saved before tracking existed.
+        invalid_field_values: Raw, non-secret values typed into a builder
+            step that failed format validation, keyed by step id then form
+            field name. They are kept so leaving a page never loses input,
+            shown again with their errors on that page, and listed on review.
     """
 
     draft_id: str
@@ -168,7 +169,7 @@ class BuilderDraft:
     unrepresented_plan_fields: Mapping[str, JsonValue] = field(default_factory=dict)
     import_issues: tuple[PlanImportIssue, ...] = ()
     openapi_document_update: str | None = None
-    completed_steps: tuple[BuilderStepId, ...] = ()
+    invalid_field_values: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
 
     @classmethod
     def create(cls) -> BuilderDraft:
@@ -243,7 +244,7 @@ class BuilderDraft:
             openapi_document_update=_optional_string(raw_value.get("openApiDocumentUpdate")),
             unrepresented_plan_fields=_json_object(raw_value.get("unrepresentedPlanFields")),
             import_issues=_import_issues(raw_value.get("importIssues")),
-            completed_steps=_completed_steps(raw_value.get("completedSteps")),
+            invalid_field_values=_invalid_field_values(raw_value.get("invalidFieldValues")),
         )
 
     def with_catalogue_boundary(
@@ -411,32 +412,21 @@ class BuilderDraft:
         """
         return replace(self, import_issues=tuple(import_issues), updated_at=_utc_timestamp())
 
-    def with_completed_steps(self, completed_steps: tuple[BuilderStepId, ...]) -> BuilderDraft:
-        """Return a copy with the set of completed builder steps replaced.
+    def with_invalid_field_values(self, step: BuilderStepId, values: Mapping[str, str]) -> BuilderDraft:
+        """Return a copy with one step's retained invalid field values replaced.
 
         Args:
-            completed_steps: Steps to record as complete; duplicates are dropped
-                and the result is kept in canonical step order.
+            step: Builder step whose values are replaced.
+            values: Raw typed values that failed format validation, keyed by
+                form field name; empty clears the step.
 
         Returns:
-            Updated draft. ``updated_at`` is unchanged because completion is
-            navigation state, not plan content.
+            Updated draft with a refreshed ``updated_at`` timestamp.
         """
-        return replace(
-            self,
-            completed_steps=tuple(step for step in BUILDER_STEP_IDS if step in completed_steps),
-        )
-
-    def with_completed_step(self, step: BuilderStepId) -> BuilderDraft:
-        """Return a copy with one builder step recorded as complete.
-
-        Args:
-            step: Step that was just saved successfully.
-
-        Returns:
-            Updated draft.
-        """
-        return self.with_completed_steps((*self.completed_steps, step))
+        updated = {key: dict(value) for key, value in self.invalid_field_values.items() if key != step}
+        if values:
+            updated[step] = dict(values)
+        return replace(self, invalid_field_values=updated, updated_at=_utc_timestamp())
 
     def to_session_object(self) -> JsonObject:
         """Serialise this draft into a Django-session-safe JSON object.
@@ -468,7 +458,7 @@ class BuilderDraft:
             "updatedAt": self.updated_at,
             "unrepresentedPlanFields": _json_object(self.unrepresented_plan_fields),
             "importIssues": [issue.to_session_object() for issue in self.import_issues],
-            "completedSteps": list(self.completed_steps),
+            "invalidFieldValues": {step: dict(values) for step, values in self.invalid_field_values.items()},
         }
 
 
@@ -578,17 +568,26 @@ def _string_tuple(value: object) -> tuple[str, ...]:
     return tuple(values)
 
 
-def _completed_steps(value: object) -> tuple[BuilderStepId, ...]:
-    """Return completed builder steps decoded from session JSON.
+def _invalid_field_values(value: object) -> dict[str, dict[str, str]]:
+    """Decode retained invalid field values from session state.
 
     Args:
-        value: Raw value decoded from the Django session.
+        value: Session value.
 
     Returns:
-        Known step ids in canonical order; unknown values are ignored.
+        Mapping of known step id to field name to raw string; malformed
+        entries are dropped.
     """
-    raw_steps = _string_tuple(value)
-    return tuple(step for step in BUILDER_STEP_IDS if step in raw_steps)
+    if not isinstance(value, dict):
+        return {}
+    decoded: dict[str, dict[str, str]] = {}
+    for step, fields in value.items():
+        if step not in BUILDER_STEP_IDS or not isinstance(fields, dict):
+            continue
+        strings = {name: raw for name, raw in fields.items() if isinstance(name, str) and isinstance(raw, str)}
+        if strings:
+            decoded[step] = strings
+    return decoded
 
 
 def _string_tuple_mapping(value: object) -> dict[str, tuple[str, ...]]:

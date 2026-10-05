@@ -114,17 +114,7 @@
         <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         {% if review.error %}<div class="message error">{{ review.error }}</div>{% endif %}
-        {% if import_issues %}
-            <div class="message warning" role="status" aria-labelledby="import-warnings-heading">
-                <strong id="import-warnings-heading">Import warnings</strong>
-                <p>Some imported fields could not be loaded into the builder. Complete or fix them in the builder steps or in the plan JSON editor below; launch stays blocked until the plan is valid.</p>
-                <ul>
-                    {% for issue in import_issues %}
-                        <li><span class="badge">{{ issue.kind|capfirst }}</span>{% if issue.path %} <code>{{ issue.path }}</code>{% endif %} {{ issue.message }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
-        {% endif %}
+        {% include "conformance/partials/builder_import_issues.html" %}
         {% if launch_error %}
             <div class="message error">
                 {{ launch_error }}
@@ -148,7 +138,14 @@
         {% else %}
             <div class="message warning">Resolve review blockers before launch.</div>
         {% endif %}
-        {% for blocker in review.blockers %}
+        {% for group in step_issue_groups %}
+            <div class="message warning" data-step-issues="{{ group.step.step_id }}">
+                <strong>{{ group.step.label }} needs attention</strong>
+                <ul>{% for issue in group.issues %}<li>{{ issue }}</li>{% endfor %}</ul>
+                <button type="submit" class="secondary" name="next" value="{{ group.step.step_id }}" form="review-plan-form" formnovalidate>Fix {{ group.step.label|lower }}</button>
+            </div>
+        {% endfor %}
+        {% for blocker in other_blockers %}
             <div class="message warning">{{ blocker }}</div>
         {% endfor %}
         {% if review.compiled_plan and not review.compiled_plan.certifying %}

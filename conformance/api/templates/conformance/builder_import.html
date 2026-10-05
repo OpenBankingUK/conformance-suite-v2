@@ -77,8 +77,14 @@
 
     <section class="panel" aria-labelledby="import-heading">
         <h2 id="import-heading">Plan JSON</h2>
-        <p class="helper">Upload or paste a schemaVersion 1.0 test plan. Incomplete plans are still imported: everything that can be loaded opens in the builder, and missing or invalid fields are listed as warnings on the review page so you can complete them before launch. Imported secrets are retained only in this browser session.</p>
-        {% if import_error %}<div class="message error">{{ import_error }}</div>{% endif %}
+        <p class="helper">Upload or paste a schemaVersion 1.0 test plan. Incomplete plans are still imported: everything that can be loaded opens in the builder, and missing or invalid fields are listed as warnings so you can complete them before launch. A plan without a supported specification opens on the specification step first. Imported secrets are retained only in this browser session.</p>
+        {% if import_error %}
+            <div class="message error">{{ import_error }}</div>
+            <form method="post" action="{% url 'builder-new' %}" data-start-new-plan>
+                {% csrf_token %}
+                <button type="submit" class="secondary">Start a new plan instead</button>
+            </form>
+        {% endif %}
         {# Full navigation: file uploads are posted as multipart form data. #}
         <form method="post" action="{% url 'builder-import' %}" enctype="multipart/form-data" hx-boost="false">
             {% csrf_token %}

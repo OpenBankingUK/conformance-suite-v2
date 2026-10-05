@@ -18,19 +18,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retains mandatory endpoints and required features. Specification conditions
   and conflicting source text remain explicit.
 - The builder shows a step bar at the top of every step and the review page.
-  Participants can jump to any step whose earlier steps are complete, so an
-  imported plan can be edited one step at a time and returned straight to
-  review. Each jump validates and saves the current page first; an invalid page
-  cannot be left. Locked steps are enforced server-side, including typed URLs,
-  and step targets come from a fixed allow-list.
-- Builder **Back** now saves valid edits before going back. If the page has
-  errors, a dialog offers to discard the changes and go back, or **Stay**.
-  Clicking an earlier step in the step bar on an invalid page (including
-  review with invalid plan JSON) offers the same choice. Going back does not
-  mark a step complete; only moving forward from a step does.
-- The builder scope step now asks for at least one resource group, and at
-  least one endpoint in every selected group, before continuing to business
-  data. Going back with an incomplete scope saves it but re-locks business data.
+  Choosing a supported specification is the only gate: after that, new and
+  imported plans can move freely between any steps, and the step bar marks each
+  step complete (✓), needing attention (!), or not started from the saved data.
+  Step targets come from a fixed allow-list, and typed URLs for later steps
+  return to the specification step until one is chosen.
+- Leaving a builder page by **Back**, **Continue**, or the step bar always saves
+  what was entered. Missing values are left empty; a badly formatted value is
+  kept as typed and flagged on its page and at review instead of blocking the
+  page. Pasted or uploaded credential material that fails validation is never
+  kept; a message says it was not saved and why.
+- Review is the single validation gate: it lists each step's issues with a
+  **Fix** button for that step, and launch stays blocked until they are
+  resolved. Business data is empty until scope is selected and follows the
+  saved scope; an empty or incomplete scope is reported at review.
+- Changing the specification now lists the scope and data it would affect and
+  asks for confirmation before saving; reselecting the same specification
+  needs none.
+- Importing a plan without a supported specification opens the specification
+  step with the import warnings and later steps locked; the rest of the plan is
+  loaded once a specification is chosen. An unusable import, or one without a
+  specification, offers **Start a new plan instead**.
 - Ticking a resource group on the builder scope step now selects all of its
   endpoints and optional features by default; ticking a single endpoint selects
   its optional features. **Select all endpoints and features** does the same for
@@ -40,8 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Builder business data no longer shows every resource group's fields when the
-  selected scope cannot be resolved; it shows only the scope error, and returns
-  to the scope step when a selected group has no endpoints.
+  selected scope cannot be resolved; it shows no fields and links to the scope
+  step.
+- Malformed advanced JSON on the builder business data step is now reported
+  against its own field rather than rejecting the whole page.
 - The run screen's **New plan** button is now a **Main menu** link, so
   participants choose between creating and importing a plan.
 - The builder's specification step now preselects the latest OpenAPI document

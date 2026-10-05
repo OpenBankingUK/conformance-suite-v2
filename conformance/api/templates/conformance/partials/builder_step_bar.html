@@ -1,7 +1,9 @@
 {% comment %}
 Builder step bar. Clickable steps submit the page's own form (``step_form_id``)
-with ``next=<step id>`` so the current page is validated and saved before the
-jump; an invalid page re-renders with its errors and nothing is saved.
+with ``next=<step id>`` so whatever was entered on the current page is saved
+before the jump. Each step shows the state of its saved data: a tick when it
+has no issues, a warning when it needs attention, or its number when not
+started. Only the specification gates navigation; review lists every issue.
 {% endcomment %}
 <style>
     .builder-step-bar {
@@ -71,6 +73,15 @@ jump; an invalid page re-renders with its errors and nothing is saved.
         color: #ffffff;
     }
 
+    .builder-step-bar .builder-step-attention .builder-step-number {
+        background: var(--warning, #b54708);
+        color: #ffffff;
+    }
+
+    .builder-step-messages {
+        margin: 0 0 12px;
+    }
+
     .visually-hidden {
         position: absolute;
         width: 1px;
@@ -87,11 +98,16 @@ jump; an invalid page re-renders with its errors and nothing is saved.
                 {% if item.state == "current" %}
                     <span class="builder-step-current" aria-current="step"><span class="builder-step-number">{{ item.number }}</span>{{ item.label }}</span>
                 {% elif item.clickable %}
-                    <button type="submit" name="next" value="{{ item.step_id }}" form="{{ step_form_id }}" formnovalidate><span class="builder-step-number">{% if item.state == "complete" %}&#10003;{% else %}{{ item.number }}{% endif %}</span>{{ item.label }}{% if item.state == "complete" %}<span class="visually-hidden"> (complete)</span>{% endif %}</button>
+                    <button type="submit" name="next" value="{{ item.step_id }}" form="{{ step_form_id }}" formnovalidate><span class="builder-step-number" aria-hidden="true">{% if item.state == "complete" %}&#10003;{% elif item.state == "attention" %}!{% else %}{{ item.number }}{% endif %}</span>{{ item.label }}<span class="visually-hidden">{% if item.state == "complete" %} (complete){% elif item.state == "attention" %} (needs attention){% else %} (not started){% endif %}</span></button>
                 {% else %}
-                    <button type="button" disabled><span class="builder-step-number">{{ item.number }}</span>{{ item.label }}<span class="visually-hidden"> (locked until earlier steps are complete)</span></button>
+                    <button type="button" disabled><span class="builder-step-number">{{ item.number }}</span>{{ item.label }}<span class="visually-hidden"> (locked until a specification is selected)</span></button>
                 {% endif %}
             </li>
         {% endfor %}
     </ol>
 </nav>
+{% if messages %}
+    <div class="builder-step-messages">
+        {% for message in messages %}<div class="message warning" role="alert">{{ message }}</div>{% endfor %}
+    </div>
+{% endif %}

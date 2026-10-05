@@ -3,29 +3,44 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import cast
 from zoneinfo import ZoneInfo
 
-from django.http import HttpRequest, HttpResponse, HttpResponseNotFound, JsonResponse
+from django import forms
+from django.contrib import messages
+from django.core.files.uploadedfile import UploadedFile
+from django.http import HttpRequest, HttpResponse, HttpResponseNotFound, JsonResponse, QueryDict
 from django.shortcuts import redirect, render
 from django.urls import reverse
+from django.utils.datastructures import MultiValueDict
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from conformance.api.builder_draft_store import BUILDER_STEP_IDS, BuilderDraft, BuilderStepId, SessionBuilderDraftStore
+from conformance.api.builder_draft_store import BuilderDraft, BuilderStepId, SessionBuilderDraftStore
+from conformance.api.builder_step_status import (
+    builder_step_issues,
+    builder_step_progress,
+    business_config_form_for_draft,
+    discovery_form_for_draft,
+    draft_boundary,
+    is_dcr_draft,
+    security_form_for_draft,
+    security_form_initial,
+)
 from conformance.api.builder_steps import (
     BACK_NEXT_VALUE,
     BuilderNavigationTarget,
     BuilderStepDefinition,
-    completed_steps_after_catalogue_save,
+    builder_flow,
     first_blocking_step,
     following_step,
     navigates_backward,
     previous_step,
     resolve_next,
+    specification_selected,
     step_bar,
 )
 from conformance.api.builder_wizard import (
@@ -38,7 +53,6 @@ from conformance.api.builder_wizard import (
     boundary_requires_resource_groups,
     business_config_form_initial,
     catalogue_boundary_continue_blocker,
-    config_visibility_for_plan_document,
     discovery_config_form_initial,
     endpoint_capability_values_from_mapping,
     merge_business_config,
@@ -51,9 +65,7 @@ from conformance.api.builder_wizard import (
     plan_document_to_export_json,
     plan_json_from_draft,
     refresh_security_environment,
-    resource_groups_without_endpoints,
     scope_selection_defaults,
-    security_config_form_initial,
     security_credential_rows,
     security_field_metadata,
     specification_options,
@@ -211,6 +223,21 @@ def builder_catalogue_boundary(request: HttpRequest, draft_id: str) -> HttpRespo
                 enforce_endpoint_requirements=False,
             )
             pruned_scope.is_valid()
+            change_effects = _specification_change_effects(draft, selected_boundary, pruned_scope)
+            confirm_token = _specification_change_token(selected_boundary)
+            if change_effects and request.POST.get("confirm_specification_change") != confirm_token:
+                return _render_builder_step(
+                    request,
+                    "conformance/builder_catalogue_boundary.html",
+                    {
+                        **_builder_catalogue_boundary_context(draft=draft, form=form, saved=False),
+                        "specification_change_effects": change_effects,
+                        "specification_change_token": confirm_token,
+                        "pending_next": request.POST.get("next", ""),
+                    },
+                    draft=draft,
+                    step="catalogue",
+                )
             updated_draft = draft.with_catalogue_boundary(
                 scheme=selected_boundary.scheme,
                 specification=selected_boundary.specification,
@@ -221,12 +248,7 @@ def builder_catalogue_boundary(request: HttpRequest, draft_id: str) -> HttpRespo
                 endpoint_ids=pruned_scope.selected_endpoint_ids,
                 endpoint_capability_ids=pruned_scope.selected_endpoint_capability_ids,
             )
-            updated_draft = reconcile_draft_after_builder_save(draft, updated_draft, step="catalogue")
-            updated_draft = updated_draft.with_completed_steps(
-                completed_steps_after_catalogue_save(draft, updated_draft)
-            )
-            draft_store.save(updated_draft)
-            return _redirect_after_step_save(request, updated_draft, "catalogue")
+            return _save_step_and_redirect(request, draft_store, draft, updated_draft, "catalogue")
         return _render_builder_step(
             request,
             "conformance/builder_catalogue_boundary.html",
@@ -237,13 +259,17 @@ def builder_catalogue_boundary(request: HttpRequest, draft_id: str) -> HttpRespo
         )
 
     form = CatalogueBoundaryForm(initial=_boundary_form_initial(draft))
-    return _render_builder_step(
+    response = _render_builder_step(
         request,
         "conformance/builder_catalogue_boundary.html",
         _builder_catalogue_boundary_context(draft=draft, form=form, saved=request.GET.get("saved") == "1"),
         draft=draft,
         step="catalogue",
     )
+    # Import diagnostics can quote imported plan content, so like review the
+    # page must not be cached by the browser.
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 @require_http_methods(["GET", "POST"])
@@ -262,7 +288,7 @@ def builder_scope(request: HttpRequest, draft_id: str) -> HttpResponse:
     draft = draft_store.get(draft_id)
     if draft is None:
         return HttpResponseNotFound("Builder draft not found")
-    boundary = _draft_boundary(draft)
+    boundary = draft_boundary(draft)
     if boundary is None:
         return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
     if catalogue_boundary_continue_blocker(boundary) is not None:
@@ -278,32 +304,7 @@ def builder_scope(request: HttpRequest, draft_id: str) -> HttpResponse:
                 endpoint_ids=form.selected_endpoint_ids,
                 endpoint_capability_ids=form.selected_endpoint_capability_ids,
             )
-            target = _step_save_target(request, updated_draft.with_completed_step("scope"), "scope")
-            requires_groups = boundary_requires_resource_groups(boundary)
-            groups_missing_endpoints = (
-                resource_groups_without_endpoints(
-                    boundary,
-                    resource_group_ids=updated_draft.resource_group_ids,
-                    endpoint_ids=updated_draft.endpoint_ids,
-                )
-                if requires_groups
-                else ()
-            )
-            scope_incomplete = requires_groups and (
-                not updated_draft.resource_group_ids or bool(groups_missing_endpoints)
-            )
-            if scope_incomplete and not navigates_backward(updated_draft, "scope", target):
-                if not updated_draft.resource_group_ids:
-                    form.add_error("resource_groups", "Select at least one resource group to continue.")
-                for label in groups_missing_endpoints:
-                    form.add_error("resource_groups", f"Select at least one {label} endpoint to continue.")
-            else:
-                if scope_incomplete:
-                    # Going back with an incomplete scope: keep it, but business data needs a resolvable scope.
-                    updated_draft = updated_draft.with_completed_steps(
-                        tuple(s for s in updated_draft.completed_steps if s not in {"scope", "config"})
-                    )
-                return _save_step_and_redirect(request, draft_store, draft, updated_draft, "scope")
+            return _save_step_and_redirect(request, draft_store, draft, updated_draft, "scope")
         return _render_builder_step(
             request,
             "conformance/builder_scope.html",
@@ -338,7 +339,7 @@ def builder_scope_options(request: HttpRequest, draft_id: str) -> HttpResponse:
     draft = SessionBuilderDraftStore(request.session).get(draft_id)
     if draft is None:
         return HttpResponseNotFound("Builder draft not found")
-    boundary = _draft_boundary(draft)
+    boundary = draft_boundary(draft)
     if boundary is None:
         return HttpResponseNotFound("Builder draft catalogue boundary not selected")
 
@@ -391,25 +392,19 @@ def builder_config(request: HttpRequest, draft_id: str) -> HttpResponse:
     draft = draft_store.get(draft_id)
     if draft is None:
         return HttpResponseNotFound("Builder draft not found")
-    if _draft_boundary(draft) is None:
+    if draft_boundary(draft) is None:
         return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
-    boundary = _draft_boundary(draft)
+    boundary = draft_boundary(draft)
     if boundary is not None and not boundary_requires_resource_groups(boundary):
         return redirect("builder-discovery-config", draft_id=draft.draft_id)
-    if not draft.resource_group_ids:
-        return redirect("builder-scope", draft_id=draft.draft_id)
-    if boundary is not None and resource_groups_without_endpoints(
-        boundary,
-        resource_group_ids=draft.resource_group_ids,
-        endpoint_ids=draft.endpoint_ids,
-    ):
-        return redirect("builder-scope", draft_id=draft.draft_id)
     if (blocked := _blocked_step_redirect(draft, "config")) is not None:
         return blocked
 
-    try:
-        config_visibility = config_visibility_for_plan_document(plan_document_from_draft(draft))
-    except CatalogueError as error:
+    if business_config_form_for_draft(draft) is None:
+        # No resolvable scope yet: show an empty page that still lets the
+        # participant move on; previously entered business data is kept.
+        if request.method == "POST":
+            return _redirect_after_step_save(request, draft, "config")
         return _render_builder_step(
             request,
             "conformance/builder_business_config.html",
@@ -419,34 +414,40 @@ def builder_config(request: HttpRequest, draft_id: str) -> HttpResponse:
                     initial=business_config_form_initial(draft.config),
                     config_visibility=EMPTY_CONFIG_VISIBILITY,
                 ),
-                review_error=f"Scope validation failed: {error}",
+                scope_missing=True,
             ),
             draft=draft,
             step="config",
-            status=400,
         )
 
     if request.method == "POST":
-        form = BusinessConfigForm(
-            data=request.POST,
-            initial=business_config_form_initial(draft.config),
-            config_visibility=config_visibility,
+        bound = _lenient_bind(
+            lambda data, _files: cast(
+                BusinessConfigForm, business_config_form_for_draft(draft, data=data, lenient=True)
+            ),
+            request,
         )
-        if form.is_valid() and form.config is not None:
-            updated_draft = draft.with_config(config=merge_business_config(draft.config, form.config))
+        if bound.form.is_valid() and bound.form.config is not None:
+            updated_draft = draft.with_config(
+                config=merge_business_config(draft.config, bound.form.config)
+            ).with_invalid_field_values("config", bound.invalid_values)
             return _save_step_and_redirect(request, draft_store, draft, updated_draft, "config")
         return _render_builder_step(
             request,
             "conformance/builder_business_config.html",
-            _builder_business_config_context(draft=draft, form=form),
+            _builder_business_config_context(draft=draft, form=bound.form),
             draft=draft,
             step="config",
             status=400,
         )
 
-    form = BusinessConfigForm(
-        initial=business_config_form_initial(draft.config),
-        config_visibility=config_visibility,
+    form = cast(
+        BusinessConfigForm,
+        business_config_form_for_draft(
+            draft,
+            data=_retained_invalid_data(draft, "config", business_config_form_initial(draft.config)),
+            lenient=True,
+        ),
     )
     return _render_builder_step(
         request,
@@ -473,38 +474,42 @@ def builder_discovery_config(request: HttpRequest, draft_id: str) -> HttpRespons
     draft = draft_store.get(draft_id)
     if draft is None:
         return HttpResponseNotFound("Builder draft not found")
-    if _draft_boundary(draft) is None:
+    if draft_boundary(draft) is None:
         return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
     if (blocked := _blocked_step_redirect(draft, "discovery")) is not None:
         return blocked
 
     if request.method == "POST":
-        form = DiscoveryConfigForm(
-            data=request.POST,
-            initial=discovery_config_form_initial(draft.config),
-            discovery_required=_is_dcr_draft(draft),
-        )
-        if form.is_valid() and form.config is not None:
-            updated_config = merge_discovery_config(draft.config, form.config)
-            metadata = (
-                _fetch_discovery_metadata(updated_config) if _metadata_string(updated_config, "discoveryUrl") else {}
-            )
-            updated_draft = draft.with_config(config=updated_config).with_discovery_metadata(
-                discovery_metadata=metadata
+        bound = _lenient_bind(lambda data, _files: discovery_form_for_draft(draft, data=data, lenient=True), request)
+        if bound.form.is_valid() and bound.form.config is not None:
+            updated_config = merge_discovery_config(draft.config, bound.form.config)
+            if "discovery_url" in bound.invalid_values:
+                # The rejected URL was not saved, so the stored URL and its
+                # metadata are unchanged; avoid re-fetching on every leave.
+                metadata = dict(draft.discovery_metadata)
+            elif _metadata_string(updated_config, "discoveryUrl"):
+                metadata = _fetch_discovery_metadata(updated_config)
+            else:
+                metadata = {}
+            updated_draft = (
+                draft.with_config(config=updated_config)
+                .with_discovery_metadata(discovery_metadata=metadata)
+                .with_invalid_field_values("discovery", bound.invalid_values)
             )
             return _save_step_and_redirect(request, draft_store, draft, updated_draft, "discovery")
         return _render_builder_step(
             request,
             "conformance/builder_discovery_config.html",
-            _builder_discovery_config_context(draft=draft, form=form),
+            _builder_discovery_config_context(draft=draft, form=bound.form),
             draft=draft,
             step="discovery",
             status=400,
         )
 
-    form = DiscoveryConfigForm(
-        initial=discovery_config_form_initial(draft.config),
-        discovery_required=_is_dcr_draft(draft),
+    form = discovery_form_for_draft(
+        draft,
+        data=_retained_invalid_data(draft, "discovery", discovery_config_form_initial(draft.config)),
+        lenient=True,
     )
     return _render_builder_step(
         request,
@@ -536,7 +541,7 @@ def builder_discovery_preview(request: HttpRequest, draft_id: str) -> HttpRespon
     draft = SessionBuilderDraftStore(request.session).get(draft_id)
     if draft is None:
         return HttpResponseNotFound("Builder draft not found")
-    if _draft_boundary(draft) is None:
+    if draft_boundary(draft) is None:
         return HttpResponseNotFound("Builder draft catalogue boundary not selected")
 
     form = DiscoveryConfigForm(data=request.POST, discovery_required=True)
@@ -571,7 +576,7 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
     draft = draft_store.get(draft_id)
     if draft is None:
         return HttpResponseNotFound("Builder draft not found")
-    if _draft_boundary(draft) is None:
+    if draft_boundary(draft) is None:
         return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
     if (blocked := _blocked_step_redirect(draft, "security")) is not None:
         return blocked
@@ -581,42 +586,31 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
         dynamic_client_registration=draft.dynamic_client_registration,
     )
     if request.method == "POST":
-        form = SecurityConfigForm(
-            data=request.POST,
-            files=request.FILES,
-            initial=security_config_form_initial(
-                draft.config,
-                draft.discovery_metadata,
-                security_environment=draft.security_environment,
-                dynamic_client_registration=draft.dynamic_client_registration,
-                metadata=draft.metadata,
-                execution_mode=draft.execution_mode,
-            ),
-            dcr_mode=_is_dcr_draft(draft),
-            stored_credentials=stored_credentials,
+        bound = _lenient_bind(
+            lambda data, files: security_form_for_draft(draft, data=data, files=files, lenient=True),
+            request,
         )
+        form = bound.form
         if form.is_valid() and form.config is not None:
             updated_config = merge_security_config(draft.config, form.config)
-            validation_error = None if _is_dcr_draft(draft) else _validate_model_config(updated_config)
-            if validation_error is None:
-                updated_draft = draft.with_config(config=updated_config)
-                if _is_dcr_draft(draft):
-                    updated_draft = updated_draft.with_plan_context(
-                        security_environment=form.security_environment or {},
-                        business_test_data=draft.business_test_data,
-                        metadata=form.metadata or {},
-                        execution_mode=form.execution_mode or draft.execution_mode,
-                        dynamic_client_registration=form.dynamic_client_registration or {},
-                    )
-                else:
-                    updated_draft = updated_draft.with_plan_context(
-                        security_environment=refresh_security_environment(draft.security_environment, updated_config),
-                        business_test_data=draft.business_test_data,
-                        metadata=draft.metadata,
-                        execution_mode=draft.execution_mode,
-                    )
-                return _save_step_and_redirect(request, draft_store, draft, updated_draft, "security")
-            form.add_error(None, validation_error)
+            updated_draft = draft.with_config(config=updated_config)
+            if is_dcr_draft(draft):
+                updated_draft = updated_draft.with_plan_context(
+                    security_environment=form.security_environment or {},
+                    business_test_data=draft.business_test_data,
+                    metadata=form.metadata or {},
+                    execution_mode=form.execution_mode or draft.execution_mode,
+                    dynamic_client_registration=form.dynamic_client_registration or {},
+                )
+            else:
+                updated_draft = updated_draft.with_plan_context(
+                    security_environment=refresh_security_environment(draft.security_environment, updated_config),
+                    business_test_data=draft.business_test_data,
+                    metadata=draft.metadata,
+                    execution_mode=draft.execution_mode,
+                )
+            updated_draft = updated_draft.with_invalid_field_values("security", bound.invalid_values)
+            return _save_step_and_redirect(request, draft_store, draft, updated_draft, "security")
         return _render_builder_step(
             request,
             "conformance/builder_security_config.html",
@@ -626,17 +620,10 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
             status=400,
         )
 
-    form = SecurityConfigForm(
-        initial=security_config_form_initial(
-            draft.config,
-            draft.discovery_metadata,
-            security_environment=draft.security_environment,
-            dynamic_client_registration=draft.dynamic_client_registration,
-            metadata=draft.metadata,
-            execution_mode=draft.execution_mode,
-        ),
-        dcr_mode=_is_dcr_draft(draft),
-        stored_credentials=stored_credentials,
+    form = security_form_for_draft(
+        draft,
+        data=_retained_invalid_data(draft, "security", security_form_initial(draft)),
+        lenient=True,
     )
     return _render_builder_step(
         request,
@@ -679,23 +666,13 @@ def builder_import(request: HttpRequest) -> HttpResponse:
 
     draft_store = SessionBuilderDraftStore(request.session)
     draft = draft_store.create()
-    draft_store.save(_with_every_step_completed(recover_draft_from_plan_json(form.raw_plan, draft=draft)))
+    imported = recover_draft_from_plan_json(form.raw_plan, draft=draft)
+    draft_store.save(imported)
+    if not specification_selected(imported):
+        # Nothing else can be interpreted until a specification is chosen; the
+        # imported values are kept and re-read against it on save.
+        return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
     return redirect("builder-review", draft_id=draft.draft_id)
-
-
-def _with_every_step_completed(draft: BuilderDraft) -> BuilderDraft:
-    """Mark every builder step complete for a draft loaded from plan JSON.
-
-    A loaded plan fills every step at once, so the participant may jump to any
-    step; review still lists anything that needs fixing before launch.
-
-    Args:
-        draft: Draft recovered from plan JSON.
-
-    Returns:
-        Draft with every step recorded as complete.
-    """
-    return draft.with_completed_steps(BUILDER_STEP_IDS)
 
 
 def _blocked_step_redirect(draft: BuilderDraft, step: BuilderNavigationTarget) -> HttpResponse | None:
@@ -724,27 +701,27 @@ def _navigation_context(
     """Return step-bar and Back context for a builder page.
 
     Args:
-        request: Incoming request; an invalid POST from Back or a step-bar
-            jump to an earlier step opens the discard-changes dialog.
+        request: Incoming request.
         draft: Draft as currently saved (unsaved edits are never reflected).
         step: Page being rendered.
 
     Returns:
-        Template context for the step bar, Back button, and Back dialog.
+        Template context for the step bar and Back button. Step-bar states
+        come from the saved data of each step.
     """
+    del request
     return {
-        "step_bar": step_bar(draft, step),
+        "step_bar": step_bar(draft, step, builder_step_progress(draft)),
         "back_step": previous_step(draft, step),
-        **_discard_context(request, draft, step),
     }
 
 
 def _discard_context(request: HttpRequest, draft: BuilderDraft, step: BuilderNavigationTarget) -> dict[str, object]:
-    """Return discard-dialog context for an invalid POST that tried to go back.
+    """Return discard-dialog context for rejected review-page plan JSON.
 
-    Back, or a step-bar jump to an earlier step, may leave an invalid page by
-    discarding its unsaved edits. Forward jumps stay blocked until the page is
-    valid, so later steps are never unlocked by discarding.
+    Builder steps always save on leave, so only the review page's plan JSON
+    box, whose text cannot be saved until it is a JSON object, offers to
+    discard unsaved edits when Back or a step-bar jump is pressed.
 
     Args:
         request: Incoming request.
@@ -840,14 +817,14 @@ def _save_step_and_redirect(
     updated: BuilderDraft,
     step: BuilderStepId,
 ) -> HttpResponse:
-    """Persist a valid step save and redirect.
+    """Persist a step save and redirect.
 
-    Moving forward marks the step complete. Back or a jump to an earlier step
-    keeps the valid edits but leaves completion unchanged, so visiting a step
-    without continuing from it does not unlock later steps.
+    Every builder page saves whatever was entered when it is left, whichever
+    way the participant leaves it; completeness is shown in the step bar and
+    enforced at review.
 
     Args:
-        request: Valid step POST.
+        request: Step POST.
         draft_store: Session draft store.
         previous: Draft before the save.
         updated: Draft with the step's changes applied.
@@ -857,11 +834,211 @@ def _save_step_and_redirect(
         Redirect to the page chosen by :func:`_step_save_target`.
     """
     reconciled = reconcile_draft_after_builder_save(previous, updated, step=step)
-    completed = reconciled.with_completed_step(step)
-    target = _step_save_target(request, completed, step)
-    saved = reconciled if navigates_backward(completed, step, target) else completed
-    draft_store.save(saved)
-    return redirect(target.url_name, draft_id=saved.draft_id)
+    draft_store.save(reconciled)
+    return _redirect_after_step_save(request, reconciled, step)
+
+
+@dataclass(frozen=True)
+class _LenientBinding[FormT: forms.Form]:
+    """Result of binding a builder step form leniently.
+
+    Attributes:
+        form: Bound form with every rejected field restored to its saved value.
+        invalid_values: Rejected non-secret values exactly as typed, keyed by
+            field name, so they can be shown again and flagged at review.
+    """
+
+    form: FormT
+    invalid_values: dict[str, str]
+
+
+_SECRET_FIELD_SUFFIXES = ("_pem", "_file")
+"""Credential inputs carrying pasted or uploaded key material."""
+
+_LENIENT_BIND_PASSES = 4
+"""Upper bound on re-binding passes; each pass only removes rejected fields."""
+
+
+def _is_secret_field(form: forms.Form, name: str) -> bool:
+    """Return whether a field carries secret credential material.
+
+    Args:
+        form: Bound form.
+        name: Field name.
+
+    Returns:
+        True for pasted or uploaded credential inputs, which are never retained.
+    """
+    return name.endswith(_SECRET_FIELD_SUFFIXES) or isinstance(form.fields.get(name), forms.FileField)
+
+
+def _secret_inputs_for(name: str, data: QueryDict, files: MultiValueDict[str, UploadedFile]) -> tuple[str, ...]:
+    """Return pasted or uploaded inputs submitted alongside a credential path.
+
+    Args:
+        name: Rejected field name.
+        data: Submitted data.
+        files: Uploaded files.
+
+    Returns:
+        Non-empty ``<credential>_pem``/``<credential>_file`` inputs when
+        ``name`` is that credential's path field, otherwise empty.
+    """
+    if not name.endswith("_path"):
+        return ()
+    base = name.removesuffix("_path")
+    pem = data.get(f"{base}_pem")
+    return tuple(
+        key
+        for key, present in (
+            (f"{base}_pem", isinstance(pem, str) and bool(pem.strip())),
+            (f"{base}_file", f"{base}_file" in files),
+        )
+        if present
+    )
+
+
+def _restore_field(data: QueryDict, form: forms.Form, name: str) -> None:
+    """Replace a rejected submitted value with the field's saved value.
+
+    Args:
+        data: Mutable copy of the submitted data.
+        form: Bound form the value was rejected by.
+        name: Field name.
+    """
+    initial = form.get_initial_for_field(form.fields[name], name)
+    data.pop(name, None)
+    if isinstance(initial, list | tuple):
+        data.setlist(name, [str(value) for value in initial])
+    elif initial not in (None, ""):
+        data[name] = str(initial)
+
+
+def _lenient_bind[FormT: forms.Form](
+    build: Callable[[Mapping[str, object], MultiValueDict[str, UploadedFile] | None], FormT],
+    request: HttpRequest,
+) -> _LenientBinding[FormT]:
+    """Bind a step form so a page with bad values can still be saved and left.
+
+    Fields the form rejects are put back to their saved value so everything
+    else can be saved. Rejected non-secret values are returned as typed so
+    the page and review can flag them. Rejected pasted or uploaded credential
+    material is never retained or echoed; the participant is told it was not
+    saved instead.
+
+    Args:
+        build: Builds the lenient form from data and uploaded files.
+        request: Step POST.
+
+    Returns:
+        The final bound form and the rejected non-secret values.
+    """
+    data = request.POST.copy()
+    files: MultiValueDict[str, UploadedFile] = MultiValueDict(
+        {key: request.FILES.getlist(key) for key in request.FILES}
+    )
+    invalid: dict[str, str] = {}
+    dropped_secrets: list[str] = []
+    form = build(data, files)
+    for _ in range(_LENIENT_BIND_PASSES):
+        if form.is_valid():
+            break
+        rejected = [name for name in form.errors if name in form.fields]
+        if not rejected:
+            break
+        for name in rejected:
+            secret_inputs = _secret_inputs_for(name, data, files)
+            if _is_secret_field(form, name) or secret_inputs:
+                # Pasted or uploaded material cannot be kept as typed, so the
+                # whole credential submission is dropped and the participant is
+                # told why. Credential errors never contain the material itself.
+                reasons = " ".join(str(error) for error in form.errors[name])
+                label = str(form.fields[name].label or name)
+                dropped_secrets.append(f"{label} was not saved: {reasons} Supply it again.")
+                for key in (name, *secret_inputs):
+                    data.pop(key, None)
+                    files.pop(key, None)
+                continue
+            raw = data.get(name)
+            if isinstance(raw, str) and raw.strip():
+                invalid[name] = raw
+            _restore_field(data, form, name)
+        form = build(data, files)
+    for message in dropped_secrets:
+        messages.warning(request, message)
+    return _LenientBinding(form=form, invalid_values=invalid)
+
+
+def _retained_invalid_data(
+    draft: BuilderDraft, step: BuilderStepId, initial: Mapping[str, object]
+) -> dict[str, object] | None:
+    """Return form data that shows a step's retained invalid values again.
+
+    Args:
+        draft: Builder draft.
+        step: Step being rendered.
+        initial: Initial form values decoded from the draft.
+
+    Returns:
+        Saved values overlaid with the retained invalid values, so the page
+        shows them with their errors, or ``None`` when nothing was rejected.
+    """
+    invalid = draft.invalid_field_values.get(step)
+    if not invalid:
+        return None
+    return {**initial, **invalid}
+
+
+def _specification_change_token(boundary: PlanDocumentBoundary) -> str:
+    """Return the confirmation value for changing to ``boundary``.
+
+    Args:
+        boundary: Newly selected specification boundary.
+
+    Returns:
+        Token naming the confirmed boundary, so confirming one change never
+        confirms a different one chosen afterwards.
+    """
+    return f"{boundary.scheme}/{boundary.specification}/{boundary.version}"
+
+
+def _specification_change_effects(
+    draft: BuilderDraft,
+    selected: PlanDocumentBoundary,
+    pruned_scope: ScopeSelectionForm,
+) -> tuple[str, ...]:
+    """Describe what a specification change would do to entered data.
+
+    Args:
+        draft: Draft before the change.
+        selected: Newly selected specification boundary.
+        pruned_scope: Existing scope re-bound against the new specification.
+
+    Returns:
+        Participant-facing effects that need confirming, empty when the
+        change keeps everything (or no specification was saved before).
+    """
+    previous = draft_boundary(draft)
+    if previous is None or previous == selected:
+        return ()
+    effects: list[str] = []
+    if boundary_requires_resource_groups(previous) != boundary_requires_resource_groups(selected):
+        effects.append(
+            "The builder steps change for this specification. Business data, discovery, and security values "
+            "entered for the current specification are kept but may no longer apply; check each step."
+        )
+    removed_groups = [g for g in draft.resource_group_ids if g not in pruned_scope.selected_resource_group_ids]
+    removed_endpoints = [e for e in draft.endpoint_ids if e not in pruned_scope.selected_endpoint_ids]
+    if removed_groups:
+        effects.append(f"Resource groups not in the new specification will be removed: {', '.join(removed_groups)}.")
+    if removed_endpoints:
+        effects.append(f"Endpoints not in the new specification will be removed: {', '.join(removed_endpoints)}.")
+    previous_capabilities = endpoint_capability_values_from_mapping(draft.endpoint_capability_ids)
+    kept_capabilities = endpoint_capability_values_from_mapping(pruned_scope.selected_endpoint_capability_ids)
+    removed_capabilities = [c for c in previous_capabilities if c not in kept_capabilities]
+    if removed_capabilities:
+        effects.append(f"{len(removed_capabilities)} selected endpoint capabilities will be removed.")
+    return tuple(effects)
 
 
 def _apply_review_plan_json(
@@ -902,7 +1079,7 @@ def _apply_review_plan_json(
     if raw_plan == plan_json_from_draft(draft):
         return draft
     fresh_draft = replace(BuilderDraft.create(), draft_id=draft.draft_id, created_at=draft.created_at)
-    updated = _with_every_step_completed(recover_draft_from_plan_json(raw_plan, draft=fresh_draft))
+    updated = recover_draft_from_plan_json(raw_plan, draft=fresh_draft)
     draft_store.save(updated)
     return updated
 
@@ -1236,32 +1413,6 @@ def _boundary_form_initial(draft: BuilderDraft) -> dict[str, object]:
     return initial
 
 
-def _draft_boundary(draft: BuilderDraft) -> PlanDocumentBoundary | None:
-    """Return the selected catalogue boundary from a draft.
-
-    Args:
-        draft: Current browser wizard draft.
-
-    Returns:
-        Selected plan-document boundary, or ``None`` until step one is saved.
-    """
-    if draft.scheme is None or draft.specification is None or draft.version is None:
-        return None
-    return PlanDocumentBoundary(scheme=draft.scheme, specification=draft.specification, version=draft.version)
-
-
-def _is_dcr_draft(draft: BuilderDraft) -> bool:
-    """Return whether a browser draft targets Open Banking DCR 3.4.
-
-    Args:
-        draft: Current browser builder draft.
-
-    Returns:
-        True for the DCR specification boundary.
-    """
-    return draft.specification == "dynamic-client-registration" and draft.version == "3.4"
-
-
 def _scope_form_initial(draft: BuilderDraft) -> dict[str, object]:
     """Return initial scope form values from a builder draft.
 
@@ -1302,6 +1453,8 @@ def _builder_catalogue_boundary_context(
         "version_options": version_options(),
         "openapi_document_update_options": openapi_document_update_options(),
         "catalogue_boundary_blocker": catalogue_boundary_continue_blocker(form.selected_boundary),
+        "imported_without_specification": bool(draft.import_issues) and not specification_selected(draft),
+        "import_issues": draft.import_issues,
     }
     return context
 
@@ -1348,26 +1501,25 @@ def _builder_business_config_context(
     *,
     draft: BuilderDraft,
     form: BusinessConfigForm,
-    review_error: str | None = None,
+    scope_missing: bool = False,
 ) -> dict[str, object]:
     """Build template context for business/request defaults.
 
     Args:
         draft: Current browser wizard draft.
         form: Business config form.
-        review_error: Optional scope/config validation error to render.
+        scope_missing: Whether no scope with endpoints is selected yet, so no
+            business data fields apply.
 
     Returns:
         Template context for the business config wizard page.
     """
-    context: dict[str, object] = {
+    return {
         "draft": draft,
         "form": form,
         "config_visibility": form.config_visibility,
+        "scope_missing": scope_missing,
     }
-    if review_error is not None:
-        context["review_error"] = review_error
-    return context
 
 
 def _builder_discovery_config_context(
@@ -1413,7 +1565,7 @@ def _builder_security_config_context(
         "form": form,
         "discovery_metadata": _discovery_metadata_context(draft.discovery_metadata),
         "security_requirements": security_field_metadata(),
-        "dcr_mode": _is_dcr_draft(draft),
+        "dcr_mode": is_dcr_draft(draft),
         "credentials": security_credential_rows(form, stored_credentials),
     }
 
@@ -1546,22 +1698,6 @@ def _display_metadata_value(value: JsonValue) -> str:
     return str(value)
 
 
-def _validate_model_config(config: Mapping[str, JsonValue]) -> str | None:
-    """Return a model-config validation error for ``config`` when invalid.
-
-    Args:
-        config: Draft v2 plan config.
-
-    Returns:
-        Error message, or ``None`` when the executable config validates.
-    """
-    try:
-        parse_model_bank_config(model_bank_config_from_plan_config(config), base_dir=Path.cwd())
-    except ConfigError as error:
-        return f"Config validation failed: {error}"
-    return None
-
-
 def _builder_review_context(
     *,
     draft: BuilderDraft,
@@ -1583,9 +1719,14 @@ def _builder_review_context(
         Template context for the generated review/summary page.
     """
     state = _builder_review_state(draft)
+    step_issue_groups = _step_issue_groups(draft)
     context: dict[str, object] = {
         "draft": draft,
-        "step_bar": step_bar(draft, "review"),
+        "step_bar": step_bar(draft, "review", builder_step_progress(draft)),
+        "step_issue_groups": step_issue_groups,
+        "other_blockers": tuple(
+            blocker for blocker in state.blockers if not any(blocker in group.issues for group in step_issue_groups)
+        ),
         "review": state,
         "review_counts": _builder_review_counts(state),
         "review_phase_counts": _builder_review_phase_counts(state.rows),
@@ -1598,6 +1739,36 @@ def _builder_review_context(
     if active_run_id is not None:
         context["active_run_id"] = active_run_id
     return context
+
+
+@dataclass(frozen=True)
+class _StepIssueGroup:
+    """Review-page issues for one builder step.
+
+    Attributes:
+        step: Builder step the issues belong to.
+        issues: Participant-facing issue messages.
+    """
+
+    step: BuilderStepDefinition
+    issues: tuple[str, ...]
+
+
+def _step_issue_groups(draft: BuilderDraft) -> tuple[_StepIssueGroup, ...]:
+    """Return per-step issues for the review page, in builder order.
+
+    Args:
+        draft: Current browser wizard draft.
+
+    Returns:
+        One group per step that has issues, linking back to that step.
+    """
+    issues = builder_step_issues(draft)
+    return tuple(
+        _StepIssueGroup(step=step, issues=issues[step.step_id])
+        for step in builder_flow(draft)
+        if step.step_id != "review" and issues.get(step.step_id)
+    )
 
 
 def _review_response(request: HttpRequest, context: dict[str, object], *, status: int = 200) -> HttpResponse:
@@ -1636,8 +1807,10 @@ def _builder_review_state(draft: BuilderDraft) -> _BuilderReviewState:
     state = _builder_document_review_state(draft)
     plan_json = plan_json_from_draft(draft)
     blockers = list(state.blockers)
+    for issues in builder_step_issues(draft).values():
+        blockers.extend(issue for issue in issues if issue not in blockers)
     error = state.error
-    if _draft_boundary(draft) is None:
+    if draft_boundary(draft) is None:
         error = None
         blockers = ["Choose a specification in the builder or the plan JSON before launch."]
     if draft.unrepresented_plan_fields:
