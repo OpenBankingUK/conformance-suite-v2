@@ -19,9 +19,11 @@ from conformance.api.builder_draft_store import BUILDER_STEP_IDS, BuilderDraft, 
 from conformance.api.builder_steps import (
     BACK_NEXT_VALUE,
     BuilderNavigationTarget,
+    BuilderStepDefinition,
     completed_steps_after_catalogue_save,
     first_blocking_step,
     following_step,
+    navigates_backward,
     previous_step,
     resolve_next,
     step_bar,
@@ -272,7 +274,20 @@ def builder_scope(request: HttpRequest, draft_id: str) -> HttpResponse:
                 endpoint_ids=form.selected_endpoint_ids,
                 endpoint_capability_ids=form.selected_endpoint_capability_ids,
             )
-            return _save_step_and_redirect(request, draft_store, draft, updated_draft, "scope")
+            target = _step_save_target(request, updated_draft.with_completed_step("scope"), "scope")
+            if (
+                boundary_requires_resource_groups(boundary)
+                and not updated_draft.resource_group_ids
+                and not navigates_backward(updated_draft, "scope", target)
+            ):
+                form.add_error("resource_groups", "Select at least one resource group to continue.")
+            else:
+                if boundary_requires_resource_groups(boundary) and not updated_draft.resource_group_ids:
+                    # Going back with an empty scope: keep it, but business data needs resource groups.
+                    updated_draft = updated_draft.with_completed_steps(
+                        tuple(s for s in updated_draft.completed_steps if s not in {"scope", "config"})
+                    )
+                return _save_step_and_redirect(request, draft_store, draft, updated_draft, "scope")
         return _render_builder_step(
             request,
             "conformance/builder_scope.html",
@@ -710,11 +725,30 @@ def _render_builder_step(
     return render(request, template_name, {**context, **_navigation_context(request, draft, step)}, status=status)
 
 
-def _redirect_after_step_save(request: HttpRequest, draft: BuilderDraft, step: BuilderNavigationTarget) -> HttpResponse:
-    """Redirect after a valid step save to the requested or next step.
+def _step_save_target(
+    request: HttpRequest, draft: BuilderDraft, step: BuilderNavigationTarget
+) -> BuilderStepDefinition:
+    """Return the page to open after a valid step save.
 
     ``next`` is resolved against fixed step ids only, so it cannot become an
     open redirect; unknown or locked targets fall back to the next step.
+
+    Args:
+        request: Valid step POST, optionally carrying ``next``.
+        draft: Draft as it will be saved, with ``step`` recorded complete.
+        step: Step that was submitted.
+
+    Returns:
+        The previous step for Back, the requested step-bar step, or the
+        following step in the flow.
+    """
+    raw_next = request.POST.get("next")
+    target = previous_step(draft, step) if raw_next == BACK_NEXT_VALUE else resolve_next(raw_next, draft)
+    return target if target is not None else following_step(draft, step)
+
+
+def _redirect_after_step_save(request: HttpRequest, draft: BuilderDraft, step: BuilderNavigationTarget) -> HttpResponse:
+    """Redirect after a valid step save to the requested or next step.
 
     Args:
         request: Valid step POST, optionally carrying ``next``.
@@ -722,14 +756,9 @@ def _redirect_after_step_save(request: HttpRequest, draft: BuilderDraft, step: B
         step: Step that was saved.
 
     Returns:
-        Redirect to the previous step for Back, the requested step-bar step, or
-        the following step in the flow.
+        Redirect to the page chosen by :func:`_step_save_target`.
     """
-    raw_next = request.POST.get("next")
-    target = previous_step(draft, step) if raw_next == BACK_NEXT_VALUE else resolve_next(raw_next, draft)
-    if target is None:
-        target = following_step(draft, step)
-    return redirect(target.url_name, draft_id=draft.draft_id)
+    return redirect(_step_save_target(request, draft, step).url_name, draft_id=draft.draft_id)
 
 
 def _save_step_and_redirect(
@@ -739,7 +768,11 @@ def _save_step_and_redirect(
     updated: BuilderDraft,
     step: BuilderStepId,
 ) -> HttpResponse:
-    """Persist a valid step save, mark the step complete, and redirect.
+    """Persist a valid step save and redirect.
+
+    Moving forward marks the step complete. Back or a jump to an earlier step
+    keeps the valid edits but leaves completion unchanged, so visiting a step
+    without continuing from it does not unlock later steps.
 
     Args:
         request: Valid step POST.
@@ -749,11 +782,14 @@ def _save_step_and_redirect(
         step: Step that was saved.
 
     Returns:
-        Redirect chosen by :func:`_redirect_after_step_save`.
+        Redirect to the page chosen by :func:`_step_save_target`.
     """
-    saved = reconcile_draft_after_builder_save(previous, updated, step=step).with_completed_step(step)
+    reconciled = reconcile_draft_after_builder_save(previous, updated, step=step)
+    completed = reconciled.with_completed_step(step)
+    target = _step_save_target(request, completed, step)
+    saved = reconciled if navigates_backward(completed, step, target) else completed
     draft_store.save(saved)
-    return _redirect_after_step_save(request, saved, step)
+    return redirect(target.url_name, draft_id=saved.draft_id)
 
 
 def _apply_review_plan_json(

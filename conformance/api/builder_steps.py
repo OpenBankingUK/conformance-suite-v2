@@ -113,6 +113,23 @@ def builder_flow(draft: BuilderDraft) -> tuple[BuilderStepDefinition, ...]:
     return DIRECT_ENDPOINT_FLOW
 
 
+def navigates_backward(draft: BuilderDraft, current: BuilderNavigationTarget, target: BuilderStepDefinition) -> bool:
+    """Return whether ``target`` comes before ``current`` in the draft's flow.
+
+    Args:
+        draft: Builder draft.
+        current: Page that was submitted.
+        target: Page the participant is going to.
+
+    Returns:
+        True for Back or a step-bar jump to an earlier step.
+    """
+    order = [step.step_id for step in builder_flow(draft)]
+    if current not in order or target.step_id not in order:
+        return False
+    return order.index(target.step_id) < order.index(current)
+
+
 def first_blocking_step(draft: BuilderDraft, target: BuilderNavigationTarget) -> BuilderStepDefinition | None:
     """Return the earliest incomplete step that must be saved before ``target``.
 

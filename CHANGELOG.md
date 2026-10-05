@@ -18,7 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cannot be left. Locked steps are enforced server-side, including typed URLs,
   and step targets come from a fixed allow-list.
 - Builder **Back** now saves valid edits before going back. If the page has
-  errors, a dialog offers **Discard & go back** or **Stay**.
+  errors, a dialog offers **Discard & go back** or **Stay**. Going back does
+  not mark a step complete; only moving forward from a step does.
+- The builder scope step now asks for at least one resource group before
+  continuing to business data, instead of silently returning to scope.
 - The run screen's **New plan** button is now a **Main menu** link, so
   participants choose between creating and importing a plan.
 - The builder's specification step now preselects the latest OpenAPI document

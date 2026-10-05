@@ -14,6 +14,7 @@ from conformance.api.builder_steps import (
     completed_steps_after_catalogue_save,
     first_blocking_step,
     following_step,
+    navigates_backward,
     previous_step,
     resolve_next,
     step_bar,
@@ -125,6 +126,17 @@ def test_resolve_next_rejects_locked_steps_and_steps_outside_the_flow() -> None:
     resolved = resolve_next("review", _read_write_draft(*BUILDER_STEP_IDS))
     assert resolved is not None
     assert resolved.url_name == "builder-review"
+
+
+def test_navigates_backward_compares_flow_positions() -> None:
+    draft = _read_write_draft(*BUILDER_STEP_IDS)
+    flow = {step.step_id: step for step in builder_flow(draft)}
+
+    assert navigates_backward(draft, "scope", flow["discovery"])
+    assert not navigates_backward(draft, "scope", flow["config"])
+    assert not navigates_backward(draft, "scope", flow["scope"])
+    assert not navigates_backward(draft, "config", flow["review"])
+    assert not navigates_backward(_dcr_draft(*BUILDER_STEP_IDS), "config", flow["discovery"])
 
 
 def test_changing_specification_invalidates_every_later_step() -> None:

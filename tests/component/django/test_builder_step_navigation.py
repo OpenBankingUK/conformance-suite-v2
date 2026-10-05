@@ -59,6 +59,19 @@ def _read_write_boundary(**extra: str) -> dict[str, str]:
     return {"scheme": "open-banking-uk", "specification": "read-write", "version": "4.0.1", **extra}
 
 
+def _draft_at_scope(client: Client) -> str:
+    """Return a fresh Read/Write draft whose steps before scope are complete."""
+    draft_id = _new_draft_id(client)
+    client.post(f"/builder/{draft_id}/catalogue/", data=_read_write_boundary())
+    session = client.session
+    store = SessionBuilderDraftStore(session)
+    draft = store.get(draft_id)
+    assert draft is not None
+    store.save(draft.with_completed_steps(("catalogue", "discovery", "security")))
+    session.save()
+    return draft_id
+
+
 class TestStepBar:
     """The step bar renders on every builder page and submits the page form."""
 
@@ -240,6 +253,51 @@ class TestBack:
         assert discarded.status_code == 200
         assert _draft(client, draft_id) == before
         assert _draft(client, draft_id).config["discoveryUrl"] == _DISCOVERY_URL
+
+    @patch("conformance.api.ui_views._fetch_discovery_metadata", return_value={})
+    def test_back_from_unvisited_valid_step_does_not_mark_it_complete(self, _mock_fetch: Mock) -> None:
+        client = Client()
+        draft_id = _new_draft_id(client)
+        client.post(f"/builder/{draft_id}/catalogue/", data=_read_write_boundary())
+
+        response = client.post(f"/builder/{draft_id}/config/discovery/", data={"discovery_url": "", "next": "back"})
+
+        assert response["Location"] == f"/builder/{draft_id}/catalogue/"
+        assert _draft(client, draft_id).completed_steps == ("catalogue",)
+        content = client.get(f"/builder/{draft_id}/catalogue/").content.decode("utf-8")
+        assert content.count('data-builder-step-state="locked"') == 4
+
+    def test_empty_scope_back_saves_without_unlocking_business_data(self) -> None:
+        client = Client()
+        draft_id = _draft_at_scope(client)
+
+        response = client.post(f"/builder/{draft_id}/scope/", data={"next": "back"})
+
+        assert response["Location"] == f"/builder/{draft_id}/config/security/"
+        draft = _draft(client, draft_id)
+        assert "scope" not in draft.completed_steps
+        assert client.get(f"/builder/{draft_id}/config/")["Location"] == f"/builder/{draft_id}/scope/"
+
+    def test_clearing_a_completed_scope_relocks_business_data(self) -> None:
+        client = Client()
+        draft_id = _imported_draft_id(client)
+
+        client.post(f"/builder/{draft_id}/scope/", data={"next": "security"})
+
+        draft = _draft(client, draft_id)
+        assert draft.resource_group_ids == ()
+        assert "scope" not in draft.completed_steps
+        assert "config" not in draft.completed_steps
+
+    def test_continue_with_empty_scope_shows_an_error(self) -> None:
+        client = Client()
+        draft_id = _draft_at_scope(client)
+
+        response = client.post(f"/builder/{draft_id}/scope/", data={})
+
+        assert response.status_code == 400
+        assert "Select at least one resource group to continue." in response.content.decode("utf-8")
+        assert "scope" not in _draft(client, draft_id).completed_steps
 
 
 class TestLocking:
