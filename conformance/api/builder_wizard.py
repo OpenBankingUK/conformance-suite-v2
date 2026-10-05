@@ -1110,20 +1110,35 @@ class BusinessConfigForm(forms.Form):
             data=cast(MutableMapping[str, object] | None, data),
             initial=cast(MutableMapping[str, object] | None, initial),
         )
+        required_names: list[str] = []
+        if self.config_visibility.show_cbpii:
+            required_names.extend(
+                (
+                    "cbpii_debtor_account_scheme_name",
+                    "cbpii_debtor_account_identification",
+                    "cbpii_debtor_account_name",
+                )
+            )
+        if self.config_visibility.show_vrp:
+            required_names.extend(
+                (
+                    "vrp_creditor_account_scheme_name",
+                    "vrp_creditor_account_identification",
+                    "vrp_creditor_account_name",
+                    "vrp_instructed_amount_amount",
+                    "vrp_instructed_amount_currency",
+                    "vrp_valid_from_date_time",
+                    "vrp_valid_to_date_time",
+                )
+            )
+        # Requirement badges follow the selected scope's specification
+        # requirements even when lenient binding lets the page be left
+        # incomplete, so labels never downgrade a required field to optional.
+        self.required_fields: dict[str, bool] = dict.fromkeys(required_names, True)
         if lenient:
             return
-        if self.config_visibility.show_cbpii:
-            self.fields["cbpii_debtor_account_scheme_name"].required = True
-            self.fields["cbpii_debtor_account_identification"].required = True
-            self.fields["cbpii_debtor_account_name"].required = True
-        if self.config_visibility.show_vrp:
-            self.fields["vrp_creditor_account_scheme_name"].required = True
-            self.fields["vrp_creditor_account_identification"].required = True
-            self.fields["vrp_creditor_account_name"].required = True
-            self.fields["vrp_instructed_amount_amount"].required = True
-            self.fields["vrp_instructed_amount_currency"].required = True
-            self.fields["vrp_valid_from_date_time"].required = True
-            self.fields["vrp_valid_to_date_time"].required = True
+        for name in required_names:
+            self.fields[name].required = True
 
     def clean(self) -> dict[str, object]:
         """Build and validate the business-default partial config.

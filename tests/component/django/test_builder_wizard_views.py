@@ -748,6 +748,8 @@ class TestBuilderWizardUi:
         assert "Debtor account scheme" in content
         assert "Debtor account identification" in content
         assert "Debtor account name" in content
+        _assert_requirement_badge(content, "Debtor account scheme", "Required")
+        _assert_requirement_badge(content, "Debtor account name", "Required")
         assert "No business data inputs required" not in content
 
         saved_response = client.post(

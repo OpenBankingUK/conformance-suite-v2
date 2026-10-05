@@ -52,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   step.
 - Malformed advanced JSON on the builder business data step is now reported
   against its own field rather than rejecting the whole page.
+- Builder business data labels for Confirmation of Funds debtor-account and VRP
+  fields keep their **Required** badge when the page is saved incomplete; the
+  badge reflects the selected scope's specification requirements rather than
+  whether the builder blocks leaving the page.
 - The run screen's **New plan** button is now a **Main menu** link, so
   participants choose between creating and importing a plan.
 - The builder's specification step now preselects the latest OpenAPI document

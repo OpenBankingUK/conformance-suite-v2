@@ -84,7 +84,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.ais_transaction_from_date.id_for_label }}">Transaction from date</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.ais_transaction_from_date.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.ais_transaction_from_date only %}
                             </div>
                             {{ form.ais_transaction_from_date.errors }}
                             <input id="{{ form.ais_transaction_from_date.id_for_label }}" name="ais_transaction_from_date" type="text" value="{{ form.ais_transaction_from_date.value|default_if_none:'' }}" autocomplete="off">
@@ -92,7 +92,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.ais_transaction_to_date.id_for_label }}">Transaction to date</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.ais_transaction_to_date.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.ais_transaction_to_date only %}
                             </div>
                             {{ form.ais_transaction_to_date.errors }}
                             <input id="{{ form.ais_transaction_to_date.id_for_label }}" name="ais_transaction_to_date" type="text" value="{{ form.ais_transaction_to_date.value|default_if_none:'' }}" autocomplete="off">
@@ -102,7 +102,7 @@
                         <summary>Advanced AIS resource IDs JSON</summary>
                         <p class="helper">When supplied, this JSON object overrides the friendly account identifier field.</p>
                         <div class="field-heading">
-                            {% include "conformance/partials/builder_requirement_badge.html" with required=form.ais_resource_ids_json.field.required only %}
+                            {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.ais_resource_ids_json only %}
                         </div>
                         {{ form.ais_resource_ids_json.errors }}
                         <textarea id="{{ form.ais_resource_ids_json.id_for_label }}" name="ais_resource_ids_json" spellcheck="false">{{ form.ais_resource_ids_json.value|default_if_none:'' }}</textarea>
@@ -270,7 +270,7 @@
                             <div class="field">
                                 <div class="field-heading">
                                     <label for="{{ form.conditional_properties_json.id_for_label }}">Conditional properties JSON</label>
-                                    {% include "conformance/partials/builder_requirement_badge.html" with required=form.conditional_properties_json.field.required only %}
+                                    {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.conditional_properties_json only %}
                                 </div>
                                 {{ form.conditional_properties_json.errors }}
                                 <textarea id="{{ form.conditional_properties_json.id_for_label }}" name="conditional_properties_json" spellcheck="false">{{ form.conditional_properties_json.value|default_if_none:'' }}</textarea>
@@ -287,7 +287,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.cbpii_debtor_account_scheme_name.id_for_label }}">Debtor account scheme</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_scheme_name.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.cbpii_debtor_account_scheme_name only %}
                             </div>
                             {{ form.cbpii_debtor_account_scheme_name.errors }}
                             <input id="{{ form.cbpii_debtor_account_scheme_name.id_for_label }}" name="cbpii_debtor_account_scheme_name" type="text" value="{{ form.cbpii_debtor_account_scheme_name.value|default_if_none:'' }}" autocomplete="off">
@@ -295,7 +295,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.cbpii_debtor_account_identification.id_for_label }}">Debtor account identification</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_identification.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.cbpii_debtor_account_identification only %}
                             </div>
                             {{ form.cbpii_debtor_account_identification.errors }}
                             <input id="{{ form.cbpii_debtor_account_identification.id_for_label }}" name="cbpii_debtor_account_identification" type="text" value="{{ form.cbpii_debtor_account_identification.value|default_if_none:'' }}" autocomplete="off">
@@ -303,7 +303,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.cbpii_debtor_account_name.id_for_label }}">Debtor account name</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_name.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.cbpii_debtor_account_name only %}
                             </div>
                             {{ form.cbpii_debtor_account_name.errors }}
                             <input id="{{ form.cbpii_debtor_account_name.id_for_label }}" name="cbpii_debtor_account_name" type="text" value="{{ form.cbpii_debtor_account_name.value|default_if_none:'' }}" autocomplete="off">
@@ -312,7 +312,7 @@
                     <details>
                         <summary>Advanced CBPII debtor account JSON</summary>
                         <div class="field-heading">
-                            {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_json.field.required only %}
+                            {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.cbpii_debtor_account_json only %}
                         </div>
                         {{ form.cbpii_debtor_account_json.errors }}
                         <textarea id="{{ form.cbpii_debtor_account_json.id_for_label }}" name="cbpii_debtor_account_json" spellcheck="false">{{ form.cbpii_debtor_account_json.value|default_if_none:'' }}</textarea>
@@ -327,7 +327,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.vrp_creditor_account_scheme_name.id_for_label }}">Creditor account scheme</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_creditor_account_scheme_name.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.vrp_creditor_account_scheme_name only %}
                             </div>
                             {{ form.vrp_creditor_account_scheme_name.errors }}
                             <input id="{{ form.vrp_creditor_account_scheme_name.id_for_label }}" name="vrp_creditor_account_scheme_name" type="text" value="{{ form.vrp_creditor_account_scheme_name.value|default_if_none:'' }}" autocomplete="off">
@@ -335,7 +335,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.vrp_creditor_account_identification.id_for_label }}">Creditor account identification</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_creditor_account_identification.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.vrp_creditor_account_identification only %}
                             </div>
                             {{ form.vrp_creditor_account_identification.errors }}
                             <input id="{{ form.vrp_creditor_account_identification.id_for_label }}" name="vrp_creditor_account_identification" type="text" value="{{ form.vrp_creditor_account_identification.value|default_if_none:'' }}" autocomplete="off">
@@ -343,7 +343,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.vrp_creditor_account_name.id_for_label }}">Creditor account name</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_creditor_account_name.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.vrp_creditor_account_name only %}
                             </div>
                             {{ form.vrp_creditor_account_name.errors }}
                             <input id="{{ form.vrp_creditor_account_name.id_for_label }}" name="vrp_creditor_account_name" type="text" value="{{ form.vrp_creditor_account_name.value|default_if_none:'' }}" autocomplete="off">
@@ -353,7 +353,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.vrp_instructed_amount_amount.id_for_label }}">Instructed amount</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_instructed_amount_amount.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.vrp_instructed_amount_amount only %}
                             </div>
                             {{ form.vrp_instructed_amount_amount.errors }}
                             <input id="{{ form.vrp_instructed_amount_amount.id_for_label }}" name="vrp_instructed_amount_amount" type="text" value="{{ form.vrp_instructed_amount_amount.value|default_if_none:'' }}" autocomplete="off">
@@ -361,7 +361,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.vrp_instructed_amount_currency.id_for_label }}">Instructed amount currency</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_instructed_amount_currency.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.vrp_instructed_amount_currency only %}
                             </div>
                             {{ form.vrp_instructed_amount_currency.errors }}
                             <input id="{{ form.vrp_instructed_amount_currency.id_for_label }}" name="vrp_instructed_amount_currency" type="text" value="{{ form.vrp_instructed_amount_currency.value|default_if_none:'' }}" autocomplete="off">
@@ -371,7 +371,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.vrp_valid_from_date_time.id_for_label }}">Valid-from date/time</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_valid_from_date_time.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.vrp_valid_from_date_time only %}
                             </div>
                             {{ form.vrp_valid_from_date_time.errors }}
                             <input id="{{ form.vrp_valid_from_date_time.id_for_label }}" name="vrp_valid_from_date_time" type="text" value="{{ form.vrp_valid_from_date_time.value|default_if_none:'' }}" autocomplete="off">
@@ -379,7 +379,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.vrp_valid_to_date_time.id_for_label }}">Valid-to date/time</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_valid_to_date_time.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.vrp_valid_to_date_time only %}
                             </div>
                             {{ form.vrp_valid_to_date_time.errors }}
                             <input id="{{ form.vrp_valid_to_date_time.id_for_label }}" name="vrp_valid_to_date_time" type="text" value="{{ form.vrp_valid_to_date_time.value|default_if_none:'' }}" autocomplete="off">

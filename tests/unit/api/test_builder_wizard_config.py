@@ -145,6 +145,20 @@ def test_config_visibility_restores_cbpii_business_defaults() -> None:
     assert visibility.show_business_defaults is True
 
 
+def test_lenient_business_form_keeps_specification_requirement_badges() -> None:
+    """Lenient binding drops enforcement but not the spec-required labels."""
+    strict_form = BusinessConfigForm(data={})
+    lenient_form = BusinessConfigForm(data={}, lenient=True)
+
+    assert lenient_form.is_valid() is True
+    assert strict_form.is_valid() is False
+    assert lenient_form.required_fields == strict_form.required_fields
+    assert lenient_form.required_fields["vrp_creditor_account_scheme_name"] is True
+    assert lenient_form.required_fields["cbpii_debtor_account_name"] is True
+    assert "ais_transaction_from_date" not in lenient_form.required_fields
+    assert lenient_form.fields["vrp_creditor_account_scheme_name"].required is False
+
+
 def test_config_visibility_classifies_v311_pisp_vrp_paths_as_vrp() -> None:
     """Show only VRP business fields for v3.1 VRP resources under ``pisp``."""
     boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "3.1.11")
