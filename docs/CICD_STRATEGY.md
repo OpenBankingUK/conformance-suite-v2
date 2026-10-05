@@ -353,7 +353,7 @@ are produced there too.
 | `.github/workflows/promote-ga.yml` | Manual dispatch from `main` | Recovery/backfill path for a tagged `main` candidate |
 | `.github/workflows/_promote-image.yml` | Called by automatic and manual promotion workflows | Trusted validation, pre-approval vulnerability re-scan, and exact-artifact Docker Hub publication implementation |
 | `.github/workflows/security-rescan.yml` | Daily schedule + manual dispatch | Re-scan `main`, `release/*` and published images; sync one issue per vulnerability |
-| `.github/workflows/_finalize-ga-release.yml` | Called after successful GA publication | Create the GA Git tag at the source SHA and open the develop merge-back PR |
+| `.github/workflows/_finalize-release.yml` | Called after successful beta or GA publication | Create the `vX.Y.Z-beta.N`/`vX.Y.Z` Git tag at the source SHA, create the immutable GitHub Release, and (GA only) open the develop merge-back PR |
 
 Promotion locates the successful push CI run for the exact source SHA and
 branch, re-scans its exact image archives with current vulnerability data and
@@ -399,19 +399,32 @@ without a candidate artifact, with a mismatched channel, or for an already
 published version are skipped with a notice and never create a pending
 Environment approval. An eligible run starts the matching promotion
 automatically and pauses only at its required Environment reviewer gate. After
-a successful GA publication, the shared finalizer creates `vX.Y.Z` at the
-promoted source SHA if needed and opens the main-to-develop PR; it never merges
-that PR automatically.
+a successful beta or GA publication, the shared finalizer creates the Git tag
+and GitHub Release (Section 5.1). For GA it also opens the main-to-develop PR;
+it never merges that PR automatically.
 
 ### 4.3 Concurrency Control
 
-All workflows use `concurrency` groups to cancel in-progress runs when new commits are pushed to the same branch or PR. This avoids queue pile-up from rapid successive commits.
+CI uses branch- or PR-scoped `concurrency` groups to cancel superseded checks:
 
 ```yaml
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 ```
+
+The four root promotion workflows (`auto-promote.yml`, `promote-beta.yml`,
+`promote-ga.yml`, and `promote-preview.yml`) share a workflow-level
+`image-promotion` group with `cancel-in-progress: false`. This lock covers
+scanning, Environment approval, publication, attestations, moving-tag updates,
+and release finalization. The reusable promotion workflow does not reacquire
+the lock. A newer run never automatically cancels a running publication, even
+while it awaits approval.
+
+GitHub concurrency retains at most one running and one pending workflow per
+group; a newer pending run replaces the previous pending run, so this is not
+a FIFO queue. The automatic resolver also has a separate branch-scoped
+cancellation group, but only runs after its root workflow is admitted.
 
 ---
 
@@ -423,20 +436,97 @@ Publication starts automatically after successful CI for eligible `main`,
 `release/**`, and `preview/**` pushes; it never rebuilds from the registry.
 The only routine human action is approving the matching GitHub Environment
 deployment, which is required before Docker Hub credentials are used. Manual
-dispatch of the `promote-*` workflows is reserved for recovery or backfill.
+dispatch of the `promote-*` workflows is reserved for promotion recovery before
+publication or backfill.
+
+**GitHub Releases record publications; they never trigger them.** A Release is
+created only after the approved image, its attestations, and any moving tag
+have been published, so a Release can never exist for an image that failed to
+publish. The finalizer (`_finalize-release.yml`) then:
+
+1. creates the annotated Git tag `v<version>` at the promoted source commit
+   (or confirms an existing tag already points there, failing otherwise);
+2. creates one GitHub Release for that tag: a **prerelease** for betas and
+   the **latest** release for GA. Preview images get no tag or Release.
+
+Release immutability is enabled on the repository (see
+[`settings/GENERAL.md`](settings/GENERAL.md)), so newly published Releases and
+their tags are protected by GitHub. Previously published Releases are not
+retroactively made immutable. The finalizer creates a Release complete in one
+call and leaves an existing Release unchanged. Its notes keep three sections
+separate:
+
+| Section | Source |
+|---|---|
+| Summary | The version's `## [<version>]` section of `CHANGELOG.md` at the released commit |
+| Docker image | `docker pull` command, digest-pinned image reference, and moving-tag note (`latest` or `2.0.0-beta-latest`) |
+| Pull requests | GitHub-generated notes since the previous release tag on the same channel (previous beta for betas, previous GA for GA) |
+
+`CHANGELOG.md` is the canonical, concise, user-facing summary of notable
+changes per release, not a commit log. Each version has a compare link at the
+end of the file (Keep a Changelog), and the generated PR notes provide full
+traceability. A GA version **must** have a `CHANGELOG.md` section. CI's `Check`
+job fails any pull request to `main` or `release/**` that changes
+`[project].version` to a GA version without one, and the finalizer refuses to
+render GA notes without it. A beta without a section emits a CI warning, and
+its Release uses the generated PR notes only. Pull requests that leave the
+version unchanged prepare no release and are not checked.
+
+If tag or Release creation fails after publication, re-run the failed
+finalize job; dispatching `promote-*` is not a recovery path once the version
+has been published. Every finalizer step is idempotent, an existing Release is
+left unchanged, and the image is never republished. Tag protection must allow
+`github-actions[bot]` to create `v*` tags.
 
 **Tag formats:**
 
 | Tag | Example | Type |
 |---|---|---|
-| `vX.Y.Z` | `v1.2.0` | Stable release |
+| `vX.Y.Z` | `v1.2.0` | Stable Git tag and GitHub Release |
+| `vX.Y.Z-beta.N` | `v2.0.0-beta.7` | Beta Git tag and GitHub prerelease |
 | `X.Y.Z-beta.N` in `pyproject.toml` | `2.0.0-beta.1` | Beta image |
 | `2.0.0-beta-latest` (Docker Hub only) | `2.0.0-beta-latest` | Temporary MVP beta pointer |
 
+Tags and Releases are created by the finalizer; do not create them by hand
+except for the one-off backfill below.
+
+#### One-off backfill: `2.0.0-beta.3` to `2.0.0-beta.6`
+
+These images were published before the finalizer created beta tags and
+Releases. Once this change is on `main`, a maintainer with `contents: write`
+backfills them once, in version order, from an up-to-date checkout of `main`.
+Commits are the `org.opencontainers.image.revision` labels of the published
+images, and digests are their published manifest digests (verify with
+`docker buildx imagetools inspect openbanking/conformance-suite-v2:<version>`).
+
 ```bash
-git tag -a v1.2.0 -m "Release 1.2.0"
-git push origin v1.2.0
+set -euo pipefail
+git fetch --tags origin
+repo=OpenBankingUK/conformance-suite-v2
+while read -r version sha digest; do
+  tag="v$version"
+  git tag -a "$tag" "$sha" -m "Release $tag"
+  git push origin "refs/tags/$tag"
+  git tag -l 'v*' > /tmp/tags.txt
+  previous="$(uv run python -m scripts.release_notes previous-tag --tag "$tag" --tags-file /tmp/tags.txt)"
+  gh api --method POST "repos/$repo/releases/generate-notes" \
+    -f tag_name="$tag" -f target_commitish="$sha" -f previous_tag_name="$previous" \
+    --jq .body > /tmp/generated.md
+  git show "$sha:CHANGELOG.md" > /tmp/CHANGELOG.md
+  uv run python -m scripts.release_notes render --version "$version" --digest "$digest" \
+    --changelog /tmp/CHANGELOG.md --generated-notes /tmp/generated.md > /tmp/notes.md
+  gh release create "$tag" --repo "$repo" --verify-tag --prerelease --latest=false \
+    --title "$tag" --notes-file /tmp/notes.md
+done <<'BACKFILL'
+2.0.0-beta.3 01a6b644a0f0a4705695a5766c74b671e49bb924 sha256:78756bcf3b9a17cf305b98ae3c72544575a39e23723ca6ed1f46474cf4d1f7fe
+2.0.0-beta.4 005633adfe0fc4d5513895048299c2add53b530b sha256:32c5a92d5285f5c8dde9d69e5514492cf5c100abc0cdfe4ff16aa17c01a10757
+2.0.0-beta.5 398a1051198f61d0e3d684864fa12a19a7721014 sha256:090927066b23946e7e4c696e2f22ec81e586ef5ed9b60ee428be3f8630d2d080
+2.0.0-beta.6 747409f8336d1d491e2c4265132d1faeabd11e5f sha256:cbdf840d899b7bcbad4dcc4b9af16523340c7d1765265ef191124d934680e617
+BACKFILL
 ```
+
+The backfilled notes omit the `2.0.0-beta-latest` line because the pointer has
+since moved. `v2.0.0-beta.1` and `v2.0.0-beta.2` already have Releases.
 
 ---
 
@@ -447,6 +537,8 @@ git push origin v1.2.0
    git checkout develop && git checkout -b release/1.2.0
 
 2. Stabilise on release branch (version bump, changelog, final fixes)
+   - The `## [X.Y.Z]` CHANGELOG.md section is mandatory; CI blocks the PR
+     to main without it
    - CI runs automatically on every push
 
 3. Open PR: release/1.2.0 → main
@@ -461,9 +553,10 @@ git push origin v1.2.0
    publishes the exact candidate artifacts to Docker Hub as `X.Y.Z` and `latest`,
    with provenance and SBOM attestations.
 
-6. After publication, the workflow creates `vX.Y.Z` at the promoted source
-   commit if it is missing and opens the main-to-develop PR. Review and merge
-   that PR; it is never merged automatically.
+6. After publication, the finalizer creates `vX.Y.Z` at the promoted source
+   commit if it is missing, creates the GitHub Release (marked latest), and
+   opens the main-to-develop PR. Review and merge that PR; it is never merged
+   automatically.
 
 Manual **Promote GA image** dispatch is available from `main` only for
 recovery/backfill.
@@ -475,7 +568,8 @@ Beta releases allow pre-release images to be distributed before a final stable t
 
 ```
 1. Set `[project].version` to `X.Y.Z-beta.N` on the matching
-   `release/X.Y.Z` branch and merge the change through an approved PR.
+   `release/X.Y.Z` branch, add its `## [X.Y.Z-beta.N]` CHANGELOG.md section
+   (CI warns if it is missing), and merge through an approved PR.
 2. Wait for that exact branch SHA's push CI run to produce both candidate
    artifacts and the promotion manifest. Automatic promotion then starts and
    waits for approval of the `beta-release` Environment deployment.
@@ -484,7 +578,8 @@ Beta releases allow pre-release images to be distributed before a final stable t
    `X.Y.Z-beta.N`, completes provenance and both platform SBOM attestations,
    then updates `2.0.0-beta-latest` if this is the highest published 2.0.0 beta
    and the formal `2.0.0` version has not been published.
-   It does not create or move GA `latest`.
+   It does not create or move GA `latest`. The finalizer then creates the
+   `vX.Y.Z-beta.N` tag and a GitHub prerelease (Section 5.1).
 4. Increment `N` in a new approved change for each subsequent beta.
 
 Manual **Promote beta image** dispatch is available from `main` only for
@@ -547,7 +642,8 @@ repository administrator may merge despite failing status checks.
 
 3. After merge, successful `main` candidate CI and approval of the
    `ga-release` Environment publish the exact image to Docker Hub. The
-   finalizer creates the `vX.Y.Z` tag at the promoted source commit.
+   finalizer creates the `vX.Y.Z` tag at the promoted source commit and the
+   GitHub Release. The hotfix PR must include its CHANGELOG.md section.
 
 4. Also merge/cherry-pick into develop:
    git checkout develop && git merge hotfix/107-fix-auth-header
