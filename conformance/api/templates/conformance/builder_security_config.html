@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
     {% include "conformance/partials/htmx_script.html" %}
+    {% include "conformance/partials/builder_select_styles.html" %}
     <style>
         :root { color-scheme: light; --bg: #f7f8fa; --panel: #ffffff; --border: #ccd3dc; --text: #1b1f24; --muted: #667085; --accent: #0b6bcb; --danger: #b42318; --warning: #a15c07; }
         * { box-sizing: border-box; }
@@ -33,7 +34,7 @@
         .inline-action { display: flex; gap: 8px; align-items: stretch; }
         .inline-action input { flex: 1 1 auto; }
         .inline-action button { flex: none; }
-        input, select, textarea { width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }
+        input, textarea { width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }
         input[type="checkbox"] { width: auto; min-height: auto; margin-right: 8px; }
         textarea { min-height: 120px; resize: vertical; font: 0.9rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
         .grid { align-items: start; }
@@ -184,7 +185,7 @@
                     <div>
                         <label for="{{ form.signing_token_endpoint_auth_method.id_for_label }}">Token endpoint auth method {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_token_endpoint_auth_method.status label=security_requirements.signing_token_endpoint_auth_method.label only %}</label>
                         {{ form.signing_token_endpoint_auth_method.errors }}
-                        <select id="{{ form.signing_token_endpoint_auth_method.id_for_label }}" name="signing_token_endpoint_auth_method">
+                        <select id="{{ form.signing_token_endpoint_auth_method.id_for_label }}" name="signing_token_endpoint_auth_method" class="builder-select">
                             {% for value,label in form.signing_token_endpoint_auth_method.field.choices %}
                                 <option value="{{ value }}" {% if form.signing_token_endpoint_auth_method.value == value %}selected{% endif %}>{{ label }}</option>
                             {% endfor %}
@@ -248,7 +249,7 @@
                     <div>
                         <label for="{{ form.dcr_execution_mode.id_for_label }}">Execution mode <span class="requirement-badge required">Required</span></label>
                         {{ form.dcr_execution_mode.errors }}
-                        <select id="{{ form.dcr_execution_mode.id_for_label }}" name="dcr_execution_mode">
+                        <select id="{{ form.dcr_execution_mode.id_for_label }}" name="dcr_execution_mode" class="builder-select">
                             {% for value,label in form.dcr_execution_mode.field.choices %}
                                 <option value="{{ value }}" {% if form.dcr_execution_mode.value == value %}selected{% endif %}>{{ label }}</option>
                             {% endfor %}
@@ -266,7 +267,7 @@
                     <div>
                         <label for="{{ form.signing_token_endpoint_auth_method.id_for_label }}">Client authentication method <span class="requirement-badge required">Required</span></label>
                         {{ form.signing_token_endpoint_auth_method.errors }}
-                        <select id="{{ form.signing_token_endpoint_auth_method.id_for_label }}" name="signing_token_endpoint_auth_method">
+                        <select id="{{ form.signing_token_endpoint_auth_method.id_for_label }}" name="signing_token_endpoint_auth_method" class="builder-select">
                             {% for value,label in form.signing_token_endpoint_auth_method.field.choices %}
                                 <option value="{{ value }}" {% if form.signing_token_endpoint_auth_method.value == value %}selected{% endif %}>{{ label }}</option>
                             {% endfor %}

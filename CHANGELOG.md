@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Builder dropdowns on the specification and connection & security pages are
+  restyled, with a consistent chevron, hover and focus states. Browsers that
+  support customisable selects (`appearance: base-select`) also get a styled
+  option list. The controls stay native, so keyboard and screen-reader
+  behaviour is unchanged.
 - The Read/Write builder now asks for scope before connection and security:
   specification → scope → connection & security → business data → review. The
   discovery URL moved onto the connection and security page, with an inline

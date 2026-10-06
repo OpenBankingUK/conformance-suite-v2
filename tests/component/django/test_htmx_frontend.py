@@ -223,6 +223,10 @@ class TestBuilderPages:
         assert "Empty OAuth fields below are filled from it; values you've already typed are kept." in content
         assert '<span id="discovery-tag-oauth_issuer" class="discovery-tag" hidden>From discovery</span>' in content
         assert ">Check<" not in content
+        selects = re.findall(r"<select[^>]*>", content)
+        assert selects
+        assert all('class="builder-select"' in select for select in selects)
+        assert "select.builder-select::picker(select)" in content
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
     def test_discovery_preview_renders_metadata_without_saving(self, mock_fetch: Mock) -> None:

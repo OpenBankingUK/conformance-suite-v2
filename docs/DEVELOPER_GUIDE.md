@@ -447,6 +447,12 @@ response bodies so `400` validation re-renders appear in place.
   extension merges each page's `<head>` styles. Export downloads, export with
   secrets, launch and links to run pages opt out with `hx-boost="false"`.
   Inline page scripts must stay idempotent IIFEs because boosted swaps re-run them.
+- **Builder dropdowns** are native `<select class="builder-select">` elements
+  styled by `conformance/partials/builder_select_styles.html`, included in the
+  page `<head>`. Every browser gets the restyled closed control. Browsers that
+  support `appearance: base-select` also get a styled option list; others keep
+  the native list. There is no dropdown JavaScript, so scripts that hide or
+  disable options keep working.
 - **Scope** refreshes `#scope-options` through `hx-post` to
   `/builder/<draft>/scope/options/`; the bulk select buttons fire a
   `scope-refresh` event.

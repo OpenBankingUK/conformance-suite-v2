@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
     {% include "conformance/partials/htmx_script.html" %}
+    {% include "conformance/partials/builder_select_styles.html" %}
     <style>
         :root {
             color-scheme: light;
@@ -90,17 +91,6 @@
             display: block;
             font-weight: 650;
             margin-bottom: 8px;
-        }
-
-        select {
-            width: 100%;
-            min-height: 42px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 10px 12px;
-            font: inherit;
-            color: var(--text);
-            background: #fbfcfe;
         }
 
         .field-grid {
@@ -249,7 +239,7 @@
                 <div>
                     <label for="{{ form.scheme.id_for_label }}">Scheme</label>
                     {{ form.scheme.errors }}
-                    <select id="{{ form.scheme.id_for_label }}" name="scheme" data-scheme-select>
+                    <select id="{{ form.scheme.id_for_label }}" name="scheme" class="builder-select" data-scheme-select>
                         {% for value,label in form.scheme.field.choices %}
                             <option value="{{ value }}" {% if form.scheme.value == value %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
@@ -259,7 +249,7 @@
                 <div>
                     <label for="{{ form.specification.id_for_label }}">Specification</label>
                     {{ form.specification.errors }}
-                    <select id="{{ form.specification.id_for_label }}" name="specification" data-specification-select>
+                    <select id="{{ form.specification.id_for_label }}" name="specification" class="builder-select" data-specification-select>
                         {% for option in specification_options %}
                             <option value="{{ option.value }}"
                                     data-scheme="{{ option.scheme }}"
@@ -271,7 +261,7 @@
                 <div>
                     <label for="{{ form.version.id_for_label }}">Version</label>
                     {{ form.version.errors }}
-                    <select id="{{ form.version.id_for_label }}" name="version" data-version-select>
+                    <select id="{{ form.version.id_for_label }}" name="version" class="builder-select" data-version-select>
                         {% for option in version_options %}
                             <option value="{{ option.value }}"
                                     data-scheme="{{ option.scheme }}"
@@ -284,7 +274,7 @@
                 <div data-openapi-document-update-field>
                     <label for="{{ form.openapi_document_update.id_for_label }}">OpenAPI document update</label>
                     {{ form.openapi_document_update.errors }}
-                    <select id="{{ form.openapi_document_update.id_for_label }}" name="openapi_document_update" data-openapi-document-update-select>
+                    <select id="{{ form.openapi_document_update.id_for_label }}" name="openapi_document_update" class="builder-select" data-openapi-document-update-select>
                         {% for option in openapi_document_update_options %}
                             <option value="{{ option.value }}"
                                     data-scheme="{{ option.scheme }}"

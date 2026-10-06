@@ -288,6 +288,19 @@ class TestBuilderWizardUi:
 
         assert self._selected_openapi_document_updates(content) == [("Update-1", "4.0.1")]
 
+    def test_specification_selects_use_shared_dropdown_style(self) -> None:
+        """Every specification dropdown uses the shared builder select styling."""
+        client = Client()
+        location = client.post("/builder/new/")["Location"]
+
+        content = client.get(location).content.decode("utf-8")
+
+        selects = re.findall(r"<select[^>]*>", content)
+        assert len(selects) == 4
+        assert all('class="builder-select"' in select for select in selects)
+        assert "select.builder-select::picker(select)" in content
+        assert "@supports (appearance: base-select)" in content
+
     def test_imported_plan_keeps_its_saved_openapi_document_update_selected(self) -> None:
         """A saved non-latest update stays selected instead of the latest default."""
         client = Client()
