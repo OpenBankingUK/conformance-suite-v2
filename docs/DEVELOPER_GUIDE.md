@@ -393,6 +393,26 @@ and treats them as launch blockers, so lenient saving never relaxes launch
 validation. The review JSON jump still renders a discard `<dialog>` when the
 submitted plan JSON is not a JSON object.
 
+The review page's plan JSON box applies edits live. An HTMX
+`input changed delay:800ms` trigger (`hx-sync="this:queue last"`) posts the
+text to `/builder/<draft>/review/apply/` (`builder_review_apply`), which runs
+the same lenient recovery as import and answers with the
+`partials/builder_review_apply.html` fragment: out-of-band swaps of the step
+bar, summary, generated tests, and status line. The textarea itself is never
+swapped, so the caret and undo history survive. Each edit sends an
+`edit_seq` value that the server echoes as `X-Edit-Seq`; the client drops any
+response older than the latest edit. Text that is not a JSON object leaves the
+last applied plan untouched.
+`PlanImportError` carries `line`/`column`; `_display_error_position` in
+`plan_import_recovery.py` moves a missing-comma error onto the previous
+non-blank line (where the comma belongs), and the fragment's `data-error-line`
+lets the page underline that line. Syntax highlighting is an `aria-hidden`
+`<pre class="json-highlight">` layer behind a transparent-text textarea inside
+`.json-editor`; it is enabled only once JavaScript adds `is-highlighted`, so
+the box stays a plain textarea without JavaScript. The layer's font, size,
+line-height, padding, border, `white-space`, and `tab-size` must match the
+textarea exactly or the colours drift from the text.
+
 Changing the specification on `/catalogue/` when it would switch flow or prune
 saved scope re-renders with the affected items and a confirmation token
 (`confirm_specification_change`); the change is saved only when the token
@@ -416,6 +436,16 @@ validation. Saving a builder step takes ownership of the overlay fields that
 step produces and clears their warnings. The review JSON editor reloads the
 draft with the same recovery rules. Because it shows secrets unmasked, the
 review page is served with `Cache-Control: no-store`.
+
+Every builder page header also has an **Import plan** link
+(`partials/builder_header_actions.html`) to `/builder/<draft>/import/?from=<step id>`
+(`builder_draft_import`). It reuses `builder_import.html` and `PlanImportForm`,
+replaces the existing draft's contents in place with the same lenient recovery
+(the draft id is kept), and then redirects to review, or to the specification
+step when no supported specification was loaded. When the draft already has
+values, the submit button reads **Replace current plan** and a
+**Replace current plan?** `<dialog>` confirms first. **Cancel** returns to the
+validated `from` step.
 
 Generated tests are always read-only. Scope changes happen by editing resource
 groups, endpoints, and capabilities; the review page must not expose generated

@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The README, Docker guide and Developer guide now describe the current builder:
+  the step order (specification, scope, connection & security, business data,
+  review), free step-bar navigation with review as the launch gate,
+  **Fetch and fill**, **Import plan** on every builder page, and the live,
+  highlighted plan JSON editor.
 - Builder dropdowns on the specification and connection & security pages are
   restyled, with a consistent chevron, hover and focus states. Browsers that
   support customisable selects (`appearance: base-select`) also get a styled
