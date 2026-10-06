@@ -88,6 +88,14 @@
             font-size: 0.82rem;
             font-weight: 650;
         }
+        #id_review_plan_json {
+            height: clamp(480px, 70vh, 960px);
+            min-height: 320px;
+            white-space: pre;
+            overflow: auto;
+            tab-size: 2;
+            line-height: 1.45;
+        }
         textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
         .plan-json-heading-row, .plan-json-label-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
         .plan-json-label-row { margin: 4px 0 6px; }
@@ -105,6 +113,7 @@
         @media (max-width: 900px) {
             header, .summary-grid { display: block; }
             .count + .count { margin-top: 12px; }
+            #id_review_plan_json { height: 60vh; }
         }
     </style>
 </head>
