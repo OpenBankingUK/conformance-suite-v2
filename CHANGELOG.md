@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Incomplete or invalid JSON leaves the last applied plan untouched.
   - Older responses never overwrite newer edits.
   - Launch, export and step navigation still validate the current text.
+- The review page's plan JSON box is larger and has JSON syntax highlighting. It is still a plain text box underneath, so typing, undo, paste and live apply behave as before.
 
 ### Changed
 

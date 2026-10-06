@@ -96,6 +96,41 @@
             tab-size: 2;
             line-height: 1.45;
         }
+        .json-editor { position: relative; }
+        .json-editor #id_review_plan_json { display: block; }
+        .json-highlight { display: none; }
+        .json-editor.is-highlighted .json-highlight {
+            display: block;
+            position: absolute;
+            inset: 0;
+            margin: 0;
+            overflow: hidden;
+            pointer-events: none;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            padding: 12px;
+            background: #ffffff;
+            color: var(--text);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.9rem;
+            line-height: 1.45;
+            white-space: pre;
+            tab-size: 2;
+        }
+        {# Extra room so the layer can scroll as far as the textarea, whose scrollbars shrink its viewport. #}
+        .json-highlight code { display: inline-block; min-width: 100%; padding: 0 24px 24px 0; font: inherit; }
+        .json-editor.is-highlighted #id_review_plan_json {
+            position: relative;
+            background: transparent;
+            color: transparent;
+            caret-color: var(--text);
+        }
+        .json-editor.is-highlighted #id_review_plan_json::selection { background: rgba(11, 107, 203, 0.25); color: transparent; }
+        .tok-key { color: #1849a9; }
+        .tok-string { color: #067647; }
+        .tok-number { color: #b54708; }
+        .tok-literal { color: #6927da; font-weight: 650; }
+        .tok-punct { color: #667085; }
         textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
         .plan-json-heading-row, .plan-json-label-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
         .plan-json-label-row { margin: 4px 0 6px; }
@@ -164,13 +199,17 @@
         </div>
         <input id="id_review_edit_seq" type="hidden" name="edit_seq" value="">
         {# Live apply: the text box is never swapped, so the caret is preserved; queue last serialises requests so the newest edit is applied last. #}
-        <textarea id="id_review_plan_json" name="plan_json" form="review-plan-form" spellcheck="false" autocomplete="off"
-                  aria-describedby="plan-json-help review-apply-status"
-                  hx-post="{% url 'builder-review-apply' draft.draft_id %}"
-                  hx-trigger="input changed delay:800ms"
-                  hx-sync="this:queue last"
-                  hx-include="#id_review_edit_seq"
-                  hx-swap="none">{{ plan_json_text }}</textarea>
+        {# Syntax highlighting: a decorative layer sits behind the transparent-text textarea, which stays the real input. #}
+        <div class="json-editor" data-json-editor>
+            <pre class="json-highlight" aria-hidden="true"><code></code></pre>
+            <textarea id="id_review_plan_json" name="plan_json" form="review-plan-form" spellcheck="false" autocomplete="off"
+                      aria-describedby="plan-json-help review-apply-status"
+                      hx-post="{% url 'builder-review-apply' draft.draft_id %}"
+                      hx-trigger="input changed delay:800ms"
+                      hx-sync="this:queue last"
+                      hx-include="#id_review_edit_seq"
+                      hx-swap="none">{{ plan_json_text }}</textarea>
+        </div>
     </section>
 
     <section class="panel" aria-labelledby="generated-tests-heading">
@@ -257,6 +296,78 @@
             reader.addEventListener("error", () => setStatus("error", `Not loaded: ${file.name} could not be read.`));
             reader.readAsText(file);
         });
+    })();
+    // JSON syntax highlighting for the review plan box. Text is always HTML-escaped; tokens only add spans.
+    (() => {
+        const TOKEN = /("(?:\\.|[^"\\\n])*")(\s*:)?|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|\b(true|false|null)\b|([{}\[\],:])/g;
+        const escapeHtml = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const highlight = (text) => {
+            let html = "";
+            let last = 0;
+            TOKEN.lastIndex = 0;
+            for (let match = TOKEN.exec(text); match; match = TOKEN.exec(text)) {
+                html += escapeHtml(text.slice(last, match.index));
+                if (match[1] !== undefined) {
+                    const kind = match[2] !== undefined ? "key" : "string";
+                    html += `<span class="tok-${kind}">${escapeHtml(match[1])}</span>`;
+                    if (match[2] !== undefined) {
+                        html += escapeHtml(match[2].slice(0, -1)) + '<span class="tok-punct">:</span>';
+                    }
+                } else if (match[3] !== undefined) {
+                    html += `<span class="tok-number">${match[3]}</span>`;
+                } else if (match[4] !== undefined) {
+                    html += `<span class="tok-literal">${match[4]}</span>`;
+                } else {
+                    html += `<span class="tok-punct">${escapeHtml(match[5])}</span>`;
+                }
+                last = TOKEN.lastIndex;
+            }
+            // Trailing newline keeps a final empty line the same height as in the textarea.
+            return html + escapeHtml(text.slice(last)) + "\n";
+        };
+        const syncScroll = (textarea) => {
+            const layer = textarea.parentElement && textarea.parentElement.querySelector(".json-highlight");
+            if (layer) {
+                layer.scrollTop = textarea.scrollTop;
+                layer.scrollLeft = textarea.scrollLeft;
+            }
+        };
+        const render = () => {
+            const textarea = document.getElementById("id_review_plan_json");
+            const editor = textarea && textarea.closest("[data-json-editor]");
+            const code = editor && editor.querySelector(".json-highlight code");
+            if (!(textarea instanceof HTMLTextAreaElement) || !code) {
+                return;
+            }
+            code.innerHTML = highlight(textarea.value);
+            editor.classList.add("is-highlighted");
+            syncScroll(textarea);
+        };
+        render();
+        if (window.__builderReviewHighlightBound) {
+            return;
+        }
+        window.__builderReviewHighlightBound = true;
+        let frame = 0;
+        const scheduleRender = () => {
+            if (!frame) {
+                frame = requestAnimationFrame(() => {
+                    frame = 0;
+                    render();
+                });
+            }
+        };
+        document.addEventListener("input", (event) => {
+            if (event.target instanceof HTMLTextAreaElement && event.target.id === "id_review_plan_json") {
+                scheduleRender();
+            }
+        });
+        document.addEventListener("scroll", (event) => {
+            if (event.target instanceof HTMLTextAreaElement && event.target.id === "id_review_plan_json") {
+                syncScroll(event.target);
+            }
+        }, true);
+        document.addEventListener("htmx:load", scheduleRender);
     })();
 </script>
 </body>

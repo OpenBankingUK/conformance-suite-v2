@@ -1807,3 +1807,16 @@ class TestBuilderInDraftImportAndLiveApply:
 
         assert client.get(f"/builder/{draft_id}/review/apply/").status_code == 405
         assert client.post("/builder/unknown/review/apply/", data={"plan_json": "{}"}).status_code == 404
+
+    def test_review_plan_json_has_highlight_layer_behind_the_real_textarea(self) -> None:
+        """The syntax-highlight layer is decorative; the textarea stays the live-applied input."""
+        client = Client()
+        draft_id = self._imported_draft(client)
+
+        content = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
+
+        editor_start = content.index("data-json-editor")
+        layer = content.index('<pre class="json-highlight" aria-hidden="true"><code></code></pre>', editor_start)
+        textarea = content.index('<textarea id="id_review_plan_json" name="plan_json"', editor_start)
+        assert layer < textarea
+        assert f'hx-post="/builder/{draft_id}/review/apply/"' in content[textarea:]
