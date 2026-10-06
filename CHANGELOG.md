@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.8] - 2026-10-06
+
 ### Added
 
 - Every builder page now has an **Import plan** button beside **Main menu**. It imports a test plan JSON file or pasted JSON into the current draft, so switching from building to importing no longer needs a trip through the main menu. If the draft already has values, a **Replace current plan?** confirmation is shown first. **Cancel** returns to the page you came from.
@@ -511,7 +513,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.7...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.8...HEAD
+[2.0.0-beta.8]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.7...v2.0.0-beta.8
 [2.0.0-beta.7]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.6...v2.0.0-beta.7
 [2.0.0-beta.6]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.5...v2.0.0-beta.6
 [2.0.0-beta.5]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.4...v2.0.0-beta.5
