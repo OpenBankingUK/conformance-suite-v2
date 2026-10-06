@@ -9,4 +9,4 @@ JSON text box is never returned, so the participant's caret is preserved.
     {% include "conformance/partials/builder_review_summary.html" with oob=True %}
     {% include "conformance/partials/builder_review_tests.html" with oob=True %}
 {% endif %}
-<span id="review-apply-status" hx-swap-oob="innerHTML">{% if apply_status == "error" %}<span class="apply-state apply-state-error">Not applied: {{ apply_error }}</span>{% else %}<span class="apply-state apply-state-applied">Applied &#10003;</span>{% endif %}</span>
+<span id="review-apply-status" hx-swap-oob="innerHTML">{% if apply_status == "error" %}<span class="apply-state apply-state-error"{% if apply_error_line %} data-error-line="{{ apply_error_line }}"{% endif %}>Not applied: {{ apply_error }}</span>{% else %}<span class="apply-state apply-state-applied">Applied &#10003;</span>{% endif %}</span>

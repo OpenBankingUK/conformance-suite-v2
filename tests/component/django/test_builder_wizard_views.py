@@ -1783,6 +1783,37 @@ class TestBuilderInDraftImportAndLiveApply:
         assert "review-summary-region" not in content
         assert client.get(f"/builder/{draft_id}/export.json").json() == before
 
+    def test_live_apply_reports_the_syntax_error_line_for_the_editor(self) -> None:
+        """A missing comma is reported on the line that needs it, for the editor squiggle."""
+        client = Client()
+        draft_id = self._imported_draft(client)
+
+        response = client.post(f"/builder/{draft_id}/review/apply/", data={"plan_json": '{\n  "a": 1\n  "b": 2\n}'})
+        content = response.content.decode("utf-8")
+
+        assert 'data-error-line="2"' in content
+        assert "(line 2)" in content
+
+    def test_rejected_review_json_marks_the_syntax_error_line(self) -> None:
+        """A launch rejected for invalid JSON renders the error line for the editor."""
+        client = Client()
+        draft_id = self._imported_draft(client)
+
+        rejected = client.post(f"/builder/{draft_id}/launch/", data={"plan_json": '{\n  "a": 1\n  "b": 2\n}'})
+
+        assert rejected.status_code == 400
+        assert 'data-error-line="2"' in rejected.content.decode("utf-8")
+
+    def test_live_apply_omits_the_error_line_for_non_syntax_errors(self) -> None:
+        """A valid JSON value that is not an object has no line to mark."""
+        client = Client()
+        draft_id = self._imported_draft(client)
+
+        content = client.post(f"/builder/{draft_id}/review/apply/", data={"plan_json": "[]"}).content.decode("utf-8")
+
+        assert "apply-state-error" in content
+        assert "data-error-line" not in content
+
     def test_live_apply_ignores_stale_edits(self) -> None:
         """An edit older than one already applied must not overwrite it."""
         client = Client()

@@ -131,6 +131,12 @@
         .tok-number { color: #b54708; }
         .tok-literal { color: #6927da; font-weight: 650; }
         .tok-punct { color: #667085; }
+        .json-error-line {
+            background: rgba(217, 45, 32, 0.08);
+            text-decoration: underline wavy #d92d20;
+            text-decoration-skip-ink: none;
+            text-underline-offset: 3px;
+        }
         textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
         .plan-json-heading-row, .plan-json-label-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
         .plan-json-label-row { margin: 4px 0 6px; }
@@ -195,7 +201,7 @@
         <div class="message warning">Secrets are shown unmasked, including tokens and inline private keys. Do not share your screen while reviewing.</div>
         <div class="plan-json-label-row">
             <label for="id_review_plan_json">Plan JSON</label>
-            <span id="review-apply-status" class="apply-status" role="status" aria-live="polite">{% if plan_json_error %}<span class="apply-state apply-state-error">Not applied: {{ plan_json_error }}</span>{% else %}<span class="apply-state apply-state-idle">Changes apply automatically</span>{% endif %}</span>
+            <span id="review-apply-status" class="apply-status" role="status" aria-live="polite">{% if plan_json_error %}<span class="apply-state apply-state-error"{% if plan_json_error_line %} data-error-line="{{ plan_json_error_line }}"{% endif %}>Not applied: {{ plan_json_error }}</span>{% else %}<span class="apply-state apply-state-idle">Changes apply automatically</span>{% endif %}</span>
         </div>
         <input id="id_review_edit_seq" type="hidden" name="edit_seq" value="">
         {# Live apply: the text box is never swapped, so the caret is preserved; queue last serialises requests so the newest edit is applied last. #}
@@ -301,7 +307,7 @@
     (() => {
         const TOKEN = /("(?:\\.|[^"\\\n])*")(\s*:)?|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|\b(true|false|null)\b|([{}\[\],:])/g;
         const escapeHtml = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        const highlight = (text) => {
+        const highlightLine = (text) => {
             let html = "";
             let last = 0;
             TOKEN.lastIndex = 0;
@@ -322,8 +328,26 @@
                 }
                 last = TOKEN.lastIndex;
             }
+            return html + escapeHtml(text.slice(last));
+        };
+        // JSON strings cannot contain raw newlines, so highlighting line by line never splits a token.
+        const highlight = (text, errorLine) => {
+            const lines = text.split("\n").map((line, index) => {
+                if (index + 1 !== errorLine) {
+                    return highlightLine(line);
+                }
+                const indent = line.match(/^\s*/)[0];
+                const content = line.slice(indent.length) || " ";
+                return `${escapeHtml(indent)}<span class="json-error-line">${highlightLine(content)}</span>`;
+            });
             // Trailing newline keeps a final empty line the same height as in the textarea.
-            return html + escapeHtml(text.slice(last)) + "\n";
+            return lines.join("\n") + "\n";
+        };
+        // Server-reported syntax error line; cleared on edit because the text may have moved.
+        let errorLine = 0;
+        const readErrorLine = () => {
+            const marker = document.querySelector("#review-apply-status [data-error-line]");
+            errorLine = marker ? Number(marker.getAttribute("data-error-line")) || 0 : 0;
         };
         const syncScroll = (textarea) => {
             const layer = textarea.parentElement && textarea.parentElement.querySelector(".json-highlight");
@@ -339,10 +363,11 @@
             if (!(textarea instanceof HTMLTextAreaElement) || !code) {
                 return;
             }
-            code.innerHTML = highlight(textarea.value);
+            code.innerHTML = highlight(textarea.value, errorLine);
             editor.classList.add("is-highlighted");
             syncScroll(textarea);
         };
+        readErrorLine();
         render();
         if (window.__builderReviewHighlightBound) {
             return;
@@ -359,6 +384,7 @@
         };
         document.addEventListener("input", (event) => {
             if (event.target instanceof HTMLTextAreaElement && event.target.id === "id_review_plan_json") {
+                errorLine = 0;
                 scheduleRender();
             }
         });
@@ -368,6 +394,13 @@
             }
         }, true);
         document.addEventListener("htmx:load", scheduleRender);
+        document.addEventListener("htmx:afterSettle", (event) => {
+            const source = event.detail.requestConfig && event.detail.requestConfig.elt;
+            if (source instanceof HTMLElement && source.id === "id_review_plan_json") {
+                readErrorLine();
+                scheduleRender();
+            }
+        });
     })();
 </script>
 </body>

@@ -397,6 +397,35 @@ def test_parse_plan_import_text_rejects_unrecoverable_input(text: str, message: 
         parse_plan_import_text(text)
 
 
+@pytest.mark.parametrize(
+    ("text", "line", "column"),
+    [
+        ('{\n  "a": [\n    1\n    2\n  ]\n}', 3, 6),
+        ('{\n  "a": 1\n\n  "b": 2\n}', 2, 9),
+        ('{\n  "a": 1 2\n}', 2, 10),
+        ('{\n  "a": 1,\n', 2, 10),
+        ('{\n  "a": tru\n}', 2, 8),
+    ],
+    ids=["missing-comma-between-items", "missing-comma-across-blank-line", "same-line", "unclosed", "bad-literal"],
+)
+def test_parse_plan_import_text_reports_where_to_fix_a_syntax_error(text: str, line: int, column: int) -> None:
+    """A missing comma or early end of text is reported at the line that needs fixing."""
+    with pytest.raises(PlanImportError) as raised:
+        parse_plan_import_text(text)
+
+    assert (raised.value.line, raised.value.column) == (line, column)
+    assert str(raised.value).endswith(f"(line {line})")
+
+
+def test_parse_plan_import_text_has_no_position_for_non_syntax_errors() -> None:
+    """Errors that are not JSON syntax errors carry no editor position."""
+    with pytest.raises(PlanImportError) as raised:
+        parse_plan_import_text("[]")
+
+    assert raised.value.line is None
+    assert raised.value.column is None
+
+
 def test_plan_import_form_prefers_uploaded_file_and_limits_size() -> None:
     """An uploaded file wins over pasted text, and oversized uploads are rejected."""
     upload = SimpleUploadedFile("plan.json", b'\xef\xbb\xbf{"metadata": {}}', content_type="application/json")

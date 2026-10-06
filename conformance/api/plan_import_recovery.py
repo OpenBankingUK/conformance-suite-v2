@@ -56,7 +56,37 @@ PLAN_IMPORT_MAX_BYTES = 1_048_576
 
 
 class PlanImportError(ValueError):
-    """Raised when import text is not a JSON object and cannot be recovered at all."""
+    """Raised when import text is not a JSON object and cannot be recovered at all.
+
+    Attributes:
+        line: 1-based line of a JSON syntax error, for the editor to mark, or ``None``.
+        column: 1-based column of that error, or ``None``.
+    """
+
+    def __init__(self, message: str, *, line: int | None = None, column: int | None = None) -> None:
+        """Store the message and optional syntax error position."""
+        super().__init__(message)
+        self.line = line
+        self.column = column
+
+
+def _display_error_position(text: str, error: json.JSONDecodeError) -> tuple[int, int]:
+    """Return the line and column where a participant should fix a JSON syntax error.
+
+    The parser reports where it noticed the problem. For a missing comma between
+    items, or an error at a blank line or end of text, that is the start of the
+    next token, while the mistake is at the end of the previous non-blank line.
+    """
+    line_start = text.rfind("\n", 0, error.pos) + 1
+    at_line_start = not text[line_start : error.pos].strip()
+    line_end = text.find("\n", error.pos)
+    rest_of_line = text[error.pos : len(text) if line_end == -1 else line_end]
+    if at_line_start and (error.msg == "Expecting ',' delimiter" or not rest_of_line.strip()):
+        previous_lines = text[:line_start].splitlines()
+        for index in range(len(previous_lines) - 1, -1, -1):
+            if previous_lines[index].strip():
+                return index + 1, len(previous_lines[index].rstrip()) + 1
+    return error.lineno, error.colno
 
 
 def parse_plan_import_text(text: str) -> JsonObject:
@@ -82,7 +112,10 @@ def parse_plan_import_text(text: str) -> JsonObject:
     try:
         parsed: object = json.loads(text)
     except json.JSONDecodeError as error:
-        raise PlanImportError(f"Plan JSON must be valid JSON: {error.msg}") from error
+        line, column = _display_error_position(text, error)
+        raise PlanImportError(
+            f"Plan JSON must be valid JSON: {error.msg} (line {line})", line=line, column=column
+        ) from error
     if not isinstance(parsed, dict):
         raise PlanImportError("Plan JSON must be a JSON object.")
     return cast(JsonObject, parsed)

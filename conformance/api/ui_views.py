@@ -1356,7 +1356,12 @@ def _apply_review_plan_json(
         return _review_response(
             request,
             {
-                **_builder_review_context(draft=draft, plan_json_error=str(error), plan_json_text=plan_text),
+                **_builder_review_context(
+                    draft=draft,
+                    plan_json_error=str(error),
+                    plan_json_error_line=error.line,
+                    plan_json_text=plan_text,
+                ),
                 **_discard_context(request, draft, "review"),
             },
             status=400,
@@ -1453,7 +1458,12 @@ def builder_review_apply(request: HttpRequest, draft_id: str) -> HttpResponse:
         try:
             raw_plan = parse_plan_import_text(plan_text)
         except PlanImportError as error:
-            context = {"apply_status": "error", "apply_error": str(error), "refresh": False}
+            context = {
+                "apply_status": "error",
+                "apply_error": str(error),
+                "apply_error_line": error.line,
+                "refresh": False,
+            }
         else:
             if raw_plan != plan_json_from_draft(draft):
                 draft = _replace_draft_from_plan(draft_store, draft, raw_plan)
@@ -2105,6 +2115,7 @@ def _builder_review_context(
     launch_error: str | None = None,
     active_run_id: str | None = None,
     plan_json_error: str | None = None,
+    plan_json_error_line: int | None = None,
     plan_json_text: str | None = None,
 ) -> dict[str, object]:
     """Build template context for the builder review page.
@@ -2114,6 +2125,8 @@ def _builder_review_context(
         launch_error: Optional launch failure message.
         active_run_id: Optional active run id supplied for conflict links.
         plan_json_error: Optional error for rejected review JSON edits.
+        plan_json_error_line: Optional 1-based line of a JSON syntax error,
+            marked in the review JSON editor.
         plan_json_text: Rejected review JSON text to show back to the user.
 
     Returns:
@@ -2138,6 +2151,7 @@ def _builder_review_context(
         "import_issues": draft.import_issues,
         "plan_json_text": state.plan_json_text if plan_json_text is None else plan_json_text,
         "plan_json_error": plan_json_error,
+        "plan_json_error_line": plan_json_error_line,
         "plan_import_max_bytes": PLAN_IMPORT_MAX_BYTES,
     }
     if launch_error is not None:
