@@ -300,6 +300,8 @@ class TestBuilderWizardUi:
         assert all('class="builder-select"' in select for select in selects)
         assert "select.builder-select::picker(select)" in content
         assert "@supports (appearance: base-select)" in content
+        # Cascade filtering hides options via [hidden]; the picker's option display rule must not override it.
+        assert "select.builder-select option[hidden]" in content
 
     def test_imported_plan_keeps_its_saved_openapi_document_update_selected(self) -> None:
         """A saved non-latest update stays selected instead of the latest default."""

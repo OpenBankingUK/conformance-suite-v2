@@ -82,6 +82,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The builder's OpenAPI document update dropdown now lists only the updates for
+  the selected specification version in browsers that support the customisable
+  select picker; previously hidden options for other versions were still shown.
 - Builder business data no longer shows every resource group's fields when the
   selected scope cannot be resolved; it shows no fields and links to the scope
   step.

@@ -87,6 +87,11 @@ select (``appearance: base-select``) also get a styled option list.
             cursor: pointer;
         }
 
+        /* The display rule above overrides the UA [hidden] style; keep cascade-filtered options hidden. */
+        select.builder-select option[hidden] {
+            display: none;
+        }
+
         select.builder-select option:hover,
         select.builder-select option:focus-visible {
             outline: none;
