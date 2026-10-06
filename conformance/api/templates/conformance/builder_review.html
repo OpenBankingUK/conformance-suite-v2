@@ -88,6 +88,18 @@
             font-size: 0.82rem;
             font-weight: 650;
         }
+        textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+        .plan-json-heading-row, .plan-json-label-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+        .plan-json-label-row { margin: 4px 0 6px; }
+        .plan-json-label-row label { font-weight: 650; }
+        .editable-badge { margin-left: 6px; vertical-align: middle; color: var(--accent); border-color: var(--accent); }
+        .file-button { display: inline-flex; align-items: center; min-height: 0; padding: 6px 12px; font-size: 0.85rem; }
+        #id_review_plan_file:focus-visible + .file-button { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .apply-status { font-size: 0.85rem; }
+        .apply-state-idle { color: var(--muted); }
+        .apply-state-pending { color: var(--muted); }
+        .apply-state-applied { color: var(--success); font-weight: 650; }
+        .apply-state-error { color: var(--danger); font-weight: 650; }
         details { margin-top: 14px; }
         details summary { cursor: pointer; font-weight: 700; }
         @media (max-width: 900px) {
@@ -104,53 +116,18 @@
         <div>
             <h1>Review generated test plan</h1>
         </div>
-        <a class="button secondary builder-menu-link" href="{% url 'home' %}">Main menu</a>
+        {% include "conformance/partials/builder_header_actions.html" with from_step="review" %}
     </header>
     {# Step-bar jumps submit review-plan-form, so plan JSON edits are applied before leaving review. #}
-    {% include "conformance/partials/builder_step_bar.html" with step_form_id="review-plan-form" %}
+    <div id="review-step-bar">
+        {% include "conformance/partials/builder_step_bar.html" with step_form_id="review-plan-form" %}
+    </div>
 
     <section class="panel" aria-labelledby="review-heading">
         <h2 id="review-heading">Plan summary</h2>
         <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span>. Generated tests are read-only; use the steps above to edit scope or config.</p>
 
-        {% if review_error %}<div class="message error">{{ review_error }}</div>{% endif %}
-        {% include "conformance/partials/builder_import_issues.html" %}
-        {% if launch_error %}
-            <div class="message error">
-                {{ launch_error }}
-                {% if active_run_id %}<a href="{% url 'ui-run-detail' active_run_id %}" hx-boost="false">Open active run</a>{% endif %}
-            </div>
-        {% endif %}
-
-        <div class="summary-grid" aria-label="Generated plan counts">
-            <div class="count"><strong>{{ review_counts.generated }}</strong><span>Generated tests</span></div>
-            <div class="count"><strong>{{ review_counts.resource_groups }}</strong><span>Resource groups</span></div>
-            <div class="count"><strong>{{ review_counts.endpoints }}</strong><span>Endpoints</span></div>
-            <div class="count"><strong>{{ review_counts.capabilities }}</strong><span>Capabilities</span></div>
-            <div class="count"><strong>{{ review_counts.runtime_inputs }}</strong><span>Runtime inputs</span></div>
-            <div class="count"><strong>{{ review_counts.consents }}</strong><span>Expected consent groups</span></div>
-            <div class="count"><strong>{{ review_counts.psu_authorisations }}</strong><span>Expected PSU auths</span></div>
-            <div class="count"><strong>{{ review_phase_counts.setup }} / {{ review_phase_counts.security }} / {{ review_phase_counts.resource }}</strong><span>Setup / security / resource</span></div>
-        </div>
-
-        {% if review.launch_supported %}
-            <div class="message success">Ready to launch from this reviewed plan.</div>
-        {% else %}
-            <div class="message warning">Resolve review blockers before launch.</div>
-        {% endif %}
-        {% for group in step_issue_groups %}
-            <div class="message warning" data-step-issues="{{ group.step.step_id }}">
-                <strong>{{ group.step.label }} needs attention</strong>
-                <ul>{% for issue in group.issues %}<li>{{ issue }}</li>{% endfor %}</ul>
-                <button type="submit" class="secondary" name="next" value="{{ group.step.step_id }}" form="review-plan-form" formnovalidate>Fix {{ group.step.label|lower }}</button>
-            </div>
-        {% endfor %}
-        {% for blocker in other_blockers %}
-            <div class="message warning">{{ blocker }}</div>
-        {% endfor %}
-        {% if review.compiled_plan and not review.compiled_plan.certifying %}
-            <div class="message warning">Certification plan ineligible.</div>
-        {% endif %}
+        {% include "conformance/partials/builder_review_summary.html" %}
 
         {# One form drives every review action so the plan JSON box below is always what is applied, exported, or launched. Downloads and the run page use full navigation: attachments cannot be swapped, and the run page binds document-level listeners. #}
         <form id="review-plan-form" class="actions" method="post" action="{% url 'builder-review-json' draft.draft_id %}" hx-boost="false">
@@ -163,12 +140,28 @@
     </section>
 
     <section class="panel" aria-labelledby="plan-json-heading">
-        <h2 id="plan-json-heading">Plan JSON</h2>
-        <p class="helper">The full plan JSON, including imported fields the builder cannot show. This is the plan that is launched, exported, and opened in the builder steps above; edits are applied with the same rules as import.</p>
+        <div class="plan-json-heading-row">
+            <h2 id="plan-json-heading">Edit plan JSON <span class="badge editable-badge">Editable</span></h2>
+            <div class="plan-json-tools">
+                <input id="id_review_plan_file" class="visually-hidden" type="file" accept=".json,application/json" data-max-bytes="{{ plan_import_max_bytes }}" aria-describedby="plan-json-help">
+                <label class="button secondary file-button" for="id_review_plan_file">Load from file&hellip;</label>
+            </div>
+        </div>
+        <p class="helper" id="plan-json-help">You can edit, paste, or load a plan file here. Changes apply automatically after you stop typing, using the same rules as import, and update the summary, generated tests, and builder steps. This JSON is the plan that is launched and exported, including imported fields the builder steps cannot show.</p>
         <div class="message warning">Secrets are shown unmasked, including tokens and inline private keys. Do not share your screen while reviewing.</div>
-        {% if plan_json_error %}<div class="message error">{{ plan_json_error }}</div>{% endif %}
-        <label for="id_review_plan_json">Plan JSON</label>
-        <textarea id="id_review_plan_json" name="plan_json" form="review-plan-form" spellcheck="false" autocomplete="off">{{ plan_json_text }}</textarea>
+        <div class="plan-json-label-row">
+            <label for="id_review_plan_json">Plan JSON</label>
+            <span id="review-apply-status" class="apply-status" role="status" aria-live="polite">{% if plan_json_error %}<span class="apply-state apply-state-error">Not applied: {{ plan_json_error }}</span>{% else %}<span class="apply-state apply-state-idle">Changes apply automatically</span>{% endif %}</span>
+        </div>
+        <input id="id_review_edit_seq" type="hidden" name="edit_seq" value="">
+        {# Live apply: the text box is never swapped, so the caret is preserved; queue last serialises requests so the newest edit is applied last. #}
+        <textarea id="id_review_plan_json" name="plan_json" form="review-plan-form" spellcheck="false" autocomplete="off"
+                  aria-describedby="plan-json-help review-apply-status"
+                  hx-post="{% url 'builder-review-apply' draft.draft_id %}"
+                  hx-trigger="input changed delay:800ms"
+                  hx-sync="this:queue last"
+                  hx-include="#id_review_edit_seq"
+                  hx-swap="none">{{ plan_json_text }}</textarea>
     </section>
 
     <section class="panel" aria-labelledby="generated-tests-heading">
@@ -176,49 +169,86 @@
         <p class="helper">Exact generated tests are shown for audit only and cannot be selected or deselected here.</p>
         <details>
             <summary>Show generated test rows</summary>
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                    <tr>
-                        <th scope="col">Test case</th>
-                        <th scope="col">Source</th>
-                        <th scope="col">Phase</th>
-                        <th scope="col">Requests</th>
-                        <th scope="col">Assertions</th>
-                        <th scope="col">Runtime/auth</th>
-                        <th scope="col">Certification</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    {% for row in review.rows %}
-                        <tr>
-                            <td><strong>{{ row.name }}</strong><br><span class="step-id">{{ row.id }}</span></td>
-                            <td><span class="badge">{{ row.source }}</span><br><span class="muted">{{ row.source_detail }}</span></td>
-                            <td><span class="badge">{{ row.phase }}</span><br><span class="muted">{{ row.role }}</span></td>
-                            <td>{{ row.request_count }}</td>
-                            <td>{{ row.assertion_count }}</td>
-                            <td>
-                                {% for requirement in row.runtime_requirements %}
-                                    <div>
-                                        <span class="step-id">{{ requirement.input_id }}</span>
-                                        {% if requirement.required %}<span class="badge">Required</span>{% endif %}
-                                        {% if requirement.sensitive %}<span class="badge">Sensitive</span>{% endif %}
-                                    </div>
-                                {% empty %}
-                                    <span class="muted">No runtime input</span>
-                                {% endfor %}
-                            </td>
-                            <td>{% if row.mandatory %}<span class="badge">Mandatory</span>{% else %}<span class="badge">Optional</span>{% endif %}</td>
-                        </tr>
-                    {% empty %}
-                        <tr><td colspan="7">No generated tests. Select endpoints before launch.</td></tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+            {% include "conformance/partials/builder_review_tests.html" %}
         </details>
     </section>
     {% include "conformance/partials/builder_back_dialog.html" %}
 </main>
+<script>
+    // Delegated listeners bound once, so boosted page swaps do not stack handlers.
+    (() => {
+        if (window.__builderReviewApplyBound) {
+            return;
+        }
+        window.__builderReviewApplyBound = true;
+        let latestSeq = 0;
+        const setStatus = (state, text) => {
+            const status = document.getElementById("review-apply-status");
+            if (!status) {
+                return;
+            }
+            const span = document.createElement("span");
+            span.className = `apply-state apply-state-${state}`;
+            span.textContent = text;
+            status.replaceChildren(span);
+        };
+        document.addEventListener("input", (event) => {
+            if (!(event.target instanceof HTMLTextAreaElement) || event.target.id !== "id_review_plan_json") {
+                return;
+            }
+            // Seeded from the clock so a reloaded page never falls behind the server's last applied edit.
+            latestSeq = Math.max(Date.now(), latestSeq + 1);
+            const seqInput = document.getElementById("id_review_edit_seq");
+            if (seqInput instanceof HTMLInputElement) {
+                seqInput.value = String(latestSeq);
+            }
+            setStatus("pending", "Updating\u2026");
+        });
+        document.addEventListener("htmx:beforeSwap", (event) => {
+            const source = event.detail.requestConfig && event.detail.requestConfig.elt;
+            if (!(source instanceof HTMLElement) || source.id !== "id_review_plan_json") {
+                return;
+            }
+            const responseSeq = Number(event.detail.xhr.getResponseHeader("X-Edit-Seq") || "0");
+            if (responseSeq < latestSeq) {
+                // A newer edit is pending; never let an older response overwrite it.
+                event.detail.shouldSwap = false;
+            }
+        });
+        document.addEventListener("htmx:sendError", (event) => {
+            const source = event.detail.requestConfig && event.detail.requestConfig.elt;
+            if (source instanceof HTMLElement && source.id === "id_review_plan_json") {
+                setStatus("error", "Not applied: could not reach the server.");
+            }
+        });
+        document.addEventListener("change", (event) => {
+            const input = event.target;
+            if (!(input instanceof HTMLInputElement) || input.id !== "id_review_plan_file" || !input.files || !input.files[0]) {
+                return;
+            }
+            const file = input.files[0];
+            input.value = "";
+            const maxBytes = Number(input.dataset.maxBytes || "0");
+            if (maxBytes && file.size > maxBytes) {
+                setStatus("error", `Not loaded: ${file.name} is larger than the import limit.`);
+                return;
+            }
+            const reader = new FileReader();
+            reader.addEventListener("load", () => {
+                const textarea = document.getElementById("id_review_plan_json");
+                if (!(textarea instanceof HTMLTextAreaElement) || typeof reader.result !== "string") {
+                    return;
+                }
+                textarea.value = reader.result;
+                textarea.dispatchEvent(new Event("input", { bubbles: true }));
+                textarea.focus();
+                textarea.setSelectionRange(0, 0);
+                textarea.scrollTop = 0;
+            });
+            reader.addEventListener("error", () => setStatus("error", `Not loaded: ${file.name} could not be read.`));
+            reader.readAsText(file);
+        });
+    })();
+</script>
 </body>
 </html>

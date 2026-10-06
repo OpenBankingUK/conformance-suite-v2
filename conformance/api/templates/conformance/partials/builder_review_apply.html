@@ -1,0 +1,12 @@
+{% comment %}
+Live plan JSON apply response. Every fragment is swapped out of band; the plan
+JSON text box is never returned, so the participant's caret is preserved.
+{% endcomment %}
+{% if refresh %}
+    <div id="review-step-bar" hx-swap-oob="true">
+        {% include "conformance/partials/builder_step_bar.html" with step_form_id="review-plan-form" %}
+    </div>
+    {% include "conformance/partials/builder_review_summary.html" with oob=True %}
+    {% include "conformance/partials/builder_review_tests.html" with oob=True %}
+{% endif %}
+<span id="review-apply-status" hx-swap-oob="innerHTML">{% if apply_status == "error" %}<span class="apply-state apply-state-error">Not applied: {{ apply_error }}</span>{% else %}<span class="apply-state apply-state-applied">Applied &#10003;</span>{% endif %}</span>

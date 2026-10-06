@@ -82,7 +82,7 @@
         <div>
             <h1>{% if dcr_mode %}OAuth and security configuration{% else %}Connection and security{% endif %}</h1>
         </div>
-        <a class="button secondary builder-menu-link" href="{% url 'home' %}">Main menu</a>
+        {% include "conformance/partials/builder_header_actions.html" with from_step="security" %}
     </header>
     {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 

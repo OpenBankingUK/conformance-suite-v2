@@ -49,7 +49,7 @@
         <div>
             <h1>Discovery configuration</h1>
         </div>
-        <a class="button secondary builder-menu-link" href="{% url 'home' %}">Main menu</a>
+        {% include "conformance/partials/builder_header_actions.html" with from_step="discovery" %}
     </header>
     {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 

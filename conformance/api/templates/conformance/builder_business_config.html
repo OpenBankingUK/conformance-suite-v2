@@ -55,7 +55,7 @@
         <div>
             <h1>Business test data</h1>
         </div>
-        <a class="button secondary builder-menu-link" href="{% url 'home' %}">Main menu</a>
+        {% include "conformance/partials/builder_header_actions.html" with from_step="config" %}
     </header>
     {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 

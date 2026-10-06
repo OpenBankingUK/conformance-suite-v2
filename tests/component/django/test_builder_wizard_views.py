@@ -1629,3 +1629,181 @@ class TestBuilderWizardUi:
         assert client.get("/plan/").status_code == 404
         assert client.post("/plan/preview/", data={}).status_code == 404
         assert client.post("/plan/launch/", data={}).status_code == 404
+
+
+class TestBuilderInDraftImportAndLiveApply:
+    """In-builder plan import and live-applied review plan JSON."""
+
+    @staticmethod
+    def _imported_draft(client: Client) -> str:
+        response = client.post("/builder/import/", data={"plan_json": json.dumps(_valid_import_plan())})
+        return _draft_id_from_builder_redirect(response["Location"])
+
+    def test_every_builder_page_links_to_in_draft_import(self) -> None:
+        """Each builder page header offers Import plan, returning to that page on cancel."""
+        client = Client()
+        draft_id = self._imported_draft(client)
+        pages = {
+            "catalogue": f"/builder/{draft_id}/catalogue/",
+            "scope": f"/builder/{draft_id}/scope/",
+            "config": f"/builder/{draft_id}/config/",
+            "security": f"/builder/{draft_id}/config/security/",
+            "review": f"/builder/{draft_id}/review/",
+        }
+
+        for step_id, url in pages.items():
+            content = client.get(url).content.decode("utf-8")
+            assert f'href="/builder/{draft_id}/import/?from={step_id}" data-builder-import-link' in content, url
+            assert ">Main menu</a>" in content, url
+
+    def test_in_draft_import_page_confirms_replacing_a_draft_with_data(self) -> None:
+        """A draft with data gets replace wording, a warning, and the confirm dialog."""
+        client = Client()
+        draft_id = self._imported_draft(client)
+
+        content = client.get(f"/builder/{draft_id}/import/?from=scope").content.decode("utf-8")
+
+        assert "Import into current plan" in content
+        assert "data-replace-warning" in content
+        assert "data-confirm-replace" in content
+        assert 'id="replace-plan-dialog"' in content
+        assert ">Replace current plan</button>" in content
+        assert f'action="/builder/{draft_id}/import/"' in content
+        assert f'href="/builder/{draft_id}/scope/">Cancel</a>' in content
+        assert 'name="from" value="scope"' in content
+
+    def test_in_draft_import_page_skips_confirmation_for_a_blank_draft(self) -> None:
+        """A blank draft has nothing to lose, so no replace confirmation is shown."""
+        client = Client()
+        draft_id = _draft_id_from_builder_redirect(client.post("/builder/new/")["Location"])
+
+        content = client.get(f"/builder/{draft_id}/import/?from=https://evil.example").content.decode("utf-8")
+
+        assert "data-confirm-replace" not in content
+        assert "replace-plan-dialog" not in content
+        assert ">Import and review</button>" in content
+        assert f'href="/builder/{draft_id}/catalogue/">Cancel</a>' in content
+        assert "evil.example" not in content
+
+    def test_in_draft_import_replaces_the_same_draft(self) -> None:
+        """Importing into a draft keeps its id and replaces its contents."""
+        client = Client()
+        draft_id = self._imported_draft(client)
+        plan = _valid_import_plan()
+        plan["metadata"] = {"aspspName": "Replacement Bank"}
+
+        response = client.post(f"/builder/{draft_id}/import/", data={"plan_json": json.dumps(plan)})
+        exported = client.get(f"/builder/{draft_id}/export.json").json()
+
+        assert response.status_code == 302
+        assert response["Location"] == f"/builder/{draft_id}/review/"
+        assert exported["metadata"]["aspspName"] == "Replacement Bank"
+
+    def test_in_draft_import_without_specification_opens_specification_step(self) -> None:
+        """A plan without a supported specification opens the specification step of the same draft."""
+        client = Client()
+        draft_id = self._imported_draft(client)
+
+        response = client.post(f"/builder/{draft_id}/import/", data={"plan_json": json.dumps({"schemaVersion": "1.0"})})
+
+        assert response["Location"] == f"/builder/{draft_id}/catalogue/"
+
+    def test_in_draft_import_rejects_non_object_and_keeps_draft(self) -> None:
+        """Text that is not a JSON object is rejected and the draft is unchanged."""
+        client = Client()
+        draft_id = self._imported_draft(client)
+        before = client.get(f"/builder/{draft_id}/export.json").json()
+
+        response = client.post(f"/builder/{draft_id}/import/", data={"plan_json": "[1, 2]", "from": "review"})
+
+        assert response.status_code == 400
+        assert "Start a new plan instead" not in response.content.decode("utf-8")
+        assert client.get(f"/builder/{draft_id}/export.json").json() == before
+
+    def test_in_draft_import_unknown_draft_is_404(self) -> None:
+        """Only drafts from this browser session can be replaced."""
+        assert Client().get("/builder/unknown/import/").status_code == 404
+
+    def test_review_page_explains_the_plan_json_is_editable(self) -> None:
+        """The review page makes manual editing, file loading, and live apply obvious."""
+        client = Client()
+        draft_id = self._imported_draft(client)
+
+        content = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
+
+        assert "Edit plan JSON" in content
+        assert ">Editable</span>" in content
+        assert "You can edit, paste, or load a plan file here." in content
+        assert 'id="id_review_plan_file"' in content
+        assert "Load from file&hellip;" in content
+        assert 'id="review-apply-status"' in content
+        assert f'hx-post="/builder/{draft_id}/review/apply/"' in content
+        assert 'hx-trigger="input changed delay:800ms"' in content
+        assert 'hx-sync="this:queue last"' in content
+        assert 'id="review-summary-region"' in content
+        assert 'id="review-generated-tests"' in content
+
+    def test_live_apply_updates_draft_and_returns_out_of_band_fragments(self) -> None:
+        """Valid JSON is applied and the summary, tests, step bar, and status are refreshed."""
+        client = Client()
+        draft_id = self._imported_draft(client)
+        edited = _valid_import_plan()
+        edited["unexpected"] = True
+
+        response = client.post(
+            f"/builder/{draft_id}/review/apply/",
+            data={"plan_json": json.dumps(edited), "edit_seq": "10"},
+        )
+        content = response.content.decode("utf-8")
+
+        assert response.status_code == 200
+        assert response["Cache-Control"] == "no-store"
+        assert response["X-Edit-Seq"] == "10"
+        assert '<div id="review-summary-region" hx-swap-oob="true">' in content
+        assert '<div id="review-generated-tests" hx-swap-oob="true">' in content
+        assert '<div id="review-step-bar" hx-swap-oob="true">' in content
+        assert "Applied &#10003;" in content
+        assert "unexpected is not a recognised test-plan field." in content
+        assert "Resolve review blockers before launch." in content
+        assert "id_review_plan_json" not in content
+        assert client.get(f"/builder/{draft_id}/export.json").json()["unexpected"] is True
+
+    def test_live_apply_keeps_last_applied_draft_for_invalid_json(self) -> None:
+        """Incomplete JSON only reports an error and never changes the draft."""
+        client = Client()
+        draft_id = self._imported_draft(client)
+        before = client.get(f"/builder/{draft_id}/export.json").json()
+
+        response = client.post(f"/builder/{draft_id}/review/apply/", data={"plan_json": '{"schemaVersion": '})
+        content = response.content.decode("utf-8")
+
+        assert response.status_code == 200
+        assert "apply-state-error" in content
+        assert "Not applied:" in content
+        assert "review-summary-region" not in content
+        assert client.get(f"/builder/{draft_id}/export.json").json() == before
+
+    def test_live_apply_ignores_stale_edits(self) -> None:
+        """An edit older than one already applied must not overwrite it."""
+        client = Client()
+        draft_id = self._imported_draft(client)
+        newer = _valid_import_plan()
+        newer["metadata"] = {"aspspName": "Newer"}
+        older = _valid_import_plan()
+        older["metadata"] = {"aspspName": "Older"}
+
+        client.post(f"/builder/{draft_id}/review/apply/", data={"plan_json": json.dumps(newer), "edit_seq": "20"})
+        stale = client.post(
+            f"/builder/{draft_id}/review/apply/", data={"plan_json": json.dumps(older), "edit_seq": "19"}
+        )
+
+        assert stale.status_code == 204
+        assert client.get(f"/builder/{draft_id}/export.json").json()["metadata"]["aspspName"] == "Newer"
+
+    def test_live_apply_requires_post_and_known_draft(self) -> None:
+        """Live apply is POST-only and scoped to this session's drafts."""
+        client = Client()
+        draft_id = self._imported_draft(client)
+
+        assert client.get(f"/builder/{draft_id}/review/apply/").status_code == 405
+        assert client.post("/builder/unknown/review/apply/", data={"plan_json": "{}"}).status_code == 404

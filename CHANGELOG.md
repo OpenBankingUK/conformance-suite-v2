@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Every builder page now has an **Import plan** button beside **Main menu**. It imports a test plan JSON file or pasted JSON into the current draft, so switching from building to importing no longer needs a trip through the main menu. If the draft already has values, a **Replace current plan?** confirmation is shown first. **Cancel** returns to the page you came from.
+- The review page's plan JSON box is now clearly marked as editable and has a **Load from file…** button. Pasted, typed or loaded JSON is applied automatically after a short pause, using the same rules as import. The summary, generated tests and step bar refresh without replacing the text box or moving the caret.
+  - A status line shows **Updating…**, **Applied** or an error.
+  - Incomplete or invalid JSON leaves the last applied plan untouched.
+  - Older responses never overwrite newer edits.
+  - Launch, export and step navigation still validate the current text.
+
 ### Changed
 
 - Builder dropdowns on the specification and connection & security pages are

@@ -77,6 +77,7 @@ from conformance.api.builder_wizard import (
     version_options,
 )
 from conformance.api.plan_import_recovery import (
+    PLAN_IMPORT_MAX_BYTES,
     PlanImportError,
     PlanImportForm,
     parse_plan_import_text,
@@ -863,6 +864,95 @@ def builder_import(request: HttpRequest) -> HttpResponse:
     return redirect("builder-review", draft_id=draft.draft_id)
 
 
+def _draft_has_data(draft: BuilderDraft) -> bool:
+    """Return whether replacing ``draft`` would lose participant input.
+
+    Args:
+        draft: Builder draft.
+
+    Returns:
+        True once any specification value is chosen or any step is saved.
+    """
+    return any((draft.scheme, draft.specification, draft.version, draft.saved_steps))
+
+
+def _draft_import_from_step(request: HttpRequest, draft: BuilderDraft) -> str:
+    """Return the validated originating step id for the in-builder import page.
+
+    Args:
+        request: Incoming request with an optional ``from`` step id.
+        draft: Current builder draft.
+
+    Returns:
+        A known, available builder step id, or ``""``.
+    """
+    step = resolve_next(request.GET.get("from") or request.POST.get("from"), draft)
+    return step.step_id if step is not None else ""
+
+
+def _draft_import_cancel_url(request: HttpRequest, draft: BuilderDraft) -> str:
+    """Return where Cancel on the in-builder import page goes.
+
+    ``from`` is only ever matched against fixed builder step ids, so it can
+    never redirect outside the builder.
+
+    Args:
+        request: Incoming request with an optional ``from`` step id.
+        draft: Current builder draft.
+
+    Returns:
+        URL of the originating step, else review or the specification step.
+    """
+    step = resolve_next(_draft_import_from_step(request, draft), draft)
+    if step is not None:
+        return reverse(step.url_name, kwargs={"draft_id": draft.draft_id})
+    fallback = "builder-review" if specification_selected(draft) else "builder-catalogue-boundary"
+    return reverse(fallback, kwargs={"draft_id": draft.draft_id})
+
+
+@require_http_methods(["GET", "POST"])
+def builder_draft_import(request: HttpRequest, draft_id: str) -> HttpResponse:
+    """Import a test plan into an existing builder draft, replacing it.
+
+    Lets a participant who started in the builder switch to an imported plan
+    without returning to the main menu. The draft keeps its id; its contents
+    are replaced with the same lenient recovery as the main import page.
+
+    Args:
+        request: The incoming browser request.
+        draft_id: Session-scoped draft id from the route.
+
+    Returns:
+        HTML import page, a ``400`` error when the input is not a JSON object,
+        a redirect to the replaced draft, or ``404`` when the draft is unknown.
+    """
+    draft_store = SessionBuilderDraftStore(request.session)
+    draft = draft_store.get(draft_id)
+    if draft is None:
+        return HttpResponseNotFound("Builder draft not found")
+    context: dict[str, object] = {
+        "draft": draft,
+        "replace_existing": _draft_has_data(draft),
+        "cancel_url": _draft_import_cancel_url(request, draft),
+        "from_step": _draft_import_from_step(request, draft),
+        "plan_json": "",
+        "import_error": None,
+    }
+    if request.method == "GET":
+        return render(request, "conformance/builder_import.html", context)
+
+    form = PlanImportForm(data=request.POST, files=request.FILES)
+    if not form.is_valid() or form.raw_plan is None:
+        context["plan_json"] = form.data.get("plan_json", "")
+        context["import_error"] = form.import_error()
+        return render(request, "conformance/builder_import.html", context, status=400)
+
+    imported = _replace_draft_from_plan(draft_store, draft, form.raw_plan)
+    if not specification_selected(imported):
+        return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
+    return redirect("builder-review", draft_id=draft.draft_id)
+
+
 def _blocked_step_redirect(draft: BuilderDraft, step: BuilderNavigationTarget) -> HttpResponse | None:
     """Redirect to the first incomplete earlier step when ``step`` is locked.
 
@@ -1273,10 +1363,106 @@ def _apply_review_plan_json(
         )
     if raw_plan == plan_json_from_draft(draft):
         return draft
+    return _replace_draft_from_plan(draft_store, draft, raw_plan)
+
+
+def _replace_draft_from_plan(
+    draft_store: SessionBuilderDraftStore,
+    draft: BuilderDraft,
+    raw_plan: Mapping[str, JsonValue],
+) -> BuilderDraft:
+    """Replace a draft's contents with an imported plan, keeping its id.
+
+    Uses the same lenient recovery as the import page, applied to a blank draft
+    that reuses the existing id and creation time so open builder URLs stay
+    valid.
+
+    Args:
+        draft_store: Session draft store.
+        draft: Draft being replaced.
+        raw_plan: Decoded plan JSON object.
+
+    Returns:
+        The saved replacement draft.
+    """
     fresh_draft = replace(BuilderDraft.create(), draft_id=draft.draft_id, created_at=draft.created_at)
     updated = recover_draft_from_plan_json(raw_plan, draft=fresh_draft)
     draft_store.save(updated)
     return updated
+
+
+_REVIEW_APPLY_SEQ_SESSION_KEY = "builder_review_apply_seq"
+
+
+def _accept_review_edit_seq(request: HttpRequest, draft_id: str) -> bool:
+    """Record a live-apply edit sequence number, rejecting stale ones.
+
+    The review page numbers each plan JSON edit. An edit older than the newest
+    one already applied must not overwrite it, even if requests arrive out of
+    order.
+
+    Args:
+        request: Live-apply POST carrying an optional ``edit_seq`` integer.
+        draft_id: Draft being edited.
+
+    Returns:
+        ``False`` when the edit is older than one already applied.
+    """
+    try:
+        edit_seq = int(request.POST.get("edit_seq", ""))
+    except ValueError:
+        return True
+    raw_seqs = request.session.get(_REVIEW_APPLY_SEQ_SESSION_KEY)
+    seqs: dict[str, int] = dict(raw_seqs) if isinstance(raw_seqs, dict) else {}
+    last_seq = seqs.get(draft_id)
+    if isinstance(last_seq, int) and edit_seq < last_seq:
+        return False
+    seqs[draft_id] = edit_seq
+    request.session[_REVIEW_APPLY_SEQ_SESSION_KEY] = seqs
+    return True
+
+
+@require_POST
+def builder_review_apply(request: HttpRequest, draft_id: str) -> HttpResponse:
+    """Live-apply review-page plan JSON and return refreshed review fragments.
+
+    Called by the review page shortly after the participant stops editing the
+    plan JSON box. Text that is not a JSON object leaves the last applied draft
+    intact and only reports the error; otherwise the draft is reloaded with the
+    same lenient rules as import and the summary, generated tests, and step bar
+    are returned as out-of-band fragments. The text box itself is never
+    replaced, so the caret and selection are preserved.
+
+    Args:
+        request: HTMX POST with ``plan_json`` and an optional ``edit_seq``.
+        draft_id: Session-scoped draft id from the route.
+
+    Returns:
+        Out-of-band review fragments, ``204`` for a stale edit, or ``404`` when
+        the draft is unknown.
+    """
+    draft_store = SessionBuilderDraftStore(request.session)
+    draft = draft_store.get(draft_id)
+    if draft is None:
+        return HttpResponseNotFound("Builder draft not found")
+    if not _accept_review_edit_seq(request, draft_id):
+        response = HttpResponse(status=204)
+    else:
+        plan_text = request.POST.get("plan_json", "")
+        context: dict[str, object]
+        try:
+            raw_plan = parse_plan_import_text(plan_text)
+        except PlanImportError as error:
+            context = {"apply_status": "error", "apply_error": str(error), "refresh": False}
+        else:
+            if raw_plan != plan_json_from_draft(draft):
+                draft = _replace_draft_from_plan(draft_store, draft, raw_plan)
+            context = {**_builder_review_context(draft=draft), "apply_status": "applied", "refresh": True}
+        response = render(request, "conformance/partials/builder_review_apply.html", context)
+    response["X-Edit-Seq"] = request.POST.get("edit_seq", "")
+    response["Cache-Control"] = "no-store"
+    response["Pragma"] = "no-cache"
+    return response
 
 
 @require_POST
@@ -1952,6 +2138,7 @@ def _builder_review_context(
         "import_issues": draft.import_issues,
         "plan_json_text": state.plan_json_text if plan_json_text is None else plan_json_text,
         "plan_json_error": plan_json_error,
+        "plan_import_max_bytes": PLAN_IMPORT_MAX_BYTES,
     }
     if launch_error is not None:
         context["launch_error"] = launch_error
