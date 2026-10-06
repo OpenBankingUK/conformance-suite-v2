@@ -56,6 +56,17 @@
         .metadata-list { display: grid; grid-template-columns: minmax(180px, 0.5fr) 1fr; gap: 8px 12px; margin-top: 12px; }
         .metadata-list dt { font-weight: 650; }
         .metadata-list dd { margin: 0; overflow-wrap: anywhere; }
+        .discovery-tag { display: inline-flex; align-items: center; margin-left: 6px; border-radius: 999px; border: 1px solid #b2ddff; background: #f5faff; color: #175cd3; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; vertical-align: middle; }
+        .discovery-tag[hidden] { display: none; }
+        .discovery-intro { margin: 0 0 8px; }
+        .discovery-result { margin-top: 12px; }
+        .discovery-summary { margin: 0 0 8px; padding-left: 20px; }
+        .discovery-conflicts p { margin: 0; }
+        .discovery-conflicts button { margin-top: 12px; }
+        .discovery-document { margin-top: 8px; }
+        .discovery-document summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+        button .busy-label, button.htmx-request .idle-label { display: none; }
+        button.htmx-request .busy-label { display: inline; }
         .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
         button, .button { min-height: 38px; border: 1px solid var(--accent); border-radius: 6px; padding: 8px 14px; background: var(--accent); color: #ffffff; font: inherit; font-weight: 650; text-decoration: none; cursor: pointer; }
         .button.secondary, button.secondary { background: #ffffff; color: var(--accent); }
@@ -108,6 +119,7 @@
                 <div class="field-row">
                     <label for="{{ discovery_form.discovery_url.id_for_label }}">Discovery URL {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.discovery_url.status label=security_requirements.discovery_url.label only %}</label>
                     {{ discovery_form.discovery_url.errors }}
+                    <p class="helper discovery-intro">Enter your provider's <code>.well-known/openid-configuration</code> URL, then choose <strong>Fetch and fill</strong>. Empty OAuth fields below are filled from it; values you've already typed are kept.</p>
                     <div class="inline-action">
                         <input id="{{ discovery_form.discovery_url.id_for_label }}" name="discovery_url" type="url" value="{{ discovery_form.discovery_url.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
                         <button type="button"
@@ -117,9 +129,9 @@
                                 hx-target="#discovery-preview"
                                 hx-swap="outerHTML"
                                 hx-sync="this:replace"
-                                hx-disabled-elt="this">Check</button>
+                                hx-disabled-elt="this"><span class="idle-label">Fetch and fill</span><span class="busy-label">Fetching…</span></button>
                     </div>
-                    <div class="helper">{{ security_requirements.discovery_url.description }} Type: {{ security_requirements.discovery_url.type_hint }}. {{ security_requirements.discovery_url.requirement }} Checking fills empty OAuth endpoint fields below.</div>
+                    <div class="helper">{{ security_requirements.discovery_url.description }} Type: {{ security_requirements.discovery_url.type_hint }}. {{ security_requirements.discovery_url.requirement }}</div>
                 </div>
                 {% include "conformance/partials/builder_discovery_preview.html" %}
             </section>
@@ -140,31 +152,31 @@
                         <div class="helper">{{ security_requirements.oauth_redirect_uri.description }} Type: {{ security_requirements.oauth_redirect_uri.type_hint }}. {{ security_requirements.oauth_redirect_uri.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_authorization_endpoint.id_for_label }}">Authorization endpoint {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_authorization_endpoint.status label=security_requirements.oauth_authorization_endpoint.label only %}</label>
+                        <label for="{{ form.oauth_authorization_endpoint.id_for_label }}">Authorization endpoint {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_authorization_endpoint.status label=security_requirements.oauth_authorization_endpoint.label only %} <span id="discovery-tag-oauth_authorization_endpoint" class="discovery-tag" hidden>From discovery</span></label>
                         {{ form.oauth_authorization_endpoint.errors }}
                         <input id="{{ form.oauth_authorization_endpoint.id_for_label }}" name="oauth_authorization_endpoint" type="url" value="{{ form.oauth_authorization_endpoint.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
                         <div class="helper">{{ security_requirements.oauth_authorization_endpoint.description }} Type: {{ security_requirements.oauth_authorization_endpoint.type_hint }}. {{ security_requirements.oauth_authorization_endpoint.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_issuer.id_for_label }}">Issuer {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_issuer.status label=security_requirements.oauth_issuer.label only %}</label>
+                        <label for="{{ form.oauth_issuer.id_for_label }}">Issuer {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_issuer.status label=security_requirements.oauth_issuer.label only %} <span id="discovery-tag-oauth_issuer" class="discovery-tag" hidden>From discovery</span></label>
                         {{ form.oauth_issuer.errors }}
                         <input id="{{ form.oauth_issuer.id_for_label }}" name="oauth_issuer" type="url" value="{{ form.oauth_issuer.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
                         <div class="helper">{{ security_requirements.oauth_issuer.description }} Type: {{ security_requirements.oauth_issuer.type_hint }}. {{ security_requirements.oauth_issuer.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_token_endpoint.id_for_label }}">Token endpoint {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_token_endpoint.status label=security_requirements.oauth_token_endpoint.label only %}</label>
+                        <label for="{{ form.oauth_token_endpoint.id_for_label }}">Token endpoint {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_token_endpoint.status label=security_requirements.oauth_token_endpoint.label only %} <span id="discovery-tag-oauth_token_endpoint" class="discovery-tag" hidden>From discovery</span></label>
                         {{ form.oauth_token_endpoint.errors }}
                         <input id="{{ form.oauth_token_endpoint.id_for_label }}" name="oauth_token_endpoint" type="url" value="{{ form.oauth_token_endpoint.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
                         <div class="helper">{{ security_requirements.oauth_token_endpoint.description }} Type: {{ security_requirements.oauth_token_endpoint.type_hint }}. {{ security_requirements.oauth_token_endpoint.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_response_type.id_for_label }}">Response type {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_response_type.status label=security_requirements.oauth_response_type.label only %}</label>
+                        <label for="{{ form.oauth_response_type.id_for_label }}">Response type {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_response_type.status label=security_requirements.oauth_response_type.label only %} <span id="discovery-tag-oauth_response_type" class="discovery-tag" hidden>From discovery</span></label>
                         {{ form.oauth_response_type.errors }}
                         <input id="{{ form.oauth_response_type.id_for_label }}" name="oauth_response_type" type="text" value="{{ form.oauth_response_type.value|default_if_none:'' }}" autocomplete="off">
                         <div class="helper">{{ security_requirements.oauth_response_type.description }} Type: {{ security_requirements.oauth_response_type.type_hint }}. {{ security_requirements.oauth_response_type.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_request_object_signing_alg.id_for_label }}">Request object signing algorithm {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_request_object_signing_alg.status label=security_requirements.oauth_request_object_signing_alg.label only %}</label>
+                        <label for="{{ form.oauth_request_object_signing_alg.id_for_label }}">Request object signing algorithm {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_request_object_signing_alg.status label=security_requirements.oauth_request_object_signing_alg.label only %} <span id="discovery-tag-oauth_request_object_signing_alg" class="discovery-tag" hidden>From discovery</span></label>
                         {{ form.oauth_request_object_signing_alg.errors }}
                         <input id="{{ form.oauth_request_object_signing_alg.id_for_label }}" name="oauth_request_object_signing_alg" type="text" value="{{ form.oauth_request_object_signing_alg.value|default_if_none:'' }}" autocomplete="off">
                         <div class="helper">{{ security_requirements.oauth_request_object_signing_alg.description }} Type: {{ security_requirements.oauth_request_object_signing_alg.type_hint }}. {{ security_requirements.oauth_request_object_signing_alg.requirement }}</div>
@@ -339,5 +351,24 @@
         </form>
     </section>
 </main>
+<script>
+    (() => {
+        if (window.builderDiscoveryTagListener) {
+            return;
+        }
+        window.builderDiscoveryTagListener = true;
+        // A field the participant edits no longer holds the discovery value, so drop its tag.
+        document.addEventListener("input", (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLInputElement)) {
+                return;
+            }
+            const tag = document.getElementById(`discovery-tag-${target.name}`);
+            if (tag) {
+                tag.hidden = true;
+            }
+        });
+    })();
+</script>
 </body>
 </html>

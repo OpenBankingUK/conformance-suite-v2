@@ -34,6 +34,8 @@
         .metadata-list { display: grid; grid-template-columns: minmax(180px, 0.5fr) 1fr; gap: 8px 12px; margin-top: 12px; }
         .metadata-list dt { font-weight: 650; }
         .metadata-list dd { margin: 0; overflow-wrap: anywhere; }
+        .discovery-result { margin-top: 12px; }
+        .discovery-document summary { cursor: pointer; color: var(--accent); font-weight: 600; }
         #discovery-preview > * { margin-top: 12px; }
         button:disabled { opacity: 0.6; cursor: progress; }
         @media (max-width: 840px) { header, .grid, .metadata-list { display: block; } .grid > div + div, .metadata-list dd + dt { margin-top: 12px; } }
@@ -78,7 +80,7 @@
                             hx-target="#discovery-preview"
                             hx-swap="outerHTML"
                             hx-sync="this:replace"
-                            hx-disabled-elt="this">Check discovery URL</button>
+                            hx-disabled-elt="this">Preview discovery</button>
                 </div>
                 {% include "conformance/partials/builder_discovery_preview.html" %}
             </section>

@@ -328,16 +328,22 @@ The Read/Write wizard follows this order:
    here. Saving fetches discovery metadata again only when the URL changed or
    the previous fetch failed, stores non-secret helper metadata on the draft,
    and fills empty OAuth endpoint, response type and algorithm fields from it.
-   The inline **Check** button posts to `/builder/<draft>/config/discovery/preview/`,
-   which validates and fetches without saving and fills empty OAuth inputs with
-   HTMX out-of-band swaps; fields the participant typed are never overwritten.
+   The inline **Fetch and fill** button posts to
+   `/builder/<draft>/config/discovery/preview/`, which validates and fetches
+   without saving and fills empty OAuth inputs with HTMX out-of-band swaps.
+   It summarises what was filled and kept, tags each field holding the
+   discovery value **From discovery** (the tag clears when the field is
+   edited), and lists typed values that differ from discovery. Typed values
+   are only replaced when the participant chooses **Replace with discovery
+   values**, which reposts with `overwrite=true`.
    Field badges come from `security_field_requirements()` in
    `builder_wizard.py`, which uses `compiled_plan_run_config_requirements()`
    (`conformance/run_config_requirements.py`) on the draft's compiled scope:
    **Required to run** (with the reason), **Optional**, or **Depends on
    scope** when no endpoints are selected. The mTLS certificate and key are
    required to run only when the token endpoint auth method is
-   `tls_client_auth`. DCR keeps its separate discovery page before security.
+   `tls_client_auth`. DCR keeps its separate discovery page before security, whose
+   **Preview discovery** button shows the metadata without filling anything.
 5. Enter business/request defaults at `/builder/<draft>/config/`. DCR skips this
    page. AIS, PIS,
    CBPII, and VRP fields render only when selected endpoints need that domain.

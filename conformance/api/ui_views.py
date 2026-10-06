@@ -49,6 +49,7 @@ from conformance.api.builder_wizard import (
     BusinessConfigForm,
     CatalogueBoundaryForm,
     DiscoveryConfigForm,
+    DiscoveryFillForm,
     ScopeSelectionForm,
     SecurityConfigForm,
     boundary_requires_resource_groups,
@@ -528,13 +529,16 @@ def builder_discovery_config(request: HttpRequest, draft_id: str) -> HttpRespons
 
 @require_POST
 def builder_discovery_preview(request: HttpRequest, draft_id: str) -> HttpResponse:
-    """Render the HTMX fragment previewing OpenID discovery metadata.
+    """Render the HTMX fragment for the discovery "Fetch and fill" / "Preview discovery" actions.
 
-    Lets the participant check an OpenID Provider ``.well-known/openid-configuration``
-    URL before continuing. It validates and fetches exactly as the discovery
-    step's submit path does (same HTTPS URL validation and
-    :func:`_fetch_discovery_metadata`), so it adds no new outbound request
-    capability, and it persists nothing to the draft.
+    Lets the participant fetch an OpenID Provider ``.well-known/openid-configuration``
+    document before saving. On the Read/Write connection page the response
+    also fills empty OAuth fields out of band (or, when ``overwrite`` is
+    posted, replaces values that differ from discovery) and tags them
+    "From discovery"; DCR drafts only preview the metadata. It validates and
+    fetches exactly as the discovery submit path does (same HTTPS URL
+    validation and :func:`_fetch_discovery_metadata`), so it adds no new
+    outbound request capability, and it persists nothing to the draft.
 
     Args:
         request: The incoming HTMX POST request.
@@ -559,38 +563,88 @@ def builder_discovery_preview(request: HttpRequest, draft_id: str) -> HttpRespon
             status=400,
         )
     metadata = _fetch_discovery_metadata(form.config)
-    return render(
-        request,
-        "conformance/partials/builder_discovery_preview.html",
-        {
-            "preview_checked": True,
-            "preview": _discovery_metadata_context(metadata),
-            "prefill": () if is_dcr_draft(draft) else _discovery_prefill_fields(request.POST, metadata),
-        },
-    )
+    preview = _discovery_metadata_context(metadata)
+    context: dict[str, object] = {
+        "preview_checked": True,
+        "preview": preview,
+        "dcr_mode": is_dcr_draft(draft),
+        "draft_id": draft.draft_id,
+    }
+    if not is_dcr_draft(draft) and not preview["fetch_error"]:
+        fill_form = DiscoveryFillForm(data=request.POST)
+        overwrite = fill_form.is_valid() and bool(fill_form.cleaned_data["overwrite"])
+        context["fill"] = _discovery_fill_result(request.POST, metadata, overwrite=overwrite)
+    return render(request, "conformance/partials/builder_discovery_preview.html", context)
 
 
-def _discovery_prefill_fields(submitted: QueryDict, metadata: Mapping[str, JsonValue]) -> tuple[dict[str, str], ...]:
-    """Return out-of-band input replacements for empty OAuth fields that discovery can fill.
+_DISCOVERY_FIELD_LABELS = {
+    "oauth_authorization_endpoint": "Authorization endpoint",
+    "oauth_issuer": "Issuer",
+    "oauth_token_endpoint": "Token endpoint",
+    "oauth_response_type": "Response type",
+    "oauth_request_object_signing_alg": "Request object signing algorithm",
+}
+"""Display labels for OAuth fields that OpenID discovery can fill."""
+
+
+def _discovery_fill_result(
+    submitted: QueryDict, metadata: Mapping[str, JsonValue], *, overwrite: bool
+) -> dict[str, object]:
+    """Work out how the "Fetch and fill" action changes the OAuth fields.
+
+    Empty fields are filled from OpenID discovery metadata. Typed values are
+    kept unless ``overwrite`` is set, in which case only values that differ
+    from discovery are replaced.
 
     Args:
-        submitted: Connection and security form data sent with the check.
+        submitted: Connection and security form data sent with the action.
         metadata: Freshly fetched discovery metadata.
+        overwrite: Whether the participant asked to replace differing values.
 
     Returns:
-        ``name``, ``value``, and ``input_type`` for each empty field with a
-        discovery-derived value; fields the participant filled are untouched.
+        Labels of filled, replaced, and kept fields, the differing fields, the
+        out-of-band input replacements, and per-field "From discovery" tags.
     """
     defaults = _discovery_defaults(BuilderDraft.create().with_discovery_metadata(discovery_metadata=metadata))
-    return tuple(
-        {
-            "name": name,
-            "value": value,
-            "input_type": "url" if name in _DISCOVERY_URL_FIELDS else "text",
-        }
-        for name, value in defaults.items()
-        if not submitted.get(name, "").strip()
-    )
+    filled: list[str] = []
+    replaced: list[str] = []
+    kept: list[str] = []
+    conflicts: list[dict[str, str]] = []
+    inputs: list[dict[str, str]] = []
+    tags: list[dict[str, object]] = []
+    for name in _DISCOVERY_PREFILL_FIELDS:
+        label = _DISCOVERY_FIELD_LABELS[name]
+        current = submitted.get(name, "").strip()
+        discovered = defaults.get(name)
+        final = current
+        if discovered is not None:
+            if not current:
+                filled.append(label)
+                final = discovered
+            elif current != discovered and overwrite:
+                replaced.append(label)
+                final = discovered
+            else:
+                kept.append(label)
+                if current != discovered:
+                    conflicts.append({"label": label, "current": current, "discovered": discovered})
+            if final != current:
+                inputs.append(
+                    {
+                        "name": name,
+                        "value": final,
+                        "input_type": "url" if name in _DISCOVERY_URL_FIELDS else "text",
+                    }
+                )
+        tags.append({"name": name, "shown": discovered is not None and final == discovered})
+    return {
+        "filled": filled,
+        "replaced": replaced,
+        "kept": kept,
+        "conflicts": conflicts,
+        "inputs": inputs,
+        "tags": tags,
+    }
 
 
 @require_http_methods(["GET", "POST"])

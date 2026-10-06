@@ -14,7 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Read/Write builder now asks for scope before connection and security:
   specification → scope → connection & security → business data → review. The
   discovery URL moved onto the connection and security page, with an inline
-  **Check** that fills empty OAuth fields from discovery metadata. Each field
+  **Fetch and fill** action that fills empty OAuth fields from discovery
+  metadata, summarises what was filled or kept, tags filled fields **From
+  discovery**, and offers **Replace with discovery values** when typed values
+  differ. DCR's discovery button is now **Preview discovery**. Each field
   shows **Required to run** (with the reason), **Optional**, or **Depends on
   scope** based on the selected endpoints, and the step shows needing attention
   (!) when a value the selected tests need is missing.

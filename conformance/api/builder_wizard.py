@@ -1280,6 +1280,17 @@ class DiscoveryConfigForm(forms.Form):
         return cleaned_data
 
 
+class DiscoveryFillForm(forms.Form):
+    """Options for the connection page's "Fetch and fill" discovery action.
+
+    Attributes:
+        overwrite: Replace typed OAuth values that differ from OpenID discovery
+            metadata instead of only filling empty fields.
+    """
+
+    overwrite: forms.BooleanField = forms.BooleanField(required=False)
+
+
 class SecurityConfigForm(forms.Form):
     """Form for OAuth, FAPI signing, TLS, and resource-server settings.
 
