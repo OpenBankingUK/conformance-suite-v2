@@ -408,3 +408,25 @@ def test_psu_headless_off_target_redirect_is_flagged_without_echoing_target() ->
     assert details["response"]["redirectsToRedirectUri"] is False
     assert "location" not in details["response"]
     assert "login.aspsp.example" not in json.dumps(result)
+
+
+def test_psu_headless_step_reads_hybrid_flow_fragment_response() -> None:
+    """OIDC hybrid-flow redirects return ``code``/``id_token`` in the fragment; both are read and masked."""
+    state = "f" * 32
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            302,
+            headers={
+                "Location": f"https://conformance.example.com/callback#code=frag-code&id_token=frag-idt&state={state}"
+            },
+        )
+
+    result, _events = _run_headless(handler, state=state)
+
+    details = cast("dict[str, dict[str, object]]", result["details"])
+    rendered = json.dumps(result)
+    assert result["status"] == "passed"
+    assert "frag-code" not in rendered
+    assert "frag-idt" not in rendered
+    assert "#code=***&id_token=***" in str(details["response"]["location"])

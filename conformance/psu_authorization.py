@@ -155,16 +155,23 @@ def _effective_port(scheme: str, parsed_port: int | None) -> int | None:
 
 
 def extract_redirect_parameters(location: str) -> dict[str, str]:
-    """Extract query parameters from an ASPSP redirect URL.
+    """Extract authorisation response parameters from an ASPSP redirect URL.
 
     OAuth 2.0 authorisation responses carry ``state`` and either ``code`` or
-    ``error`` in the redirect query string. Duplicate keys are collapsed using
-    the last value so callers get a simple mapping for validation.
+    ``error``. With the OIDC hybrid flow (``response_type=code id_token``, as
+    used by FAPI 1 Advanced) the default response mode is ``fragment``, so the
+    parameters arrive after ``#``; with ``response_mode=query`` they arrive in
+    the query string. Both are read, with
+    fragment values taking precedence. Duplicate keys collapse to the last
+    value so callers get a simple mapping for validation.
 
     Args:
         location: Redirect URL received in the headless authorisation response.
 
     Returns:
-        Query parameter mapping with blank values preserved.
+        Parameter mapping with blank values preserved.
     """
-    return dict(parse_qsl(urlsplit(location).query, keep_blank_values=True))
+    parts = urlsplit(location)
+    parameters = dict(parse_qsl(parts.query, keep_blank_values=True))
+    parameters.update(parse_qsl(parts.fragment, keep_blank_values=True))
+    return parameters
