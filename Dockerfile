@@ -1,3 +1,22 @@
+# Temporary, Security-approved fix for CVE-2026-102633 and CVE-2026-77214.
+# Alpine 3.24/DHI have not shipped the fix; use signature-verified edge packages.
+# Remove this stage and bump the DHI digests when
+# dhi.io/python:3.14-alpine3.24 ships expat >= 2.9.0.
+FROM dhi.io/python:3.14-alpine3.24@sha256:4361d30a5f505dd5509622eff5c7bef79afa798b4f3eedd3f5cb1abc92be9168 AS runtime-base
+FROM dhi.io/python:3.14-alpine3.24-dev@sha256:a40c90f9eb46f8a1c8d56ea1bb990c556677622e4b7d3d7130d713a9de4b4b1d AS expat-patch
+
+COPY --from=runtime-base /lib/apk/db/installed /patch/lib/apk/db/installed
+COPY docker/patch_expat.py /patch_expat.py
+# Pin both the CLI and shared library: upgrading expat alone does not upgrade
+# libexpat. Fail if apk changes any other package (including musl).
+RUN cp /lib/apk/db/installed /before-installed && \
+    apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/edge/main \
+        'expat=2.9.0-r0' 'libexpat=2.9.0-r0' && \
+    python3 /patch_expat.py && \
+    mkdir -p /patch/usr/lib /patch/usr/bin && \
+    cp -a /usr/lib/libexpat.so.1* /patch/usr/lib/ && \
+    cp -a /usr/bin/xmlwf /patch/usr/bin/
+
 # ─── Build stage ──────────────────────────────────────────────────────────────
 # Docker Hardened Image (DHI), Alpine 3.24, "-dev" variant: has a shell, apk,
 # and pip so it can build the venv, but is otherwise the same underlying
@@ -45,6 +64,13 @@ RUN mkdir -p /data/results /data/logs /data/sessions && \
 # Distroless DHI runtime variant: no shell, defaults to non-root UID/GID 65532.
 # Pinned to an exact digest for the same reasons as the builder stage above.
 FROM dhi.io/python:3.14-alpine3.24@sha256:4361d30a5f505dd5509622eff5c7bef79afa798b4f3eedd3f5cb1abc92be9168 AS runtime
+
+# Build-time root only, using exec-form Python because this image has no shell.
+# Remove the old library before COPY; merging directories cannot remove it.
+USER 0:0
+RUN ["python3", "-c", "from pathlib import Path; [p.unlink() for p in Path('/usr/lib').glob('libexpat.so.1*')]"]
+COPY --from=expat-patch /patch/ /
+USER 65532:65532
 
 WORKDIR /app
 
