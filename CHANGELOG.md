@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The CLI now supports unattended pipeline runs. A plan can include an optional `execution.psuAuthorization` block:
+  - `mode` is `manual` (the default) or `headless`.
+  - `headers` are custom headers sent on the headless authorisation request only, for example a sandbox auto-approve header.
+  - `parameters` are custom authorisation parameters. They are added as signed request-object claims, for example `"headless": true`.
+  - Protocol-generated OAuth/OIDC names and HTTP framing headers are rejected.
+  - Results record the mode and the header and parameter names, never their values. Certification eligibility does not change.
+- In manual mode, the CLI starts a built-in HTTPS callback listener for the plan's `redirectUri` and always prints the PSU authorisation URL.
+  - New `--open-browser` option opens the URL automatically.
+  - New `--callback-listen HOST:PORT` option overrides the bind address.
+  - If the listener can't bind, the CLI exits with code `2` and an actionable message.
+- At the end of each run, the CLI prints a summary to stdout. It shows the overall result, step counts, the PSU authorisation mode, any certification-eligibility reasons, and failed steps with HTTP status and message. It ends with the paths of the result file and execution log and the `result_gate` command.
+- The browser builder's connection & security step can set the PSU authorisation mode, custom headers and custom parameters.
+- Headless authorisation failures now report the response content type. When the ASPSP returns a login or consent page instead of a redirect, the message says so.
+
+### Changed
+
+- Manual PSU authorisation URLs are now always printed to stderr, not only on an interactive terminal.
+
 ## [2.0.0-beta.8] - 2026-10-06
 
 ### Added

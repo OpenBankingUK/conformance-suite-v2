@@ -51,6 +51,7 @@ from conformance.context import (
 from conformance.dcr_execution import DcrCatalogueExecutionAdapter
 from conformance.execution_log import ExecutionLogger, NullExecutionLogger, is_developer_mode_enabled, new_run_id
 from conformance.execution_schedule import ExecutionGroup, build_execution_schedule
+from conformance.execution_settings import PlanExecutionSettings, PsuParameterValue, parameter_query_value
 from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
@@ -78,7 +79,14 @@ from conformance.manifest import (
     V1Step,
     validate_header_value,
 )
-from conformance.masking import SENSITIVE_JSON_KEYS, mask_form_fields, mask_headers, mask_json_value, mask_url_query
+from conformance.masking import (
+    MASKED_VALUE,
+    SENSITIVE_JSON_KEYS,
+    mask_form_fields,
+    mask_headers,
+    mask_json_value,
+    mask_url_query,
+)
 from conformance.model_bank_config import FapiSigningConfig
 from conformance.plan_configuration import parse_dcr_execution_runtime_inputs
 from conformance.psu_authorization import (
@@ -661,8 +669,69 @@ def _compiled_plan_to_manifest(
         schema_version="v1",
         name=catalogue_name,
         certification_coverage="complete",
-        steps=tuple(steps),
+        steps=_apply_psu_execution_settings(tuple(steps), compiled_plan.execution_settings),
     )
+
+
+def _apply_psu_execution_settings(
+    steps: tuple[V1Step, ...],
+    settings: PlanExecutionSettings,
+) -> tuple[V1Step, ...]:
+    """Apply plan-level PSU authorisation settings to every PSU step.
+
+    Custom headers are attached only in headless mode, so manual-mode browser
+    redirects never carry them, and no other step type is changed.
+
+    Args:
+        steps: Synthetic manifest steps built from the compiled plan.
+        settings: Plan ``execution`` settings.
+
+    Returns:
+        Steps with PSU authorisation mode, headers, and parameters applied.
+    """
+    psu_settings = settings.psu_authorization
+    if psu_settings.is_default:
+        return steps
+    headers = psu_settings.headers if psu_settings.mode == "headless" else ()
+    return tuple(
+        replace(
+            step,
+            mode=psu_settings.mode,
+            custom_headers=headers,
+            custom_parameters=psu_settings.parameters,
+        )
+        if isinstance(step, PsuAuthorizationStep)
+        else step
+        for step in steps
+    )
+
+
+def compiled_plan_requires_psu_callback(compiled_plan: CompiledTestPlan) -> bool:
+    """Return whether a compiled plan will wait for a manual PSU callback.
+
+    Used by the CLI to decide whether to start its HTTPS callback listener
+    before execution. Headless PSU authorisation captures the redirect
+    directly and never needs the listener.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to inspect.
+
+    Returns:
+        ``True`` when the plan contains PSU authorisation steps and the plan's
+        PSU authorisation mode is ``manual``.
+    """
+    if compiled_plan.execution_settings.psu_authorization.mode != "manual":
+        return False
+    for test_case in compiled_plan.test_cases:
+        for request_step in test_case.request_steps:
+            if request_step.step_id == _AIS_CONSENT_CREATE_STEP_ID:
+                return True
+            if any(
+                isinstance(step, PsuAuthorizationStep)
+                for step in compiled_plan_synthetic_inline_steps(compiled_plan, request_step)
+            ):
+                return True
+    return False
 
 
 def compiled_plan_synthetic_setup_steps(compiled_plan: CompiledTestPlan) -> tuple[ManifestStep, ...]:
@@ -3382,6 +3451,7 @@ def _execute_v1_psu_step_inner(
         state=session.state,
         nonce=resolved_nonce,
         request_object=resolved_request_object,
+        extra_query_parameters=_psu_query_parameters(manifest_step),
     )
     result_url = _mask_result_url_query(authorization_url)
     request_record = RequestRecord(method="GET", url=result_url)
@@ -3448,6 +3518,26 @@ def _execute_v1_psu_step_inner(
         ),
         record_step(context, manifest_step.id, request_record, None),
     )
+
+
+def _psu_query_parameters(manifest_step: PsuAuthorizationStep) -> tuple[tuple[str, str], ...]:
+    """Return custom PSU parameters that must travel as unsigned query values.
+
+    FAPI 1 Advanced Part 2 §5.2.2 requires the authorisation server to use only
+    parameters from the signed request object, so runtime-generated request
+    objects carry custom parameters as signed claims instead. Steps without a
+    generated request object (no request object, or a pre-signed literal JWT
+    the tool cannot amend) fall back to query parameters.
+
+    Args:
+        manifest_step: PSU authorisation step carrying plan-configured parameters.
+
+    Returns:
+        Name/value pairs to append to the authorisation URL query.
+    """
+    if isinstance(manifest_step.request_object, GeneratedRequestObject):
+        return ()
+    return tuple((name, parameter_query_value(value)) for name, value in manifest_step.custom_parameters)
 
 
 def _resolve_psu_request_object(
@@ -3521,6 +3611,7 @@ def _resolve_psu_request_object(
         scope=manifest_step.scope,
         state=state,
         nonce=nonce,
+        additional_claims=manifest_step.custom_parameters,
     )
 
 
@@ -3538,6 +3629,7 @@ def _generate_psu_request_object(
     scope: str,
     state: str,
     nonce: str,
+    additional_claims: tuple[tuple[str, PsuParameterValue], ...] = (),
 ) -> str:
     """Generate a signed PSU request-object JWT from validated runtime config.
 
@@ -3558,6 +3650,9 @@ def _generate_psu_request_object(
         state: Registered auth-session state that must be embedded into the
             request object.
         nonce: OIDC nonce that must be embedded into the request object.
+        additional_claims: Plan-configured PSU authorisation parameters
+            carried as signed top-level claims (FAPI 1 Advanced Part 2
+            §5.2.2).
 
     Returns:
         Compact PS256 JWT ready for the OAuth ``request`` query parameter.
@@ -3589,9 +3684,29 @@ def _generate_psu_request_object(
             state=state,
             nonce=nonce,
             openbanking_intent_id=openbanking_intent_id,
+            additional_claims=additional_claims,
         )
     )
     return signed_request_object.token
+
+
+def _headless_non_redirect_message(status_code: int, content_type: str | None) -> str:
+    """Describe why a headless PSU authorisation response was not usable.
+
+    Args:
+        status_code: HTTP status returned by the authorisation endpoint.
+        content_type: Response ``Content-Type`` header, if present.
+
+    Returns:
+        Actionable failure message for the step result.
+    """
+    if 200 <= status_code < 300 and content_type is not None and "html" in content_type.lower():
+        return (
+            f"PSU authorisation headless request returned an HTML page (HTTP {status_code}) instead of a redirect; "
+            "the ASPSP is likely showing a login or consent page. Check the headless headers/parameters, "
+            "or use manual mode"
+        )
+    return f"PSU authorisation headless request did not return a redirect (got HTTP {status_code})"
 
 
 def _execute_headless_psu_authorization(
@@ -3630,8 +3745,13 @@ def _execute_headless_psu_authorization(
     Returns:
         A tuple of the PSU step result and updated execution context.
     """
+    custom_headers = dict(manifest_step.custom_headers)
+    if custom_headers:
+        # Custom header values are participant-defined and may be credentials;
+        # result evidence records the names only.
+        request_evidence["headers"] = cast("JsonObject", dict.fromkeys(custom_headers, MASKED_VALUE))
     try:
-        response = client.get(authorization_url, follow_redirects=False)
+        response = client.get(authorization_url, headers=custom_headers or None, follow_redirects=False)
     except httpx.HTTPError as error:
         return (
             _attach_evidence(
@@ -3648,16 +3768,16 @@ def _execute_headless_psu_authorization(
         )
 
     response_evidence: dict[str, JsonValue] = {"statusCode": response.status_code}
+    content_type = response.headers.get("Content-Type")
+    if content_type is not None:
+        response_evidence["contentType"] = content_type
     if not 300 <= response.status_code < 400:
         return (
             _attach_evidence(
                 StepResult(
                     name=manifest_step.id,
                     status="failed",
-                    message=(
-                        "PSU authorisation headless request did not return a redirect "
-                        f"(got HTTP {response.status_code})"
-                    ),
+                    message=_headless_non_redirect_message(response.status_code, content_type),
                     url=result_url,
                     status_code=response.status_code,
                 ),
@@ -3690,7 +3810,11 @@ def _execute_headless_psu_authorization(
                 StepResult(
                     name=manifest_step.id,
                     status="failed",
-                    message="PSU authorisation redirect target did not match the configured redirectUri",
+                    message=(
+                        "PSU authorisation redirect target did not match the configured redirectUri; "
+                        "headless mode expects the ASPSP to auto-approve and redirect straight back to "
+                        "redirectUri, so an intermediate (for example login) redirect is not supported"
+                    ),
                     url=result_url,
                     status_code=response.status_code,
                 ),

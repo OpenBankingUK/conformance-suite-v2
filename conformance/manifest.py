@@ -12,6 +12,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Literal, cast
 
+from conformance.execution_settings import PsuParameterValue
 from conformance.json_types import JsonValue
 from conformance.openapi_documents import bundled_openapi_document_paths
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
@@ -573,6 +574,12 @@ class PsuAuthorizationStep:
         phase: Scheduling phase for this step. Defaults to
             ``"execution"``. Setup-phase PSU steps execute before grouped
             execution starts.
+        custom_headers: Plan-configured headers attached only to the
+            headless authorisation request (never to token, consent, or
+            resource calls). Empty for manual mode.
+        custom_parameters: Plan-configured authorisation parameters. Embedded
+            as signed request-object claims when a request object is used
+            (FAPI 1 Advanced Part 2 §5.2.2), otherwise appended to the query.
     """
 
     id: str
@@ -590,6 +597,8 @@ class PsuAuthorizationStep:
     optional: bool = False
     group: str = "default"
     phase: StepPhase = "execution"
+    custom_headers: tuple[tuple[str, str], ...] = ()
+    custom_parameters: tuple[tuple[str, PsuParameterValue], ...] = ()
 
 
 type V1Step = ManifestStep | PsuAuthorizationStep

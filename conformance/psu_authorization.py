@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from conformance.context import ResponseRecord
@@ -18,6 +19,7 @@ def build_authorization_url(
     state: str,
     nonce: str,
     request_object: str | None = None,
+    extra_query_parameters: Sequence[tuple[str, str]] = (),
 ) -> str:
     """Build an OAuth 2.0 authorisation URL with encoded query parameters.
 
@@ -38,6 +40,11 @@ def build_authorization_url(
         nonce: OIDC nonce value bound to the authorisation request.
         request_object: Optional JAR request object JWT, sent as the
             ``request`` query parameter when present.
+        extra_query_parameters: Plan-configured authorisation parameters to
+            append as unsigned query parameters. Callers only pass these when
+            they cannot be carried as signed request-object claims. Names that
+            collide with executor-owned OAuth parameters are ignored, and an
+            existing endpoint query parameter of the same name is replaced.
 
     Returns:
         Complete authorisation URL ready to surface to the participant or
@@ -45,10 +52,12 @@ def build_authorization_url(
     """
     parts = urlsplit(endpoint)
     reserved_query_keys = {"client_id", "redirect_uri", "response_type", "scope", "state", "nonce", "request"}
+    extra_items = [(name, value) for name, value in extra_query_parameters if name.lower() not in reserved_query_keys]
+    extra_names = {name for name, _ in extra_items}
     query_items = [
         (name, value)
         for name, value in parse_qsl(parts.query, keep_blank_values=True)
-        if name.lower() not in reserved_query_keys
+        if name.lower() not in reserved_query_keys and name not in extra_names
     ]
     if request_object is not None:
         query_items.extend(
@@ -72,6 +81,7 @@ def build_authorization_url(
                 ("nonce", nonce),
             ]
         )
+    query_items.extend(extra_items)
     return urlunsplit(parts._replace(query=urlencode(query_items)))
 
 

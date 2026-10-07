@@ -6,11 +6,15 @@ import argparse
 import json
 import logging
 import sys
-from collections.abc import Mapping, Sequence
+import webbrowser
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
 
 from conformance.api.auth_session_store import auth_session_store
 from conformance.catalogue import CompiledTestPlan
+from conformance.cli_callback import CallbackListenerError, psu_callback_listener
+from conformance.cli_summary import render_run_summary
 from conformance.context import RuntimeConfig
 from conformance.execution_log import (
     BufferedExecutionLogger,
@@ -18,7 +22,7 @@ from conformance.execution_log import (
     new_run_id,
     warn_if_developer_mode,
 )
-from conformance.executor import run_compiled_test_plan
+from conformance.executor import compiled_plan_requires_psu_callback, run_compiled_test_plan
 from conformance.http import build_json_http_client
 from conformance.json_types import JsonObject, JsonValue
 from conformance.model_bank_config import ConfigError, ModelBankConfig, load_model_bank_config
@@ -31,6 +35,12 @@ logger = logging.getLogger(__name__)
 
 def run(argv: Sequence[str] | None = None) -> int:
     """Run a conformance check from config input or a canonical test plan.
+
+    A concise run summary (status, counts, PSU authorisation mode,
+    certification-eligibility reasons, failed-step digest, and artefact paths)
+    is printed to stdout once the result file is written. Manual PSU
+    authorisation URLs are printed to stderr, and a built-in HTTPS callback
+    listener on the configured ``redirectUri`` receives the ASPSP redirect.
 
     Args:
         argv: Optional argument list to parse instead of `sys.argv`.
@@ -46,6 +56,19 @@ def run(argv: Sequence[str] | None = None) -> int:
         "--test-plan",
         type=Path,
         help="Canonical schemaVersion 1.0 test plan JSON file to validate and execute",
+    )
+    parser.add_argument(
+        "--open-browser",
+        action="store_true",
+        help="Best-effort: open manual PSU authorisation URLs in the default browser",
+    )
+    parser.add_argument(
+        "--callback-listen",
+        metavar="HOST:PORT",
+        help=(
+            "Bind address for the manual PSU callback listener; defaults to loopback "
+            "(or 0.0.0.0 in the container) on the redirectUri port"
+        ),
     )
     try:
         args = parser.parse_args(argv)
@@ -64,6 +87,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         execution_logger,
         stdout=sys.stdout,
         stderr=sys.stderr,
+        open_browser=webbrowser.open if args.open_browser else None,
     )
 
     plan_snapshot: JsonObject | None = None
@@ -89,14 +113,19 @@ def run(argv: Sequence[str] | None = None) -> int:
         runtime_input_base_dir = args.test_plan.parent
         plan_snapshot = prepared.snapshot
         validation_result = prepared.validation.to_json_object()
-        result = _run_cli_compiled_plan(
-            config=config,
-            compiled_plan=compiled_plan,
-            runtime_inputs=runtime_inputs,
-            runtime_input_base_dir=runtime_input_base_dir,
-            logger_sink=logger_sink,
-            run_id=run_id,
-        )
+        try:
+            with _callback_listener_for(config, compiled_plan, listen=args.callback_listen):
+                result = _run_cli_compiled_plan(
+                    config=config,
+                    compiled_plan=compiled_plan,
+                    runtime_inputs=runtime_inputs,
+                    runtime_input_base_dir=runtime_input_base_dir,
+                    logger_sink=logger_sink,
+                    run_id=run_id,
+                )
+        except CallbackListenerError as error:
+            logger.error("%s", error)
+            return 2
     else:
         assert args.config is not None  # noqa: S101 - argparse validation above
         try:
@@ -130,6 +159,15 @@ def run(argv: Sequence[str] | None = None) -> int:
         return 3
 
     run_label = f"Test plan run ({args.test_plan})" if args.test_plan is not None else "Model-bank smoke check"
+    sys.stdout.write(
+        render_run_summary(
+            result_object,
+            run_label=str(args.test_plan) if args.test_plan is not None else "model-bank smoke check",
+            result_path=config.result_output_path,
+            execution_log_path=config.execution_log_path,
+        )
+    )
+    sys.stdout.flush()
     if result.status == "passed":
         logger.info(
             "%s passed; wrote %s and %s",
@@ -146,6 +184,49 @@ def run(argv: Sequence[str] | None = None) -> int:
         config.execution_log_path,
     )
     return 1
+
+
+def _callback_listener_for(
+    config: ModelBankConfig,
+    compiled_plan: CompiledTestPlan,
+    *,
+    listen: str | None,
+) -> AbstractContextManager[None]:
+    """Return the PSU callback listener context for a CLI plan run.
+
+    The listener is only started when the plan will wait for a manual PSU
+    authorisation callback and a ``redirectUri`` is configured; otherwise a
+    no-op context is returned so headless and non-PSU runs never bind a port.
+
+    Args:
+        config: Parsed run config carrying the OAuth ``redirectUri``.
+        compiled_plan: Compiled plan to inspect for manual PSU steps.
+        listen: Optional ``HOST:PORT`` bind override.
+
+    Returns:
+        Context manager that keeps the listener running while entered.
+    """
+    redirect_uri = config.oauth.redirect_uri if config.oauth is not None else None
+    if redirect_uri is None or not compiled_plan_requires_psu_callback(compiled_plan):
+        return nullcontext()
+    return _announced_listener(redirect_uri, listen=listen)
+
+
+@contextmanager
+def _announced_listener(redirect_uri: str, *, listen: str | None) -> Iterator[None]:
+    """Run the callback listener and tell the operator where it is bound.
+
+    Args:
+        redirect_uri: Configured OAuth ``redirectUri``.
+        listen: Optional ``HOST:PORT`` bind override.
+
+    Yields:
+        Control while the listener is running.
+    """
+    with psu_callback_listener(redirect_uri, session_store=auth_session_store, listen=listen) as (host, port):
+        sys.stderr.write(f"[PSU] Callback listener ready on https://{host}:{port} for {redirect_uri}\n")
+        sys.stderr.flush()
+        yield
 
 
 def _run_cli_compiled_plan(

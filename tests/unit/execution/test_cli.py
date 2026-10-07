@@ -1,3 +1,4 @@
+import contextlib
 import json
 from datetime import UTC, datetime
 from io import StringIO
@@ -8,6 +9,7 @@ import pytest
 
 from conformance import cli
 from conformance.catalogue import CatalogueKey, CompiledTestPlan
+from conformance.cli_callback import CallbackListenerError
 from conformance.results import SmokeCheckResult
 from tests.support.run_config import RUN_READY_SECURITY_ENVIRONMENT
 
@@ -443,6 +445,7 @@ def test_cli_compiles_v311_canonical_plan(monkeypatch: pytest.MonkeyPatch, tmp_p
         return SmokeCheckResult(status="passed", started_at=now, finished_at=now, steps=())
 
     monkeypatch.setattr(cli, "_run_cli_compiled_plan", run_compiled_plan)
+    monkeypatch.setattr(cli, "_callback_listener_for", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.chdir(tmp_path)
 
     exit_code = cli.run(["--test-plan", str(plan_path)])
@@ -460,3 +463,74 @@ def test_cli_compiles_v311_canonical_plan(monkeypatch: pytest.MonkeyPatch, tmp_p
         for test_case in captured_plans[0].test_cases
         for request in test_case.request_steps
     )
+
+
+def _write_v311_plan(tmp_path: Path) -> Path:
+    """Write a minimal run-ready v3.1.11 canonical plan and return its path."""
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": "1.0",
+                "specification": {
+                    "family": "OBL_READ_WRITE",
+                    "version": "3.1.11",
+                    "openApiDocumentUpdate": "Release-5",
+                    "profile": "FAPI1_ADVANCED",
+                },
+                "executionMode": "development",
+                "securityEnvironment": {
+                    **RUN_READY_SECURITY_ENVIRONMENT,
+                    "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                    "resourceBaseUrl": "https://resource.example.com",
+                },
+                "resourceGroups": [
+                    {"id": "AIS", "endpoints": [{"method": "GET", "path": "/open-banking/v3.1/aisp/accounts"}]}
+                ],
+                "businessTestData": {},
+                "metadata": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return plan_path
+
+
+def test_cli_returns_2_when_callback_listener_cannot_start(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A listener bind failure is a configuration error and never runs the plan."""
+    plan_path = _write_v311_plan(tmp_path)
+    ran: list[object] = []
+
+    def failing_listener(*_args: object, **_kwargs: object) -> contextlib.AbstractContextManager[None]:
+        """Raise the error the real listener raises when it cannot bind."""
+        raise CallbackListenerError("cannot listen on 127.0.0.1:443; pass --callback-listen HOST:PORT")
+
+    monkeypatch.setattr(cli, "_callback_listener_for", failing_listener)
+    monkeypatch.setattr(cli, "_run_cli_compiled_plan", lambda **kwargs: ran.append(kwargs))
+    monkeypatch.chdir(tmp_path)
+
+    assert cli.run(["--test-plan", str(plan_path)]) == 2
+    assert ran == []
+
+
+def test_cli_prints_run_summary_to_stdout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The CLI writes a human-readable verdict and file pointers to stdout."""
+    plan_path = _write_v311_plan(tmp_path)
+
+    def run_compiled_plan(**_kwargs: object) -> SmokeCheckResult:
+        """Return a minimal passing result."""
+        now = datetime.now(UTC)
+        return SmokeCheckResult(status="passed", started_at=now, finished_at=now, steps=())
+
+    monkeypatch.setattr(cli, "_run_cli_compiled_plan", run_compiled_plan)
+    monkeypatch.setattr(cli, "_callback_listener_for", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.chdir(tmp_path)
+
+    assert cli.run(["--test-plan", str(plan_path)]) == 0
+
+    stdout = capsys.readouterr().out
+    assert "Conformance run PASSED" in stdout
+    assert "Result file:" in stdout
+    assert "conformance.result_gate" in stdout

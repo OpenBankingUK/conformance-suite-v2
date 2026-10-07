@@ -25,6 +25,7 @@ from conformance.catalogue import (
 from conformance.catalogue_registry import supported_catalogues
 from conformance.executor import compiled_plan_run_config_requirements
 from conformance.json_types import JsonObject, JsonValue
+from conformance.masking import SENSITIVE_HEADER_NAMES
 from conformance.model_bank_config import ConfigError, ModelBankConfig, parse_model_bank_config
 from conformance.plan_configuration import (
     dcr_execution_runtime_inputs,
@@ -54,6 +55,29 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
     "properties": {
         "schemaVersion": {"const": "1.0"},
         "executionMode": {"enum": ["certification", "development"]},
+        "execution": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "psuAuthorization": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "mode": {"enum": ["manual", "headless"]},
+                        "headers": {
+                            "type": "object",
+                            "maxProperties": 32,
+                            "additionalProperties": {"type": "string"},
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "maxProperties": 32,
+                            "additionalProperties": {"type": ["string", "number", "boolean"]},
+                        },
+                    },
+                },
+            },
+        },
         "specification": {
             "oneOf": [
                 {
@@ -630,7 +654,32 @@ def safe_test_plan_snapshot(
     snapshot = _safe_json_object(plan_document_to_json_object(document), sensitive_input_ids)
     _restore_ais_business_account_ids(snapshot, document)
     _restore_dcr_file_references(snapshot, document)
+    _redact_sensitive_psu_headers(snapshot)
     return snapshot
+
+
+def _redact_sensitive_psu_headers(snapshot: JsonObject) -> None:
+    """Blank custom PSU authorisation header values that use sensitive names.
+
+    Custom header names are participant defined; values for names in
+    :data:`conformance.masking.SENSITIVE_HEADER_NAMES` (for example
+    ``Authorization``) are removed from persisted snapshots and safe exports.
+
+    Args:
+        snapshot: Mutable safe-export snapshot.
+    """
+    execution = snapshot.get("execution")
+    if not isinstance(execution, dict):
+        return
+    psu_authorization = execution.get("psuAuthorization")
+    if not isinstance(psu_authorization, dict):
+        return
+    headers = psu_authorization.get("headers")
+    if not isinstance(headers, dict):
+        return
+    for name in headers:
+        if name.lower() in SENSITIVE_HEADER_NAMES:
+            headers[name] = ""
 
 
 def _restore_ais_business_account_ids(snapshot: JsonObject, document: PlanDocumentV2) -> None:

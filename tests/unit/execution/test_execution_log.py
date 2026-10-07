@@ -83,28 +83,55 @@ def test_psu_url_console_logger_exposes_wrapped_run_id() -> None:
     assert logger.run_id == "wrapped-run"
 
 
-def test_psu_url_console_logger_is_quiet_when_stderr_is_not_tty() -> None:
+def test_psu_url_console_logger_prints_plain_url_when_stderr_is_not_tty() -> None:
+    """Pipelines without a TTY still need the manual consent URL in the job log."""
     wrapped = BufferedExecutionLogger(run_id="r", developer_mode=False)
-    stdout = _TtyStringIO()
     stderr = io.StringIO()
-    logger = PsuAuthorizationUrlConsoleLogger(wrapped, stdout=stdout, stderr=stderr)
+    logger = PsuAuthorizationUrlConsoleLogger(wrapped, stdout=io.StringIO(), stderr=stderr)
+    url = "https://auth.example.com/authorize"
 
-    logger.emit("psu-authorization-url", step_id="psu", payload={"url": "https://auth.example.com/authorize"})
+    logger.emit("psu-authorization-url", step_id="psu", payload={"url": url, "mode": "manual"})
 
     assert [event.type for event in wrapped.events()] == ["psu-authorization-url"]
-    assert stderr.getvalue() == ""
+    assert stderr.getvalue() == f"[PSU] Open this URL to authorise: {url}\n"
 
 
-def test_psu_url_console_logger_is_quiet_when_stdout_is_not_tty() -> None:
+def test_psu_url_console_logger_is_quiet_for_headless_mode() -> None:
     wrapped = BufferedExecutionLogger(run_id="r", developer_mode=False)
-    stdout = io.StringIO()
-    stderr = io.StringIO()
-    logger = PsuAuthorizationUrlConsoleLogger(wrapped, stdout=stdout, stderr=stderr)
+    stderr = _TtyStringIO()
+    opened: list[str] = []
+    logger = PsuAuthorizationUrlConsoleLogger(wrapped, stdout=_TtyStringIO(), stderr=stderr, open_browser=opened.append)
 
-    logger.emit("psu-authorization-url", step_id="psu", payload={"url": "https://auth.example.com/authorize"})
+    logger.emit("psu-authorization-url", step_id="psu", payload={"url": "https://a.example/x", "mode": "headless"})
 
-    assert [event.type for event in wrapped.events()] == ["psu-authorization-url"]
     assert stderr.getvalue() == ""
+    assert opened == []
+
+
+def test_psu_url_console_logger_opens_browser_best_effort() -> None:
+    wrapped = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    opened: list[str] = []
+    logger = PsuAuthorizationUrlConsoleLogger(
+        wrapped, stdout=io.StringIO(), stderr=io.StringIO(), open_browser=opened.append
+    )
+
+    logger.emit("psu-authorization-url", step_id="psu", payload={"url": "https://a.example/x", "mode": "manual"})
+
+    assert opened == ["https://a.example/x"]
+
+
+def test_psu_url_console_logger_ignores_browser_failures() -> None:
+    def failing_open(_url: str) -> bool:
+        raise RuntimeError("no browser")
+
+    stderr = io.StringIO()
+    logger = PsuAuthorizationUrlConsoleLogger(
+        NullExecutionLogger(), stdout=io.StringIO(), stderr=stderr, open_browser=failing_open
+    )
+
+    logger.emit("psu-authorization-url", step_id="psu", payload={"url": "https://a.example/x"})
+
+    assert "https://a.example/x" in stderr.getvalue()
 
 
 def test_buffered_logger_records_event_in_emission_order() -> None:

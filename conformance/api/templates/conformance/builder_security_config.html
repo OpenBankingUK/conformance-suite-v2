@@ -329,6 +329,43 @@
             </section>
             {% endif %}
 
+            <section class="config-card" aria-labelledby="psu-authorization-heading">
+                <h3 id="psu-authorization-heading">PSU authorisation</h3>
+                <p class="helper">Manual mode opens the authorisation URL in a browser. Headless mode sends the authorisation GET directly and can include sandbox-specific headers. Parameter values equal to <code>true</code> or <code>false</code> (case-insensitive) become JSON booleans; all other values remain strings, including numbers.</p>
+                <fieldset class="field-row" style="border:0;padding:0;margin:12px 0 0">
+                    <legend><strong>Authorisation mode</strong></legend>
+                    {{ form.psu_authorization_mode.errors }}
+                    <label class="inline-choice"><input type="radio" name="psu_authorization_mode" value="manual" {% if form.psu_authorization_mode.value != "headless" %}checked{% endif %}> Manual</label>
+                    <label class="inline-choice"><input type="radio" name="psu_authorization_mode" value="headless" {% if form.psu_authorization_mode.value == "headless" %}checked{% endif %}> Headless</label>
+                </fieldset>
+                <div class="field-row">
+                    <h3>Parameters</h3>
+                    <p class="helper">Added to the signed request object when one is used. These parameters apply in both modes.</p>
+                    <div id="psu-parameter-rows" data-kind="parameter">
+                        {% for row in psu_parameter_rows %}
+                            <div class="grid field-row psu-pair-row" data-index="{{ forloop.counter0 }}">
+                                <div><label for="{{ row.name.id_for_label }}">Name</label>{{ row.name.errors }}{{ row.name }}</div>
+                                <div class="inline-action"><div style="flex:1"><label for="{{ row.value.id_for_label }}">Value</label>{{ row.value.errors }}{{ row.value }}</div><button type="button" class="secondary psu-remove-row" aria-label="Remove parameter row">Remove</button></div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <button type="button" class="secondary psu-add-row" data-kind="parameter">Add parameter</button>
+                </div>
+                <div class="field-row" id="psu-header-section" {% if form.psu_authorization_mode.value != "headless" %}hidden{% endif %}>
+                    <h3>Headless authorisation headers</h3>
+                    <p class="helper">Headers are sent only on the headless PSU authorisation GET. They are retained when switching to Manual but are not applied or exported in that mode.</p>
+                    <div id="psu-header-rows" data-kind="header">
+                        {% for row in psu_header_rows %}
+                            <div class="grid field-row psu-pair-row" data-index="{{ forloop.counter0 }}">
+                                <div><label for="{{ row.name.id_for_label }}">Name</label>{{ row.name.errors }}{{ row.name }}</div>
+                                <div class="inline-action"><div style="flex:1"><label for="{{ row.value.id_for_label }}">Value</label>{{ row.value.errors }}{{ row.value }}</div><button type="button" class="secondary psu-remove-row" aria-label="Remove header row">Remove</button></div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <button type="button" class="secondary psu-add-row" data-kind="header">Add header</button>
+                </div>
+            </section>
+
             <section class="config-card" aria-labelledby="tls-heading">
                 <h3 id="tls-heading">TLS/certificates</h3>
                 <p class="helper">{% if dcr_mode %}mTLS client certificate and private key references are required for DCR. The CA bundle is optional.{% else %}Provide the mTLS client certificate and private key together; they are required to run when the token endpoint auth method is tls_client_auth.{% endif %}</p>
@@ -353,6 +390,71 @@
     </section>
 </main>
 <script>
+    (() => {
+        if (window.builderPsuSettingsListener) return;
+        window.builderPsuSettingsListener = true;
+        const updateHeaderVisibility = () => {
+            const section = document.getElementById("psu-header-section");
+            const selected = document.querySelector('input[name="psu_authorization_mode"]:checked');
+            if (section) section.hidden = !selected || selected.value !== "headless";
+        };
+        const addRow = (button) => {
+            const kind = button.dataset.kind;
+            const prefix = kind === "header" ? "psu_header" : "psu_parameter";
+            const container = document.getElementById(`psu-${kind}-rows`);
+            if (!container || container.querySelectorAll(".psu-pair-row").length >= 32) return;
+            const used = new Set(Array.from(container.querySelectorAll(".psu-pair-row"), (row) => Number(row.dataset.index)));
+            let index = 0;
+            while (used.has(index) && index < 32) index += 1;
+            if (index >= 32) return;
+            const row = document.createElement("div");
+            row.className = "grid field-row psu-pair-row";
+            row.dataset.index = String(index);
+            ["name", "value"].forEach((part) => {
+                const cell = document.createElement("div");
+                const label = document.createElement("label");
+                const input = document.createElement("input");
+                const fieldName = `${prefix}_${part}_${index}`;
+                label.htmlFor = `id_${fieldName}`;
+                label.textContent = part === "name" ? "Name" : "Value";
+                input.id = `id_${fieldName}`;
+                input.name = fieldName;
+                input.type = "text";
+                input.autocomplete = "off";
+                cell.append(label, input);
+                row.append(cell);
+            });
+            const valueCell = row.lastElementChild;
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "secondary psu-remove-row";
+            remove.setAttribute("aria-label", `Remove ${kind} row`);
+            remove.textContent = "Remove";
+            valueCell.classList.add("inline-action");
+            valueCell.append(remove);
+            container.append(row);
+        };
+        document.addEventListener("change", (event) => {
+            const target = event.target;
+            if (target instanceof HTMLInputElement && target.name === "psu_authorization_mode") updateHeaderVisibility();
+        });
+        document.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            const addButton = target.closest(".psu-add-row");
+            if (addButton instanceof HTMLButtonElement) {
+                addRow(addButton);
+                return;
+            }
+            const removeButton = target.closest(".psu-remove-row");
+            if (!(removeButton instanceof HTMLButtonElement)) return;
+            const container = removeButton.closest("[data-kind]");
+            const row = removeButton.closest(".psu-pair-row");
+            if (!container || !row || container.querySelectorAll(".psu-pair-row").length <= 1) return;
+            row.remove();
+        });
+        updateHeaderVisibility();
+    })();
     (() => {
         if (window.builderDiscoveryTagListener) {
             return;
