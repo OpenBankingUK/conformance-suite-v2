@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `expat` and `libexpat` 2.9.0-r0 for CVE-2026-102633 and CVE-2026-77214,
   as approved by Security. Remove the patch when the DHI Alpine 3.24 image
   ships Expat 2.9.0 or later.
+- Temporarily patch the pinned DHI runtime with signature-verified Alpine
+  v3.24 `zlib` 1.3.2-r1 for CVE-2026-85091, as approved by Security. Remove
+  the patch when the DHI Alpine 3.24 image ships zlib 1.3.2-r1 or later.
 
 ## [2.0.0-beta.7] - 2026-10-05
 
