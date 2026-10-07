@@ -15,7 +15,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Final, cast
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import httpx
 
@@ -3715,6 +3715,25 @@ _MAX_HTML_TITLE_LENGTH: Final = 200
 _MAX_HEADLESS_JSON_BODY_BYTES: Final = 16384
 
 
+def _redirect_target_without_parameters(location: str) -> str:
+    """Return a redirect ``Location`` reduced to scheme, host and path.
+
+    Off-target redirects (for example an ASPSP login or error page) are useful
+    diagnostics, but their query and fragment can carry session handles or
+    authorisation artefacts, so only the origin and path are kept.
+
+    Args:
+        location: Raw ``Location`` header value.
+
+    Returns:
+        ``scheme://host/path`` with query, fragment and userinfo removed.
+    """
+    parts = urlsplit(location)
+    host = parts.hostname or ""
+    netloc = f"{host}:{parts.port}" if parts.port is not None else host
+    return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+
+
 def _headless_response_evidence(response: httpx.Response, *, redirect_uri: str) -> dict[str, JsonValue]:
     """Build masked diagnostic evidence for a headless PSU authorisation response.
 
@@ -3722,9 +3741,9 @@ def _headless_response_evidence(response: httpx.Response, *, redirect_uri: str) 
     request with a redirect to ``redirectUri``. When it does not, the evidence
     gives enough to tell why: an HTML login/consent page (by its ``<title>``)
     or a JSON error body. ``Location`` is recorded only when it targets the
-    configured ``redirectUri``, with ``code``/``id_token`` query values masked.
-    Redirects elsewhere are reported as a flag only and the target is not
-    echoed.
+    configured ``redirectUri``, with ``code``/``id_token`` values masked.
+    Redirects elsewhere are reported as ``redirectTarget`` with the query and
+    fragment stripped.
 
     Args:
         response: Authorisation-endpoint response (redirects not followed).
@@ -3746,6 +3765,8 @@ def _headless_response_evidence(response: httpx.Response, *, redirect_uri: str) 
         evidence["redirectsToRedirectUri"] = matches
         if matches:
             evidence["location"] = _mask_result_url_query(location)
+        else:
+            evidence["redirectTarget"] = _redirect_target_without_parameters(location)
     media_type = (content_type or "").split(";", 1)[0].strip().lower()
     if "html" in media_type:
         title_match = _HTML_TITLE_PATTERN.search(response.text)
@@ -3877,9 +3898,10 @@ def _execute_headless_psu_authorization(
                     name=manifest_step.id,
                     status="failed",
                     message=(
-                        "PSU authorisation redirect target did not match the configured redirectUri; "
-                        "headless mode expects the ASPSP to auto-approve and redirect straight back to "
-                        "redirectUri, so an intermediate (for example login) redirect is not supported"
+                        f"PSU authorisation redirected to {_redirect_target_without_parameters(location)}, "
+                        "not the configured redirectUri; headless mode expects the ASPSP to auto-approve "
+                        "and redirect straight back to redirectUri. An ASPSP error page usually means "
+                        "redirectUri is not registered for the client or headless is not enabled for it"
                     ),
                     url=result_url,
                     status_code=response.status_code,

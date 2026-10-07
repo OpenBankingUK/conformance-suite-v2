@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - status, content type and masked headers;
   - the HTML page title, for login or consent pages;
   - a masked JSON error body, when the response is JSON;
-  - whether the redirect targeted `redirectUri`. The redirect location is recorded only when it does, with the code masked.
+  - whether the redirect targeted `redirectUri`. If it did, the redirect location is recorded with the code masked. If it went elsewhere (for example an ASPSP error page), `redirectTarget` records the scheme, host and path only, and the step message names that target.
 - Headless authorisation now reads `code`, `state` and `error` from the redirect URL fragment as well as from the query string. OIDC hybrid-flow (`code id_token`) redirects return these in the fragment by default. URL masking in evidence now covers fragment parameters too, so a fragment `code` or `id_token` is never recorded.
 
 ### Changed

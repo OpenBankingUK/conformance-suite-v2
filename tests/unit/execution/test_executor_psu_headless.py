@@ -265,8 +265,9 @@ def test_psu_headless_step_fails_on_mismatched_redirect_target() -> None:
 
     rendered = json.dumps(result.to_json_object())
     assert result.status == "failed"
-    assert "redirect target" in result.message
-    assert "evil.example.com" not in rendered
+    assert "not the configured redirectUri" in result.message
+    assert "https://evil.example.com/callback" in result.message
+    assert "bad-code" not in rendered
     assert context.steps["psu"].response is None
 
 
@@ -396,18 +397,26 @@ def test_psu_headless_success_attaches_masked_redirect_evidence() -> None:
     assert "secret-code" not in json.dumps(result)
 
 
-def test_psu_headless_off_target_redirect_is_flagged_without_echoing_target() -> None:
-    """A redirect elsewhere (for example a login page) is flagged but its target is not recorded."""
+def test_psu_headless_off_target_redirect_records_target_without_parameters() -> None:
+    """A redirect elsewhere (for example an ASPSP error page) records origin and path only."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(302, headers={"Location": "https://login.aspsp.example/start?x=1"})
+        userinfo = "operator@"
+        return httpx.Response(
+            302, headers={"Location": f"https://{userinfo}login.aspsp.example:8443/perry/error?session=s3cret#frag"}
+        )
 
     result, _events = _run_headless(handler, state="o" * 32)
 
     details = cast("dict[str, dict[str, object]]", result["details"])
+    rendered = json.dumps(result)
     assert details["response"]["redirectsToRedirectUri"] is False
     assert "location" not in details["response"]
-    assert "login.aspsp.example" not in json.dumps(result)
+    assert details["response"]["redirectTarget"] == "https://login.aspsp.example:8443/perry/error"
+    assert "https://login.aspsp.example:8443/perry/error" in str(result["message"])
+    assert "s3cret" not in rendered
+    assert "frag" not in rendered
+    assert "operator" not in rendered
 
 
 def test_psu_headless_step_reads_hybrid_flow_fragment_response() -> None:
