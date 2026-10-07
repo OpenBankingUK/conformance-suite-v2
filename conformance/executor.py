@@ -15,7 +15,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Final, cast
-from urllib.parse import urlencode, urlsplit, urlunsplit
+from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 
 import httpx
 
@@ -3766,7 +3766,7 @@ def _headless_response_evidence(response: httpx.Response, *, redirect_uri: str) 
         if matches:
             evidence["location"] = _mask_result_url_query(location)
         else:
-            evidence["redirectTarget"] = _redirect_target_without_parameters(location)
+            evidence["redirectTarget"] = _redirect_target_without_parameters(urljoin(str(response.url), location))
     media_type = (content_type or "").split(";", 1)[0].strip().lower()
     if "html" in media_type:
         title_match = _HTML_TITLE_PATTERN.search(response.text)
@@ -3780,6 +3780,127 @@ def _headless_response_evidence(response: httpx.Response, *, redirect_uri: str) 
             pass
         else:
             evidence["body"] = _mask_result_json_value(body)
+    return evidence
+
+
+_MAX_HEADLESS_FOLLOW_HOPS: Final = 3
+_MAX_ERROR_PAGE_TEXT_LENGTH: Final = 2048
+_MAX_ERROR_PAGE_MESSAGE_LENGTH: Final = 500
+_NON_CONTENT_ELEMENT_PATTERN: Final = re.compile(
+    r"<(script|style|noscript|template|head)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL
+)
+_HTML_COMMENT_PATTERN: Final = re.compile(r"<!--.*?-->", re.DOTALL)
+_HTML_TAG_PATTERN: Final = re.compile(r"<[^>]+>")
+
+
+def _html_text_excerpt(markup: str) -> str:
+    """Return the visible text of an HTML page, whitespace-collapsed and capped.
+
+    Scripts, styles, comments and all tag markup (including hidden form
+    inputs and their values) are removed, so only rendered text is kept.
+
+    Args:
+        markup: HTML document text.
+
+    Returns:
+        Visible text, at most ``_MAX_ERROR_PAGE_TEXT_LENGTH`` characters.
+    """
+    without_blocks = _NON_CONTENT_ELEMENT_PATTERN.sub(" ", _HTML_COMMENT_PATTERN.sub(" ", markup))
+    text = " ".join(html.unescape(_HTML_TAG_PATTERN.sub(" ", without_blocks)).split())
+    return text[:_MAX_ERROR_PAGE_TEXT_LENGTH]
+
+
+def _same_origin(first: str, second: str) -> bool:
+    """Return whether two absolute URLs share scheme, host and effective port."""
+    left, right = urlsplit(first), urlsplit(second)
+    default_ports = {"https": 443, "http": 80}
+    return (
+        left.scheme.lower() == right.scheme.lower()
+        and (left.hostname or "").lower() == (right.hostname or "").lower()
+        and (left.port or default_ports.get(left.scheme.lower()))
+        == (right.port or default_ports.get(right.scheme.lower()))
+    )
+
+
+def _follow_authorization_error_redirects(
+    response: httpx.Response,
+    *,
+    client: httpx.Client,
+    authorization_url: str,
+    step_id: str,
+    execution_logger: ExecutionLogger,
+) -> dict[str, JsonValue] | None:
+    """Follow same-origin redirects from the authorisation endpoint to read its error page.
+
+    Many ASPSPs answer an invalid OAuth 2.0 authorisation request (RFC 6749
+    section 4.1.2.1: a request that cannot safely be returned to the client)
+    by redirecting to an error page on their own authorisation server, and
+    render the reason only for that browser session. Headless mode has no
+    browser, so up to ``_MAX_HEADLESS_FOLLOW_HOPS`` same-origin redirects are
+    followed, carrying only the cookies the ASPSP set along the way. Custom
+    headless headers are deliberately not re-sent. Cross-origin redirects are
+    never followed.
+
+    Args:
+        response: Off-target redirect response from the authorisation endpoint.
+        client: HTTP client used for the authorisation request.
+        authorization_url: Authorisation URL the redirect chain started from.
+        step_id: PSU step identifier for execution-log events.
+        execution_logger: Structured execution-log sink.
+
+    Returns:
+        ``errorPage`` evidence (final target, status, title, text excerpt and
+        hop list), or ``None`` when the first hop is not same-origin.
+    """
+    current = response
+    hops: list[JsonValue] = []
+    cookies: dict[str, str] = {}
+    for _ in range(_MAX_HEADLESS_FOLLOW_HOPS):
+        location = current.headers.get("Location")
+        if not 300 <= current.status_code < 400 or location is None:
+            break
+        target = urljoin(str(current.url), location)
+        if not _same_origin(target, authorization_url):
+            break
+        cookies.update({cookie.name: cookie.value or "" for cookie in current.cookies.jar})
+        stripped_target = _redirect_target_without_parameters(target)
+        execution_logger.emit(
+            "request-sent", step_id=step_id, payload={"method": "GET", "url": stripped_target, "followedRedirect": True}
+        )
+        headers = {"Cookie": "; ".join(f"{name}={value}" for name, value in cookies.items())} if cookies else None
+        try:
+            current = client.get(target, headers=headers, follow_redirects=False)
+        except httpx.HTTPError as error:
+            hops.append({"url": stripped_target, "error": str(error)})
+            break
+        hops.append({"url": stripped_target, "statusCode": current.status_code})
+        execution_logger.emit(
+            "response-received",
+            step_id=step_id,
+            payload={"statusCode": current.status_code, "url": stripped_target, "followedRedirect": True},
+        )
+    if not hops:
+        return None
+    evidence: dict[str, JsonValue] = {"followedRedirects": hops}
+    last = hops[-1]
+    if isinstance(last, dict) and "statusCode" in last:
+        evidence["url"] = last["url"]
+        evidence["statusCode"] = current.status_code
+        content_type = current.headers.get("Content-Type", "")
+        if "html" in content_type.lower():
+            title_match = _HTML_TITLE_PATTERN.search(current.text)
+            if title_match is not None:
+                evidence["htmlTitle"] = " ".join(html.unescape(title_match.group(1)).split())[:_MAX_HTML_TITLE_LENGTH]
+            text = _html_text_excerpt(current.text)
+            if text:
+                evidence["text"] = text
+        elif content_type.lower().split(";", 1)[0].strip().endswith("json") and (
+            len(current.content) <= _MAX_HEADLESS_JSON_BODY_BYTES
+        ):
+            try:
+                evidence["body"] = _mask_result_json_value(cast("JsonValue", current.json()))
+            except ValueError:
+                pass
     return evidence
 
 
@@ -3892,17 +4013,29 @@ def _execute_headless_psu_authorization(
         )
 
     if not redirect_matches_registered_uri(location=location, redirect_uri=redirect_uri):
+        redirect_target = _redirect_target_without_parameters(urljoin(str(response.url), location))
+        message = (
+            f"PSU authorisation redirected to {redirect_target}, not the configured redirectUri; headless mode "
+            "expects the ASPSP to auto-approve and redirect straight back to redirectUri"
+        )
+        error_page = _follow_authorization_error_redirects(
+            response,
+            client=client,
+            authorization_url=authorization_url,
+            step_id=manifest_step.id,
+            execution_logger=execution_logger,
+        )
+        if error_page is not None:
+            response_evidence["errorPage"] = error_page
+            page_text = error_page.get("text")
+            if isinstance(page_text, str):
+                message = f"{message}. ASPSP page says: {page_text[:_MAX_ERROR_PAGE_MESSAGE_LENGTH]}"
         return (
             _attach_evidence(
                 StepResult(
                     name=manifest_step.id,
                     status="failed",
-                    message=(
-                        f"PSU authorisation redirected to {_redirect_target_without_parameters(location)}, "
-                        "not the configured redirectUri; headless mode expects the ASPSP to auto-approve "
-                        "and redirect straight back to redirectUri. An ASPSP error page usually means "
-                        "redirectUri is not registered for the client or headless is not enabled for it"
-                    ),
+                    message=message,
                     url=result_url,
                     status_code=response.status_code,
                 ),

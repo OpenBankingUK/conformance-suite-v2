@@ -439,3 +439,104 @@ def test_psu_headless_step_reads_hybrid_flow_fragment_response() -> None:
     assert "frag-code" not in rendered
     assert "frag-idt" not in rendered
     assert "#code=***&id_token=***" in str(details["response"]["location"])
+
+
+def test_psu_headless_same_origin_error_page_is_followed_and_summarised() -> None:
+    """A same-origin redirect to an ASPSP error page is followed with its session cookie and its text captured."""
+    error_page = (
+        "<html><head><title>OBL Error</title><style>.x{}</style></head><body>"
+        "<script>var token='script-secret';</script>"
+        "<form><input type='hidden' name='csrf' value='hidden-secret'></form>"
+        "<p>That is an error.</p><pre>invalid_request: nonce_not_specified</pre></body></html>"
+    )
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path == "/authorize":
+            return httpx.Response(
+                302, headers={"Location": "/perry/error?ref=abc", "Set-Cookie": "connect.sid=sess-1; Path=/"}
+            )
+        return httpx.Response(200, headers={"Content-Type": "text/html"}, text=error_page)
+
+    result, events = _run_headless(handler, state="e" * 32)
+
+    details = cast("dict[str, dict[str, object]]", result["details"])
+    page = cast("dict[str, object]", details["response"]["errorPage"])
+    rendered = json.dumps(result)
+    assert details["response"]["redirectTarget"] == "https://auth.example.com/perry/error"
+    assert page["url"] == "https://auth.example.com/perry/error"
+    assert page["statusCode"] == 200
+    assert page["htmlTitle"] == "OBL Error"
+    assert page["text"] == "That is an error. invalid_request: nonce_not_specified"
+    assert "nonce_not_specified" in str(result["message"])
+    assert seen[1].headers["Cookie"] == "connect.sid=sess-1"
+    for secret in ("script-secret", "hidden-secret", "sess-1", "ref=abc"):
+        assert secret not in rendered
+    followed = [payload for event_type, payload in events if payload.get("followedRedirect")]
+    assert [payload["url"] for payload in followed] == ["https://auth.example.com/perry/error"] * 2
+
+
+def test_psu_headless_cross_origin_redirect_is_not_followed() -> None:
+    """Redirects to another origin are reported but never requested."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(302, headers={"Location": "https://login.other.example/error"})
+
+    result, _events = _run_headless(handler, state="c" * 32)
+
+    details = cast("dict[str, dict[str, object]]", result["details"])
+    assert len(seen) == 1
+    assert "errorPage" not in details["response"]
+
+
+def test_psu_headless_error_redirect_following_is_bounded() -> None:
+    """A same-origin redirect loop stops after the hop limit."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(302, headers={"Location": f"/loop/{len(seen)}"})
+
+    result, _events = _run_headless(handler, state="l" * 32)
+
+    details = cast("dict[str, dict[str, object]]", result["details"])
+    page = cast("dict[str, object]", details["response"]["errorPage"])
+    assert len(seen) == 4
+    assert len(cast("list[object]", page["followedRedirects"])) == 3
+    assert "text" not in page
+
+
+def test_psu_headless_error_page_transport_error_is_recorded() -> None:
+    """A transport failure while following the error redirect is recorded, not raised."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/authorize":
+            return httpx.Response(302, headers={"Location": "/perry/error"})
+        raise httpx.ConnectError("boom", request=request)
+
+    result, _events = _run_headless(handler, state="t" * 32)
+
+    details = cast("dict[str, dict[str, object]]", result["details"])
+    page = cast("dict[str, object]", details["response"]["errorPage"])
+    assert result["status"] == "failed"
+    assert page["followedRedirects"] == [{"url": "https://auth.example.com/perry/error", "error": "boom"}]
+    assert "url" not in page
+
+
+def test_psu_headless_error_page_json_body_is_masked() -> None:
+    """A JSON error page reached by redirect is recorded with sensitive keys masked."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/authorize":
+            return httpx.Response(302, headers={"Location": "/oauth/error"})
+        return httpx.Response(400, json={"error": "invalid_request", "access_token": "leaky"})
+
+    result, _events = _run_headless(handler, state="j" * 32)
+
+    details = cast("dict[str, dict[str, object]]", result["details"])
+    page = cast("dict[str, object]", details["response"]["errorPage"])
+    assert cast("dict[str, object]", page["body"])["error"] == "invalid_request"
+    assert "leaky" not in json.dumps(result)

@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - the HTML page title, for login or consent pages;
   - a masked JSON error body, when the response is JSON;
   - whether the redirect targeted `redirectUri`. If it did, the redirect location is recorded with the code masked. If it went elsewhere (for example an ASPSP error page), `redirectTarget` records the scheme, host and path only, and the step message names that target.
+- When a headless authorisation request is redirected to a page on the ASPSP's own authorisation server rather than to `redirectUri`, the runner follows up to three same-origin redirects. It sends only the cookies the ASPSP set, and never the custom headers. The page's visible text (scripts, markup and hidden fields removed, at most 2 KB), its title and a masked JSON body are recorded as `errorPage` evidence, and the start of the text is added to the step message. For example, Ozone shows the reason for a rejected request only on its `/perry/error` page. Cross-origin redirects are never followed.
 - Headless authorisation now reads `code`, `state` and `error` from the redirect URL fragment as well as from the query string. OIDC hybrid-flow (`code id_token`) redirects return these in the fragment by default. URL masking in evidence now covers fragment parameters too, so a fragment `code` or `id_token` is never recorded.
 
 ### Changed

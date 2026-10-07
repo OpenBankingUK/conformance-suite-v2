@@ -237,6 +237,13 @@ authorisation is completed. If it is left out, the runner uses `manual` mode.
   `execution.psuAuthorization`, but never their values. Header values that
   look sensitive are also blanked in the stored plan snapshot. Headless
   automation does not change certification eligibility.
+- If the ASPSP redirects a headless request to one of its own pages (for
+  example an error page) instead of `redirectUri`, the runner follows up to
+  three redirects on the same origin. It sends only the cookies the ASPSP set
+  and never resends your custom headers. The page's visible text (scripts,
+  markup and hidden fields removed, at most 2 KB) is recorded as `errorPage`
+  evidence, and the start of it is added to the step message. Redirects to
+  another origin are reported but not followed.
 
 The manual-mode listener binds to the host and port of `redirectUri`. Inside
 the container it binds to all interfaces. It uses the container certificate
