@@ -1,6 +1,7 @@
 """PSU authorisation in headless mode: signed request objects and redirect handling."""
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 from urllib.parse import parse_qsl, urlsplit
@@ -313,3 +314,97 @@ def test_psu_headless_step_fails_when_authorization_endpoint_returns_ok() -> Non
     assert result.status_code == 200
     assert "did not return a redirect" in result.message
     assert context.steps["psu"].response is None
+
+
+def _run_headless(
+    handler: Callable[[httpx.Request], httpx.Response], *, state: str
+) -> tuple[dict[str, object], list[tuple[str, dict[str, object]]]]:
+    """Run one headless PSU step and return its result JSON and log events."""
+    execution_logger = BufferedExecutionLogger(run_id="run-headless-evidence", developer_mode=False)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result, _context = _execute_v1_psu_step(
+            psu_headless_step(state=state),
+            context=ExecutionContext(),
+            client=client,
+            run_id="run-headless-evidence",
+            auth_session_store=AuthSessionStore(),
+            execution_logger=execution_logger,
+            clock=FakeClock().monotonic,
+            sleep=FakeClock().sleep,
+        )
+    events = [(event.type, dict(event.payload)) for event in execution_logger.events()]
+    return result.to_json_object(), events
+
+
+def test_psu_headless_login_page_is_logged_and_diagnosed() -> None:
+    """An HTML login page response is logged and its title recorded as evidence."""
+    page = "<html><head><title> Ozone &amp; Bank\n Login </title></head><body>secret-form</body></html>"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/html; charset=utf-8", "Set-Cookie": "session=abc"},
+            text=page,
+        )
+
+    result, events = _run_headless(handler, state="t" * 32)
+
+    event_types = [event_type for event_type, _payload in events]
+    assert event_types.index("request-sent") < event_types.index("response-received")
+    request_payload = dict(events)["request-sent"]
+    response_payload = dict(events)["response-received"]
+    assert request_payload["method"] == "GET"
+    assert str(request_payload["url"]).startswith("https://auth.example.com/authorize?")
+    assert response_payload["statusCode"] == 200
+    assert response_payload["contentType"] == "text/html; charset=utf-8"
+    details = cast("dict[str, dict[str, object]]", result["details"])
+    response = details["response"]
+    assert response["htmlTitle"] == "Ozone & Bank Login"
+    assert "secret-form" not in json.dumps(result)
+    assert "abc" not in json.dumps(response["headers"])
+
+
+def test_psu_headless_json_error_body_is_recorded_masked() -> None:
+    """A JSON error from the authorisation endpoint is kept, with sensitive keys masked."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": "invalid_request", "id_token": "leak"})
+
+    result, events = _run_headless(handler, state="j" * 32)
+
+    details = cast("dict[str, dict[str, object]]", result["details"])
+    assert details["response"]["body"] == {"error": "invalid_request", "id_token": "***"}
+    assert ("response-received", {"statusCode": 400, "url": result["url"], "contentType": "application/json"}) in events
+
+
+def test_psu_headless_success_attaches_masked_redirect_evidence() -> None:
+    """A successful headless redirect keeps evidence but masks the authorisation code."""
+    state = "s" * 32
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            302,
+            headers={"Location": f"https://conformance.example.com/callback?state={state}&code=secret-code"},
+        )
+
+    result, _events = _run_headless(handler, state=state)
+
+    details = cast("dict[str, dict[str, object]]", result["details"])
+    assert result["status"] == "passed"
+    assert details["response"]["redirectsToRedirectUri"] is True
+    assert "code=***" in str(details["response"]["location"])
+    assert "secret-code" not in json.dumps(result)
+
+
+def test_psu_headless_off_target_redirect_is_flagged_without_echoing_target() -> None:
+    """A redirect elsewhere (for example a login page) is flagged but its target is not recorded."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(302, headers={"Location": "https://login.aspsp.example/start?x=1"})
+
+    result, _events = _run_headless(handler, state="o" * 32)
+
+    details = cast("dict[str, dict[str, object]]", result["details"])
+    assert details["response"]["redirectsToRedirectUri"] is False
+    assert "location" not in details["response"]
+    assert "login.aspsp.example" not in json.dumps(result)

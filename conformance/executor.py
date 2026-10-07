@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import re
 import secrets
@@ -13,7 +14,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import cast
+from typing import Final, cast
 from urllib.parse import urlencode, urlsplit
 
 import httpx
@@ -3709,6 +3710,58 @@ def _headless_non_redirect_message(status_code: int, content_type: str | None) -
     return f"PSU authorisation headless request did not return a redirect (got HTTP {status_code})"
 
 
+_HTML_TITLE_PATTERN: Final = re.compile(r"<title[^>]*>(.*?)</title\s*>", re.IGNORECASE | re.DOTALL)
+_MAX_HTML_TITLE_LENGTH: Final = 200
+_MAX_HEADLESS_JSON_BODY_BYTES: Final = 16384
+
+
+def _headless_response_evidence(response: httpx.Response, *, redirect_uri: str) -> dict[str, JsonValue]:
+    """Build masked diagnostic evidence for a headless PSU authorisation response.
+
+    The OAuth 2.0 authorisation endpoint is expected to answer a headless
+    request with a redirect to ``redirectUri``. When it does not, the evidence
+    gives enough to tell why: an HTML login/consent page (by its ``<title>``)
+    or a JSON error body. ``Location`` is recorded only when it targets the
+    configured ``redirectUri``, with ``code``/``id_token`` query values masked.
+    Redirects elsewhere are reported as a flag only and the target is not
+    echoed.
+
+    Args:
+        response: Authorisation-endpoint response (redirects not followed).
+        redirect_uri: Configured redirect URI the ASPSP should return to.
+
+    Returns:
+        Masked response evidence for the step result.
+    """
+    evidence: dict[str, JsonValue] = {"statusCode": response.status_code}
+    content_type = response.headers.get("Content-Type")
+    if content_type is not None:
+        evidence["contentType"] = content_type
+    headers = {name: value for name, value in response.headers.items() if name.lower() != "location"}
+    if headers:
+        evidence["headers"] = _mask_result_headers(headers)
+    location = response.headers.get("Location")
+    if location is not None:
+        matches = redirect_matches_registered_uri(location=location, redirect_uri=redirect_uri)
+        evidence["redirectsToRedirectUri"] = matches
+        if matches:
+            evidence["location"] = _mask_result_url_query(location)
+    media_type = (content_type or "").split(";", 1)[0].strip().lower()
+    if "html" in media_type:
+        title_match = _HTML_TITLE_PATTERN.search(response.text)
+        if title_match is not None:
+            title = " ".join(html.unescape(title_match.group(1)).split())
+            evidence["htmlTitle"] = title[:_MAX_HTML_TITLE_LENGTH]
+    elif media_type.endswith("json") and len(response.content) <= _MAX_HEADLESS_JSON_BODY_BYTES:
+        try:
+            body = cast("JsonValue", response.json())
+        except ValueError:
+            pass
+        else:
+            evidence["body"] = _mask_result_json_value(body)
+    return evidence
+
+
 def _execute_headless_psu_authorization(
     manifest_step: PsuAuthorizationStep,
     *,
@@ -3750,9 +3803,15 @@ def _execute_headless_psu_authorization(
         # Custom header values are participant-defined and may be credentials;
         # result evidence records the names only.
         request_evidence["headers"] = cast("JsonObject", dict.fromkeys(custom_headers, MASKED_VALUE))
+    execution_logger.emit("request-sent", step_id=manifest_step.id, payload=dict(request_evidence))
     try:
         response = client.get(authorization_url, headers=custom_headers or None, follow_redirects=False)
     except httpx.HTTPError as error:
+        execution_logger.emit(
+            "application-error",
+            step_id=manifest_step.id,
+            payload={"message": f"PSU authorisation headless request failed: {error}"},
+        )
         return (
             _attach_evidence(
                 StepResult(
@@ -3767,10 +3826,17 @@ def _execute_headless_psu_authorization(
             record_step(context, manifest_step.id, request_record, None),
         )
 
-    response_evidence: dict[str, JsonValue] = {"statusCode": response.status_code}
     content_type = response.headers.get("Content-Type")
-    if content_type is not None:
-        response_evidence["contentType"] = content_type
+    response_evidence = _headless_response_evidence(response, redirect_uri=redirect_uri)
+    execution_logger.emit(
+        "response-received",
+        step_id=manifest_step.id,
+        payload={
+            "statusCode": response.status_code,
+            "url": result_url,
+            **({"contentType": content_type} if content_type is not None else {}),
+        },
+    )
     if not 300 <= response.status_code < 400:
         return (
             _attach_evidence(
@@ -3913,6 +3979,7 @@ def _execute_headless_psu_authorization(
         authorization_url=authorization_url,
         result_url=result_url,
         current_session=current_session,
+        response_evidence=response_evidence,
     )
 
 
@@ -3925,6 +3992,7 @@ def _complete_psu_step_from_session(
     authorization_url: str,
     result_url: str,
     current_session: AuthSession,
+    response_evidence: dict[str, JsonValue] | None = None,
 ) -> tuple[StepResult, ExecutionContext]:
     """Convert a terminal auth session into a PSU step result.
 
@@ -3937,6 +4005,9 @@ def _complete_psu_step_from_session(
         result_url: Masked authorisation URL safe to embed in result files.
         current_session: Terminal auth session captured by manual callback
             polling or by the headless redirect parser.
+        response_evidence: Masked authorisation-endpoint response evidence.
+            Only headless mode has one; when present it is attached to the
+            result on success as well as failure.
 
     Returns:
         A tuple of the PSU step result and updated execution context.
@@ -3945,16 +4016,16 @@ def _complete_psu_step_from_session(
     if current_session.status == "captured" and current_session.code is not None:
         response_record = synthesize_psu_response(code=current_session.code, state=current_session.state)
         new_context = record_step(context, manifest_step.id, request_record, response_record)
-        return (
-            StepResult(
-                name=manifest_step.id,
-                status="passed",
-                message=f"{manifest_step.name} captured authorization code",
-                url=result_url,
-                status_code=response_record.status_code,
-            ),
-            new_context,
+        passed = StepResult(
+            name=manifest_step.id,
+            status="passed",
+            message=f"{manifest_step.name} captured authorization code",
+            url=result_url,
+            status_code=response_record.status_code,
         )
+        if response_evidence is not None:
+            passed = _attach_evidence(passed, request_evidence=request_evidence, response_evidence=response_evidence)
+        return passed, new_context
 
     error_details: dict[str, JsonValue] = {"error": current_session.error or "authorization_error"}
     if current_session.error_description is not None:
@@ -3969,7 +4040,7 @@ def _complete_psu_step_from_session(
                 details=error_details,
             ),
             request_evidence=request_evidence,
-            response_evidence=None,
+            response_evidence=response_evidence,
         ),
         record_step(context, manifest_step.id, request_record, None),
     )

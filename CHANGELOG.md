@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - At the end of each run, the CLI prints a summary to stdout. It shows the overall result, step counts, the PSU authorisation mode, any certification-eligibility reasons, and failed steps with HTTP status and message. It ends with the paths of the result file and execution log and the `result_gate` command.
 - The browser builder's connection & security step can set the PSU authorisation mode, custom headers and custom parameters.
 - Headless authorisation failures now report the response content type. When the ASPSP returns a login or consent page instead of a redirect, the message says so.
+- The headless authorisation request and response now appear in the execution log (`request-sent` / `response-received`) and in the run page's step evidence. Evidence includes:
+  - status, content type and masked headers;
+  - the HTML page title, for login or consent pages;
+  - a masked JSON error body, when the response is JSON;
+  - whether the redirect targeted `redirectUri`. The redirect location is recorded only when it does, with the code masked.
 
 ### Changed
 
