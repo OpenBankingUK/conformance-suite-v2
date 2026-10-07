@@ -1,6 +1,6 @@
-# Functional Conformance Suite v2 beta.6
+# Functional Conformance Suite v2 beta.8
 
-**Beta only — not for certification.** FCS v2 `2.0.0-beta.6` is an MVP for
+**Beta only — not for certification.** FCS v2 `2.0.0-beta.8` is an MVP for
 evaluating the new Open Banking UK Functional Conformance Suite and providing
 feedback. It is **not approved for certification**; runs and reports from this
 beta must not be submitted as certification evidence, even if a plan or result
@@ -45,7 +45,7 @@ does not persist browser sessions, results, or logs across runs.
 For the complete beta UI walkthrough and optional persistence or certificate
 mounts, see the [Docker deployment guide](docs/DOCKER_GUIDE.md). CLI, REST,
 Compose, and file-based credential configuration below are advanced reference,
-not the primary beta.6 participant workflow.
+not the primary beta.8 participant workflow.
 
 ## Give beta feedback
 
@@ -138,30 +138,49 @@ The supported workflow is:
 
 1. Open the browser main menu at `/`.
 2. Choose **Create a new test plan with builder** or **Import test plan**.
-3. For a new plan, select the scheme, specification, and version.
-4. Enter the single security environment for the plan, starting with the OpenID
-   discovery URL and then confirming OAuth/FAPI, mTLS, and resource-server
-   values. For required credentials, select **Paste or upload** and use
-   **Paste PEM text**; do not put host file paths in the container's
-   **Absolute file path** field.
-5. For Read/Write, select compatible resource groups and implemented endpoints.
-   For Dynamic Client Registration 3.4, select direct endpoints: POST is always
-   selected and locked; GET, PUT, and DELETE are optional.
-6. Confirm endpoint capabilities. DCR token traffic is generated and is never a
-   participant-selected endpoint.
-7. Review the endpoint capabilities shown inline on each selected endpoint card.
-   Required capabilities are checked and locked; optional capabilities are
-   unchecked until the participant declares that behaviour as implemented.
-8. Provide resource-group-specific business data. Domain-specific fields appear
-   only for the selected endpoint scope.
-9. Review the generated schemaVersion `1.0` test plan and launch the run.
-   **Export safe JSON** omits secret values, so you will need to enter them
-   again when importing it. **Export with secrets** contains sensitive
+3. **Specification:** select the scheme, specification, and version. For
+   Read/Write, the latest OpenAPI document update for that version is
+   preselected; choose an earlier one only if you need it.
+4. **Scope:** for Read/Write, tick the resource groups you implement. Ticking a
+   group selects all of its endpoints and optional features. Mandatory
+   endpoints and required features stay locked, and **Deselect conditional
+   and optional endpoints and features** removes only the ones you can opt
+   out of. For
+   Dynamic Client Registration 3.4, select direct endpoints: POST is always
+   selected and locked; GET, PUT, and DELETE are optional. DCR token traffic is
+   generated and is never a participant-selected endpoint.
+5. **Connection & security:** enter the OpenID discovery URL and choose
+   **Fetch and fill** to fill empty OAuth/FAPI fields from the discovery
+   metadata (values you typed are kept unless you choose **Replace with
+   discovery values**). Each field shows **Required to run**, **Optional**, or
+   **Depends on scope** for the selected endpoints. For required credentials,
+   select **Paste or upload** and use **Paste PEM text**; do not put host file
+   paths in the container's **Absolute file path** field.
+6. **Business data:** provide resource-group-specific business data. Fields
+   appear only for the selected scope, with the specification's **Required**
+   badges.
+7. **Review:** check the generated schemaVersion `1.0` test plan and launch the
+   run. Review is the single validation gate: it lists each step's issues with
+   a **Fix** button, and **Launch run** stays blocked until they are resolved.
+   The plan JSON box is editable and syntax-highlighted; edits (or a file from
+   **Load from file…**) are applied automatically after a short pause, and a
+   JSON syntax error is reported with its line number and underlined on that
+   line. **Export safe JSON** omits secret values, so you will need to enter
+   them again when importing it. **Export with secrets** contains sensitive
    material; use only if necessary and store it securely.
+
+The step bar at the top of every builder page shows every step. Once a
+specification is chosen, you can jump to any step in any order; leaving a page
+always saves what you entered, even if it is incomplete. Steps are marked
+complete (✓) or needing attention (!). **Import plan**, beside **Main menu** on
+every builder page, loads a test plan JSON file or pasted JSON into the current
+draft (after a **Replace current plan?** confirmation if the draft already has
+values). After a run, **Main menu** on the run screen returns you to the choice
+between building and importing a plan.
 
 The UI shows generated tests, counts, source traceability, runtime/auth
 requirements, launch blockers, and internal certification-status labels after
-preview. **Those labels do not make beta.6 runs valid for certification.**
+preview. **Those labels do not make beta.8 runs valid for certification.**
 Generated tests are read-only: participants cannot select exact generated
 tests. Lower-level request and assertion details stay collapsed under audit
 details.
@@ -259,6 +278,13 @@ CLI, and REST execution paths accept canonical schemaVersion `1.0` plans only.
 `--plan-spec`, REST `manifest`, REST `planSpec`, and REST `deselectStepIds` are
 intentionally rejected. Mandatory applicable catalogue tests cannot be
 arbitrarily deselected.
+
+Specification endpoint implementation requirements are separate from required
+tests for implemented endpoints. The
+[Read/Write endpoint requirement matrix](docs/READ_WRITE_ENDPOINT_REQUIREMENTS.md)
+records Mandatory, Conditional and Optional classifications from the individual
+resource pages for v4.0.1, v4.0.0 and v3.1.11, including dependencies and source
+discrepancies.
 
 DCR plans instead use family `OBL_DCR`, specification
 `dynamic-client-registration`, version `3.4`, top-level `endpoints`, and

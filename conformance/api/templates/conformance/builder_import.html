@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>Import test plan</title>
+    <title>{% if draft %}Import into current plan{% else %}Import test plan{% endif %}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
     {% include "conformance/partials/htmx_script.html" %}
@@ -25,7 +25,7 @@
             font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             line-height: 1.5;
         }
-        main { width: min(960px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+        main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
         header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
         h1, h2 { margin: 0; line-height: 1.2; }
         h1 { font-size: 1.75rem; }
@@ -47,6 +47,10 @@
         }
         .message { border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; }
         .message.error { border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
+        .message.warning { border: 1px solid #fedf89; background: #fffcf5; color: #a15c07; }
+        .replace-dialog { max-width: 440px; border: 1px solid var(--border); border-radius: 8px; padding: 20px; color: var(--text); }
+        .replace-dialog::backdrop { background: rgba(27, 31, 36, 0.45); }
+        .replace-dialog form { margin: 0; }
         .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
         button, .button {
             min-height: 38px;
@@ -61,6 +65,7 @@
             cursor: pointer;
         }
         .button.secondary { background: #ffffff; color: var(--accent); }
+        header .builder-menu-link { min-height: 0; padding: 6px 12px; font-size: 0.85rem; }
     </style>
 </head>
 <body>
@@ -69,29 +74,74 @@
 <main hx-boost="true">
     <header>
         <div>
-            <h1>Import test plan</h1>
-            <div class="muted">Open a reusable JSON-first test plan into review</div>
+            <h1>{% if draft %}Import into current plan{% else %}Import test plan{% endif %}</h1>
+            <div class="muted">{% if draft %}Replace this builder draft with a reusable JSON-first test plan{% else %}Open a reusable JSON-first test plan into review{% endif %}</div>
         </div>
-        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+        <a class="button secondary builder-menu-link" href="{% url 'home' %}">Main menu</a>
     </header>
 
     <section class="panel" aria-labelledby="import-heading">
         <h2 id="import-heading">Plan JSON</h2>
-        <p class="helper">Upload or paste a schemaVersion 1.0 test plan. Incomplete plans are still imported: everything that can be loaded opens in the builder, and missing or invalid fields are listed as warnings on the review page so you can complete them before launch. Imported secrets are retained only in this browser session.</p>
-        {% if import_error %}<div class="message error">{{ import_error }}</div>{% endif %}
+        <p class="helper">Upload or paste a schemaVersion 1.0 test plan. Incomplete plans are still imported: everything that can be loaded opens in the builder, and missing or invalid fields are listed as warnings so you can complete them before launch. A plan without a supported specification opens on the specification step first. Imported secrets are retained only in this browser session.</p>
+        {% if replace_existing %}
+            <div class="message warning" data-replace-warning>Importing replaces everything in your current plan, including values entered in the builder steps.</div>
+        {% endif %}
+        {% if import_error %}
+            <div class="message error">{{ import_error }}</div>
+            {% if not draft %}<form method="post" action="{% url 'builder-new' %}" data-start-new-plan>
+                {% csrf_token %}
+                <button type="submit" class="secondary">Start a new plan instead</button>
+            </form>{% endif %}
+        {% endif %}
         {# Full navigation: file uploads are posted as multipart form data. #}
-        <form method="post" action="{% url 'builder-import' %}" enctype="multipart/form-data" hx-boost="false">
+        <form method="post" action="{% if draft %}{% url 'builder-draft-import' draft.draft_id %}{% else %}{% url 'builder-import' %}{% endif %}" enctype="multipart/form-data" hx-boost="false"{% if replace_existing %} data-confirm-replace{% endif %}>
             {% csrf_token %}
+            {% if draft %}<input type="hidden" name="from" value="{{ from_step }}">{% endif %}
             <label for="id_plan_file">Test plan file</label>
             <input id="id_plan_file" name="plan_file" type="file" accept=".json,application/json">
             <label for="id_plan_json">Or paste test plan JSON</label>
             <textarea id="id_plan_json" name="plan_json" spellcheck="false">{{ plan_json }}</textarea>
             <div class="actions">
-                <a class="button secondary" href="{% url 'home' %}">Cancel</a>
-                <button type="submit">Import and review</button>
+                <a class="button secondary" href="{% if cancel_url %}{{ cancel_url }}{% else %}{% url 'home' %}{% endif %}">Cancel</a>
+                <button type="submit">{% if replace_existing %}Replace current plan{% else %}Import and review{% endif %}</button>
             </div>
         </form>
     </section>
+    {% if replace_existing %}
+        <dialog class="replace-dialog" id="replace-plan-dialog" aria-labelledby="replace-plan-dialog-title">
+            <h2 id="replace-plan-dialog-title">Replace current plan?</h2>
+            <p>Your current builder values will be overwritten by the imported plan. This cannot be undone.</p>
+            <form method="dialog" class="actions">
+                <button class="secondary" type="submit" value="cancel" autofocus>Cancel</button>
+                <button type="submit" value="replace" data-confirm-replace-button>Replace plan</button>
+            </form>
+        </dialog>
+        <script>
+            // Without JS the warning and "Replace current plan" label are the confirmation.
+            (() => {
+                const form = document.querySelector("form[data-confirm-replace]");
+                const dialog = document.getElementById("replace-plan-dialog");
+                if (!form || !(dialog instanceof HTMLDialogElement) || typeof dialog.showModal !== "function") {
+                    return;
+                }
+                let confirmed = false;
+                form.addEventListener("submit", (event) => {
+                    if (confirmed) {
+                        return;
+                    }
+                    event.preventDefault();
+                    dialog.returnValue = "";
+                    dialog.showModal();
+                });
+                dialog.addEventListener("close", () => {
+                    if (dialog.returnValue === "replace") {
+                        confirmed = true;
+                        form.requestSubmit();
+                    }
+                });
+            })();
+        </script>
+    {% endif %}
 </main>
 </body>
 </html>

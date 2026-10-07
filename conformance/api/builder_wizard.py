@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Collection, Iterable, Mapping, MutableMapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
@@ -46,7 +46,19 @@ from conformance.catalogue import (
 )
 from conformance.catalogue_registry import supported_catalogues
 from conformance.credentials import CredentialMaterial, credential_from_inline, credential_from_path
+from conformance.endpoint_requirements import (
+    EndpointRequirement,
+    endpoint_requirement_key,
+    read_write_endpoint_requirement,
+)
+from conformance.executor import compiled_plan_run_config_requirements
 from conformance.json_types import JsonObject, JsonValue
+from conformance.run_config_requirements import (
+    RUN_CONFIG_REASONS,
+    RunConfigKey,
+    RunConfigRequirement,
+    required_run_config_keys,
+)
 from conformance.specification_registry import (
     latest_openapi_document_update,
     openapi_document_update_for_boundary,
@@ -122,7 +134,7 @@ _SECURITY_CONFIG_KEYS = frozenset(
 )
 """Config keys owned by the OAuth/FAPI/security step."""
 
-SecurityRequirementStatus = Literal["required", "conditional", "optional"]
+SecurityRequirementStatus = Literal["required", "conditional", "optional", "depends_on_scope"]
 """User-facing field requirement status values for builder security fields."""
 
 
@@ -291,6 +303,9 @@ class EndpointOption:
             coverage.
         selected: Whether the participant selected this endpoint.
         features: Endpoint-scoped required and optional features.
+        implementation_requirement: Specification-derived implementation status,
+            independent of test coverage; None for unclassified test-only paths.
+        required: Whether implementation is mandatory in the current scope.
     """
 
     id: str
@@ -305,6 +320,8 @@ class EndpointOption:
     baseline: bool
     selected: bool
     features: tuple[FeatureOption, ...]
+    implementation_requirement: EndpointRequirement | None = None
+    required: bool = False
 
 
 @dataclass(frozen=True)
@@ -435,7 +452,25 @@ _FULL_CONFIG_VISIBILITY = ConfigVisibility(
 )
 """Default grouped-config visibility used outside a scoped wizard draft."""
 
+EMPTY_CONFIG_VISIBILITY = ConfigVisibility(
+    selected_api_ids=frozenset(),
+    show_ais=False,
+    show_pis=False,
+    show_cbpii=False,
+    show_vrp=False,
+    show_business_defaults=False,
+)
+"""Grouped-config visibility when a draft's scope cannot be resolved: show no domain fields."""
+
 _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
+    SecurityFieldMetadata(
+        name="discovery_url",
+        status="optional",
+        label="Optional",
+        type_hint="HTTPS URL ending in /.well-known/openid-configuration",
+        description="OpenID Provider discovery document; its metadata can fill the OAuth endpoints below.",
+        requirement="Needed when selected tests fetch discovery metadata or validate response signatures.",
+    ),
     SecurityFieldMetadata(
         name="oauth_client_id",
         status="conditional",
@@ -755,6 +790,7 @@ class ScopeSelectionForm(forms.Form):
         initial: Mapping[str, object] | None = None,
         catalogues: Iterable[TestCatalogue] | None = None,
         prune_unavailable_choices: bool = False,
+        enforce_endpoint_requirements: bool = True,
     ) -> None:
         """Initialise the form from catalogue-derived scope options.
 
@@ -767,6 +803,8 @@ class ScopeSelectionForm(forms.Form):
                 values before field validation. This is used only for dynamic
                 preview refreshes where a just-deselected parent can still post
                 previously rendered child inputs.
+            enforce_endpoint_requirements: False only when pruning scope during
+                a specification edit, which must not expand an imported plan.
         """
         selected_resource_groups = _raw_or_initial_values(data, initial, "resource_groups")
         selected_endpoints = _raw_or_initial_values(data, initial, "endpoints")
@@ -777,6 +815,7 @@ class ScopeSelectionForm(forms.Form):
             selected_endpoint_ids=selected_endpoints,
             selected_capability_values=selected_capability_values,
             catalogues=catalogues,
+            enforce_endpoint_requirements=enforce_endpoint_requirements,
         )
         effective_initial = {
             "resource_groups": list(selected_resource_groups),
@@ -868,6 +907,10 @@ class ScopeSelectionForm(forms.Form):
                 endpoint.id for endpoint in _endpoint_options(self.hierarchy) if endpoint.id in selected_endpoint_ids
             )
             return cleaned_data
+        selected_endpoint_ids.update(endpoint.id for endpoint in endpoint_options.values() if endpoint.required)
+        cleaned_data["endpoints"] = tuple(
+            endpoint.id for endpoint in endpoint_options.values() if endpoint.id in selected_endpoint_ids
+        )
         for endpoint_id in selected_endpoint_ids:
             endpoint = endpoint_options.get(endpoint_id)
             if endpoint is not None and endpoint.resource_group_id not in selected_group_ids:
@@ -1064,6 +1107,7 @@ class BusinessConfigForm(forms.Form):
         *,
         initial: Mapping[str, object] | None = None,
         config_visibility: ConfigVisibility | None = None,
+        lenient: bool = False,
     ) -> None:
         """Initialise the business defaults form.
 
@@ -1071,24 +1115,45 @@ class BusinessConfigForm(forms.Form):
             data: Optional bound form data.
             initial: Initial values decoded from the draft config.
             config_visibility: Optional scope-derived field visibility.
+            lenient: Skip required-field checks so a partially completed page
+                can be saved; format errors are still reported. Completeness
+                is checked at review instead.
         """
         self.config_visibility = config_visibility if config_visibility is not None else _FULL_CONFIG_VISIBILITY
+        self.lenient = lenient
         super().__init__(
             data=cast(MutableMapping[str, object] | None, data),
             initial=cast(MutableMapping[str, object] | None, initial),
         )
+        required_names: list[str] = []
         if self.config_visibility.show_cbpii:
-            self.fields["cbpii_debtor_account_scheme_name"].required = True
-            self.fields["cbpii_debtor_account_identification"].required = True
-            self.fields["cbpii_debtor_account_name"].required = True
+            required_names.extend(
+                (
+                    "cbpii_debtor_account_scheme_name",
+                    "cbpii_debtor_account_identification",
+                    "cbpii_debtor_account_name",
+                )
+            )
         if self.config_visibility.show_vrp:
-            self.fields["vrp_creditor_account_scheme_name"].required = True
-            self.fields["vrp_creditor_account_identification"].required = True
-            self.fields["vrp_creditor_account_name"].required = True
-            self.fields["vrp_instructed_amount_amount"].required = True
-            self.fields["vrp_instructed_amount_currency"].required = True
-            self.fields["vrp_valid_from_date_time"].required = True
-            self.fields["vrp_valid_to_date_time"].required = True
+            required_names.extend(
+                (
+                    "vrp_creditor_account_scheme_name",
+                    "vrp_creditor_account_identification",
+                    "vrp_creditor_account_name",
+                    "vrp_instructed_amount_amount",
+                    "vrp_instructed_amount_currency",
+                    "vrp_valid_from_date_time",
+                    "vrp_valid_to_date_time",
+                )
+            )
+        # Requirement badges follow the selected scope's specification
+        # requirements even when lenient binding lets the page be left
+        # incomplete, so labels never downgrade a required field to optional.
+        self.required_fields: dict[str, bool] = dict.fromkeys(required_names, True)
+        if lenient:
+            return
+        for name in required_names:
+            self.fields[name].required = True
 
     def clean(self) -> dict[str, object]:
         """Build and validate the business-default partial config.
@@ -1098,6 +1163,7 @@ class BusinessConfigForm(forms.Form):
         """
         base_cleaned_data = super().clean()
         cleaned_data: dict[str, object] = {} if base_cleaned_data is None else dict(base_cleaned_data)
+        self._add_json_field_errors(cleaned_data)
         if self.errors:
             return cleaned_data
         self.config = _business_config_from_fields(
@@ -1105,6 +1171,8 @@ class BusinessConfigForm(forms.Form):
             self.config_visibility,
             changed_fields=self.changed_data,
         )
+        if self.lenient:
+            return cleaned_data
         if self.config_visibility.show_ais and self.config_visibility.ais_account_id_required:
             ais_config = self.config.get("ais")
             if not _ais_config_has_account_id(ais_config):
@@ -1115,6 +1183,33 @@ class BusinessConfigForm(forms.Form):
         if self.config_visibility.show_pis:
             _add_required_pis_errors(self, cleaned_data)
         return cleaned_data
+
+    def _add_json_field_errors(self, cleaned_data: Mapping[str, object]) -> None:
+        """Attach malformed advanced-JSON errors to the field that holds them.
+
+        Field-level errors let the builder keep the rest of the page and flag
+        just the bad JSON instead of rejecting the whole submission.
+
+        Args:
+            cleaned_data: Cleaned form data.
+        """
+        for name in self.fields:
+            if not name.endswith("_json"):
+                continue
+            raw_value = _cleaned_optional_string(cleaned_data.get(name))
+            if raw_value is None:
+                continue
+            label = str(self.fields[name].label or name)
+            try:
+                loaded = json.loads(raw_value)
+            except json.JSONDecodeError as error:
+                self.add_error(name, f"{label} must be valid JSON: {error.msg}")
+                continue
+            expected_array = name == "conditional_properties_json"
+            if expected_array and not isinstance(loaded, list):
+                self.add_error(name, f"{label} must be a JSON array")
+            elif not expected_array and not isinstance(loaded, dict):
+                self.add_error(name, f"{label} must be a JSON object")
 
 
 class DiscoveryConfigForm(forms.Form):
@@ -1135,6 +1230,7 @@ class DiscoveryConfigForm(forms.Form):
         *,
         initial: Mapping[str, object] | None = None,
         discovery_required: bool = False,
+        lenient: bool = False,
     ) -> None:
         """Initialise the discovery config form.
 
@@ -1142,12 +1238,14 @@ class DiscoveryConfigForm(forms.Form):
             data: Optional bound form data.
             initial: Initial values decoded from the draft config.
             discovery_required: Whether the selected specification mandates discovery.
+            lenient: Allow an empty URL even when discovery is required, so the
+                page can be left incomplete; review reports it instead.
         """
         super().__init__(
             data=cast(MutableMapping[str, object] | None, data),
             initial=cast(MutableMapping[str, object] | None, initial),
         )
-        self.fields["discovery_url"].required = discovery_required
+        self.fields["discovery_url"].required = discovery_required and not lenient
 
     def clean_discovery_url(self) -> str:
         """Validate the submitted OpenID discovery URL.
@@ -1180,6 +1278,17 @@ class DiscoveryConfigForm(forms.Form):
             return cleaned_data
         self.config = _discovery_config_from_fields(cleaned_data)
         return cleaned_data
+
+
+class DiscoveryFillForm(forms.Form):
+    """Options for the connection page's "Fetch and fill" discovery action.
+
+    Attributes:
+        overwrite: Replace typed OAuth values that differ from OpenID discovery
+            metadata instead of only filling empty fields.
+    """
+
+    overwrite: forms.BooleanField = forms.BooleanField(required=False)
 
 
 class SecurityConfigForm(forms.Form):
@@ -1321,6 +1430,7 @@ class SecurityConfigForm(forms.Form):
         initial: Mapping[str, object] | None = None,
         dcr_mode: bool = False,
         stored_credentials: Mapping[str, CredentialMaterial | None] | None = None,
+        lenient: bool = False,
     ) -> None:
         """Initialise the OAuth/FAPI/security config form.
 
@@ -1333,8 +1443,12 @@ class SecurityConfigForm(forms.Form):
             stored_credentials: Credentials already held in the draft. They are
                 used to honour a "keep" action without ever re-rendering
                 stored material into the page.
+            lenient: Skip required-field and whole-group completeness checks so
+                a partially completed page can be saved; format errors are
+                still reported. Completeness is checked at review instead.
         """
         self.dcr_mode = dcr_mode
+        self.lenient = lenient
         self.stored_credentials: Mapping[str, CredentialMaterial | None] = stored_credentials or {}
         self.credentials: dict[str, CredentialMaterial | None] = {}
         super().__init__(
@@ -1356,7 +1470,7 @@ class SecurityConfigForm(forms.Form):
                 ]
             )
         cast(forms.ChoiceField, self.fields["signing_token_endpoint_auth_method"]).choices = auth_choices
-        if dcr_mode:
+        if dcr_mode and not lenient:
             # Credential fields are deliberately absent: each may be satisfied
             # by a path, pasted text, an upload, or a previously stored value,
             # so their presence is enforced on the resolved credential instead.
@@ -1393,9 +1507,13 @@ class SecurityConfigForm(forms.Form):
             "signing_token_endpoint_auth_method",
         )
         signing_credentials = ("signing_certificate", "signing_private_key")
-        if not self.dcr_mode and (
-            any(_cleaned_optional_string(cleaned_data.get(field_name)) is not None for field_name in signing_fields)
-            or any(self.credentials.get(name) is not None for name in signing_credentials)
+        if (
+            not self.lenient
+            and not self.dcr_mode
+            and (
+                any(_cleaned_optional_string(cleaned_data.get(field_name)) is not None for field_name in signing_fields)
+                or any(self.credentials.get(name) is not None for name in signing_credentials)
+            )
         ):
             message = "Complete every FAPI signing field, or leave the whole group blank."
             for field_name in signing_fields:
@@ -1405,7 +1523,7 @@ class SecurityConfigForm(forms.Form):
                 if self.credentials.get(name) is None:
                     self.add_error(SECURITY_CREDENTIAL_SPECS_BY_NAME[name].path_field, message)
 
-        if (self.credentials.get("tls_client_certificate") is None) != (
+        if not self.lenient and (self.credentials.get("tls_client_certificate") is None) != (
             self.credentials.get("tls_client_private_key") is None
         ):
             message = "mTLS client certificate and private key must be supplied together."
@@ -1413,7 +1531,7 @@ class SecurityConfigForm(forms.Form):
                 if self.credentials.get(name) is None:
                     self.add_error(SECURITY_CREDENTIAL_SPECS_BY_NAME[name].path_field, message)
 
-        if self.dcr_mode:
+        if self.dcr_mode and not self.lenient:
             for name in (
                 "signing_private_key",
                 "tls_client_certificate",
@@ -1430,14 +1548,14 @@ class SecurityConfigForm(forms.Form):
         if self.errors:
             return cleaned_data
         if self.dcr_mode:
-            _validate_dcr_form_fields(self, cleaned_data)
+            _validate_dcr_form_fields(self, cleaned_data, require_audience=not self.lenient)
             if self.errors:
                 return cleaned_data
             self.config = {}
             self.security_environment = _dcr_security_environment_from_fields(cleaned_data, self.credentials)
             self.dynamic_client_registration = _dcr_config_from_fields(cleaned_data, self.credentials)
             self.metadata = _dcr_metadata_from_fields(cleaned_data)
-            self.execution_mode = cast(PlanExecutionMode, cleaned_data["dcr_execution_mode"])
+            self.execution_mode = cast(PlanExecutionMode | None, cleaned_data.get("dcr_execution_mode") or None)
         else:
             self.config = _security_config_from_fields(cleaned_data, self.credentials)
         return cleaned_data
@@ -1512,6 +1630,7 @@ def catalogue_scope_hierarchy(
     selected_endpoint_ids: Iterable[str] = (),
     selected_capability_values: Iterable[str] = (),
     catalogues: Iterable[TestCatalogue] | None = None,
+    enforce_endpoint_requirements: bool = True,
 ) -> CatalogueScopeHierarchy:
     """Return resource-group, endpoint, and feature options for a boundary.
 
@@ -1523,6 +1642,8 @@ def catalogue_scope_hierarchy(
         selected_capability_values: Endpoint capability checkbox values
             currently selected by the participant.
         catalogues: Optional catalogue override used by tests.
+        enforce_endpoint_requirements: Whether to select required endpoints;
+            disabled when merely pruning an existing imported scope.
 
     Returns:
         Catalogue-derived scope hierarchy with endpoints revealed only for
@@ -1548,6 +1669,7 @@ def catalogue_scope_hierarchy(
                 baseline=required,
                 selected=required or _endpoint_id("dcr", EndpointRef(method=method, path=path)) in selected_endpoints,
                 features=(),
+                required=required,
             )
             for method, path, operation_id, required in _DCR_ENDPOINTS
         )
@@ -1568,6 +1690,8 @@ def catalogue_scope_hierarchy(
     for catalogue in candidate_catalogues:
         for endpoint in _endpoint_options_for_catalogue(
             catalogue,
+            specification_version=boundary.version,
+            enforce_endpoint_requirements=enforce_endpoint_requirements,
             selected_endpoint_ids=selected_endpoints,
             selected_capability_ids_by_endpoint=selected_capabilities,
         ):
@@ -1596,6 +1720,100 @@ def catalogue_scope_hierarchy(
         for accumulator in (accumulators[group_id] for group_id in group_order)
     )
     return CatalogueScopeHierarchy(boundary=boundary, resource_groups=resource_groups)
+
+
+def scope_selection_defaults(
+    boundary: PlanDocumentBoundary,
+    *,
+    selected_resource_group_ids: Iterable[str],
+    expand_resource_group_ids: Iterable[str] = (),
+    expand_endpoint_ids: Iterable[str] = (),
+    catalogues: Iterable[TestCatalogue] | None = None,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return endpoints and optional features selected by default for newly ticked scope items.
+
+    A newly selected resource group defaults to every endpoint in that group, and a
+    newly selected endpoint defaults to every optional feature it offers. Required
+    features are implied by endpoint selection, so they are not returned. Ids that
+    are not part of the currently selected scope are ignored.
+
+    Args:
+        boundary: Selected scheme/specification/version boundary.
+        selected_resource_group_ids: Resource groups currently selected.
+        expand_resource_group_ids: Newly selected groups to fill with defaults.
+        expand_endpoint_ids: Newly selected endpoints to fill with defaults.
+        catalogues: Optional catalogue override used by tests.
+
+    Returns:
+        Endpoint option ids and endpoint capability checkbox values to add.
+    """
+    selected_groups = tuple(selected_resource_group_ids)
+    groups_hierarchy = catalogue_scope_hierarchy(
+        boundary,
+        selected_resource_group_ids=selected_groups,
+        catalogues=catalogues,
+    )
+    expand_groups = set(expand_resource_group_ids)
+    expand_endpoints = set(expand_endpoint_ids)
+    endpoint_ids = tuple(
+        endpoint.id
+        for group in groups_hierarchy.resource_groups
+        if group.selected
+        for endpoint in group.endpoints
+        if group.id in expand_groups or endpoint.id in expand_endpoints
+    )
+    if not endpoint_ids:
+        return (), ()
+    endpoints_hierarchy = catalogue_scope_hierarchy(
+        boundary,
+        selected_resource_group_ids=selected_groups,
+        selected_endpoint_ids=endpoint_ids,
+        catalogues=catalogues,
+    )
+    defaulted = set(endpoint_ids)
+    capability_values = tuple(
+        feature.value
+        for endpoint in _endpoint_options(endpoints_hierarchy)
+        if endpoint.id in defaulted
+        for feature in endpoint.features
+        if not feature.required
+    )
+    return endpoint_ids, capability_values
+
+
+def resource_groups_without_endpoints(
+    boundary: PlanDocumentBoundary,
+    *,
+    resource_group_ids: Iterable[str],
+    endpoint_ids: Iterable[str],
+    catalogues: Iterable[TestCatalogue] | None = None,
+) -> tuple[str, ...]:
+    """Return labels of selected resource groups that have no selected endpoint.
+
+    A resource group contributes nothing to the generated test plan without at
+    least one implemented endpoint, so the guided builder must not advance with one.
+
+    Args:
+        boundary: Selected scheme/specification/version boundary.
+        resource_group_ids: Selected resource-group ids.
+        endpoint_ids: Selected endpoint option ids.
+        catalogues: Optional catalogue override used by tests.
+
+    Returns:
+        Participant-facing labels of selected groups with no selected endpoint.
+    """
+    hierarchy = catalogue_scope_hierarchy(
+        boundary,
+        selected_resource_group_ids=resource_group_ids,
+        selected_endpoint_ids=endpoint_ids,
+        catalogues=catalogues,
+        enforce_endpoint_requirements=False,
+    )
+    return tuple(
+        group.label
+        for group in hierarchy.resource_groups
+        if group.selected and not any(endpoint.selected for endpoint in group.endpoints)
+    )
 
 
 def scheme_options(*, boundaries: Iterable[PlanDocumentBoundary] | None = None) -> tuple[SchemeOption, ...]:
@@ -2163,6 +2381,8 @@ class CredentialRow:
 def security_credential_rows(
     form: SecurityConfigForm,
     stored: Mapping[str, CredentialMaterial | None],
+    *,
+    field_metadata: Mapping[str, SecurityFieldMetadata] | None = None,
 ) -> dict[str, CredentialRow]:
     """Return per-credential render rows keyed by field-name stem.
 
@@ -2172,11 +2392,13 @@ def security_credential_rows(
     Args:
         form: Bound or unbound security config form.
         stored: Stored credential material keyed by field-name stem.
+        field_metadata: Requirement metadata by field name; defaults to the
+            scope-independent metadata.
 
     Returns:
         Render rows keyed by credential field-name stem.
     """
-    metadata = security_field_metadata()
+    metadata = field_metadata if field_metadata is not None else security_field_metadata()
     return {
         spec.name: CredentialRow(
             state=credential_state(spec, stored.get(spec.name)),
@@ -2923,6 +3145,111 @@ def security_field_metadata() -> dict[str, SecurityFieldMetadata]:
     return dict(_SECURITY_FIELD_METADATA_BY_NAME)
 
 
+RUN_CONFIG_FIELD_NAMES: Mapping[RunConfigKey, str] = {
+    "discoveryUrl": "discovery_url",
+    "oauth.clientId": "oauth_client_id",
+    "oauth.redirectUri": "oauth_redirect_uri",
+    "oauth.authorizationEndpoint": "oauth_authorization_endpoint",
+    "oauth.issuer": "oauth_issuer",
+    "oauth.tokenEndpoint": "oauth_token_endpoint",
+    "resourceBaseUrl": "resource_server_base_url",
+    "fapiSigning.signingCertificate": "signing_certificate_path",
+    "fapiSigning.signingPrivateKey": "signing_private_key_path",  # pragma: allowlist secret - form field name
+    "fapiSigning.kid": "signing_kid",
+    "fapiSigning.clientAssertionIssuer": "signing_client_assertion_issuer",
+    "fapiSigning.clientAssertionSubject": "signing_client_assertion_subject",
+    "fapiSigning.tokenEndpointAuthMethod": "signing_token_endpoint_auth_method",
+    "tls.clientCertificate": "tls_client_certificate_path",
+    "tls.clientPrivateKey": "tls_client_private_key_path",  # pragma: allowlist secret - form field name
+}
+"""Connection and security form field that supplies each runner config value."""
+
+_MTLS_FIELD_NAMES = frozenset({"tls_client_certificate_path", "tls_client_private_key_path"})
+"""mTLS client credential fields, needed only for ``tls_client_auth``."""
+
+
+def run_config_requirements_for_document(document: PlanDocumentV2) -> frozenset[RunConfigRequirement] | None:
+    """Return the connection and security values a plan's selected scope needs to run.
+
+    The scope is compiled with placeholder business data, the same preview
+    used for scope-derived business-field requiredness, and the runner
+    requirements are read from the compiled steps (OAuth 2.0 token and PSU
+    consent steps, FAPI request-object and client-assertion signing,
+    detached JWS, discovery and protected resource calls).
+
+    Args:
+        document: Parsed canonical test-plan document.
+
+    Returns:
+        Required values, or ``None`` when no endpoints are selected yet.
+    """
+    if not any(resource_group.endpoints or resource_group.select_all for resource_group in document.resource_groups):
+        return None
+    boundary_requirements = _runtime_requirements_for_boundary(
+        PlanDocumentBoundary(document.scheme, document.specification, document.version)
+    )
+    preview_document = plan_document_with_runtime_placeholders(document, boundary_requirements.values())
+    compiled_plan = compile_test_plan_document(preview_document, supported_catalogues())
+    return compiled_plan_run_config_requirements(compiled_plan)
+
+
+def security_field_requirements(
+    requirements: frozenset[RunConfigRequirement] | None,
+    *,
+    config: Mapping[str, JsonValue],
+    security_environment: Mapping[str, JsonValue] | None = None,
+) -> dict[str, SecurityFieldMetadata]:
+    """Return Read/Write connection and security field metadata for the selected scope.
+
+    Args:
+        requirements: Values the selected scope needs to run, or ``None`` when
+            no scope is selected yet.
+        config: Draft config, used for the token endpoint auth method.
+        security_environment: Draft canonical security environment.
+
+    Returns:
+        Field metadata keyed by form field name, marked "Required to run",
+        "Optional", or "Depends on scope".
+    """
+    metadata = dict(_SECURITY_FIELD_METADATA_BY_NAME)
+    scope_fields = set(RUN_CONFIG_FIELD_NAMES.values())
+    if requirements is None:
+        for name in scope_fields:
+            metadata[name] = replace(
+                metadata[name],
+                status="depends_on_scope",
+                label="Depends on scope",
+                requirement="Whether this is required to run depends on the tests selected on the scope step.",
+            )
+        return metadata
+    required = required_run_config_keys(requirements, config, security_environment=security_environment)
+    required_fields = {RUN_CONFIG_FIELD_NAMES[key]: key for key in required}
+    for name in scope_fields:
+        if name in required_fields:
+            reason = RUN_CONFIG_REASONS[required_fields[name]]
+            metadata[name] = replace(
+                metadata[name],
+                status="required",
+                label="Required to run",
+                requirement=f"Required to run because {reason}.",
+            )
+        elif name in _MTLS_FIELD_NAMES and "fapiSigning" in requirements:
+            metadata[name] = replace(
+                metadata[name],
+                status="optional",
+                label="Optional",
+                requirement="Required to run only when the token endpoint auth method is tls_client_auth.",
+            )
+        else:
+            metadata[name] = replace(
+                metadata[name],
+                status="optional",
+                label="Optional",
+                requirement="The selected tests do not use this value.",
+            )
+    return metadata
+
+
 def plan_document_to_export_json(
     document: PlanDocumentV2,
     *,
@@ -2950,6 +3277,8 @@ def plan_document_to_export_json(
 def _endpoint_options_for_catalogue(
     catalogue: TestCatalogue,
     *,
+    specification_version: str,
+    enforce_endpoint_requirements: bool,
     selected_endpoint_ids: set[str],
     selected_capability_ids_by_endpoint: Mapping[str, set[str]],
 ) -> tuple[EndpointOption, ...]:
@@ -2978,9 +3307,34 @@ def _endpoint_options_for_catalogue(
                 endpoint_refs.append(endpoint_ref)
 
     options: list[EndpointOption] = []
+    selected_keys = {
+        endpoint_requirement_key(endpoint_ref)
+        for endpoint_ref in endpoint_refs
+        if (
+            _endpoint_id(catalogue.key.api, endpoint_ref) in selected_endpoint_ids
+            or _legacy_endpoint_id(endpoint_ref) in selected_endpoint_ids
+        )
+    }
     resource_group_id = _resource_group_id(catalogue.key.api)
     resource_group_label = _resource_group_label(catalogue.key.api)
     for endpoint_ref in endpoint_refs:
+        requirement = (
+            read_write_endpoint_requirement(specification_version, endpoint_ref)
+            if specification_version in {"4.0.1", "4.0.0", "3.1.11"}
+            and catalogue.key.api in _CANONICAL_RESOURCE_GROUP_ID_BY_API
+            else None
+        )
+        required = (
+            enforce_endpoint_requirements
+            and requirement is not None
+            and (
+                requirement.kind == "M"
+                or (
+                    requirement.prerequisite is not None
+                    and endpoint_requirement_key(requirement.prerequisite) in selected_keys
+                )
+            )
+        )
         endpoint_id = _endpoint_id(catalogue.key.api, endpoint_ref)
         legacy_endpoint_id = _legacy_endpoint_id(endpoint_ref)
         selected_capability_ids = selected_capability_ids_by_endpoint.get(
@@ -2989,7 +3343,7 @@ def _endpoint_options_for_catalogue(
             legacy_endpoint_id,
             set(),
         )
-        selected = endpoint_id in selected_endpoint_ids or legacy_endpoint_id in selected_endpoint_ids
+        selected = required or endpoint_id in selected_endpoint_ids or legacy_endpoint_id in selected_endpoint_ids
         options.append(
             EndpointOption(
                 id=endpoint_id,
@@ -3002,6 +3356,8 @@ def _endpoint_options_for_catalogue(
                 resource_group_id=resource_group_id,
                 resource_group_label=resource_group_label,
                 baseline=_endpoint_has_baseline_coverage(catalogue, endpoint_ref),
+                implementation_requirement=requirement,
+                required=required,
                 selected=selected,
                 features=(
                     _feature_options_for_endpoint(
@@ -3050,7 +3406,7 @@ def _feature_options_for_endpoint(
             label=capability.label,
             description=capability.description,
             required=capability.required,
-            kind="Required baseline" if capability.required else "Optional feature",
+            kind="Required feature" if capability.required else "Optional feature",
             selected=capability.required or capability.capability_id in selected_capability_ids,
         )
         for capability in catalogue.capabilities
@@ -3718,7 +4074,9 @@ def _dcr_metadata_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
     return metadata
 
 
-def _validate_dcr_form_fields(form: SecurityConfigForm, cleaned_data: Mapping[str, object]) -> None:
+def _validate_dcr_form_fields(
+    form: SecurityConfigForm, cleaned_data: Mapping[str, object], *, require_audience: bool = True
+) -> None:
     """Add DCR URL and subject-DN errors to a security form.
 
     Credential fields are validated separately, because each may be satisfied
@@ -3727,9 +4085,12 @@ def _validate_dcr_form_fields(form: SecurityConfigForm, cleaned_data: Mapping[st
     Args:
         form: Bound DCR security form to update.
         cleaned_data: Cleaned form values to validate.
+        require_audience: Whether an empty registration audience is an error.
     """
     audience = _cleaned_optional_string(cleaned_data.get("dcr_registration_audience"))
-    if audience is None or re.fullmatch(r"[0-9A-Za-z]{1,18}", audience) is None:
+    if (audience is None and require_audience) or (
+        audience is not None and re.fullmatch(r"[0-9A-Za-z]{1,18}", audience) is None
+    ):
         form.add_error(
             "dcr_registration_audience",
             "Enter the 1 to 18 character Base62 ASPSP identifier required by Open Banking DCR.",

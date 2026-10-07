@@ -243,11 +243,13 @@ is configured separately as part of the security environment.
 Canonical sections such as `securityEnvironment`, `businessTestData`, and
 runtime `inputs` derive exact runtime inputs like `resourceBaseUrl`,
 `consentedAccountId`, and debtor account fields so the browser does not duplicate
-them as a separate runtime-input step. The browser collects values in PRD order:
-specification, discovery URL, OAuth/FAPI/security details, resource
-groups, endpoints/capabilities, and business test data. Discovery metadata can
-prefill security fields, but only values accepted on the security page become
-part of the exported plan JSON. Runtime inputs remain supported by canonical
+them as a separate runtime-input step. For Read/Write the browser collects
+values in this order: specification, resource groups/endpoints/capabilities,
+connection and security (discovery URL, OAuth/FAPI/security details), and
+business test data. Scope comes before security because the selected tests
+decide which security values are needed to run. Discovery metadata can prefill
+empty OAuth fields, but only values saved on the security page become part of
+the exported plan JSON. Runtime inputs remain supported by canonical
 plans submitted through import, REST, and CLI execution; the compiler's
 traceability snapshot records only that sensitive values were provided.
 
@@ -293,44 +295,133 @@ Do not re-expose those internals as participant configuration.
 The browser root menu at `/` exposes the multi-step builder and canonical JSON
 import flow. The legacy single-page `/plan/` builder is no longer mounted.
 
-The wizard follows the PRD order:
+The Read/Write wizard follows this order:
 
 1. POST `/builder/new/` to create a session-backed draft.
 2. Select scheme, specification, and version at `/builder/<draft>/catalogue/`.
    The registry derives the matching security profile. Registered future
    boundaries without an executable catalogue render a generic blocked state.
-3. Enter the `.well-known/openid-configuration` URL at
-   `/builder/<draft>/config/discovery/`. The server attempts discovery metadata
-   lookup, records non-secret helper metadata in the draft, and allows manual
-   continuation when the lookup fails. **Check discovery URL** posts to
-   `/builder/<draft>/config/discovery/preview/`, which runs the same validation
-   and fetch and renders the metadata inline without saving anything.
-4. Enter OAuth/FAPI/security, mTLS, and resource-server settings at
-   `/builder/<draft>/config/security/`. Discovery-derived values are editable
-   prefilled fields; the token-endpoint-auth-method selector remains the tool's
-   supported list while discovery-supported methods are shown as metadata.
-5. Select scope at `/builder/<draft>/scope/`. Read/Write uses resource groups,
+3. Select scope at `/builder/<draft>/scope/`. Read/Write uses resource groups,
    endpoints, and optional capabilities. DCR shows direct POST/GET/PUT/DELETE
    operations with POST locked and management methods optional. The
    server-rendered fragment at
    `/builder/<draft>/scope/options/` shows endpoints from the selected AIS, PIS,
    CBPII, or VRP groups and reveals capabilities only for selected endpoints.
-6. Enter business/request defaults at `/builder/<draft>/config/`. DCR skips this
+   `conformance/endpoint_requirements.py` codifies the
+   [reviewed specification matrix](READ_WRITE_ENDPOINT_REQUIREMENTS.md).
+   Mandatory covered endpoints are locked within selected groups, and a selected
+   resource POST locks its mandatory dependent endpoints. The server restores
+   these selections even if checkbox values are omitted. Conditional/Optional
+   endpoints remain selectable; unknown catalogue-only paths are not inferred
+   to be Optional. This is separate from required capabilities for an implemented
+   endpoint and does not change the raw JSON compiler's declared-scope contract.
+   Ticking a group (or **Select all endpoints and features**) sends
+   `expand_resource_group`, and ticking an endpoint sends `expand_endpoint`, on
+   the fragment refresh; `scope_selection_defaults()` then adds every endpoint
+   and optional feature for those items only. An empty scope, or a group with
+   no endpoint (`resource_groups_without_endpoints()`), is saved and reported
+   as a scope issue at review; `/config/` then shows no fields and links to
+   scope.
+4. Enter connection and security settings at `/builder/<draft>/config/security/`:
+   the `.well-known/openid-configuration` URL, OAuth/FAPI signing, mTLS, and
+   the resource-server base URL. For Read/Write, `/config/discovery/` redirects
+   here. Saving fetches discovery metadata again only when the URL changed or
+   the previous fetch failed, stores non-secret helper metadata on the draft,
+   and fills empty OAuth endpoint, response type and algorithm fields from it.
+   The inline **Fetch and fill** button posts to
+   `/builder/<draft>/config/discovery/preview/`, which validates and fetches
+   without saving and fills empty OAuth inputs with HTMX out-of-band swaps.
+   It summarises what was filled and kept, tags each field holding the
+   discovery value **From discovery** (the tag clears when the field is
+   edited), and lists typed values that differ from discovery. Typed values
+   are only replaced when the participant chooses **Replace with discovery
+   values**, which reposts with `overwrite=true`.
+   Field badges come from `security_field_requirements()` in
+   `builder_wizard.py`, which uses `compiled_plan_run_config_requirements()`
+   (`conformance/run_config_requirements.py`) on the draft's compiled scope:
+   **Required to run** (with the reason), **Optional**, or **Depends on
+   scope** when no endpoints are selected. The mTLS certificate and key are
+   required to run only when the token endpoint auth method is
+   `tls_client_auth`. DCR keeps its separate discovery page before security, whose
+   **Preview discovery** button shows the metadata without filling anything.
+5. Enter business/request defaults at `/builder/<draft>/config/`. DCR skips this
    page. AIS, PIS,
    CBPII, and VRP fields render only when selected endpoints need that domain.
    Known account, amount, date, and frequency shapes use friendly fields with
    advanced JSON fallbacks.
-7. Review the generated plan at `/builder/<draft>/review/`, including summary
+6. Review the generated plan at `/builder/<draft>/review/`, including summary
    counts, import warnings, launch blockers, the unmasked, editable plan JSON
-   (the single view of the plan: launch, export, and the Edit-step buttons all
+   (the single view of the plan: launch, export, and the step-bar buttons all
    submit it and apply it to the draft first, with no separate save), and
    collapsed generated-test rows.
-8. Download safe JSON from `/builder/<draft>/export.json`, explicitly request
+7. Download safe JSON from `/builder/<draft>/export.json`, explicitly request
    local secret-bearing JSON with a POST `include_secrets=1`, or launch through
    `/builder/<draft>/launch/`.
 
+Every step page and review render a step bar from
+`conformance/api/builder_steps.py`, the single definition of both flow orders
+(Read/Write: specification, scope, connection & security, business data, review;
+direct endpoint/DCR: specification, scope, discovery, security, review). A
+supported specification is the only navigation gate: until one is chosen every
+later step (and typed URL) redirects to `/catalogue/`; afterwards every step is
+open in any order. Step-bar buttons and **Back** submit the page form with
+`next=<step id>` (or `next=back`), redirected via `resolve_next`, which accepts
+only fixed step ids; anything else falls back to the following step.
+Every builder page uses the same `main` width (`min(1180px, calc(100% - 32px))`)
+and header, and the step pills have one fixed height in every state, so the
+bar never moves between steps; a divider sets **Review** apart from the editing
+steps. When scope has issues, review reports them instead of the raw plan
+validation error they cause.
+
+Leaving a step always saves it. Step views bind their form leniently
+(`_lenient_bind` in `ui_views.py`, `lenient=True` on the config forms): required
+and whole-group checks are skipped, a non-secret field that fails format
+validation is reverted to its saved value and its raw text is kept in the
+draft's `invalid_field_values[step]`, then shown back with its error on the
+next visit. Pasted or uploaded credential material that fails validation is
+dropped, never stored or echoed, and reported with a Django `messages`
+warning. `conformance/api/builder_step_status.py` replays the saved values
+(plus retained invalid values) through the strict forms to produce per-step
+issues, and derives the step bar's `complete`/`attention`/`not_started`
+progress from them. For Read/Write, the connection and security step also
+reports each value the selected scope needs to run but that is missing
+(`draft_run_config_requirements` and `_run_config_issues`); the same check runs
+in shared plan validation (`_run_config_issues` in
+`conformance/test_plan_validation.py`), so imported, REST and CLI plans are held
+to it too. Review lists those issues per step with a **Fix** button
+and treats them as launch blockers, so lenient saving never relaxes launch
+validation. The review JSON jump still renders a discard `<dialog>` when the
+submitted plan JSON is not a JSON object.
+
+The review page's plan JSON box applies edits live. An HTMX
+`input changed delay:800ms` trigger (`hx-sync="this:queue last"`) posts the
+text to `/builder/<draft>/review/apply/` (`builder_review_apply`), which runs
+the same lenient recovery as import and answers with the
+`partials/builder_review_apply.html` fragment: out-of-band swaps of the step
+bar, summary, generated tests, and status line. The textarea itself is never
+swapped, so the caret and undo history survive. Each edit sends an
+`edit_seq` value that the server echoes as `X-Edit-Seq`; the client drops any
+response older than the latest edit. Text that is not a JSON object leaves the
+last applied plan untouched.
+`PlanImportError` carries `line`/`column`; `_display_error_position` in
+`plan_import_recovery.py` moves a missing-comma error onto the previous
+non-blank line (where the comma belongs), and the fragment's `data-error-line`
+lets the page underline that line. Syntax highlighting is an `aria-hidden`
+`<pre class="json-highlight">` layer behind a transparent-text textarea inside
+`.json-editor`; it is enabled only once JavaScript adds `is-highlighted`, so
+the box stays a plain textarea without JavaScript. The layer's font, size,
+line-height, padding, border, `white-space`, and `tab-size` must match the
+textarea exactly or the colours drift from the text.
+
+Changing the specification on `/catalogue/` when it would switch flow or prune
+saved scope re-renders with the affected items and a confirmation token
+(`confirm_specification_change`); the change is saved only when the token
+matches the newly chosen boundary.
+
 Imported plans enter through `/builder/import/` (pasted JSON or an uploaded
-`.json` file, up to 1 MB) and go straight to the same review page. Import is
+`.json` file, up to 1 MB) and go straight to the same review page, or to the specification step (with the
+import warnings and **Start a new plan instead**) when no supported
+specification was loaded. Import is
 lenient (`conformance/api/plan_import_recovery.py`): only empty input, invalid
 JSON, or a non-object root is rejected. Every other document is recovered field
 by field against the schemaVersion `1.0` shape. Values the builder can represent
@@ -345,6 +436,16 @@ validation. Saving a builder step takes ownership of the overlay fields that
 step produces and clears their warnings. The review JSON editor reloads the
 draft with the same recovery rules. Because it shows secrets unmasked, the
 review page is served with `Cache-Control: no-store`.
+
+Every builder page header also has an **Import plan** link
+(`partials/builder_header_actions.html`) to `/builder/<draft>/import/?from=<step id>`
+(`builder_draft_import`). It reuses `builder_import.html` and `PlanImportForm`,
+replaces the existing draft's contents in place with the same lenient recovery
+(the draft id is kept), and then redirects to review, or to the specification
+step when no supported specification was loaded. When the draft already has
+values, the submit button reads **Replace current plan** and a
+**Replace current plan?** `<dialog>` confirms first. **Cancel** returns to the
+validated `from` step.
 
 Generated tests are always read-only. Scope changes happen by editing resource
 groups, endpoints, and capabilities; the review page must not expose generated
@@ -376,6 +477,12 @@ response bodies so `400` validation re-renders appear in place.
   extension merges each page's `<head>` styles. Export downloads, export with
   secrets, launch and links to run pages opt out with `hx-boost="false"`.
   Inline page scripts must stay idempotent IIFEs because boosted swaps re-run them.
+- **Builder dropdowns** are native `<select class="builder-select">` elements
+  styled by `conformance/partials/builder_select_styles.html`, included in the
+  page `<head>`. Every browser gets the restyled closed control. Browsers that
+  support `appearance: base-select` also get a styled option list; others keep
+  the native list. There is no dropdown JavaScript, so scripts that hide or
+  disable options keep working.
 - **Scope** refreshes `#scope-options` through `hx-post` to
   `/builder/<draft>/scope/options/`; the bulk select buttons fire a
   `scope-refresh` event.

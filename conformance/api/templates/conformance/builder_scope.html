@@ -33,7 +33,7 @@
         }
 
         main {
-            width: min(1120px, calc(100% - 32px));
+            width: min(1180px, calc(100% - 32px));
             margin: 0 auto;
             padding: 32px 0 48px;
         }
@@ -266,20 +266,19 @@
     <header>
         <div>
             <h1>Select test plan scope</h1>
-            <div class="muted">{% if direct_endpoints %}Step 2: direct endpoint selection{% else %}Steps 4 and 5: resource groups, endpoints, and capabilities{% endif %}</div>
         </div>
-        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+        {% include "conformance/partials/builder_header_actions.html" with from_step="scope" %}
     </header>
+    {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 
     <section class="panel" aria-labelledby="scope-heading">
         <h2 id="scope-heading">{% if direct_endpoints %}Registration endpoints{% else %}Resource groups, endpoints, and scoped features{% endif %}</h2>
         {% if direct_endpoints %}
             <p class="helper">Select the Dynamic Client Registration management operations implemented by the participant. Token traffic is generated and is not selectable.</p>
         {% else %}
-            <p class="helper">Select the resource groups that share the security environment from the previous step, then select implemented endpoints and optional capabilities within those groups.</p>
-            <p class="helper">On this page, baseline and optional labels describe generated conformance coverage. Required and optional badges on later config pages describe user-entered fields.</p>
+            <p class="helper">Select the resource groups to test, then select implemented endpoints and optional capabilities within those groups.</p>
+            <p class="helper">Endpoint labels follow the specification's implementation requirements. Mandatory endpoints are locked within selected groups; dependent endpoints are locked when their resource POST is selected. Conditional and optional endpoints remain selectable. Required endpoint features describe tests for an implemented endpoint, not whether the specification requires that endpoint.</p>
         {% endif %}
-        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         <div class="boundary-summary" aria-label="Selected catalogue boundary">
             <div><strong>Scheme</strong><br>{{ draft.scheme }}</div>
@@ -291,9 +290,9 @@
         {% if saved %}
             <div class="message success">Endpoints and scoped features saved.</div>
         {% endif %}
-        <div class="message info">{% if direct_endpoints %}Next you will configure discovery and DCR security references.{% else %}Next you will enter resource-group-specific business test data.{% endif %}</div>
 
         <form method="post"
+              id="builder-step-form"
               action="{% url 'builder-scope' draft.draft_id %}"
               data-scope-form>
             {% csrf_token %}
@@ -310,8 +309,8 @@
             </div>
 
             <div class="actions">
-                <a class="button secondary" href="{% if direct_endpoints %}{% url 'builder-catalogue-boundary' draft.draft_id %}{% else %}{% url 'builder-security-config' draft.draft_id %}{% endif %}">{% if direct_endpoints %}Back to specification{% else %}Back to security{% endif %}</a>
-                <button type="submit">{% if direct_endpoints %}Continue to DCR configuration{% else %}Continue to business data{% endif %}</button>
+                {% include "conformance/partials/builder_back_button.html" %}
+                <button type="submit">{% if direct_endpoints %}Continue to DCR configuration{% else %}Continue to connection &amp; security{% endif %}</button>
             </div>
         </form>
     </section>
@@ -324,13 +323,41 @@
             return;
         }
 
-        const checkboxInputs = (name) => Array.from(form.querySelectorAll(`input[name='${name}']`))
-            .filter((input) => input instanceof HTMLInputElement);
+        const checkboxInputs = (name) => Array.from(form.querySelectorAll(`input[type='checkbox'][name='${name}']`))
+            .filter((input) => input instanceof HTMLInputElement && !input.disabled);
 
         refresher.addEventListener("htmx:beforeRequest", () => {
             const current = document.querySelector("#scope-options");
             if (current) {
                 current.setAttribute("aria-busy", "true");
+            }
+        });
+
+        // Newly ticked groups/endpoints default to all their endpoints and optional features.
+        refresher.addEventListener("htmx:configRequest", (event) => {
+            const trigger = event.detail.triggeringEvent;
+            const formData = event.detail.formData;
+            if (!trigger || !(formData instanceof FormData)) {
+                return;
+            }
+            if (trigger.type === "scope-refresh") {
+                if (trigger.detail && trigger.detail.expandAll) {
+                    for (const input of checkboxInputs("resource_groups")) {
+                        if (input.checked) {
+                            formData.append("expand_resource_group", input.value);
+                        }
+                    }
+                }
+                return;
+            }
+            const source = trigger.target;
+            if (!(source instanceof HTMLInputElement) || source.type !== "checkbox" || !source.checked) {
+                return;
+            }
+            if (source.name === "resource_groups") {
+                formData.append("expand_resource_group", source.value);
+            } else if (source.name === "endpoints") {
+                formData.append("expand_endpoint", source.value);
             }
         });
 
@@ -352,11 +379,14 @@
                 input.checked = selectEndpoints;
             }
             if (!selectEndpoints) {
+                for (const input of form.querySelectorAll("input[type='hidden'][name='endpoints'][data-requirement-kind='MP']")) {
+                    input.disabled = true;
+                }
                 for (const input of checkboxInputs("endpoint_capabilities")) {
                     input.checked = false;
                 }
             }
-            htmx.trigger(refresher, "scope-refresh");
+            htmx.trigger(refresher, "scope-refresh", { expandAll: selectEndpoints });
         });
     })();
 </script>

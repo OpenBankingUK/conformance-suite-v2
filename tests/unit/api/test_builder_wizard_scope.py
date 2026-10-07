@@ -19,6 +19,8 @@ from conformance.api.builder_wizard import (
     endpoint_capability_value,
     merge_discovery_config,
     plan_document_from_draft,
+    resource_groups_without_endpoints,
+    scope_selection_defaults,
 )
 from conformance.catalogue import PlanDocumentBoundary
 from conformance.json_types import JsonValue
@@ -421,3 +423,131 @@ def test_scope_selection_form_prunes_stale_children_for_dynamic_refresh() -> Non
     assert form.selected_resource_group_ids == ()
     assert form.selected_endpoint_ids == ()
     assert form.selected_endpoint_capability_ids == {}
+
+
+@pytest.mark.parametrize("version", ["4.0.1", "4.0.0", "3.1.11"])
+def test_scope_form_restores_spec_mandatory_endpoints_but_not_optional_ones(version: str) -> None:
+    """A crafted scope submission cannot deselect mandatory endpoints."""
+    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", version)
+    form = ScopeSelectionForm(data={"resource_groups": ["account-and-transaction"]}, boundary=boundary)
+    assert form.is_valid(), form.errors.as_json()
+    endpoints = next(g.endpoints for g in form.hierarchy.resource_groups if g.selected)
+    selected = {e.display_path for e in endpoints if e.id in form.selected_endpoint_ids}
+    assert selected == {
+        "/aisp/accounts",
+        "/aisp/accounts/{AccountId}",
+        "/aisp/accounts/{AccountId}/balances",
+        "/aisp/accounts/{AccountId}/transactions",
+    }
+    assert all(e.required for e in endpoints if e.id in form.selected_endpoint_ids)
+    assert all(g.endpoints == () for g in form.hierarchy.resource_groups if not g.selected)
+
+
+def test_scope_form_locks_post_dependents_only_while_post_is_selected() -> None:
+    """A conditional POST requires its GET, not all other conditional endpoints."""
+    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
+    hierarchy = catalogue_scope_hierarchy(boundary, selected_resource_group_ids=("payment-initiation",))
+    endpoints = next(g.endpoints for g in hierarchy.resource_groups if g.selected)
+    post = next(e for e in endpoints if e.method == "POST" and e.path.endswith("/international-payments"))
+    get = next(e for e in endpoints if e.method == "GET" and "/international-payments/" in e.path)
+    form = ScopeSelectionForm(
+        data={"resource_groups": ["payment-initiation"], "endpoints": [post.id]},
+        boundary=boundary,
+    )
+    assert form.is_valid(), form.errors.as_json()
+    assert {post.id, get.id} <= set(form.selected_endpoint_ids)
+    assert next(e for g in form.hierarchy.resource_groups for e in g.endpoints if e.id == get.id).required
+    without_post = ScopeSelectionForm(data={"resource_groups": ["payment-initiation"]}, boundary=boundary)
+    assert without_post.is_valid(), without_post.errors.as_json()
+    assert get.id not in without_post.selected_endpoint_ids
+    assert post.id not in without_post.selected_endpoint_ids
+
+
+def test_scope_form_does_not_lock_vrp_conditional_payment_get() -> None:
+    """VRP GET is Conditional in its table, not mandatory if POST implemented."""
+    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
+    hierarchy = catalogue_scope_hierarchy(boundary, selected_resource_group_ids=("variable-recurring-payments",))
+    endpoints = next(g.endpoints for g in hierarchy.resource_groups if g.selected)
+    post = next(e for e in endpoints if e.method == "POST" and e.path == "/domestic-vrps")
+    get = next(e for e in endpoints if e.method == "GET" and e.path == "/domestic-vrps/{vrpId}")
+    form = ScopeSelectionForm(
+        data={"resource_groups": ["variable-recurring-payments"], "endpoints": [post.id]},
+        boundary=boundary,
+    )
+    assert form.is_valid(), form.errors.as_json()
+    assert post.id in form.selected_endpoint_ids
+    assert get.id not in form.selected_endpoint_ids
+
+
+def test_scope_selection_defaults_select_every_endpoint_and_optional_feature_in_new_group() -> None:
+    """A newly ticked resource group defaults to all its endpoints and optional features."""
+    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
+    hierarchy = catalogue_scope_hierarchy(boundary, selected_resource_group_ids=("account-and-transaction",))
+    ais_group = next(group for group in hierarchy.resource_groups if group.id == "account-and-transaction")
+    transactions = next(e for e in ais_group.endpoints if e.path == "/open-banking/v4.0/aisp/transactions")
+
+    endpoint_ids, capability_values = scope_selection_defaults(
+        boundary,
+        selected_resource_group_ids=("account-and-transaction", "payment-initiation"),
+        expand_resource_group_ids=("account-and-transaction",),
+    )
+
+    assert endpoint_ids == tuple(endpoint.id for endpoint in ais_group.endpoints)
+    assert (
+        endpoint_capability_value(endpoint_id=transactions.id, capability_id="ais.transactions.date-range-filtering")
+        in capability_values
+    )
+    assert not any("ais.transactions.list.core" in value for value in capability_values)
+    assert not any("/pisp/" in endpoint_id for endpoint_id in endpoint_ids)
+
+
+def test_scope_selection_defaults_select_optional_features_for_new_endpoint() -> None:
+    """A newly ticked endpoint defaults to its optional features only."""
+    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
+    hierarchy = catalogue_scope_hierarchy(boundary, selected_resource_group_ids=("account-and-transaction",))
+    ais_group = next(group for group in hierarchy.resource_groups if group.id == "account-and-transaction")
+    transactions = next(e for e in ais_group.endpoints if e.path == "/open-banking/v4.0/aisp/transactions")
+
+    endpoint_ids, capability_values = scope_selection_defaults(
+        boundary,
+        selected_resource_group_ids=("account-and-transaction",),
+        expand_endpoint_ids=(transactions.id,),
+    )
+
+    assert endpoint_ids == (transactions.id,)
+    assert capability_values == (
+        endpoint_capability_value(endpoint_id=transactions.id, capability_id="ais.transactions.date-range-filtering"),
+    )
+
+
+def test_scope_selection_defaults_ignore_ids_outside_selected_scope() -> None:
+    """Unknown or unselected group and endpoint ids add nothing."""
+    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
+
+    assert scope_selection_defaults(
+        boundary,
+        selected_resource_group_ids=("account-and-transaction",),
+        expand_resource_group_ids=("payment-initiation", "not-a-group"),
+        expand_endpoint_ids=("not-an-endpoint",),
+    ) == ((), ())
+
+
+def test_resource_groups_without_endpoints_reports_empty_selected_groups() -> None:
+    """Selected groups without a selected endpoint are reported by label."""
+    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
+    hierarchy = catalogue_scope_hierarchy(boundary, selected_resource_group_ids=("account-and-transaction",))
+    ais_endpoint = next(group for group in hierarchy.resource_groups if group.selected).endpoints[0]
+
+    assert resource_groups_without_endpoints(
+        boundary,
+        resource_group_ids=("account-and-transaction", "payment-initiation"),
+        endpoint_ids=(ais_endpoint.id,),
+    ) == ("Payment Initiation",)
+    assert (
+        resource_groups_without_endpoints(
+            boundary,
+            resource_group_ids=("account-and-transaction",),
+            endpoint_ids=(ais_endpoint.id,),
+        )
+        == ()
+    )

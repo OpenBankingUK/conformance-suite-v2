@@ -17,12 +17,18 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Literal, cast
+from typing import cast
 
 from django import forms
 from django.core.files.uploadedfile import UploadedFile
 
-from conformance.api.builder_draft_store import BuilderDraft, PlanImportIssue, PlanImportIssueKind
+from conformance.api.builder_draft_store import (
+    BUILDER_STEP_IDS,
+    BuilderDraft,
+    BuilderStepId,
+    PlanImportIssue,
+    PlanImportIssueKind,
+)
 from conformance.api.builder_wizard import (
     builder_plan_json_from_draft_or_skeleton,
     draft_scope_from_plan_document,
@@ -50,7 +56,37 @@ PLAN_IMPORT_MAX_BYTES = 1_048_576
 
 
 class PlanImportError(ValueError):
-    """Raised when import text is not a JSON object and cannot be recovered at all."""
+    """Raised when import text is not a JSON object and cannot be recovered at all.
+
+    Attributes:
+        line: 1-based line of a JSON syntax error, for the editor to mark, or ``None``.
+        column: 1-based column of that error, or ``None``.
+    """
+
+    def __init__(self, message: str, *, line: int | None = None, column: int | None = None) -> None:
+        """Store the message and optional syntax error position."""
+        super().__init__(message)
+        self.line = line
+        self.column = column
+
+
+def _display_error_position(text: str, error: json.JSONDecodeError) -> tuple[int, int]:
+    """Return the line and column where a participant should fix a JSON syntax error.
+
+    The parser reports where it noticed the problem. For a missing comma between
+    items, or an error at a blank line or end of text, that is the start of the
+    next token, while the mistake is at the end of the previous non-blank line.
+    """
+    line_start = text.rfind("\n", 0, error.pos) + 1
+    at_line_start = not text[line_start : error.pos].strip()
+    line_end = text.find("\n", error.pos)
+    rest_of_line = text[error.pos : len(text) if line_end == -1 else line_end]
+    if at_line_start and (error.msg == "Expecting ',' delimiter" or not rest_of_line.strip()):
+        previous_lines = text[:line_start].splitlines()
+        for index in range(len(previous_lines) - 1, -1, -1):
+            if previous_lines[index].strip():
+                return index + 1, len(previous_lines[index].rstrip()) + 1
+    return error.lineno, error.colno
 
 
 def parse_plan_import_text(text: str) -> JsonObject:
@@ -76,7 +112,10 @@ def parse_plan_import_text(text: str) -> JsonObject:
     try:
         parsed: object = json.loads(text)
     except json.JSONDecodeError as error:
-        raise PlanImportError(f"Plan JSON must be valid JSON: {error.msg}") from error
+        line, column = _display_error_position(text, error)
+        raise PlanImportError(
+            f"Plan JSON must be valid JSON: {error.msg} (line {line})", line=line, column=column
+        ) from error
     if not isinstance(parsed, dict):
         raise PlanImportError("Plan JSON must be a JSON object.")
     return cast(JsonObject, parsed)
@@ -143,7 +182,7 @@ def _uploaded_plan_text(upload: UploadedFile) -> str:
         raise PlanImportError("Plan file must be UTF-8 encoded JSON.") from error
 
 
-type BuilderStep = Literal["catalogue", "scope", "discovery", "security", "config"]
+type BuilderStep = BuilderStepId
 """Builder wizard step whose save may take ownership of unrepresented fields."""
 
 _TOP_LEVEL_KEYS: frozenset[str] = frozenset(
@@ -268,7 +307,9 @@ def recover_draft_from_plan_json(raw_plan: Mapping[str, JsonValue], *, draft: Bu
 
     Returns:
         Draft holding recovered builder values, the unrepresented-field overlay,
-        and import issues for the review page.
+        and import issues for the review page. Every builder step is marked as
+        saved, so the step bar reports missing imported data as needing
+        attention rather than not started.
     """
     recovery = _Recovery()
     _recover_schema_version(raw_plan, recovery)
@@ -325,8 +366,10 @@ def recover_draft_from_plan_json(raw_plan: Mapping[str, JsonValue], *, draft: Bu
                 "Nothing usable was imported. Build the plan with the guided builder or fix the plan JSON on this page."
             ),
         )
-    return draft.with_unrepresented_plan_fields(unrepresented_plan_fields=recovery.overlay).with_import_issues(
-        import_issues=tuple(recovery.issues)
+    return (
+        draft.with_unrepresented_plan_fields(unrepresented_plan_fields=recovery.overlay)
+        .with_import_issues(import_issues=tuple(recovery.issues))
+        .with_steps_saved(*BUILDER_STEP_IDS)
     )
 
 

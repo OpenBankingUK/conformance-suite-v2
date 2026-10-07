@@ -3,18 +3,51 @@
         {% if preview_errors %}
             <ul class="errorlist">{% for error in preview_errors %}<li>{{ error }}</li>{% endfor %}</ul>
         {% elif preview.fetch_error %}
-            <div class="message warning">Discovery metadata could not be fetched from {{ preview.source_url }}: {{ preview.fetch_error }}</div>
+            <div class="message warning">Couldn't fetch discovery from {{ preview.source_url }}: {{ preview.fetch_error }}. Nothing was changed{% if not dcr_mode %} — enter the values manually{% endif %}.</div>
         {% else %}
-            <div class="config-card">
-                <h3>Discovery metadata</h3>
-                <p class="helper">Fetched from <code>{{ preview.source_url }}</code>. This check is not saved; continue to store the URL and metadata.</p>
+            <div class="discovery-result">
+                {% if fill %}
+                    <ul class="discovery-summary">
+                        {% if fill.filled %}<li>Filled {{ fill.filled|length }} empty field{{ fill.filled|length|pluralize }} from discovery: {{ fill.filled|join:", " }}.</li>{% endif %}
+                        {% if fill.replaced %}<li>Replaced {{ fill.replaced|length }} value{{ fill.replaced|length|pluralize }} with discovery values: {{ fill.replaced|join:", " }}.</li>{% endif %}
+                        {% if fill.kept %}<li>Kept {{ fill.kept|length }} value{{ fill.kept|length|pluralize }} you entered.</li>{% endif %}
+                        {% if not fill.filled and not fill.replaced and not fill.kept %}<li>The discovery document had no values for the OAuth fields below.</li>{% elif not fill.filled and not fill.replaced and not fill.conflicts %}<li>Nothing to fill — every discoverable field already has a value.</li>{% endif %}
+                    </ul>
+                    {% if fill.conflicts %}
+                        <div class="message warning discovery-conflicts">
+                            <p>These values you entered differ from discovery:</p>
+                            <dl class="metadata-list">
+                                {% for conflict in fill.conflicts %}
+                                    <dt>{{ conflict.label }}</dt>
+                                    <dd>Yours: <code>{{ conflict.current }}</code><br>Discovery: <code>{{ conflict.discovered }}</code></dd>
+                                {% endfor %}
+                            </dl>
+                            <button type="button"
+                                    class="secondary"
+                                    hx-post="{% url 'builder-discovery-preview' draft_id %}"
+                                    hx-include="closest form"
+                                    hx-vals='{"overwrite": "true"}'
+                                    hx-target="#discovery-preview"
+                                    hx-swap="outerHTML"
+                                    hx-sync="this:replace"
+                                    hx-disabled-elt="this">Replace with discovery values</button>
+                        </div>
+                    {% endif %}
+                    <p class="helper">Values are saved when you save or leave this page.</p>
+                {% else %}
+                    <p class="helper">Preview only — nothing on this page was changed.</p>
+                {% endif %}
                 {% if preview.fields %}
-                    <dl class="metadata-list">
-                        {% for row in preview.fields %}
-                            <dt>{{ row.label }}</dt>
-                            <dd>{{ row.value }}</dd>
-                        {% endfor %}
-                    </dl>
+                    <details class="discovery-document"{% if not fill %} open{% endif %}>
+                        <summary>Show discovery document values</summary>
+                        <p class="helper">Fetched from <code>{{ preview.source_url }}</code>.</p>
+                        <dl class="metadata-list">
+                            {% for row in preview.fields %}
+                                <dt>{{ row.label }}</dt>
+                                <dd>{{ row.value }}</dd>
+                            {% endfor %}
+                        </dl>
+                    </details>
                 {% else %}
                     <div class="message warning">The discovery document did not contain any recognised metadata fields.</div>
                 {% endif %}
@@ -22,3 +55,9 @@
         {% endif %}
     {% endif %}
 </section>
+{% for field in fill.inputs %}
+<input id="id_{{ field.name }}" name="{{ field.name }}" type="{{ field.input_type }}" value="{{ field.value }}" autocomplete="off"{% if field.input_type == "url" %} inputmode="url"{% endif %} hx-swap-oob="true">
+{% endfor %}
+{% for tag in fill.tags %}
+<span id="discovery-tag-{{ tag.name }}" class="discovery-tag"{% if not tag.shown %} hidden{% endif %} hx-swap-oob="true">From discovery</span>
+{% endfor %}

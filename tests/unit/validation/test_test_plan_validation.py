@@ -16,6 +16,7 @@ from conformance.test_plan_validation import (
     validate_test_plan_for_load,
     validate_test_plan_for_run,
 )
+from tests.support.run_config import RUN_READY_SECURITY_ENVIRONMENT
 
 pytestmark = pytest.mark.unit
 
@@ -36,6 +37,7 @@ def _canonical_plan() -> dict[str, object]:
         },
         "executionMode": "development",
         "securityEnvironment": {
+            **RUN_READY_SECURITY_ENVIRONMENT,
             "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
             "resourceBaseUrl": "https://resource.example.com",
         },
@@ -288,3 +290,47 @@ def test_parse_error_validation_preserves_development_mode(tmp_path: Path) -> No
         prepare_test_plan_for_run(raw_plan, base_dir=tmp_path)
     assert exc_info.value.result.schema_version == "1.0"
     assert exc_info.value.result.execution_mode == "development"
+
+
+@pytest.mark.parametrize(
+    ("field_name", "expected_location"),
+    [
+        ("clientId", "securityEnvironment.clientId"),
+        ("tokenEndpoint", "securityEnvironment.tokenEndpoint"),
+        ("signingKeyId", "securityEnvironment.signingKeyId"),
+        ("signingPrivateKeyPath", "securityEnvironment.signingPrivateKeyPath (or signingPrivateKeyPem)"),
+    ],
+)
+def test_validate_test_plan_for_run_requires_scope_derived_security_values(
+    tmp_path: Path, field_name: str, expected_location: str
+) -> None:
+    """Read/Write scope needing OAuth tokens and FAPI signing reports each missing value."""
+    raw_plan = _canonical_plan()
+    security_environment = raw_plan["securityEnvironment"]
+    assert isinstance(security_environment, dict)
+    security_environment.pop(field_name)
+
+    validation = validate_test_plan_for_run(raw_plan, base_dir=tmp_path)
+
+    assert validation.valid is False
+    assert any(
+        issue.layer == "security" and issue.message.startswith(f"{expected_location} is required to run because")
+        for issue in validation.issues
+    )
+
+
+def test_validate_test_plan_for_run_requires_mtls_only_for_tls_client_auth(tmp_path: Path) -> None:
+    """The mTLS client certificate pair is required only when the token endpoint uses tls_client_auth."""
+    raw_plan = _canonical_plan()
+    security_environment = raw_plan["securityEnvironment"]
+    assert isinstance(security_environment, dict)
+
+    assert validate_test_plan_for_run(raw_plan, base_dir=tmp_path).valid is True
+
+    security_environment["clientAuthMethod"] = "tls_client_auth"
+    validation = validate_test_plan_for_run(raw_plan, base_dir=tmp_path)
+
+    messages = [issue.message for issue in validation.issues]
+    assert validation.valid is False
+    assert any(message.startswith("securityEnvironment.mtls.certificatePath") for message in messages)
+    assert any(message.startswith("securityEnvironment.mtls.privateKeyPath") for message in messages)

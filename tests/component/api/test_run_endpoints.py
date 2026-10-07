@@ -25,6 +25,7 @@ from conformance.catalogue import (
 )
 from conformance.catalogues.ais import AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE, AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY
 from conformance.test_plan import TestPlan
+from tests.support.run_config import RUN_READY_SECURITY_ENVIRONMENT
 from tests.support.run_execution import StubbedRunExecution
 
 pytestmark = pytest.mark.component
@@ -44,6 +45,7 @@ VALID_TEST_PLAN = {
         "openApiDocumentUpdate": "Update-1",
     },
     "securityEnvironment": {
+        **RUN_READY_SECURITY_ENVIRONMENT,
         "discoveryUrl": "https://example.com/.well-known/openid-configuration",
         "resourceBaseUrl": "https://resource.example.com",
     },
@@ -429,6 +431,7 @@ class TestCreateRunEndpoint:
                 "profile": "FAPI1_ADVANCED",
             },
             "securityEnvironment": {
+                **RUN_READY_SECURITY_ENVIRONMENT,
                 "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
                 "resourceBaseUrl": "https://resource.example.com",
             },

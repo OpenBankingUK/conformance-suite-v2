@@ -1,0 +1,52 @@
+{% comment %}
+Rendered after an invalid Back or earlier step-bar submission. It is server-rendered ``open`` so it
+works without JavaScript; the script upgrades it to a modal dialog for focus
+trapping and Esc-to-close, including after an HTMX swap.
+{% endcomment %}
+{% if back_discard_url %}
+    <style>
+        .builder-back-dialog {
+            max-width: 440px;
+            border: 1px solid var(--border, #ccd3dc);
+            border-radius: 8px;
+            padding: 20px;
+            color: var(--text, #1b1f24);
+        }
+
+        .builder-back-dialog::backdrop {
+            background: rgba(27, 31, 36, 0.45);
+        }
+
+        .builder-back-dialog .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 16px;
+        }
+
+        .builder-back-dialog form {
+            margin: 0;
+        }
+    </style>
+    <dialog class="builder-back-dialog" id="builder-back-dialog" open aria-labelledby="builder-back-dialog-title">
+        <h2 id="builder-back-dialog-title">Discard changes?</h2>
+        <p>This page has errors. Discard your changes on this page and go to {{ back_discard_step.label|lower }}?</p>
+        <div class="actions">
+            <form method="dialog">
+                <button class="secondary" type="submit" autofocus>Stay</button>
+            </form>
+            <a class="button" href="{{ back_discard_url }}" data-back-discard>Discard &amp; go to {{ back_discard_step.label|lower }}</a>
+        </div>
+    </dialog>
+    <script>
+        (() => {
+            const dialog = document.getElementById("builder-back-dialog");
+            if (!(dialog instanceof HTMLDialogElement) || typeof dialog.showModal !== "function") {
+                return;
+            }
+            dialog.close();
+            dialog.showModal();
+        })();
+    </script>
+{% endif %}

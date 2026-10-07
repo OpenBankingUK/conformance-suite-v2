@@ -10,7 +10,7 @@
         :root { color-scheme: light; --bg: #f7f8fa; --panel: #ffffff; --border: #ccd3dc; --text: #1b1f24; --muted: #667085; --accent: #0b6bcb; --danger: #b42318; --warning: #a15c07; }
         * { box-sizing: border-box; }
         body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.5; }
-        main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+        main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
         header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
         h1, h2, h3 { margin: 0; line-height: 1.2; }
         h1 { font-size: 1.75rem; }
@@ -26,8 +26,9 @@
         .field-row { margin-top: 12px; }
         label { display: block; font-weight: 650; margin-bottom: 8px; }
         .field { display: flex; flex-direction: column; }
-        .field-heading { min-height: 54px; margin-bottom: 8px; }
-        .field-heading label { margin-bottom: 4px; }
+        /* Label and badge share a line; the heading grows so inputs in the same grid row stay aligned. */
+        .field-heading { display: flex; flex: 1 0 auto; flex-wrap: wrap; align-items: center; align-content: flex-end; gap: 4px 8px; margin-bottom: 8px; }
+        .field-heading label { margin-bottom: 0; }
         .requirement-badge { display: inline-flex; align-items: center; width: fit-content; border-radius: 999px; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; vertical-align: middle; }
         .requirement-badge.required { border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
         .requirement-badge.optional { border: 1px solid var(--border); background: #f2f4f7; color: var(--muted); }
@@ -37,11 +38,13 @@
         summary { cursor: pointer; font-weight: 650; color: var(--accent); }
         .message, .errorlist { border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; }
         .message.warning { border: 1px solid #fedf89; background: #fffcf5; color: var(--warning); }
+        .message.info { border: 1px solid #bfdbfe; background: #eff6ff; color: var(--accent); }
+        .message.info a { color: inherit; font-weight: 650; }
         .errorlist { list-style: none; border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
         .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
         button, .button { min-height: 38px; border: 1px solid var(--accent); border-radius: 6px; padding: 8px 14px; background: var(--accent); color: #ffffff; font: inherit; font-weight: 650; text-decoration: none; cursor: pointer; }
         .button.secondary, button.secondary { background: #ffffff; color: var(--accent); }
-        @media (max-width: 840px) { header, .grid, .grid.three { display: block; } .grid > div + div { margin-top: 12px; } .field-heading { min-height: 0; } }
+        @media (max-width: 840px) { header, .grid, .grid.three { display: block; } .grid > div + div { margin-top: 12px; } }
     </style>
 </head>
 <body>
@@ -51,20 +54,21 @@
     <header>
         <div>
             <h1>Business test data</h1>
-            <div class="muted">Step 6: business data</div>
         </div>
-        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+        {% include "conformance/partials/builder_header_actions.html" with from_step="config" %}
     </header>
+    {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 
     <section class="panel" aria-labelledby="business-heading">
         <h2 id="business-heading">Business and request defaults</h2>
         <p class="helper">These fields are generated from the selected resource groups and endpoints. Security settings have already been collected.</p>
-        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
-        {% if review_error %}<div class="message warning">{{ review_error }}</div>{% endif %}
+        {% if scope_missing %}
+            <div class="message info" data-scope-missing>Select scope to see business data fields. Business data fields are shown for the resource groups and endpoints chosen on the <a href="{% url 'builder-scope' draft.draft_id %}">Scope</a> step.</div>
+        {% endif %}
         {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
 
-        <form method="post" action="{% url 'builder-config' draft.draft_id %}">
+        <form method="post" id="builder-step-form" action="{% url 'builder-config' draft.draft_id %}">
             {% csrf_token %}
 
             {% if config_visibility.show_ais %}
@@ -82,7 +86,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.ais_transaction_from_date.id_for_label }}">Transaction from date</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.ais_transaction_from_date.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.ais_transaction_from_date only %}
                             </div>
                             {{ form.ais_transaction_from_date.errors }}
                             <input id="{{ form.ais_transaction_from_date.id_for_label }}" name="ais_transaction_from_date" type="text" value="{{ form.ais_transaction_from_date.value|default_if_none:'' }}" autocomplete="off">
@@ -90,7 +94,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.ais_transaction_to_date.id_for_label }}">Transaction to date</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.ais_transaction_to_date.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.ais_transaction_to_date only %}
                             </div>
                             {{ form.ais_transaction_to_date.errors }}
                             <input id="{{ form.ais_transaction_to_date.id_for_label }}" name="ais_transaction_to_date" type="text" value="{{ form.ais_transaction_to_date.value|default_if_none:'' }}" autocomplete="off">
@@ -100,7 +104,7 @@
                         <summary>Advanced AIS resource IDs JSON</summary>
                         <p class="helper">When supplied, this JSON object overrides the friendly account identifier field.</p>
                         <div class="field-heading">
-                            {% include "conformance/partials/builder_requirement_badge.html" with required=form.ais_resource_ids_json.field.required only %}
+                            {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.ais_resource_ids_json only %}
                         </div>
                         {{ form.ais_resource_ids_json.errors }}
                         <textarea id="{{ form.ais_resource_ids_json.id_for_label }}" name="ais_resource_ids_json" spellcheck="false">{{ form.ais_resource_ids_json.value|default_if_none:'' }}</textarea>
@@ -268,7 +272,7 @@
                             <div class="field">
                                 <div class="field-heading">
                                     <label for="{{ form.conditional_properties_json.id_for_label }}">Conditional properties JSON</label>
-                                    {% include "conformance/partials/builder_requirement_badge.html" with required=form.conditional_properties_json.field.required only %}
+                                    {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.conditional_properties_json only %}
                                 </div>
                                 {{ form.conditional_properties_json.errors }}
                                 <textarea id="{{ form.conditional_properties_json.id_for_label }}" name="conditional_properties_json" spellcheck="false">{{ form.conditional_properties_json.value|default_if_none:'' }}</textarea>
@@ -285,7 +289,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.cbpii_debtor_account_scheme_name.id_for_label }}">Debtor account scheme</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_scheme_name.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.cbpii_debtor_account_scheme_name only %}
                             </div>
                             {{ form.cbpii_debtor_account_scheme_name.errors }}
                             <input id="{{ form.cbpii_debtor_account_scheme_name.id_for_label }}" name="cbpii_debtor_account_scheme_name" type="text" value="{{ form.cbpii_debtor_account_scheme_name.value|default_if_none:'' }}" autocomplete="off">
@@ -293,7 +297,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.cbpii_debtor_account_identification.id_for_label }}">Debtor account identification</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_identification.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.cbpii_debtor_account_identification only %}
                             </div>
                             {{ form.cbpii_debtor_account_identification.errors }}
                             <input id="{{ form.cbpii_debtor_account_identification.id_for_label }}" name="cbpii_debtor_account_identification" type="text" value="{{ form.cbpii_debtor_account_identification.value|default_if_none:'' }}" autocomplete="off">
@@ -301,7 +305,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.cbpii_debtor_account_name.id_for_label }}">Debtor account name</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_name.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.cbpii_debtor_account_name only %}
                             </div>
                             {{ form.cbpii_debtor_account_name.errors }}
                             <input id="{{ form.cbpii_debtor_account_name.id_for_label }}" name="cbpii_debtor_account_name" type="text" value="{{ form.cbpii_debtor_account_name.value|default_if_none:'' }}" autocomplete="off">
@@ -310,7 +314,7 @@
                     <details>
                         <summary>Advanced CBPII debtor account JSON</summary>
                         <div class="field-heading">
-                            {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_json.field.required only %}
+                            {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.cbpii_debtor_account_json only %}
                         </div>
                         {{ form.cbpii_debtor_account_json.errors }}
                         <textarea id="{{ form.cbpii_debtor_account_json.id_for_label }}" name="cbpii_debtor_account_json" spellcheck="false">{{ form.cbpii_debtor_account_json.value|default_if_none:'' }}</textarea>
@@ -325,7 +329,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.vrp_creditor_account_scheme_name.id_for_label }}">Creditor account scheme</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_creditor_account_scheme_name.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.vrp_creditor_account_scheme_name only %}
                             </div>
                             {{ form.vrp_creditor_account_scheme_name.errors }}
                             <input id="{{ form.vrp_creditor_account_scheme_name.id_for_label }}" name="vrp_creditor_account_scheme_name" type="text" value="{{ form.vrp_creditor_account_scheme_name.value|default_if_none:'' }}" autocomplete="off">
@@ -333,7 +337,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.vrp_creditor_account_identification.id_for_label }}">Creditor account identification</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_creditor_account_identification.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.vrp_creditor_account_identification only %}
                             </div>
                             {{ form.vrp_creditor_account_identification.errors }}
                             <input id="{{ form.vrp_creditor_account_identification.id_for_label }}" name="vrp_creditor_account_identification" type="text" value="{{ form.vrp_creditor_account_identification.value|default_if_none:'' }}" autocomplete="off">
@@ -341,7 +345,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.vrp_creditor_account_name.id_for_label }}">Creditor account name</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_creditor_account_name.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.vrp_creditor_account_name only %}
                             </div>
                             {{ form.vrp_creditor_account_name.errors }}
                             <input id="{{ form.vrp_creditor_account_name.id_for_label }}" name="vrp_creditor_account_name" type="text" value="{{ form.vrp_creditor_account_name.value|default_if_none:'' }}" autocomplete="off">
@@ -351,7 +355,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.vrp_instructed_amount_amount.id_for_label }}">Instructed amount</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_instructed_amount_amount.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.vrp_instructed_amount_amount only %}
                             </div>
                             {{ form.vrp_instructed_amount_amount.errors }}
                             <input id="{{ form.vrp_instructed_amount_amount.id_for_label }}" name="vrp_instructed_amount_amount" type="text" value="{{ form.vrp_instructed_amount_amount.value|default_if_none:'' }}" autocomplete="off">
@@ -359,7 +363,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.vrp_instructed_amount_currency.id_for_label }}">Instructed amount currency</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_instructed_amount_currency.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.vrp_instructed_amount_currency only %}
                             </div>
                             {{ form.vrp_instructed_amount_currency.errors }}
                             <input id="{{ form.vrp_instructed_amount_currency.id_for_label }}" name="vrp_instructed_amount_currency" type="text" value="{{ form.vrp_instructed_amount_currency.value|default_if_none:'' }}" autocomplete="off">
@@ -369,7 +373,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.vrp_valid_from_date_time.id_for_label }}">Valid-from date/time</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_valid_from_date_time.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.vrp_valid_from_date_time only %}
                             </div>
                             {{ form.vrp_valid_from_date_time.errors }}
                             <input id="{{ form.vrp_valid_from_date_time.id_for_label }}" name="vrp_valid_from_date_time" type="text" value="{{ form.vrp_valid_from_date_time.value|default_if_none:'' }}" autocomplete="off">
@@ -377,7 +381,7 @@
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.vrp_valid_to_date_time.id_for_label }}">Valid-to date/time</label>
-                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_valid_to_date_time.field.required only %}
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.required_fields.vrp_valid_to_date_time only %}
                             </div>
                             {{ form.vrp_valid_to_date_time.errors }}
                             <input id="{{ form.vrp_valid_to_date_time.id_for_label }}" name="vrp_valid_to_date_time" type="text" value="{{ form.vrp_valid_to_date_time.value|default_if_none:'' }}" autocomplete="off">
@@ -386,7 +390,7 @@
                 </section>
             {% endif %}
 
-            {% if not config_visibility.show_business_defaults %}
+            {% if not config_visibility.show_business_defaults and not scope_missing %}
                 <section class="config-card">
                     <h3>No business data inputs required</h3>
                     <p class="helper">Default request payloads and stable business fixture values are supplied by the catalogue when the run is prepared.</p>
@@ -394,7 +398,7 @@
             {% endif %}
 
             <div class="actions">
-                <a class="button secondary" href="{% url 'builder-scope' draft.draft_id %}">Back to scope</a>
+                {% include "conformance/partials/builder_back_button.html" %}
                 <button type="submit">Review generated plan</button>
             </div>
         </form>

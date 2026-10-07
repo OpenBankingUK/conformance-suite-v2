@@ -1,0 +1,44 @@
+{% comment %}
+Review summary region: messages, counts, and blockers. Re-rendered out of band
+by live plan JSON apply, so it must not contain the review action form.
+{% endcomment %}
+<div id="review-summary-region"{% if oob %} hx-swap-oob="true"{% endif %}>
+    {% if review_error %}<div class="message error">{{ review_error }}</div>{% endif %}
+    {% include "conformance/partials/builder_import_issues.html" %}
+    {% if launch_error %}
+        <div class="message error">
+            {{ launch_error }}
+            {% if active_run_id %}<a href="{% url 'ui-run-detail' active_run_id %}" hx-boost="false">Open active run</a>{% endif %}
+        </div>
+    {% endif %}
+
+    <div class="summary-grid" aria-label="Generated plan counts">
+        <div class="count"><strong>{{ review_counts.generated }}</strong><span>Generated tests</span></div>
+        <div class="count"><strong>{{ review_counts.resource_groups }}</strong><span>Resource groups</span></div>
+        <div class="count"><strong>{{ review_counts.endpoints }}</strong><span>Endpoints</span></div>
+        <div class="count"><strong>{{ review_counts.capabilities }}</strong><span>Capabilities</span></div>
+        <div class="count"><strong>{{ review_counts.runtime_inputs }}</strong><span>Runtime inputs</span></div>
+        <div class="count"><strong>{{ review_counts.consents }}</strong><span>Expected consent groups</span></div>
+        <div class="count"><strong>{{ review_counts.psu_authorisations }}</strong><span>Expected PSU auths</span></div>
+        <div class="count"><strong>{{ review_phase_counts.setup }} / {{ review_phase_counts.security }} / {{ review_phase_counts.resource }}</strong><span>Setup / security / resource</span></div>
+    </div>
+
+    {% if review.launch_supported %}
+        <div class="message success">Ready to launch from this reviewed plan.</div>
+    {% else %}
+        <div class="message warning">Resolve review blockers before launch.</div>
+    {% endif %}
+    {% for group in step_issue_groups %}
+        <div class="message warning" data-step-issues="{{ group.step.step_id }}">
+            <strong>{{ group.step.label }} needs attention</strong>
+            <ul>{% for issue in group.issues %}<li>{{ issue }}</li>{% endfor %}</ul>
+            <button type="submit" class="secondary" name="next" value="{{ group.step.step_id }}" form="review-plan-form" formnovalidate>Fix {{ group.step.label|lower }}</button>
+        </div>
+    {% endfor %}
+    {% for blocker in other_blockers %}
+        <div class="message warning">{{ blocker }}</div>
+    {% endfor %}
+    {% if review.compiled_plan and not review.compiled_plan.certifying %}
+        <div class="message warning">Certification plan ineligible.</div>
+    {% endif %}
+</div>

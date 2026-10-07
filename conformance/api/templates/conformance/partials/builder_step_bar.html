@@ -1,0 +1,189 @@
+{% comment %}
+Builder step bar. Clickable steps submit the page's own form (``step_form_id``)
+with ``next=<step id>`` so whatever was entered on the current page is saved
+before the jump. Each step shows the state of its saved data: a tick when it
+has no issues, a warning when it needs attention, or its number when not
+started. Only the specification gates navigation; review lists every issue.
+{% endcomment %}
+<style>
+    /* Every pill has the same fixed height in every state, and every builder page shares one width, so steps never move. */
+    .builder-step-bar {
+        margin: 0 0 20px;
+    }
+
+    .builder-step-bar ol {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .builder-step-bar li {
+        display: flex;
+        align-items: center;
+    }
+
+    .builder-step-bar .builder-step-pill {
+        box-sizing: border-box;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 32px;
+        min-height: 0;
+        margin: 0;
+        padding: 0 12px 0 6px;
+        border: 1px solid var(--border, #ccd3dc);
+        border-radius: 999px;
+        background: var(--panel, #ffffff);
+        color: var(--text, #1b1f24);
+        font: inherit;
+        font-size: 0.85rem;
+        font-weight: 600;
+        line-height: 1;
+        white-space: nowrap;
+    }
+
+    .builder-step-bar button.builder-step-pill {
+        cursor: pointer;
+    }
+
+    .builder-step-bar button.builder-step-pill:not([aria-disabled="true"]):hover,
+    .builder-step-bar button.builder-step-pill:not([aria-disabled="true"]):focus-visible {
+        border-color: var(--accent, #0b6bcb);
+        color: var(--accent, #0b6bcb);
+    }
+
+    .builder-step-bar .builder-step-pill[aria-current="step"] {
+        border-color: var(--accent, #0b6bcb);
+        background: var(--accent, #0b6bcb);
+        color: #ffffff;
+    }
+
+    .builder-step-bar button.builder-step-pill[aria-disabled="true"] {
+        cursor: not-allowed;
+        color: var(--muted, #667085);
+        background: transparent;
+        border-style: dashed;
+    }
+
+    /* Locked steps explain why on hover and keyboard focus (aria-disabled keeps them focusable). */
+    .builder-step-bar li {
+        position: relative;
+    }
+
+    .builder-step-bar .builder-step-tooltip {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 50%;
+        z-index: 10;
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: #1b1f24;
+        color: #ffffff;
+        font-size: 0.8rem;
+        font-weight: 500;
+        line-height: 1.3;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        visibility: hidden;
+        transform: translateX(-50%);
+    }
+
+    .builder-step-bar .builder-step-tooltip::before {
+        content: "";
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        border: 5px solid transparent;
+        border-bottom-color: #1b1f24;
+    }
+
+    .builder-step-bar li:hover .builder-step-tooltip,
+    .builder-step-bar li:has(button:focus-visible) .builder-step-tooltip {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    .builder-step-bar .builder-step-number {
+        display: inline-grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.08);
+        font-size: 0.75rem;
+    }
+
+    .builder-step-bar [aria-current="step"] .builder-step-number {
+        background: rgba(255, 255, 255, 0.25);
+    }
+
+    .builder-step-bar .builder-step-state-complete .builder-step-number {
+        background: var(--success, #1f7a4d);
+        color: #ffffff;
+    }
+
+    .builder-step-bar .builder-step-state-attention .builder-step-number {
+        background: var(--warning, #b54708);
+        color: #ffffff;
+    }
+
+    .builder-step-bar .builder-step-divider {
+        width: 1px;
+        height: 20px;
+        margin: 0 6px;
+        background: var(--border, #ccd3dc);
+    }
+
+    .builder-step-messages {
+        margin: 0 0 12px;
+    }
+
+    header .builder-header-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    header .builder-menu-link {
+        min-height: 0;
+        padding: 6px 12px;
+        font-size: 0.85rem;
+    }
+
+    .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+</style>
+<nav class="builder-step-bar" aria-label="Builder steps">
+    <ol>
+        {% for item in step_bar %}
+            {% if item.step_id == "review" %}<li class="builder-step-divider" aria-hidden="true"></li>{% endif %}
+            <li class="builder-step-state-{{ item.state }}" data-builder-step="{{ item.step_id }}" data-builder-step-state="{{ item.state }}">
+                {% if item.state == "current" %}
+                    <span class="builder-step-pill" aria-current="step"><span class="builder-step-number">{{ item.number }}</span>{{ item.label }}</span>
+                {% elif item.clickable %}
+                    <button type="submit" class="builder-step-pill" name="next" value="{{ item.step_id }}" form="{{ step_form_id }}" formnovalidate><span class="builder-step-number" aria-hidden="true">{% if item.state == "complete" %}&#10003;{% elif item.state == "attention" %}!{% else %}{{ item.number }}{% endif %}</span>{{ item.label }}<span class="visually-hidden">{% if item.state == "complete" %} (complete){% elif item.state == "attention" %} (needs attention){% else %} (not started){% endif %}</span></button>
+                {% else %}
+                    <button type="button" class="builder-step-pill" aria-disabled="true" aria-describedby="builder-step-locked-tip-{{ item.step_id }}"><span class="builder-step-number">{{ item.number }}</span>{{ item.label }}</button>
+                    <span role="tooltip" id="builder-step-locked-tip-{{ item.step_id }}" class="builder-step-tooltip">Select a specification first to unlock this step.</span>
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ol>
+</nav>
+{% if messages %}
+    <div class="builder-step-messages">
+        {% for message in messages %}<div class="message warning" role="alert">{{ message }}</div>{% endfor %}
+    </div>
+{% endif %}

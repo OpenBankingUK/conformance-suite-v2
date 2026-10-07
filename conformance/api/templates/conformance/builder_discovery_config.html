@@ -10,7 +10,7 @@
         :root { color-scheme: light; --bg: #f7f8fa; --panel: #ffffff; --border: #ccd3dc; --text: #1b1f24; --muted: #667085; --accent: #0b6bcb; --danger: #b42318; --warning: #a15c07; }
         * { box-sizing: border-box; }
         body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.5; }
-        main { width: min(960px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+        main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
         header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
         h1, h2, h3 { margin: 0; line-height: 1.2; }
         h1 { font-size: 1.75rem; }
@@ -34,6 +34,8 @@
         .metadata-list { display: grid; grid-template-columns: minmax(180px, 0.5fr) 1fr; gap: 8px 12px; margin-top: 12px; }
         .metadata-list dt { font-weight: 650; }
         .metadata-list dd { margin: 0; overflow-wrap: anywhere; }
+        .discovery-result { margin-top: 12px; }
+        .discovery-document summary { cursor: pointer; color: var(--accent); font-weight: 600; }
         #discovery-preview > * { margin-top: 12px; }
         button:disabled { opacity: 0.6; cursor: progress; }
         @media (max-width: 840px) { header, .grid, .metadata-list { display: block; } .grid > div + div, .metadata-list dd + dt { margin-top: 12px; } }
@@ -46,22 +48,21 @@
     <header>
         <div>
             <h1>Discovery configuration</h1>
-            <div class="muted">Step 2: security environment discovery</div>
         </div>
-        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+        {% include "conformance/partials/builder_header_actions.html" with from_step="discovery" %}
     </header>
+    {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 
     <section class="panel" aria-labelledby="discovery-heading">
         <h2 id="discovery-heading">OpenID discovery</h2>
         <p class="helper">{% if draft.specification == "dynamic-client-registration" %}Enter the required `.well-known/openid-configuration` URL. DCR endpoints and token authentication metadata are derived from discovery.{% else %}Optionally enter the `.well-known/openid-configuration` URL for this executable test plan. The builder will try to fetch metadata for the next security step, but you can leave it blank and fill values manually.{% endif %}</p>
-        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         {% if discovery_metadata.fetch_error %}
             <div class="message warning">Last discovery fetch failed for {{ discovery_metadata.source_url }}: {{ discovery_metadata.fetch_error }}</div>
         {% endif %}
         {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
 
-        <form method="post" action="{% url 'builder-discovery-config' draft.draft_id %}">
+        <form method="post" id="builder-step-form" action="{% url 'builder-discovery-config' draft.draft_id %}">
             {% csrf_token %}
             <section class="config-card">
                 <div class="field-row">
@@ -79,13 +80,13 @@
                             hx-target="#discovery-preview"
                             hx-swap="outerHTML"
                             hx-sync="this:replace"
-                            hx-disabled-elt="this">Check discovery URL</button>
+                            hx-disabled-elt="this">Preview discovery</button>
                 </div>
                 {% include "conformance/partials/builder_discovery_preview.html" %}
             </section>
 
             <div class="actions">
-                <a class="button secondary" href="{% url 'builder-catalogue-boundary' draft.draft_id %}">Back to specification</a>
+                {% include "conformance/partials/builder_back_button.html" %}
                 <button type="submit">Continue to OAuth/FAPI security</button>
             </div>
         </form>

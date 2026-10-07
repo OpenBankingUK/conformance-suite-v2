@@ -9,6 +9,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.8] - 2026-10-06
+
+### Added
+
+- Every builder page now has an **Import plan** button beside **Main menu**. It imports a test plan JSON file or pasted JSON into the current draft, so switching from building to importing no longer needs a trip through the main menu. If the draft already has values, a **Replace current plan?** confirmation is shown first. **Cancel** returns to the page you came from.
+- The review page's plan JSON box is now clearly marked as editable and has a **Load from file…** button. Pasted, typed or loaded JSON is applied automatically after a short pause, using the same rules as import. The summary, generated tests and step bar refresh without replacing the text box or moving the caret.
+  - A status line shows **Updating…**, **Applied** or an error.
+  - Incomplete or invalid JSON leaves the last applied plan untouched.
+  - Older responses never overwrite newer edits.
+  - Launch, export and step navigation still validate the current text.
+- The review page's plan JSON box is larger and has JSON syntax highlighting. It is still a plain text box underneath, so typing, undo, paste and live apply behave as before. JSON syntax errors give the line number in the status message and get a red wavy underline on that line. A missing comma is marked on the line that needs the comma.
+
+### Changed
+
+- The README, Docker guide and Developer guide now describe the current builder:
+  the step order (specification, scope, connection & security, business data,
+  review), free step-bar navigation with review as the launch gate,
+  **Fetch and fill**, **Import plan** on every builder page, and the live,
+  highlighted plan JSON editor.
+- Builder dropdowns on the specification and connection & security pages are
+  restyled, with a consistent chevron, hover and focus states. Browsers that
+  support customisable selects (`appearance: base-select`) also get a styled
+  option list. The controls stay native, so keyboard and screen-reader
+  behaviour is unchanged.
+- The Read/Write builder now asks for scope before connection and security:
+  specification → scope → connection & security → business data → review. The
+  discovery URL moved onto the connection and security page, with an inline
+  **Fetch and fill** action that fills empty OAuth fields from discovery
+  metadata, summarises what was filled or kept, tags filled fields **From
+  discovery**, and offers **Replace with discovery values** when typed values
+  differ. DCR's discovery button is now **Preview discovery**. Each field
+  shows **Required to run** (with the reason), **Optional**, or **Depends on
+  scope** based on the selected endpoints, and the step shows needing attention
+  (!) when a value the selected tests need is missing.
+- Test plan validation now reports a missing OAuth client, OAuth endpoint, FAPI
+  signing, discovery or resource-server value that the selected tests need to
+  run, naming the `securityEnvironment` key and the reason. This applies to
+  builder, import, REST and CLI plans. The mTLS client certificate and key are
+  required only when the token endpoint auth method is `tls_client_auth`.
+
+- Builder endpoint labels now use a codified, source-linked Read/Write
+  Mandatory/Conditional/Optional matrix for 4.0.1, 4.0.0 and 3.1.11 rather than
+  catalogue "Baseline" coverage. Mandatory covered endpoints and selected
+  resource-POST dependencies are locked and restored server-side. Bulk deselection
+  retains mandatory endpoints and required features. Specification conditions
+  and conflicting source text remain explicit.
+- The builder shows a step bar at the top of every step and the review page.
+  Choosing a supported specification is the only gate: after that, new and
+  imported plans can move freely between any steps, and the step bar marks each
+  step complete (✓), needing attention (!), or not started from the saved data.
+  Step targets come from a fixed allow-list, and typed URLs for later steps
+  return to the specification step until one is chosen.
+- Leaving a builder page by **Back**, **Continue**, or the step bar always saves
+  what was entered. Missing values are left empty; a badly formatted value is
+  kept as typed and flagged on its page and at review instead of blocking the
+  page. Pasted or uploaded credential material that fails validation is never
+  kept; a message says it was not saved and why.
+- Builder step bar polish: steps keep the same position on every page (one
+  shared page width and header), pills are smaller with a fixed height in every
+  state, a divider sets **Review** apart, and **Main menu** is a compact
+  secondary button. Stale "Next you will…" banners are removed, the draft id is
+  shown on review only, Business data shows requirement badges beside labels and
+  a styled empty state when no scope is selected, and review shows each blocker
+  once (an empty scope no longer also shows the raw `resourceGroups` error).
+- Locked builder steps on a new plan show a tooltip on hover and keyboard focus
+  explaining that a specification must be selected first.
+- A builder step that has been saved, or loaded from an imported plan, now shows
+  needing attention (!) in the step bar when it still has issues, even if it is
+  empty. For example, leaving Scope with no resource group, or Business data
+  with required fields empty. Steps that have never been opened still show as
+  not started.
+- Review is the single validation gate: it lists each step's issues with a
+  **Fix** button for that step, and launch stays blocked until they are
+  resolved. Business data is empty until scope is selected and follows the
+  saved scope; an empty or incomplete scope is reported at review.
+- Changing the specification now lists the scope and data it would affect and
+  asks for confirmation before saving; reselecting the same specification
+  needs none.
+- Importing a plan without a supported specification opens the specification
+  step with the import warnings and later steps locked; the rest of the plan is
+  loaded once a specification is chosen. An unusable import, or one without a
+  specification, offers **Start a new plan instead**.
+- Ticking a resource group on the builder scope step now selects all of its
+  endpoints and optional features by default; ticking a single endpoint selects
+  its optional features. **Select all endpoints and features** does the same for
+  every selected group, and the deselect action only removes conditional and
+  optional endpoints and features.
+
+### Fixed
+
+- The builder's OpenAPI document update dropdown now lists only the updates for
+  the selected specification version in browsers that support the customisable
+  select picker; previously hidden options for other versions were still shown.
+- Builder business data no longer shows every resource group's fields when the
+  selected scope cannot be resolved; it shows no fields and links to the scope
+  step.
+- Malformed advanced JSON on the builder business data step is now reported
+  against its own field rather than rejecting the whole page.
+- Builder business data labels for Confirmation of Funds debtor-account and VRP
+  fields keep their **Required** badge when the page is saved incomplete; the
+  badge reflects the selected scope's specification requirements rather than
+  whether the builder blocks leaving the page.
+- The run screen's **New plan** button is now a **Main menu** link, so
+  participants choose between creating and importing a plan.
+- The builder's specification step now preselects the latest OpenAPI document
+  update for the chosen version instead of the earliest. A saved or imported
+  update is still kept.
+
 ### Security
 
 - Temporarily patch the pinned DHI runtime with signature-verified Alpine edge
@@ -415,7 +523,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.7...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.8...HEAD
+[2.0.0-beta.8]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.7...v2.0.0-beta.8
 [2.0.0-beta.7]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.6...v2.0.0-beta.7
 [2.0.0-beta.6]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.5...v2.0.0-beta.6
 [2.0.0-beta.5]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.4...v2.0.0-beta.5

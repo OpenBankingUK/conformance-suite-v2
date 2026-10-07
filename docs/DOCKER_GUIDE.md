@@ -1,11 +1,11 @@
 # Docker deployment guide
 
-**FCS v2 `2.0.0-beta.6` is an evaluation beta, not a certification release.**
+**FCS v2 `2.0.0-beta.8` is an evaluation beta, not a certification release.**
 Use it to try the new Functional Conformance Suite and provide feedback. Do
 not use beta runs or reports as certification evidence, even if the builder
 or a result displays certification-related labels.
 
-The primary beta.6 workflow is the local browser UI: run the Docker image,
+The primary beta.8 workflow is the local browser UI: run the Docker image,
 build a test plan, and paste credentials into the builder. The image runs
 non-root and requires no manually supplied Django secret. The persistence,
 certificate mount, Compose, and CLI options later in this guide are advanced
@@ -26,27 +26,34 @@ warning for the locally generated self-signed HTTPS certificate. Keep the
 `127.0.0.1` Docker port binding so the UI stays local.
 
 1. Select **Create new test plan with builder** on the main menu. Choose the
-   scheme, specification, and version, then provide your OpenID discovery URL
-   and the OAuth/FAPI and resource-server values relevant to your environment.
-2. On **OAuth and security configuration**, select **Paste or upload** under
-   **Supply this credential as** for each required credential. Paste your PEM
-   certificate or private key into **Paste PEM text** (and supply the other
-   credentials requested for your chosen plan). Leave **Absolute file path**
-   blank: a path on your computer is not a path inside the container. No
-   `/certs` mount is needed for pasted credentials. Supply each credential by
-   only one method.
-3. Select implemented endpoints and optional capabilities, fill in the
-   requested business data, and review the generated plan.
-   The builder indicates required fields and any launch blockers. Choose
-   **Launch run** when ready; a PSU authorisation handoff may still be needed
+   scheme, specification, and version (the latest OpenAPI document update is
+   preselected), then tick the resource groups and endpoints you implement.
+   Ticking a group selects all of its endpoints and optional features;
+   mandatory ones stay locked.
+2. On **Connection & security**, enter your OpenID discovery URL and choose
+   **Fetch and fill** to fill empty OAuth/FAPI fields from it, then confirm the
+   OAuth/FAPI and resource-server values relevant to your environment. Select
+   **Paste or upload** under **Supply this credential as** for each required
+   credential. Paste your PEM certificate or private key into **Paste PEM
+   text** (and supply the other credentials requested for your chosen plan).
+   Leave **Absolute file path** blank: a path on your computer is not a path
+   inside the container. No `/certs` mount is needed for pasted credentials.
+   Supply each credential by only one method.
+3. Fill in the requested business data and review the generated plan. Once a
+   specification is chosen, the step bar lets you move between steps in any
+   order, and leaving a page saves what you entered. Review lists any
+   remaining issues with a **Fix** button for each step; choose **Launch run**
+   when they are resolved. A PSU authorisation handoff may still be needed
    during execution. For tests requiring PSU authorisation, enter the exact
    callback URI registered for your test client with the ASPSP in the
    builder's **Redirect URI** field; it is independent of the UI address.
+   To switch to an existing plan at any point, choose **Import plan** at the
+   top of any builder page.
 4. Inspect the run details and open the **JSON** masked report if you want to
    keep it. **Export safe JSON** at plan review removes secret values and
    requires you to re-enter them after import. **Export with secrets** includes
    sensitive values: avoid it unless necessary and protect any copy you make.
-   Neither export nor the result is certification evidence in beta.6.
+   Neither export nor the result is certification evidence in beta.8.
 
 Stop with Ctrl+C. With this disposable command, browser sessions, generated
 results, logs, and the local certificate are lost when the container exits;
@@ -66,7 +73,7 @@ If the repository requires authentication, log in to Docker Hub with
 credentials that grant access before pulling.
 
 For reproducible runs, replace `2.0.0-beta-latest` in the commands in this guide
-with an exact published tag, for example `2.0.0-beta.6` once published.
+with an exact published tag, for example `2.0.0-beta.8` once published.
 See [`CICD_STRATEGY.md`](CICD_STRATEGY.md) for the full preview/beta/GA
 versioning and promotion model. `latest` refers only to the current GA release.
 For convenient MVP beta evaluation, `2.0.0-beta-latest` tracks the highest

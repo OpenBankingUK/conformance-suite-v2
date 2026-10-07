@@ -178,7 +178,7 @@ def test_clearing_a_stored_credential_reports_it_as_missing(
     mock_fetch_discovery: Mock,
     tmp_path: Path,
 ) -> None:
-    """Clearing a required credential removes it and blocks the step."""
+    """Clearing a required credential removes it and review reports it missing."""
     mock_fetch_discovery.return_value = {"token_endpoint_auth_methods_supported": ["private_key_jwt"]}
     certificate_path, private_key_path = write_signing_pair(tmp_path, stem="clear")
     certificate_pem = certificate_path.read_text(encoding="utf-8")
@@ -197,8 +197,12 @@ def test_clearing_a_stored_credential_reports_it_as_missing(
 
     cleared = client.post(security_url, data=_dcr_form_data(signing_private_key_action="clear"))
 
-    assert cleared.status_code == 400
-    assert "signing private key" in cleared.content.decode("utf-8").lower()
+    assert cleared.status_code == 302
+    draft_id = security_url.split("/")[2]
+    review = client.get(f"/builder/{draft_id}/review/").content.decode("utf-8")
+    assert 'data-step-issues="security"' in review
+    assert "signing private key" in review.lower()
+    assert 'data-builder-step-state="attention"' in review
 
 
 @pytest.mark.django_db
@@ -214,12 +218,17 @@ def test_pasting_the_wrong_artefact_is_rejected_without_echoing_material(
     client = Client()
     security_url = _dcr_draft_security_url(client)
 
-    rejected = client.post(security_url, data=_dcr_form_data(signing_private_key_pem=certificate_pem))
+    rejected = client.post(security_url, data=_dcr_form_data(signing_private_key_pem=certificate_pem), follow=True)
 
-    assert rejected.status_code == 400
     body = rejected.content.decode("utf-8")
+    assert rejected.redirect_chain
     assert "BEGIN CERTIFICATE-----\nMII" not in body
+    assert "was not saved" in body
     assert "private key" in body.lower()
+    draft = SessionBuilderDraftStore(client.session).get(security_url.split("/")[2])
+    assert draft is not None
+    assert "signingPrivateKeyPem" not in draft.security_environment
+    assert certificate_pem not in json.dumps(draft.to_session_object())
 
 
 @pytest.mark.django_db
@@ -240,10 +249,15 @@ def test_supplying_both_a_path_and_pasted_material_is_rejected(
             signing_private_key_path=str(private_key_path),
             signing_private_key_pem=private_key_path.read_text(encoding="utf-8"),
         ),
+        follow=True,
     )
 
-    assert rejected.status_code == 400
+    assert rejected.redirect_chain
     assert "only one" in rejected.content.decode("utf-8").lower()
+    draft = SessionBuilderDraftStore(client.session).get(security_url.split("/")[2])
+    assert draft is not None
+    assert "signingPrivateKeyPem" not in draft.security_environment
+    assert "signingPrivateKeyPath" not in draft.security_environment
 
 
 @pytest.mark.django_db
@@ -289,10 +303,11 @@ def test_an_oversized_upload_is_rejected(mock_fetch_discovery: Mock) -> None:
     oversized = BytesIO(b"-----BEGIN PRIVATE KEY-----\n" + b"A" * (MAX_INLINE_CREDENTIAL_BYTES + 1))
     oversized.name = "huge.key"
 
-    rejected = client.post(security_url, data=_dcr_form_data(signing_private_key_file=oversized))
+    rejected = client.post(security_url, data=_dcr_form_data(signing_private_key_file=oversized), follow=True)
 
-    assert rejected.status_code == 400
+    assert rejected.redirect_chain
     assert str(MAX_INLINE_CREDENTIAL_BYTES) in rejected.content.decode("utf-8")
+    assert "AAAAAAAAAA" not in rejected.content.decode("utf-8")
 
 
 @pytest.mark.django_db
@@ -305,9 +320,9 @@ def test_a_binary_upload_is_rejected_as_not_utf8(mock_fetch_discovery: Mock) -> 
     binary = BytesIO(b"\x30\x82\x01\x0a\x02\x82\x01\x01\x00\xff\xfe")
     binary.name = "transport.der"
 
-    rejected = client.post(security_url, data=_dcr_form_data(tls_client_certificate_file=binary))
+    rejected = client.post(security_url, data=_dcr_form_data(tls_client_certificate_file=binary), follow=True)
 
-    assert rejected.status_code == 400
+    assert rejected.redirect_chain
     assert "UTF-8" in rejected.content.decode("utf-8")
 
 
@@ -321,8 +336,12 @@ def test_a_relative_credential_path_is_rejected(mock_fetch_discovery: Mock) -> N
 
     rejected = client.post(security_url, data=_dcr_form_data(signing_private_key_path="certs/signing.key"))
 
-    assert rejected.status_code == 400
-    assert "absolute file path" in rejected.content.decode("utf-8").lower()
+    assert rejected.status_code == 302
+    revisited = client.get(security_url).content.decode("utf-8")
+    assert 'value="certs/signing.key"' in revisited
+    assert "absolute file path" in revisited.lower()
+    review = client.get(f"/builder/{security_url.split('/')[2]}/review/").content.decode("utf-8")
+    assert "absolute file path" in review.lower()
 
 
 @pytest.mark.django_db
