@@ -43,6 +43,7 @@ from conformance.catalogue import (
     parse_test_plan_document,
     validate_canonical_security_environment,
 )
+from conformance.execution_settings import ExecutionSettingsError, parse_execution_settings
 from conformance.json_types import JsonObject, JsonValue
 from conformance.specification_registry import (
     latest_openapi_document_update,
@@ -196,6 +197,7 @@ _TOP_LEVEL_KEYS: frozenset[str] = frozenset(
         "dynamicClientRegistration",
         "metadata",
         "executionMode",
+        "execution",
     }
 )
 """Top-level keys defined by the canonical schemaVersion 1.0 test plan."""
@@ -339,6 +341,20 @@ def recover_draft_from_plan_json(raw_plan: Mapping[str, JsonValue], *, draft: Bu
     business_test_data = _recover_business_test_data(raw_plan, recovery, family=family)
     dynamic_client_registration = _recover_dynamic_client_registration(raw_plan, recovery, family=family)
     metadata = _recover_metadata(raw_plan, recovery)
+    execution_settings_recovered = False
+    if "execution" in raw_plan:
+        try:
+            execution_settings = parse_execution_settings(raw_plan["execution"], location="execution")
+        except ExecutionSettingsError as error:
+            recovery.keep(("execution",), raw_plan["execution"], kind="invalid", message=str(error))
+        else:
+            psu_authorization = execution_settings.psu_authorization
+            draft = draft.with_psu_authorization_settings(
+                mode=psu_authorization.mode,
+                headers=psu_authorization.headers,
+                parameters=psu_authorization.parameters,
+            )
+            execution_settings_recovered = True
 
     draft = draft.with_config(
         config=canonical_plan_config(security_environment=security_environment, business_test_data=business_test_data)
@@ -355,6 +371,7 @@ def recover_draft_from_plan_json(raw_plan: Mapping[str, JsonValue], *, draft: Bu
     recovered_anything = (
         draft.specification is not None
         or execution_mode_recovered
+        or execution_settings_recovered
         or any((security_environment, business_test_data, dynamic_client_registration, metadata))
     )
     if not recovered_anything:
@@ -430,11 +447,14 @@ def reconcile_draft_after_builder_save(
             _prune_builder_owned(overlay, builder_json, "securityEnvironment", keys=_DISCOVERY_OWNED_KEYS)
         else:
             sections = {
-                "security": ("securityEnvironment", "dynamicClientRegistration", "metadata"),
+                "security": ("securityEnvironment", "dynamicClientRegistration", "metadata", "execution"),
                 "config": ("businessTestData",),
             }[step]
             for section in sections:
                 _prune_builder_owned(overlay, builder_json, section)
+            if step == "security":
+                overlay.pop("execution", None)
+                issues = [issue for issue in issues if issue.ref[:1] != ("execution",)]
         if step == "security" and _draft_uses_resource_groups(updated) is False:
             overlay.pop("executionMode", None)
     builder_json = builder_plan_json_from_draft_or_skeleton(draft)

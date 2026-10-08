@@ -159,6 +159,10 @@ class SmokeCheckResult:
             body["plan"] = dict(self.plan_summary)
         if self.compiled_plan is not None:
             body["catalogue"] = _compiled_plan_to_json_object(self.compiled_plan, steps=self.steps)
+            # Records how PSU authorisation was driven (mode plus custom header
+            # and parameter names only). Values are never written, and the
+            # mode does not change certification eligibility.
+            body["execution"] = {"psuAuthorization": self.compiled_plan.execution_settings.psu_authorization.evidence()}
         return body
 
 

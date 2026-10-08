@@ -12,6 +12,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Literal, cast
 
+from conformance.execution_settings import PsuParameterValue
 from conformance.json_types import JsonValue
 from conformance.openapi_documents import bundled_openapi_document_paths
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
@@ -453,12 +454,12 @@ class ManifestStep:
     response_signature_policy: ResponseSignaturePolicy | None = None
 
 
-PsuAuthorizationMode = Literal["manual", "headless"]
+PsuAuthorizationMode = Literal["manual", "auto-approve"]
 """Mode controlling how the engine completes a PSU authorisation step.
 
 ``manual`` surfaces the authorisation URL to the participant and polls the
 :class:`conformance.api.auth_session_store.AuthSessionStore` until the
-ASPSP browser redirect resolves the session. ``headless`` issues the
+ASPSP browser redirect resolves the session. ``auto-approve`` issues the
 authorisation request engine-side, parses the ``Location`` header of the
 expected 3xx response, and feeds the result into the store programmatically
 (see PRD open-investigation item: feasibility against the Ozone sandbox
@@ -521,7 +522,7 @@ class PsuAuthorizationStep:
     * ``manual``: the executor surfaces the authorisation URL via an
       execution-log event and polls the store until the participant
       completes the consent flow in a browser.
-    * ``headless``: the executor issues the authorisation request itself
+    * ``auto-approve``: the executor issues the authorisation request itself
       with ``follow_redirects=False`` and parses the 3xx ``Location``
       header to extract ``state`` and ``code`` (or ``error``).
 
@@ -529,7 +530,7 @@ class PsuAuthorizationStep:
         id: Stable identifier for the step, referenced by later placeholders.
         name: Human-readable step name.
         mode: Whether the step waits for a browser callback (``manual``) or
-            drives the redirect itself (``headless``).
+            drives the redirect itself (``auto-approve``).
         authorization_endpoint: Authorisation endpoint URL. Placeholders are
             permitted so the URL can be sourced from an earlier discovery
             step. Validated as HTTPS at parse time when no placeholder is
@@ -538,7 +539,7 @@ class PsuAuthorizationStep:
             query parameter. Placeholders permitted.
         redirect_uri: Registered redirect URI sent as the ``redirect_uri``
             query parameter and used to match the ASPSP redirect in
-            headless mode. Literal values are validated as HTTPS at parse
+            auto-approve mode. Literal values are validated as HTTPS at parse
             time. The only permitted placeholder is the narrow participant
             config value ``${config.oauth.redirectUri}``, which is resolved
             and HTTPS-validated again at runtime.
@@ -573,6 +574,12 @@ class PsuAuthorizationStep:
         phase: Scheduling phase for this step. Defaults to
             ``"execution"``. Setup-phase PSU steps execute before grouped
             execution starts.
+        custom_headers: Plan-configured headers attached only to the
+            auto-approve authorisation request (never to token, consent, or
+            resource calls). Empty for manual mode.
+        custom_parameters: Plan-configured authorisation parameters. Embedded
+            as signed request-object claims when a request object is used
+            (FAPI 1 Advanced Part 2 §5.2.2), otherwise appended to the query.
     """
 
     id: str
@@ -590,6 +597,8 @@ class PsuAuthorizationStep:
     optional: bool = False
     group: str = "default"
     phase: StepPhase = "execution"
+    custom_headers: tuple[tuple[str, str], ...] = ()
+    custom_parameters: tuple[tuple[str, PsuParameterValue], ...] = ()
 
 
 type V1Step = ManifestStep | PsuAuthorizationStep
@@ -1217,7 +1226,7 @@ def _parse_psu_mode(raw_step: dict[str, JsonValue], *, location: str) -> PsuAuth
         location: Dot-path location string used in error messages.
 
     Returns:
-        The validated mode literal (``"manual"`` or ``"headless"``).
+        The validated mode literal (``"manual"`` or ``"auto-approve"``).
 
     Raises:
         ManifestError: If ``mode`` is missing or not one of the supported values.
@@ -1225,9 +1234,9 @@ def _parse_psu_mode(raw_step: dict[str, JsonValue], *, location: str) -> PsuAuth
     mode = _required_string(raw_step, "mode", location=location)
     if mode == "manual":
         return "manual"
-    if mode == "headless":
-        return "headless"
-    raise ManifestError(f"{location}.mode must be one of: manual, headless (got: {mode!r})")
+    if mode == "auto-approve":
+        return "auto-approve"
+    raise ManifestError(f"{location}.mode must be one of: manual, auto-approve (got: {mode!r})")
 
 
 def _parse_psu_optional_string(raw_step: dict[str, JsonValue], *, key: str, default: str, location: str) -> str:

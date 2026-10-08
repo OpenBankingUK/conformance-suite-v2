@@ -51,6 +51,13 @@ from conformance.endpoint_requirements import (
     endpoint_requirement_key,
     read_write_endpoint_requirement,
 )
+from conformance.execution_settings import (
+    ExecutionSettingsError,
+    PsuAuthorizationModeSetting,
+    PsuAuthorizationSettings,
+    validate_psu_headers,
+    validate_psu_parameters,
+)
 from conformance.executor import compiled_plan_run_config_requirements
 from conformance.json_types import JsonObject, JsonValue
 from conformance.run_config_requirements import (
@@ -1330,6 +1337,9 @@ class SecurityConfigForm(forms.Form):
         dynamic_client_registration: Canonical DCR-only values emitted in DCR mode.
         metadata: Canonical reporting metadata emitted in DCR mode.
         execution_mode: Canonical execution mode emitted in DCR mode.
+        psu_authorization_mode: Manual or auto-approve PSU authorisation mode.
+        psu_authorization_headers: Custom auto-approve authorisation headers.
+        psu_authorization_parameters: Custom parameters used in both modes.
     """
 
     oauth_client_id: forms.CharField = forms.CharField(label="Client ID", required=False)
@@ -1411,6 +1421,11 @@ class SecurityConfigForm(forms.Form):
     metadata_aspsp_name: forms.CharField = forms.CharField(label="ASPSP name", required=False)
     metadata_brand_name: forms.CharField = forms.CharField(label="Brand name", required=False)
     metadata_environment_name: forms.CharField = forms.CharField(label="Environment name", required=False)
+    psu_authorization_mode: forms.ChoiceField = forms.ChoiceField(
+        label="PSU authorisation mode",
+        choices=(("manual", "Manual"), ("auto-approve", "Auto-approve")),
+        required=False,
+    )
     signing_client_auth_algorithm: forms.CharField = forms.CharField(
         label="Client authentication signing algorithm",
         required=False,
@@ -1421,6 +1436,10 @@ class SecurityConfigForm(forms.Form):
     dynamic_client_registration: JsonObject | None = None
     metadata: JsonObject | None = None
     execution_mode: PlanExecutionMode | None = None
+    psu_authorization_settings: PsuAuthorizationSettings | None = None
+    psu_authorization_headers: tuple[tuple[str, str], ...] = ()
+    psu_parameter_row_count: int = 1
+    psu_header_row_count: int = 1
 
     def __init__(
         self,
@@ -1449,6 +1468,8 @@ class SecurityConfigForm(forms.Form):
         """
         self.dcr_mode = dcr_mode
         self.lenient = lenient
+        self.psu_parameter_row_count = _psu_row_count(data, initial, "parameter")
+        self.psu_header_row_count = _psu_row_count(data, initial, "header")
         self.stored_credentials: Mapping[str, CredentialMaterial | None] = stored_credentials or {}
         self.credentials: dict[str, CredentialMaterial | None] = {}
         super().__init__(
@@ -1457,6 +1478,11 @@ class SecurityConfigForm(forms.Form):
             initial=cast(MutableMapping[str, object] | None, initial),
         )
         add_credential_fields(self.fields, SECURITY_CREDENTIAL_SPECS_BY_NAME)
+        for index in range(32):
+            self.fields[f"psu_parameter_name_{index}"] = forms.CharField(required=False)
+            self.fields[f"psu_parameter_value_{index}"] = forms.CharField(required=False, strip=False)
+            self.fields[f"psu_header_name_{index}"] = forms.CharField(required=False)
+            self.fields[f"psu_header_value_{index}"] = forms.CharField(required=False, strip=False)
         auth_choices = [
             ("", "Select auth method"),
             ("private_key_jwt", "private_key_jwt"),
@@ -1490,6 +1516,7 @@ class SecurityConfigForm(forms.Form):
         """
         base_cleaned_data = super().clean()
         cleaned_data: dict[str, object] = {} if base_cleaned_data is None else dict(base_cleaned_data)
+        self._clean_psu_authorization_settings(cleaned_data)
         self.credentials = {
             spec.name: resolve_credential(
                 self,
@@ -1559,6 +1586,38 @@ class SecurityConfigForm(forms.Form):
         else:
             self.config = _security_config_from_fields(cleaned_data, self.credentials)
         return cleaned_data
+
+    def _clean_psu_authorization_settings(self, cleaned_data: Mapping[str, object]) -> None:
+        """Validate indexed PSU header and parameter rows with shared rules.
+
+        Args:
+            cleaned_data: Cleaned Django form fields.
+        """
+        mode_raw = cleaned_data.get("psu_authorization_mode") or "manual"
+        mode: PsuAuthorizationModeSetting = "auto-approve" if mode_raw == "auto-approve" else "manual"
+        if _psu_has_oversized_rows(self.data):
+            self.add_error(None, "At most 32 PSU parameter or header rows are supported.")
+        parameter_pairs = _psu_form_pairs(cleaned_data, "parameter")
+        header_pairs = _psu_form_pairs(cleaned_data, "header")
+        typed_parameters = tuple((name, _psu_parameter_value(value)) for name, value in parameter_pairs)
+        valid_parameters: tuple[tuple[str, str | int | float | bool], ...] = ()
+        valid_headers: tuple[tuple[str, str], ...] = ()
+        try:
+            valid_parameters = validate_psu_parameters(typed_parameters, location="execution.psuAuthorization")
+        except ExecutionSettingsError as error:
+            _add_psu_row_error(self, "parameter", cleaned_data, str(error))
+        if mode == "auto-approve":
+            try:
+                valid_headers = validate_psu_headers(header_pairs, location="execution.psuAuthorization")
+            except ExecutionSettingsError as error:
+                _add_psu_row_error(self, "header", cleaned_data, str(error))
+        self.psu_authorization_headers = header_pairs
+        if not self.errors:
+            self.psu_authorization_settings = PsuAuthorizationSettings(
+                mode=mode,
+                headers=valid_headers,
+                parameters=valid_parameters,
+            )
 
 
 def catalogue_boundary_options() -> tuple[PlanDocumentBoundary, ...]:
@@ -2139,6 +2198,9 @@ def security_config_form_initial(
     dynamic_client_registration: Mapping[str, JsonValue] | None = None,
     metadata: Mapping[str, JsonValue] | None = None,
     execution_mode: PlanExecutionMode = "certification",
+    psu_authorization_mode: PsuAuthorizationModeSetting = "manual",
+    psu_authorization_headers: tuple[tuple[str, str], ...] = (),
+    psu_authorization_parameters: tuple[tuple[str, JsonValue], ...] = (),
 ) -> dict[str, object]:
     """Return security form initial values from config and discovery metadata.
 
@@ -2149,6 +2211,9 @@ def security_config_form_initial(
         dynamic_client_registration: Optional canonical DCR-only configuration.
         metadata: Optional canonical shared reporting metadata.
         execution_mode: Canonical execution mode used by DCR audience controls.
+        psu_authorization_mode: Saved PSU authorisation mode.
+        psu_authorization_headers: Saved header rows, including rows retained in manual mode.
+        psu_authorization_parameters: Saved typed parameter rows.
 
     Returns:
         Initial form values keyed by security field name.
@@ -2158,6 +2223,7 @@ def security_config_form_initial(
     signing = _object_config_value(config, "fapiSigning")
     tls = _object_config_value(config, "tls")
     initial: dict[str, object] = {
+        "psu_authorization_mode": psu_authorization_mode,
         "oauth_client_id": _string_config_value(oauth, "clientId"),
         "oauth_redirect_uri": _string_config_value(oauth, "redirectUri"),
         "oauth_authorization_endpoint": _config_or_discovery_string(
@@ -2189,6 +2255,12 @@ def security_config_form_initial(
         "tls_client_certificate_path": _string_config_value(tls, "clientCertificatePath"),
         "tls_client_private_key_path": _string_config_value(tls, "clientPrivateKeyPath"),
     }
+    for index, (name, value) in enumerate(psu_authorization_parameters[:32]):
+        initial[f"psu_parameter_name_{index}"] = name
+        initial[f"psu_parameter_value_{index}"] = _display_psu_parameter_value(value)
+    for index, (name, value) in enumerate(psu_authorization_headers[:32]):
+        initial[f"psu_header_name_{index}"] = name
+        initial[f"psu_header_value_{index}"] = value
     canonical_security = security_environment or {}
     canonical_mtls = _object_config_value(canonical_security, "mtls")
     dcr = dynamic_client_registration or {}
@@ -2687,6 +2759,9 @@ def _skeleton_plan_json_from_draft(draft: BuilderDraft) -> JsonObject:
     if not uses_resource_groups or (boundary is None and draft.dynamic_client_registration):
         raw_plan["dynamicClientRegistration"] = _copy_json_mapping(draft.dynamic_client_registration)
     raw_plan["metadata"] = _copy_json_mapping(draft.metadata)
+    execution = _psu_execution_json(draft)
+    if execution is not None:
+        raw_plan["execution"] = execution
     return raw_plan
 
 
@@ -2748,6 +2823,9 @@ def builder_plan_json_from_draft(draft: BuilderDraft, *, config: Mapping[str, Js
             "dynamicClientRegistration": _copy_json_mapping(draft.dynamic_client_registration),
             "metadata": _copy_json_mapping(draft.metadata),
         }
+        execution = _psu_execution_json(draft)
+        if execution is not None:
+            dcr_raw_plan["execution"] = execution
         return dcr_raw_plan
     selected_group_ids = _normalized_resource_group_ids_for_hierarchy(draft.resource_group_ids, hierarchy=hierarchy)
     selected_endpoint_ids = set(draft.endpoint_ids)
@@ -2813,6 +2891,9 @@ def builder_plan_json_from_draft(draft: BuilderDraft, *, config: Mapping[str, Js
         "businessTestData": business_test_data,
         "metadata": _copy_json_mapping(draft.metadata),
     }
+    execution = _psu_execution_json(draft)
+    if execution is not None:
+        raw_plan["execution"] = execution
     return raw_plan
 
 
@@ -3871,6 +3952,149 @@ def _discovery_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObj
     return config
 
 
+def _psu_row_count(
+    data: Mapping[str, object] | None,
+    initial: Mapping[str, object] | None,
+    kind: str,
+) -> int:
+    """Find the number of rendered PSU name/value rows, capped at the supported limit.
+
+    Args:
+        data: Optional submitted form mapping.
+        initial: Optional initial values from the draft.
+        kind: ``parameter`` or ``header`` row prefix.
+
+    Returns:
+        At least one row and no more than 32.
+    """
+    indexes = [0]
+    for values in (data, initial):
+        if values is None:
+            continue
+        for key in values:
+            match = re.fullmatch(rf"psu_{kind}_(?:name|value)_(\d+)", str(key))
+            if match is not None:
+                indexes.append(int(match.group(1)))
+    return min(max(indexes) + 1, 32)
+
+
+def _psu_has_oversized_rows(data: Mapping[str, object] | None) -> bool:
+    """Return whether a submission contains a row index outside the 32-row limit.
+
+    Args:
+        data: Bound form data.
+
+    Returns:
+        True when any PSU header or parameter row index is 32 or greater.
+    """
+    if data is None:
+        return False
+    return any(
+        (match := re.fullmatch(r"psu_(?:parameter|header)_(?:name|value)_(\d+)", str(key))) is not None
+        and int(match.group(1)) >= 32
+        for key in data
+    )
+
+
+def _psu_form_pairs(cleaned_data: Mapping[str, object], kind: str) -> tuple[tuple[str, str], ...]:
+    """Collect non-empty indexed PSU form rows in input order.
+
+    Args:
+        cleaned_data: Cleaned form fields.
+        kind: ``parameter`` or ``header``.
+
+    Returns:
+        Name/value pairs; only rows with both fields blank are ignored.
+    """
+    pairs: list[tuple[str, str]] = []
+    for index in range(32):
+        raw_name = cleaned_data.get(f"psu_{kind}_name_{index}", "")
+        raw_value = cleaned_data.get(f"psu_{kind}_value_{index}", "")
+        name = raw_name if isinstance(raw_name, str) else ""
+        value = raw_value if isinstance(raw_value, str) else ""
+        if not name.strip() and not value.strip():
+            continue
+        pairs.append((name.strip(), value))
+    return tuple(pairs)
+
+
+def _psu_parameter_value(value: str) -> str | bool:
+    """Convert only the textual booleans ``true`` and ``false`` to JSON booleans.
+
+    Other input remains a string, including values that resemble numbers, so
+    the UI never silently changes numeric formatting or precision.
+
+    Args:
+        value: Text entered into a parameter value field.
+
+    Returns:
+        Boolean for a case-insensitive boolean literal; otherwise the original string.
+    """
+    if value.lower() == "true":
+        return True
+    if value.lower() == "false":
+        return False
+    return value
+
+
+def _display_psu_parameter_value(value: JsonValue) -> str:
+    """Render an imported scalar parameter as editable text.
+
+    Args:
+        value: Canonical JSON scalar.
+
+    Returns:
+        Boolean values use lower-case JSON spelling; other values use text.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _add_psu_row_error(
+    form: SecurityConfigForm,
+    kind: str,
+    cleaned_data: Mapping[str, object],
+    message: str,
+) -> None:
+    """Attach a shared validation error to its matching indexed name field.
+
+    Args:
+        form: Bound security form.
+        kind: ``parameter`` or ``header``.
+        cleaned_data: Cleaned indexed form rows.
+        message: Shared execution-settings validation message.
+    """
+    for index in range(31, -1, -1):
+        raw_name = cleaned_data.get(f"psu_{kind}_name_{index}", "")
+        raw_value = cleaned_data.get(f"psu_{kind}_value_{index}", "")
+        name = raw_name.strip() if isinstance(raw_name, str) else ""
+        value = raw_value if isinstance(raw_value, str) else ""
+        if (name or value.strip()) and f"[{name!r}]" in message:
+            form.add_error(f"psu_{kind}_name_{index}", str(message))
+            return
+    form.add_error(None, str(message))
+
+
+def _psu_execution_json(draft: BuilderDraft) -> JsonObject | None:
+    """Build the plan ``execution`` object, excluding inactive manual headers.
+
+    Args:
+        draft: Builder draft.
+
+    Returns:
+        Canonical execution object, or ``None`` when settings are default.
+    """
+    if draft.psu_authorization_mode == "manual" and not draft.psu_authorization_parameters:
+        return None
+    psu: JsonObject = {"mode": draft.psu_authorization_mode}
+    if draft.psu_authorization_mode == "auto-approve" and draft.psu_authorization_headers:
+        psu["headers"] = dict(draft.psu_authorization_headers)
+    if draft.psu_authorization_parameters:
+        psu["parameters"] = dict(draft.psu_authorization_parameters)
+    return {"psuAuthorization": psu}
+
+
 def _security_config_from_fields(
     cleaned_data: Mapping[str, object],
     credentials: Mapping[str, CredentialMaterial | None],
@@ -4367,6 +4591,7 @@ def _plan_document_with_config(document: PlanDocumentV2, config: Mapping[str, Js
         endpoints=document.endpoints,
         dynamic_client_registration=document.dynamic_client_registration,
         openapi_document_update=document.openapi_document_update,
+        execution_settings=document.execution_settings,
     )
 
 

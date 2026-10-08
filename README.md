@@ -1,6 +1,6 @@
-# Functional Conformance Suite v2 beta.8
+# Functional Conformance Suite v2 beta.9
 
-**Beta only — not for certification.** FCS v2 `2.0.0-beta.8` is an MVP for
+**Beta only — not for certification.** FCS v2 `2.0.0-beta.9` is an MVP for
 evaluating the new Open Banking UK Functional Conformance Suite and providing
 feedback. It is **not approved for certification**; runs and reports from this
 beta must not be submitted as certification evidence, even if a plan or result
@@ -45,7 +45,7 @@ does not persist browser sessions, results, or logs across runs.
 For the complete beta UI walkthrough and optional persistence or certificate
 mounts, see the [Docker deployment guide](docs/DOCKER_GUIDE.md). CLI, REST,
 Compose, and file-based credential configuration below are advanced reference,
-not the primary beta.8 participant workflow.
+not the primary beta.9 participant workflow.
 
 ## Give beta feedback
 
@@ -180,7 +180,7 @@ between building and importing a plan.
 
 The UI shows generated tests, counts, source traceability, runtime/auth
 requirements, launch blockers, and internal certification-status labels after
-preview. **Those labels do not make beta.8 runs valid for certification.**
+preview. **Those labels do not make beta.9 runs valid for certification.**
 Generated tests are read-only: participants cannot select exact generated
 tests. Lower-level request and assertion details stay collapsed under audit
 details.
@@ -202,6 +202,68 @@ PIS, CBPII, and VRP catalogue areas when those groups use one security
 environment and OpenID discovery URL. cVRP is not exposed under the Open Banking
 UK Read/Write boundary for now. Read/Write version `3.1.11` is backed by
 dedicated v3.1 catalogue areas; it is not routed through the v4 catalogues.
+
+### PSU authorisation and pipeline runs
+
+An optional top-level `execution` block in the plan sets who completes PSU
+authorisation: the PSU in a browser (`manual`, the default) or the sandbox
+(`auto-approve`).
+
+```json
+"execution": {
+  "psuAuthorization": {
+    "mode": "auto-approve",
+    "headers": { "x-sandbox-auto-approve": "true" },
+    "parameters": { "headless": true }
+  }
+}
+```
+
+| Mode | Behaviour |
+| --- | --- |
+| `manual` (default) | The CLI prints each PSU authorisation URL to stderr and starts a built-in HTTPS listener for the plan's `redirectUri`. Complete the consent in a browser and the run continues. Use `--open-browser` to open the URL automatically. |
+| `auto-approve` | The sandbox completes authorisation. The runner sends the authorisation request with an HTTP client, not a browser, so the sandbox must auto-approve and redirect straight back to `redirectUri` with a code. Login and consent pages are not automated. This mode suits unattended CI/CD pipelines. |
+
+Auto-approval is a sandbox test facility, not an Open Banking UK or FAPI
+concept, and ASPSPs usually have to enable it for your client. Ozone and the
+legacy FCS call it "headless". A plan that still uses `"mode": "headless"` is
+rejected with a message asking you to change it to `auto-approve`. The
+`"headless": true` parameter above is just an example of a sandbox-specific
+custom parameter.
+
+- `headers` are only valid in `auto-approve` mode. They are sent on the
+  authorisation request only and never on resource calls. You cannot override
+  HTTP framing and hop-by-hop headers such as `Host`, `Content-Length` or
+  `Connection`.
+- `parameters` are valid in both modes. They are added as claims in the signed
+  request object (FAPI 1 Advanced Part 2 §5.2.2). They are not sent as
+  unsigned query parameters, except for pre-signed request objects that the
+  runner cannot amend. Values may be strings, numbers or booleans. You cannot
+  override OAuth/OIDC names that the runner generates, such as `state`,
+  `nonce`, `scope` or `request`.
+- Results record the mode and the header and parameter names under
+  `execution.psuAuthorization`, but never their values. Header values that
+  look sensitive are also blanked in the stored plan snapshot. Auto-approve
+  mode does not change certification eligibility.
+- If the ASPSP redirects an auto-approve request to one of its own pages (for
+  example an error page) instead of `redirectUri`, the runner follows up to
+  three redirects on the same origin. It sends only the cookies the ASPSP set
+  and never resends your custom headers. The page's visible text (scripts,
+  markup and hidden fields removed, at most 2 KB) is recorded as `errorPage`
+  evidence, and the start of it is added to the step message. Redirects to
+  another origin are reported but not followed.
+
+The manual-mode listener binds to the host and port of `redirectUri`. Inside
+the container it binds to all interfaces. It uses the container certificate
+when one is available; otherwise it uses a temporary self-signed certificate.
+If you can't bind that port (for example, port 443 without root), pass
+`--callback-listen HOST:PORT` and forward the registered redirect to it.
+
+At the end of each run, the CLI prints a short summary to stdout. It shows the
+overall result, step counts, the PSU authorisation mode, any reasons the run
+is not certification-eligible, the failed steps with HTTP status and message,
+and the paths of the result file and execution log. For pipeline gating, use
+the exit code or `python -m conformance.result_gate <result-file>`.
 
 ### OpenAPI document updates
 

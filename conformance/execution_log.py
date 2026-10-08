@@ -35,7 +35,7 @@ import os
 import tempfile
 import threading
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -192,29 +192,38 @@ class NullExecutionLogger(ExecutionLogger):
 
 
 class PsuAuthorizationUrlConsoleLogger(ExecutionLogger):
-    """Decorator that mirrors PSU authorisation URLs to an interactive CLI.
+    """Decorator that mirrors manual PSU authorisation URLs to the CLI console.
 
     The wrapped logger remains the canonical execution-log sink. This
-    decorator only adds an operator-facing stderr line when the executor emits
-    a ``psu-authorization-url`` event and both console streams are attached to
-    a TTY, so non-interactive CI invocations and redirected log streams keep
-    their output quiet while the existing NDJSON log remains complete.
+    decorator adds an operator-facing stderr line whenever the executor emits
+    a manual-mode ``psu-authorization-url`` event, so the participant (or a
+    pipeline operator watching the job log) can open the URL and complete
+    consent. ANSI emphasis is only used when stderr is a TTY. Auto-approve-mode
+    events are not printed because no human action is needed.
     """
 
-    def __init__(self, wrapped: ExecutionLogger, *, stdout: TextIO, stderr: TextIO) -> None:
+    def __init__(
+        self,
+        wrapped: ExecutionLogger,
+        *,
+        stdout: TextIO,
+        stderr: TextIO,
+        open_browser: Callable[[str], object] | None = None,
+    ) -> None:
         """Initialise the console mirroring decorator.
 
         Args:
             wrapped: Execution-log sink that receives every event unchanged.
-            stdout: Stream whose ``isatty()`` result contributes to the
-                interactive CLI decision.
-            stderr: Stream whose ``isatty()`` result contributes to the
-                interactive CLI decision and that receives the
-                participant-facing PSU URL line.
+            stdout: Standard output stream; retained for API compatibility.
+            stderr: Stream that receives the participant-facing PSU URL line.
+            open_browser: Optional best-effort callback (for example
+                :func:`webbrowser.open`) invoked with each manual PSU URL.
+                Failures are swallowed so a missing browser never fails a run.
         """
         self._wrapped = wrapped
         self._stdout = stdout
         self._stderr = stderr
+        self._open_browser = open_browser
 
     def emit(
         self,
@@ -223,23 +232,32 @@ class PsuAuthorizationUrlConsoleLogger(ExecutionLogger):
         step_id: str | None = None,
         payload: Mapping[str, JsonValue] | None = None,
     ) -> None:
-        """Forward an event and mirror PSU authorisation URLs when interactive.
+        """Forward an event and mirror manual PSU authorisation URLs.
 
         Args:
             event_type: Event type from the closed taxonomy.
             step_id: Optional manifest step identifier.
             payload: Optional event-specific data. The wrapped logger applies
                 its normal masking policy; this decorator reads only the raw
-                ``url`` field needed for the browser hand-off line.
+                ``url`` and ``mode`` fields needed for the browser hand-off.
         """
         self._wrapped.emit(event_type, step_id=step_id, payload=payload)
-        if event_type != "psu-authorization-url" or not (self._stdout.isatty() and self._stderr.isatty()):
+        if event_type != "psu-authorization-url":
             return
-        url = (payload or {}).get("url")
+        event_payload = payload or {}
+        if event_payload.get("mode") == "auto-approve":
+            return
+        url = event_payload.get("url")
         if not isinstance(url, str):
             return
-        self._stderr.write(f"\033[1m[PSU]\033[0m Open this URL to authorise: {url}\n")
+        label = "\033[1m[PSU]\033[0m" if _is_tty(self._stderr) else "[PSU]"
+        self._stderr.write(f"{label} Open this URL to authorise: {url}\n")
         self._stderr.flush()
+        if self._open_browser is not None:
+            try:
+                self._open_browser(url)
+            except Exception:  # noqa: BLE001 - opening a browser is best-effort and must never fail the run.
+                logger.debug("Unable to open a browser for the PSU authorisation URL", exc_info=True)
 
     @property
     def run_id(self) -> str | None:
@@ -251,6 +269,12 @@ class PsuAuthorizationUrlConsoleLogger(ExecutionLogger):
         """
         wrapped_run_id = getattr(self._wrapped, "run_id", None)
         return wrapped_run_id if isinstance(wrapped_run_id, str) and wrapped_run_id else None
+
+
+def _is_tty(stream: TextIO) -> bool:
+    """Return whether ``stream`` is attached to a terminal, tolerating odd streams."""
+    isatty = getattr(stream, "isatty", None)
+    return bool(isatty()) if callable(isatty) else False
 
 
 class BufferedExecutionLogger(ExecutionLogger):

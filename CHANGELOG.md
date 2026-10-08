@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.9] - 2026-10-08
+
+### Added
+
+- The CLI now supports unattended pipeline runs. A plan can include an optional `execution.psuAuthorization` block:
+  - `mode` is `manual` (the default) or `auto-approve`.
+  - `headers` are custom headers sent on the auto-approve authorisation request only, for example a sandbox auto-approve header.
+  - `parameters` are custom authorisation parameters. They are added as signed request-object claims, for example `"headless": true`.
+  - Protocol-generated OAuth/OIDC names and HTTP framing headers are rejected.
+  - Results record the mode and the header and parameter names, never their values. Certification eligibility does not change.
+- In manual mode, the CLI starts a built-in HTTPS callback listener for the plan's `redirectUri` and always prints the PSU authorisation URL.
+  - New `--open-browser` option opens the URL automatically.
+  - New `--callback-listen HOST:PORT` option overrides the bind address.
+  - If the listener can't bind, the CLI exits with code `2` and an actionable message.
+- At the end of each run, the CLI prints a summary to stdout. It shows the overall result, step counts, the PSU authorisation mode, any certification-eligibility reasons, and failed steps with HTTP status and message. It ends with the paths of the result file and execution log and the `result_gate` command.
+- The browser builder's connection & security step can set the PSU authorisation mode, custom headers and custom parameters.
+- When auto-approve authorisation does not complete with a redirect, the failure message reports the HTTP status, and whether the ASPSP returned an HTML page, and points to the step's response evidence.
+- The auto-approve authorisation request and response now appear in the execution log (`request-sent` / `response-received`) and in the run page's step evidence. Evidence includes:
+  - status, content type and masked headers;
+  - the HTML page title, for login or consent pages;
+  - a masked JSON error body, when the response is JSON;
+  - whether the redirect targeted `redirectUri`. If it did, the redirect location is recorded with the code masked. If it went elsewhere (for example an ASPSP error page), `redirectTarget` records the scheme, host and path only, and the step message names that target.
+- When an auto-approve authorisation request is redirected to a page on the ASPSP's own authorisation server rather than to `redirectUri`, the runner follows up to three same-origin redirects. It sends only the cookies the ASPSP set, and never the custom headers. The page's visible text (scripts, markup and hidden fields removed, at most 2 KB), its title and a masked JSON body are recorded as `errorPage` evidence, and the start of the text is added to the step message. For example, Ozone shows the reason for a rejected request only on its `/perry/error` page. Cross-origin redirects are never followed.
+- Auto-approve authorisation now reads `code`, `state` and `error` from the redirect URL fragment as well as from the query string. OIDC hybrid-flow (`code id_token`) redirects return these in the fragment by default. URL masking in evidence now covers fragment parameters too, so a fragment `code` or `id_token` is never recorded.
+
+### Changed
+
+- The PSU authorisation mode `headless` is renamed `auto-approve`, in both manifest PSU steps and the plan's `execution.psuAuthorization.mode`. The name now describes who completes authorisation: the PSU in a browser (`manual`) or the sandbox (`auto-approve`). It avoids confusion with vendor-specific "headless" APIs. Auto-approval is a sandbox facility, not an Open Banking UK or FAPI concept; Ozone and the legacy FCS call it "headless". A plan that still uses `"mode": "headless"` is rejected with a message asking you to change it to `auto-approve`.
+- Manual PSU authorisation URLs are now always printed to stderr, not only on an interactive terminal.
+
 ## [2.0.0-beta.8] - 2026-10-06
 
 ### Added
@@ -523,7 +553,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.8...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.9...HEAD
+[2.0.0-beta.9]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.8...v2.0.0-beta.9
 [2.0.0-beta.8]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.7...v2.0.0-beta.8
 [2.0.0-beta.7]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.6...v2.0.0-beta.7
 [2.0.0-beta.6]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.5...v2.0.0-beta.6

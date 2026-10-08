@@ -12,6 +12,7 @@ from uuid import uuid4
 from django.contrib.sessions.backends.base import SessionBase
 
 from conformance.catalogue import PlanExecutionMode, SecurityProfile
+from conformance.execution_settings import PsuAuthorizationModeSetting
 from conformance.json_types import JsonObject, JsonValue
 from conformance.specification_registry import (
     derived_security_profile_for_boundary,
@@ -129,6 +130,9 @@ class BuilderDraft:
             across guided editing and import/export.
         metadata: Optional participant/export metadata retained with the plan.
         execution_mode: Canonical execution mode retained with the plan.
+        psu_authorization_mode: Manual or auto-approve PSU authorisation mode.
+        psu_authorization_headers: Header rows retained while editing, including in manual mode.
+        psu_authorization_parameters: Parameter rows applied in either PSU mode.
         discovery_metadata: Session-only non-secret discovery helper state used
             to prefill later config steps without exporting raw metadata.
         created_at: UTC ISO timestamp for draft creation.
@@ -169,6 +173,9 @@ class BuilderDraft:
     discovery_metadata: Mapping[str, JsonValue]
     created_at: str
     updated_at: str
+    psu_authorization_mode: PsuAuthorizationModeSetting = "manual"
+    psu_authorization_headers: tuple[tuple[str, str], ...] = ()
+    psu_authorization_parameters: tuple[tuple[str, JsonValue], ...] = ()
     unrepresented_plan_fields: Mapping[str, JsonValue] = field(default_factory=dict)
     import_issues: tuple[PlanImportIssue, ...] = ()
     openapi_document_update: str | None = None
@@ -198,6 +205,9 @@ class BuilderDraft:
             dynamic_client_registration={},
             metadata={},
             execution_mode="certification",
+            psu_authorization_mode="manual",
+            psu_authorization_headers=(),
+            psu_authorization_parameters=(),
             discovery_metadata={},
             created_at=timestamp,
             updated_at=timestamp,
@@ -242,6 +252,9 @@ class BuilderDraft:
             dynamic_client_registration=_json_object(raw_value.get("dynamicClientRegistration")),
             metadata=_json_object(raw_value.get("metadata")),
             execution_mode=_execution_mode(raw_value.get("executionMode")),
+            psu_authorization_mode=_psu_authorization_mode(raw_value.get("psuAuthorizationMode")),
+            psu_authorization_headers=_string_pairs(raw_value.get("psuAuthorizationHeaders")),
+            psu_authorization_parameters=_scalar_pairs(raw_value.get("psuAuthorizationParameters")),
             discovery_metadata=_json_object(raw_value.get("discoveryMetadata")),
             created_at=created_at,
             updated_at=updated_at,
@@ -374,6 +387,31 @@ class BuilderDraft:
             updated_at=_utc_timestamp(),
         )
 
+    def with_psu_authorization_settings(
+        self,
+        *,
+        mode: PsuAuthorizationModeSetting,
+        headers: tuple[tuple[str, str], ...],
+        parameters: tuple[tuple[str, JsonValue], ...],
+    ) -> BuilderDraft:
+        """Return a copy with PSU authorisation settings saved.
+
+        Args:
+            mode: Manual or auto-approve authorisation mode.
+            headers: Header rows retained for later use, even in manual mode.
+            parameters: Typed authorisation parameter name/value pairs.
+
+        Returns:
+            Updated draft with a refreshed timestamp.
+        """
+        return replace(
+            self,
+            psu_authorization_mode=mode,
+            psu_authorization_headers=headers,
+            psu_authorization_parameters=parameters,
+            updated_at=_utc_timestamp(),
+        )
+
     def with_discovery_metadata(self, *, discovery_metadata: Mapping[str, JsonValue]) -> BuilderDraft:
         """Return a copy with session-only discovery metadata saved.
 
@@ -469,6 +507,9 @@ class BuilderDraft:
             "dynamicClientRegistration": _json_object(self.dynamic_client_registration),
             "metadata": _json_object(self.metadata),
             "executionMode": self.execution_mode,
+            "psuAuthorizationMode": self.psu_authorization_mode,
+            "psuAuthorizationHeaders": [[name, value] for name, value in self.psu_authorization_headers],
+            "psuAuthorizationParameters": [[name, value] for name, value in self.psu_authorization_parameters],
             "discoveryMetadata": _json_object(self.discovery_metadata),
             "openApiDocumentUpdate": self.openapi_document_update,
             "createdAt": self.created_at,
@@ -727,3 +768,58 @@ def _utc_timestamp() -> str:
         UTC timestamp suitable for lexicographic ordering.
     """
     return datetime.now(UTC).isoformat()
+
+
+def _psu_authorization_mode(value: object) -> PsuAuthorizationModeSetting:
+    """Decode a PSU authorisation mode from session state.
+
+    Args:
+        value: Session value.
+
+    Returns:
+        Valid mode, defaulting to manual for malformed legacy state.
+    """
+    return value if value in ("manual", "auto-approve") else "manual"
+
+
+def _string_pairs(value: object) -> tuple[tuple[str, str], ...]:
+    """Decode ordered string pairs from session state.
+
+    Args:
+        value: Session value containing two-item lists.
+
+    Returns:
+        Valid string pairs, or an empty tuple for malformed state.
+    """
+    if not isinstance(value, list):
+        return ()
+    pairs: list[tuple[str, str]] = []
+    for item in value:
+        if not isinstance(item, list) or len(item) != 2 or not all(isinstance(part, str) for part in item):
+            return ()
+        pairs.append((item[0], item[1]))
+    return tuple(pairs)
+
+
+def _scalar_pairs(value: object) -> tuple[tuple[str, JsonValue], ...]:
+    """Decode ordered scalar name/value pairs from session state.
+
+    Args:
+        value: Session value containing two-item lists.
+
+    Returns:
+        Valid string-keyed JSON scalar pairs, or an empty tuple if malformed.
+    """
+    if not isinstance(value, list):
+        return ()
+    pairs: list[tuple[str, JsonValue]] = []
+    for item in value:
+        if (
+            not isinstance(item, list)
+            or len(item) != 2
+            or not isinstance(item[0], str)
+            or not isinstance(item[1], (str, int, float, bool))
+        ):
+            return ()
+        pairs.append((item[0], item[1]))
+    return tuple(pairs)

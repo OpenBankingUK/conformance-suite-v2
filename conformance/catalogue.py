@@ -8,6 +8,12 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import ClassVar, Literal, cast
 
+from conformance.execution_settings import (
+    DEFAULT_EXECUTION_SETTINGS,
+    ExecutionSettingsError,
+    PlanExecutionSettings,
+    parse_execution_settings,
+)
 from conformance.json_types import JsonObject, JsonValue
 from conformance.openapi_documents import bind_read_write_document, is_logical_read_write_document
 from conformance.specification_registry import (
@@ -743,6 +749,9 @@ class PlanDocumentV2:
         openapi_document_update: Selected Read/Write OpenAPI document update,
             for example ``"Update-1"``; ``None`` for specifications that do not
             publish selectable updates.
+        execution_settings: Optional plan-level ``execution`` settings such as
+            the PSU authorisation mode and custom authorisation headers and
+            parameters.
     """
 
     # Class starts with "Plan" and is production code, but keep pytest explicit.
@@ -763,6 +772,7 @@ class PlanDocumentV2:
     endpoints: tuple[PlanDocumentEndpoint, ...] = ()
     dynamic_client_registration: Mapping[str, JsonValue] = field(default_factory=lambda: MappingProxyType({}))
     openapi_document_update: str | None = None
+    execution_settings: PlanExecutionSettings = DEFAULT_EXECUTION_SETTINGS
 
 
 @dataclass(frozen=True)
@@ -897,6 +907,8 @@ class CompiledTestPlan:
             planning perspective.
         skipped_test_cases: Endpoint-gated cases retained solely for explicit
             skipped traceability and never scheduled for execution.
+        execution_settings: Plan-level execution settings (for example the
+            PSU authorisation mode) applied when generating runtime steps.
     """
 
     catalogue_key: CatalogueKey
@@ -906,6 +918,7 @@ class CompiledTestPlan:
     traceability: CompilerTraceability
     certifying: bool
     skipped_test_cases: tuple[CatalogueTestCase, ...] = ()
+    execution_settings: PlanExecutionSettings = DEFAULT_EXECUTION_SETTINGS
 
 
 def parse_test_plan_spec(raw_spec: object) -> TestPlanSpec:
@@ -1013,6 +1026,8 @@ def plan_document_to_json_object(document: PlanDocumentV2) -> JsonObject:
         "securityEnvironment": _security_environment_for_export(document),
         "metadata": {key: _copy_json_value(value) for key, value in document.metadata.items()},
     }
+    if not document.execution_settings.is_default:
+        exported["execution"] = document.execution_settings.to_json_object()
     if document.specification == _V2_READ_WRITE_SPECIFICATION:
         exported["resourceGroups"] = [
             _canonical_resource_group_for_export(resource_group) for resource_group in document.resource_groups
@@ -1155,7 +1170,10 @@ def compile_test_plan_document(document: ParsedPlanDocument, catalogues: Iterabl
         return compile_test_plan(
             _resolve_catalogue_from_collection(document.catalogue_key, available_catalogues), document
         )
-    return _compile_plan_document_v2(document, available_catalogues)
+    compiled = _compile_plan_document_v2(document, available_catalogues)
+    if document.execution_settings.is_default:
+        return compiled
+    return replace(compiled, execution_settings=document.execution_settings)
 
 
 def compile_test_plan(catalogue: TestCatalogue, spec: TestPlanSpec) -> CompiledTestPlan:
@@ -2323,6 +2341,7 @@ def _parse_canonical_plan_document(spec: Mapping[str, JsonValue]) -> PlanDocumen
             "dynamicClientRegistration",
             "metadata",
             "executionMode",
+            "execution",
         },
         location="testPlan",
     )
@@ -2335,6 +2354,12 @@ def _parse_canonical_plan_document(spec: Mapping[str, JsonValue]) -> PlanDocumen
     )
     _validate_canonical_scope_shape(spec, definition=definition)
     execution_mode = _parse_execution_mode(spec)
+    execution_settings = DEFAULT_EXECUTION_SETTINGS
+    if "execution" in spec:
+        try:
+            execution_settings = parse_execution_settings(spec["execution"])
+        except ExecutionSettingsError as error:
+            raise CatalogueError(str(error)) from error
     security_environment = _parse_canonical_security_environment(
         _required_object(spec, "securityEnvironment", location="testPlan")
     )
@@ -2368,6 +2393,7 @@ def _parse_canonical_plan_document(spec: Mapping[str, JsonValue]) -> PlanDocumen
             else {}
         ),
         openapi_document_update=openapi_document_update,
+        execution_settings=execution_settings,
     )
 
 

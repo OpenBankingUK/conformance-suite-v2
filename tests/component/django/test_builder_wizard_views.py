@@ -561,6 +561,37 @@ class TestBuilderWizardUi:
             assert response.status_code == 302
             assert response["Location"] == f"/builder/{draft_id}/catalogue/"
 
+    def test_security_step_saves_psu_authorization_rows(self) -> None:
+        """The security form stores repeatable PSU settings as typed draft state."""
+        client = Client()
+        scope_location = _scope_location_after_security(client)
+        draft_id = _draft_id_from_builder_redirect(scope_location)
+        security_page = client.get(f"/builder/{draft_id}/config/security/")
+        assert security_page.status_code == 200
+        security_html = security_page.content.decode("utf-8")
+        assert 'value="manual"' in security_html
+        assert 'value="auto-approve"' in security_html
+        assert "Add parameter" in security_html
+        assert "Add header" in security_html
+
+        response = client.post(
+            f"/builder/{draft_id}/config/security/",
+            data=_valid_security_form_data(
+                psu_authorization_mode="auto-approve",
+                psu_header_name_0="X-Sandbox-Auto-Approve",
+                psu_header_value_0="true",
+                psu_parameter_name_0="sandbox_auto_approve",
+                psu_parameter_value_0="TRUE",
+            ),
+        )
+
+        assert response.status_code == 302
+        draft = SessionBuilderDraftStore(client.session).get(draft_id)
+        assert draft is not None
+        assert draft.psu_authorization_mode == "auto-approve"
+        assert draft.psu_authorization_headers == (("X-Sandbox-Auto-Approve", "true"),)
+        assert draft.psu_authorization_parameters == (("sandbox_auto_approve", True),)
+
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
     def test_security_step_saves_discovery_and_continues_to_business_data(self, mock_fetch_discovery: Mock) -> None:
         """The merged page saves the discovery URL, fills empty OAuth endpoints and moves to business data."""

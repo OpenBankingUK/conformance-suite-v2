@@ -177,6 +177,17 @@ class TestMaskUrlQuery:
         url = "https://auth.example.com/authorize?scope=openid+accounts"
         assert mask_url_query(url, frozenset({"request"})) == url
 
+    def test_sensitive_fragment_values_are_masked(self) -> None:
+        """OIDC hybrid-flow fragment parameters are masked; plain fragments are untouched."""
+        url = "https://tpp.example.com/cb?x=1#code=c1&id_token=t1&state=s1"
+
+        masked = mask_url_query(url, frozenset({"code", "id_token"}))
+
+        assert masked == f"https://tpp.example.com/cb?x=1#code={MASKED_VALUE}&id_token={MASKED_VALUE}&state=s1"
+        assert mask_url_query("https://tpp.example.com/cb#section", frozenset({"code"})) == (
+            "https://tpp.example.com/cb#section"
+        )
+
 
 class TestSensitiveKeySets:
     """Sanity checks on the published sensitive-key constants."""

@@ -161,6 +161,9 @@ def security_form_initial(draft: BuilderDraft) -> dict[str, object]:
         dynamic_client_registration=draft.dynamic_client_registration,
         metadata=draft.metadata,
         execution_mode=draft.execution_mode,
+        psu_authorization_mode=draft.psu_authorization_mode,
+        psu_authorization_headers=draft.psu_authorization_headers,
+        psu_authorization_parameters=draft.psu_authorization_parameters,
     )
 
 

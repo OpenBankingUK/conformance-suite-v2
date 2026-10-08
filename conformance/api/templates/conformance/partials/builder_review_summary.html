@@ -12,6 +12,12 @@ by live plan JSON apply, so it must not contain the review action form.
         </div>
     {% endif %}
 
+    <section class="message" aria-label="PSU authorisation settings">
+        <strong>PSU authorisation:</strong> {{ psu_authorization_summary.mode|capfirst }}
+        <div><strong>Header names:</strong> {% if psu_authorization_summary.header_names %}{% for name in psu_authorization_summary.header_names %}<code>{{ name }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}None{% endif %}</div>
+        <div><strong>Parameter names:</strong> {% if psu_authorization_summary.parameter_names %}{% for name in psu_authorization_summary.parameter_names %}<code>{{ name }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}None{% endif %}</div>
+    </section>
+
     <div class="summary-grid" aria-label="Generated plan counts">
         <div class="count"><strong>{{ review_counts.generated }}</strong><span>Generated tests</span></div>
         <div class="count"><strong>{{ review_counts.resource_groups }}</strong><span>Resource groups</span></div>

@@ -697,6 +697,12 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
         if form.is_valid() and form.config is not None:
             updated_config = merge_security_config(draft.config, form.config)
             updated_draft = draft.with_config(config=updated_config)
+            if form.psu_authorization_settings is not None:
+                updated_draft = updated_draft.with_psu_authorization_settings(
+                    mode=form.psu_authorization_settings.mode,
+                    headers=form.psu_authorization_headers,
+                    parameters=form.psu_authorization_settings.parameters,
+                )
             if is_dcr_draft(draft):
                 updated_draft = updated_draft.with_plan_context(
                     security_environment=form.security_environment or {},
@@ -1978,6 +1984,20 @@ def _builder_security_config_context(
         "dcr_mode": dcr_mode,
         "draft_has_scope": run_requirements is not None,
         "credentials": security_credential_rows(form, stored_credentials, field_metadata=requirements),
+        "psu_parameter_rows": [
+            {
+                "name": form[f"psu_parameter_name_{index}"],
+                "value": form[f"psu_parameter_value_{index}"],
+            }
+            for index in range(form.psu_parameter_row_count)
+        ],
+        "psu_header_rows": [
+            {
+                "name": form[f"psu_header_name_{index}"],
+                "value": form[f"psu_header_value_{index}"],
+            }
+            for index in range(form.psu_header_row_count)
+        ],
     }
 
 
@@ -2134,6 +2154,15 @@ def _builder_review_context(
     """
     state = _builder_review_state(draft)
     step_issue_groups = _step_issue_groups(draft)
+    psu_authorization_summary = {
+        "mode": draft.psu_authorization_mode,
+        "header_names": (
+            tuple(name for name, _value in draft.psu_authorization_headers)
+            if draft.psu_authorization_mode == "auto-approve"
+            else ()
+        ),
+        "parameter_names": tuple(name for name, _value in draft.psu_authorization_parameters),
+    }
     grouped_issues = {issue for group in step_issue_groups for issue in group.issues}
     # The compile error is also a blocker; show it once, preferring its step group so it keeps a Fix link.
     review_error = state.error if state.error not in grouped_issues else None
@@ -2148,6 +2177,7 @@ def _builder_review_context(
         "review": state,
         "review_counts": _builder_review_counts(state),
         "review_phase_counts": _builder_review_phase_counts(state.rows),
+        "psu_authorization_summary": psu_authorization_summary,
         "import_issues": draft.import_issues,
         "plan_json_text": state.plan_json_text if plan_json_text is None else plan_json_text,
         "plan_json_error": plan_json_error,
