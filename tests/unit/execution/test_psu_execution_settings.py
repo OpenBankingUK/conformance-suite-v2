@@ -14,6 +14,7 @@ import json
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 from urllib.parse import parse_qsl, urlsplit
 
 import httpx
@@ -44,6 +45,7 @@ from conformance.executor import (
     _execute_v1_psu_step,
     compiled_plan_requires_psu_callback,
 )
+from conformance.json_types import JsonValue
 from conformance.manifest import GeneratedRequestObject, ManifestRequest, ManifestStep
 from conformance.psu_authorization import build_authorization_url
 from conformance.results import SmokeCheckResult
@@ -227,7 +229,8 @@ def test_safe_snapshot_blanks_sensitive_header_values_only() -> None:
     assert isinstance(document, PlanDocumentV2)
     snapshot = safe_test_plan_snapshot(document)
 
-    headers = snapshot["execution"]["psuAuthorization"]["headers"]  # type: ignore[index, call-overload] - JSON test traversal.
+    execution = cast("dict[str, dict[str, object]]", snapshot["execution"])
+    headers = execution["psuAuthorization"]["headers"]
     assert headers == {"Authorization": "", "X-Sandbox-Auto-Approve": "true"}
 
 
@@ -460,7 +463,7 @@ def test_result_records_psu_mode_and_names_without_values() -> None:
     assert "secret-value" not in json.dumps(result["execution"])
 
 
-def _result(steps: list[dict[str, object]], *, status: str = "failed") -> dict[str, object]:
+def _result(steps: list[JsonValue], *, status: str = "failed") -> dict[str, JsonValue]:
     """Build a minimal structured result JSON object for summary tests."""
     return {
         "status": status,
@@ -474,7 +477,7 @@ def _result(steps: list[dict[str, object]], *, status: str = "failed") -> dict[s
 
 def test_summary_shows_status_counts_mode_eligibility_and_failures() -> None:
     text = render_run_summary(
-        _result([{"name": "accounts", "status": "failed", "statusCode": 403, "message": "Expected 200"}]),  # type: ignore[arg-type] - JSON test fixture.
+        _result([{"name": "accounts", "status": "failed", "statusCode": 403, "message": "Expected 200"}]),
         run_label="plan.json",
         result_path=Path("out/result.json"),
         execution_log_path=Path("out/log.ndjson"),
@@ -492,10 +495,12 @@ def test_summary_shows_status_counts_mode_eligibility_and_failures() -> None:
 
 
 def test_summary_truncates_long_failure_lists() -> None:
-    steps = [{"name": f"s{i}", "status": "failed", "message": "m"} for i in range(MAX_LISTED_STEPS + 3)]
+    steps: list[JsonValue] = [
+        {"name": f"s{i}", "status": "failed", "message": "m"} for i in range(MAX_LISTED_STEPS + 3)
+    ]
 
     text = render_run_summary(
-        _result(steps),  # type: ignore[arg-type] - JSON test fixture.
+        _result(steps),
         run_label="plan.json",
         result_path=Path("r.json"),
         execution_log_path=Path("l.ndjson"),

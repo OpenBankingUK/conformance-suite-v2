@@ -333,8 +333,10 @@ def _run_auto_approve(
             clock=FakeClock().monotonic,
             sleep=FakeClock().sleep,
         )
-    events = [(event.type, dict(event.payload)) for event in execution_logger.events()]
-    return result.to_json_object(), events
+    events: list[tuple[str, dict[str, object]]] = [
+        (event.type, dict(event.payload)) for event in execution_logger.events()
+    ]
+    return cast("dict[str, object]", result.to_json_object()), events
 
 
 def test_psu_auto_approve_login_page_is_logged_and_diagnosed() -> None:
