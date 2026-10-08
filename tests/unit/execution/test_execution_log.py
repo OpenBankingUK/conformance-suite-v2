@@ -96,13 +96,13 @@ def test_psu_url_console_logger_prints_plain_url_when_stderr_is_not_tty() -> Non
     assert stderr.getvalue() == f"[PSU] Open this URL to authorise: {url}\n"
 
 
-def test_psu_url_console_logger_is_quiet_for_headless_mode() -> None:
+def test_psu_url_console_logger_is_quiet_for_auto_approve_mode() -> None:
     wrapped = BufferedExecutionLogger(run_id="r", developer_mode=False)
     stderr = _TtyStringIO()
     opened: list[str] = []
     logger = PsuAuthorizationUrlConsoleLogger(wrapped, stdout=_TtyStringIO(), stderr=stderr, open_browser=opened.append)
 
-    logger.emit("psu-authorization-url", step_id="psu", payload={"url": "https://a.example/x", "mode": "headless"})
+    logger.emit("psu-authorization-url", step_id="psu", payload={"url": "https://a.example/x", "mode": "auto-approve"})
 
     assert stderr.getvalue() == ""
     assert opened == []

@@ -1337,8 +1337,8 @@ class SecurityConfigForm(forms.Form):
         dynamic_client_registration: Canonical DCR-only values emitted in DCR mode.
         metadata: Canonical reporting metadata emitted in DCR mode.
         execution_mode: Canonical execution mode emitted in DCR mode.
-        psu_authorization_mode: Manual or headless PSU authorisation mode.
-        psu_authorization_headers: Custom headless authorisation headers.
+        psu_authorization_mode: Manual or auto-approve PSU authorisation mode.
+        psu_authorization_headers: Custom auto-approve authorisation headers.
         psu_authorization_parameters: Custom parameters used in both modes.
     """
 
@@ -1423,7 +1423,7 @@ class SecurityConfigForm(forms.Form):
     metadata_environment_name: forms.CharField = forms.CharField(label="Environment name", required=False)
     psu_authorization_mode: forms.ChoiceField = forms.ChoiceField(
         label="PSU authorisation mode",
-        choices=(("manual", "Manual"), ("headless", "Headless")),
+        choices=(("manual", "Manual"), ("auto-approve", "Auto-approve")),
         required=False,
     )
     signing_client_auth_algorithm: forms.CharField = forms.CharField(
@@ -1594,7 +1594,7 @@ class SecurityConfigForm(forms.Form):
             cleaned_data: Cleaned Django form fields.
         """
         mode_raw = cleaned_data.get("psu_authorization_mode") or "manual"
-        mode: PsuAuthorizationModeSetting = "headless" if mode_raw == "headless" else "manual"
+        mode: PsuAuthorizationModeSetting = "auto-approve" if mode_raw == "auto-approve" else "manual"
         if _psu_has_oversized_rows(self.data):
             self.add_error(None, "At most 32 PSU parameter or header rows are supported.")
         parameter_pairs = _psu_form_pairs(cleaned_data, "parameter")
@@ -1606,7 +1606,7 @@ class SecurityConfigForm(forms.Form):
             valid_parameters = validate_psu_parameters(typed_parameters, location="execution.psuAuthorization")
         except ExecutionSettingsError as error:
             _add_psu_row_error(self, "parameter", cleaned_data, str(error))
-        if mode == "headless":
+        if mode == "auto-approve":
             try:
                 valid_headers = validate_psu_headers(header_pairs, location="execution.psuAuthorization")
             except ExecutionSettingsError as error:
@@ -4088,7 +4088,7 @@ def _psu_execution_json(draft: BuilderDraft) -> JsonObject | None:
     if draft.psu_authorization_mode == "manual" and not draft.psu_authorization_parameters:
         return None
     psu: JsonObject = {"mode": draft.psu_authorization_mode}
-    if draft.psu_authorization_mode == "headless" and draft.psu_authorization_headers:
+    if draft.psu_authorization_mode == "auto-approve" and draft.psu_authorization_headers:
         psu["headers"] = dict(draft.psu_authorization_headers)
     if draft.psu_authorization_parameters:
         psu["parameters"] = dict(draft.psu_authorization_parameters)

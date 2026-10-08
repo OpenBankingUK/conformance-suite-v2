@@ -63,7 +63,7 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
                     "type": "object",
                     "additionalProperties": False,
                     "properties": {
-                        "mode": {"enum": ["manual", "headless"]},
+                        "mode": {"enum": ["manual", "auto-approve"]},
                         "headers": {
                             "type": "object",
                             "maxProperties": 32,

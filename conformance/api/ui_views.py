@@ -2158,7 +2158,7 @@ def _builder_review_context(
         "mode": draft.psu_authorization_mode,
         "header_names": (
             tuple(name for name, _value in draft.psu_authorization_headers)
-            if draft.psu_authorization_mode == "headless"
+            if draft.psu_authorization_mode == "auto-approve"
             else ()
         ),
         "parameter_names": tuple(name for name, _value in draft.psu_authorization_parameters),

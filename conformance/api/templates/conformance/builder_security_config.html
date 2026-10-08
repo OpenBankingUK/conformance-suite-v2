@@ -331,12 +331,12 @@
 
             <section class="config-card" aria-labelledby="psu-authorization-heading">
                 <h3 id="psu-authorization-heading">PSU authorisation</h3>
-                <p class="helper">Manual mode opens the authorisation URL in a browser. Headless mode sends the authorisation GET directly and can include sandbox-specific headers. Parameter values equal to <code>true</code> or <code>false</code> (case-insensitive) become JSON booleans; all other values remain strings, including numbers.</p>
+                <p class="helper">The mode sets who completes PSU authorisation. <strong>Manual</strong>: the PSU completes it in a browser. <strong>Auto-approve</strong>: the sandbox completes it. The runner sends the authorisation request with an HTTP client, not a browser, so the sandbox must auto-approve and redirect straight back to the redirect URI. Login and consent pages are not automated. Ozone and the legacy FCS call this &ldquo;headless&rdquo;. Custom headers apply in auto-approve mode only. Parameter values equal to <code>true</code> or <code>false</code> (case-insensitive) become JSON booleans; all other values remain strings, including numbers.</p>
                 <fieldset class="field-row" style="border:0;padding:0;margin:12px 0 0">
                     <legend><strong>Authorisation mode</strong></legend>
                     {{ form.psu_authorization_mode.errors }}
-                    <label class="inline-choice"><input type="radio" name="psu_authorization_mode" value="manual" {% if form.psu_authorization_mode.value != "headless" %}checked{% endif %}> Manual</label>
-                    <label class="inline-choice"><input type="radio" name="psu_authorization_mode" value="headless" {% if form.psu_authorization_mode.value == "headless" %}checked{% endif %}> Headless</label>
+                    <label class="inline-choice"><input type="radio" name="psu_authorization_mode" value="manual" {% if form.psu_authorization_mode.value != "auto-approve" %}checked{% endif %}> Manual</label>
+                    <label class="inline-choice"><input type="radio" name="psu_authorization_mode" value="auto-approve" {% if form.psu_authorization_mode.value == "auto-approve" %}checked{% endif %}> Auto-approve</label>
                 </fieldset>
                 <div class="field-row">
                     <h3>Parameters</h3>
@@ -351,9 +351,9 @@
                     </div>
                     <button type="button" class="secondary psu-add-row" data-kind="parameter">Add parameter</button>
                 </div>
-                <div class="field-row" id="psu-header-section" {% if form.psu_authorization_mode.value != "headless" %}hidden{% endif %}>
-                    <h3>Headless authorisation headers</h3>
-                    <p class="helper">Headers are sent only on the headless PSU authorisation GET. They are retained when switching to Manual but are not applied or exported in that mode.</p>
+                <div class="field-row" id="psu-header-section" {% if form.psu_authorization_mode.value != "auto-approve" %}hidden{% endif %}>
+                    <h3>Auto-approve authorisation headers</h3>
+                    <p class="helper">Headers are sent only on the auto-approve PSU authorisation GET. They are retained when switching to Manual but are not applied or exported in that mode.</p>
                     <div id="psu-header-rows" data-kind="header">
                         {% for row in psu_header_rows %}
                             <div class="grid field-row psu-pair-row" data-index="{{ forloop.counter0 }}">
@@ -396,7 +396,7 @@
         const updateHeaderVisibility = () => {
             const section = document.getElementById("psu-header-section");
             const selected = document.querySelector('input[name="psu_authorization_mode"]:checked');
-            if (section) section.hidden = !selected || selected.value !== "headless";
+            if (section) section.hidden = !selected || selected.value !== "auto-approve";
         };
         const addRow = (button) => {
             const kind = button.dataset.kind;

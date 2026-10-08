@@ -1,7 +1,7 @@
 """Plan-level PSU authorisation execution settings: parsing, wiring, and evidence.
 
 Covers the canonical ``execution.psuAuthorization`` block that lets pipelines
-choose manual or headless PSU authorisation and supply custom headers (headless
+choose manual or auto-approve PSU authorisation and supply custom headers (auto-approve
 authorisation request only) and authorisation parameters (signed request-object
 claims per FAPI 1 Advanced Part 2 §5.2.2, or query parameters when no request
 object is generated).
@@ -51,14 +51,14 @@ from conformance.signing_credentials import load_signing_credentials
 from conformance.signing_service import FapiSigningService, JwtSigningError, RequestObjectSigningInput
 from conformance.test_plan_validation import TestPlanValidationError as PlanValidationError
 from conformance.test_plan_validation import prepare_test_plan_for_run, safe_test_plan_snapshot
-from tests.support.executor_psu import FakeClock, psu_headless_step, psu_manual_step
+from tests.support.executor_psu import FakeClock, psu_auto_approve_step, psu_manual_step
 from tests.support.executor_signing import executor_signing_config
 from tests.support.run_config import RUN_READY_SECURITY_ENVIRONMENT
 
 pytestmark = pytest.mark.unit
 
 _STATE = "h" * 32
-_REDIRECT = f"https://conformance.example.com/callback?state={_STATE}&code=headless-code"
+_REDIRECT = f"https://conformance.example.com/callback?state={_STATE}&code=auto-approve-code"
 
 
 def _plan(execution: object | None = None) -> dict[str, object]:
@@ -95,17 +95,17 @@ def test_missing_execution_block_defaults_to_manual() -> None:
     assert DEFAULT_EXECUTION_SETTINGS.is_default
 
 
-def test_headless_needs_no_extra_fields() -> None:
-    settings = parse_execution_settings({"psuAuthorization": {"mode": "headless"}})
+def test_auto_approve_needs_no_extra_fields() -> None:
+    settings = parse_execution_settings({"psuAuthorization": {"mode": "auto-approve"}})
 
-    assert settings.psu_authorization == PsuAuthorizationSettings(mode="headless")
+    assert settings.psu_authorization == PsuAuthorizationSettings(mode="auto-approve")
 
 
 def test_parses_user_defined_headers_and_parameters() -> None:
     settings = parse_execution_settings(
         {
             "psuAuthorization": {
-                "mode": "headless",
+                "mode": "auto-approve",
                 "headers": {"X-Sandbox-Auto-Approve": "true"},
                 "parameters": {"headless": True, "psu_id": "user-1", "attempts": 2},
             }
@@ -117,7 +117,7 @@ def test_parses_user_defined_headers_and_parameters() -> None:
     assert psu.parameters == (("headless", True), ("psu_id", "user-1"), ("attempts", 2))
     assert settings.to_json_object() == {
         "psuAuthorization": {
-            "mode": "headless",
+            "mode": "auto-approve",
             "headers": {"X-Sandbox-Auto-Approve": "true"},
             "parameters": {"headless": True, "psu_id": "user-1", "attempts": 2},
         }
@@ -136,11 +136,12 @@ def test_manual_mode_allows_parameters() -> None:
     [
         ({"psuAuthorization": {"mode": "manual", "headers": {"X-A": "1"}}}, "headers"),
         ({"psuAuthorization": {"mode": "auto"}}, "mode"),
-        ({"psuAuthorization": {"mode": "headless", "headers": {"Host": "x"}}}, "cannot be overridden"),
-        ({"psuAuthorization": {"mode": "headless", "headers": {"X A": "x"}}}, "X A"),
-        ({"psuAuthorization": {"mode": "headless", "headers": {"X-A": "a\nb"}}}, "control"),
-        ({"psuAuthorization": {"mode": "headless", "headers": {"X-A": 1}}}, "string"),
-        ({"psuAuthorization": {"mode": "headless", "headers": {"X-A": "1", "x-a": "2"}}}, "uplicate"),
+        ({"psuAuthorization": {"mode": "headless"}}, "renamed to 'auto-approve'"),
+        ({"psuAuthorization": {"mode": "auto-approve", "headers": {"Host": "x"}}}, "cannot be overridden"),
+        ({"psuAuthorization": {"mode": "auto-approve", "headers": {"X A": "x"}}}, "X A"),
+        ({"psuAuthorization": {"mode": "auto-approve", "headers": {"X-A": "a\nb"}}}, "control"),
+        ({"psuAuthorization": {"mode": "auto-approve", "headers": {"X-A": 1}}}, "string"),
+        ({"psuAuthorization": {"mode": "auto-approve", "headers": {"X-A": "1", "x-a": "2"}}}, "uplicate"),
         ({"psuAuthorization": {"parameters": {"state": "x"}}}, "cannot be overridden"),
         ({"psuAuthorization": {"parameters": {"Request": "x"}}}, "cannot be overridden"),
         ({"psuAuthorization": {"parameters": {"bad name": "x"}}}, "bad name"),
@@ -169,7 +170,7 @@ def test_parameter_query_value_serialises_scalars() -> None:
 def test_prepare_test_plan_carries_execution_settings_into_compiled_plan() -> None:
     execution = {
         "psuAuthorization": {
-            "mode": "headless",
+            "mode": "auto-approve",
             "headers": {"X-Sandbox-Auto-Approve": "true"},
             "parameters": {"headless": True},
         }
@@ -178,7 +179,7 @@ def test_prepare_test_plan_carries_execution_settings_into_compiled_plan() -> No
     prepared = prepare_test_plan_for_run(_plan(execution), base_dir=Path.cwd())
 
     psu = prepared.compiled_plan.execution_settings.psu_authorization
-    assert psu.mode == "headless"
+    assert psu.mode == "auto-approve"
     assert psu.headers == (("X-Sandbox-Auto-Approve", "true"),)
     assert psu.parameters == (("headless", True),)
     assert prepared.snapshot["execution"] == execution
@@ -200,7 +201,7 @@ def test_default_plan_omits_execution_block() -> None:
 
 
 def test_plan_document_round_trips_execution_block() -> None:
-    execution = {"psuAuthorization": {"mode": "headless", "parameters": {"headless": True}}}
+    execution = {"psuAuthorization": {"mode": "auto-approve", "parameters": {"headless": True}}}
     document = parse_test_plan_document(_plan(execution))
 
     assert isinstance(document, PlanDocumentV2)
@@ -216,7 +217,7 @@ def test_safe_snapshot_blanks_sensitive_header_values_only() -> None:
     plan = _plan(
         {
             "psuAuthorization": {
-                "mode": "headless",
+                "mode": "auto-approve",
                 "headers": {"Authorization": "Bearer sandbox", "X-Sandbox-Auto-Approve": "true"},
             }
         }
@@ -239,7 +240,7 @@ def test_apply_settings_sets_mode_headers_and_parameters_on_psu_steps_only() -> 
     )
     settings = PlanExecutionSettings(
         psu_authorization=PsuAuthorizationSettings(
-            mode="headless", headers=(("X-A", "1"),), parameters=(("headless", True),)
+            mode="auto-approve", headers=(("X-A", "1"),), parameters=(("headless", True),)
         )
     )
 
@@ -247,7 +248,7 @@ def test_apply_settings_sets_mode_headers_and_parameters_on_psu_steps_only() -> 
 
     assert steps[0] is http_step
     psu = steps[1]
-    assert getattr(psu, "mode", None) == "headless"
+    assert getattr(psu, "mode", None) == "auto-approve"
     assert getattr(psu, "custom_headers", None) == (("X-A", "1"),)
     assert getattr(psu, "custom_parameters", None) == (("headless", True),)
 
@@ -266,16 +267,16 @@ def test_apply_settings_never_attaches_headers_in_manual_mode() -> None:
 
 def test_requires_psu_callback_only_for_manual_plans_with_psu_steps() -> None:
     prepared = prepare_test_plan_for_run(_plan(), base_dir=Path.cwd())
-    headless = replace(
+    auto_approve = replace(
         prepared.compiled_plan,
-        execution_settings=PlanExecutionSettings(psu_authorization=PsuAuthorizationSettings(mode="headless")),
+        execution_settings=PlanExecutionSettings(psu_authorization=PsuAuthorizationSettings(mode="auto-approve")),
     )
 
     assert compiled_plan_requires_psu_callback(prepared.compiled_plan) is True
-    assert compiled_plan_requires_psu_callback(headless) is False
+    assert compiled_plan_requires_psu_callback(auto_approve) is False
 
 
-def test_headless_request_sends_custom_headers_and_records_names_only() -> None:
+def test_auto_approve_request_sends_custom_headers_and_records_names_only() -> None:
     observed: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -283,7 +284,7 @@ def test_headless_request_sends_custom_headers_and_records_names_only() -> None:
         return httpx.Response(302, headers={"Location": _REDIRECT})
 
     step = replace(
-        psu_headless_step(state=_STATE),
+        psu_auto_approve_step(state=_STATE),
         custom_headers=(("X-Sandbox-Auto-Approve", "secret-token"),),
     )
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
@@ -303,11 +304,11 @@ def test_headless_request_sends_custom_headers_and_records_names_only() -> None:
     assert "secret-token" not in json.dumps(result.to_json_object())
 
 
-def test_headless_failure_evidence_masks_custom_header_values() -> None:
+def test_auto_approve_failure_evidence_masks_custom_header_values() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, headers={"Content-Type": "text/html"}, text="<html>login</html>")
 
-    step = replace(psu_headless_step(state=_STATE), custom_headers=(("X-Api-Token", "secret-token"),))
+    step = replace(psu_auto_approve_step(state=_STATE), custom_headers=(("X-Api-Token", "secret-token"),))
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result, _ = _execute_v1_psu_step(
             step,
@@ -322,7 +323,7 @@ def test_headless_failure_evidence_masks_custom_header_values() -> None:
 
     serialised = json.dumps(result.to_json_object())
     assert result.status == "failed"
-    assert "login or consent page" in result.message
+    assert "returned an HTML page" in result.message
     assert "secret-token" not in serialised
     assert '"X-Api-Token": "***"' in serialised
 
@@ -334,7 +335,7 @@ def test_custom_parameters_become_query_parameters_without_request_object() -> N
         observed.append(str(request.url))
         return httpx.Response(302, headers={"Location": _REDIRECT})
 
-    step = replace(psu_headless_step(state=_STATE), custom_parameters=(("headless", True), ("psu_id", "u1")))
+    step = replace(psu_auto_approve_step(state=_STATE), custom_parameters=(("headless", True), ("psu_id", "u1")))
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         _execute_v1_psu_step(
             step,
@@ -361,7 +362,7 @@ def test_custom_parameters_become_signed_claims_with_generated_request_object(tm
         return httpx.Response(302, headers={"Location": _REDIRECT})
 
     step = replace(
-        psu_headless_step(state=_STATE, request_object=GeneratedRequestObject(source="fapi-signing")),
+        psu_auto_approve_step(state=_STATE, request_object=GeneratedRequestObject(source="fapi-signing")),
         custom_parameters=(("headless", True), ("psu_id", "u1")),
     )
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
@@ -436,7 +437,7 @@ def test_result_records_psu_mode_and_names_without_values() -> None:
         _plan(
             {
                 "psuAuthorization": {
-                    "mode": "headless",
+                    "mode": "auto-approve",
                     "headers": {"X-Sandbox-Auto-Approve": "secret-value"},
                     "parameters": {"psu_id": "secret-user"},
                 }
@@ -451,7 +452,7 @@ def test_result_records_psu_mode_and_names_without_values() -> None:
 
     assert result["execution"] == {
         "psuAuthorization": {
-            "mode": "headless",
+            "mode": "auto-approve",
             "headerNames": ["X-Sandbox-Auto-Approve"],
             "parameterNames": ["psu_id"],
         }
@@ -466,7 +467,7 @@ def _result(steps: list[dict[str, object]], *, status: str = "failed") -> dict[s
         "summary": {"total": len(steps), "passed": 0, "failed": len(steps), "warn": 0, "skipped": 0},
         "certificationEligibility": {"eligible": False, "reasons": ["Approved-release policy was not supplied"]},
         "catalogue": {"standard": "open-banking-uk", "version": "3.1.11", "api": "read-write"},
-        "execution": {"psuAuthorization": {"mode": "headless", "headerNames": ["X-A"], "parameterNames": ["p"]}},
+        "execution": {"psuAuthorization": {"mode": "auto-approve", "headerNames": ["X-A"], "parameterNames": ["p"]}},
         "steps": steps,
     }
 
@@ -482,7 +483,7 @@ def test_summary_shows_status_counts_mode_eligibility_and_failures() -> None:
     assert text.startswith("Conformance run FAILED: plan.json\n")
     assert "Catalogue: open-banking-uk 3.1.11 read-write" in text
     assert "Steps: 1 total, 0 passed, 1 failed, 0 warn, 0 skipped" in text
-    assert "PSU authorisation: headless (headers: X-A; parameters: p)" in text
+    assert "PSU authorisation: auto-approve (headers: X-A; parameters: p)" in text
     assert "Certification eligible: no" in text
     assert "- Approved-release policy was not supplied" in text
     assert "x accounts [HTTP 403]: Expected 200" in text

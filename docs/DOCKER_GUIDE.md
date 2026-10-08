@@ -248,7 +248,7 @@ inside the container on the `redirectUri` port. Publish that port to the host
 on loopback, for example `-p 127.0.0.1:8443:8443` for
 `https://0.0.0.0:8443/conformancesuite/callback`, so the browser redirect
 reaches the run. Plans with `"execution": {"psuAuthorization": {"mode":
-"headless"}}` don't need a published port. See the README section *PSU
+"auto-approve"}}` don't need a published port. See the README section *PSU
 authorisation and pipeline runs*.
 
 Structured results and execution logs from this run land under

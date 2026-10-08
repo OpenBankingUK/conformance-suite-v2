@@ -198,7 +198,7 @@ class PsuAuthorizationUrlConsoleLogger(ExecutionLogger):
     decorator adds an operator-facing stderr line whenever the executor emits
     a manual-mode ``psu-authorization-url`` event, so the participant (or a
     pipeline operator watching the job log) can open the URL and complete
-    consent. ANSI emphasis is only used when stderr is a TTY. Headless-mode
+    consent. ANSI emphasis is only used when stderr is a TTY. Auto-approve-mode
     events are not printed because no human action is needed.
     """
 
@@ -245,7 +245,7 @@ class PsuAuthorizationUrlConsoleLogger(ExecutionLogger):
         if event_type != "psu-authorization-url":
             return
         event_payload = payload or {}
-        if event_payload.get("mode") == "headless":
+        if event_payload.get("mode") == "auto-approve":
             return
         url = event_payload.get("url")
         if not isinstance(url, str):

@@ -1,4 +1,4 @@
-"""PSU authorisation in headless mode: signed request objects and redirect handling."""
+"""PSU authorisation in auto-approve mode: signed request objects and redirect handling."""
 
 import json
 from collections.abc import Callable
@@ -18,14 +18,14 @@ from conformance.executor import _execute_v1_psu_step
 from conformance.manifest import (
     GeneratedRequestObject,
 )
-from tests.support.executor_psu import FakeClock, psu_headless_step
+from tests.support.executor_psu import FakeClock, psu_auto_approve_step
 from tests.support.executor_signing import executor_signing_config
 
 pytestmark = pytest.mark.unit
 
 
-def test_psu_headless_step_uses_signed_request_object_for_authorization_redirect(tmp_path: Path) -> None:
-    """Headless PSU mode sends a generated JAR request and masks persisted evidence.
+def test_psu_auto_approve_step_uses_signed_request_object_for_authorization_redirect(tmp_path: Path) -> None:
+    """Auto-approve PSU mode sends a generated JAR request and masks persisted evidence.
 
     Args:
         tmp_path: Pytest temporary directory used to hold generated signing PEM files.
@@ -37,16 +37,16 @@ def test_psu_headless_step_uses_signed_request_object_for_authorization_redirect
         observed_urls.append(str(request.url))
         return httpx.Response(
             302,
-            headers={"Location": f"https://conformance.example.com/callback?state={state}&code=headless-code"},
+            headers={"Location": f"https://conformance.example.com/callback?state={state}&code=auto-approve-code"},
         )
 
-    execution_logger = BufferedExecutionLogger(run_id="run-psu-signed-headless", developer_mode=False)
+    execution_logger = BufferedExecutionLogger(run_id="run-psu-signed-auto-approve", developer_mode=False)
     with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True) as client:
         result, context = _execute_v1_psu_step(
-            psu_headless_step(state=state, request_object=GeneratedRequestObject(source="fapi-signing")),
+            psu_auto_approve_step(state=state, request_object=GeneratedRequestObject(source="fapi-signing")),
             context=ExecutionContext(),
             client=client,
-            run_id="run-psu-signed-headless",
+            run_id="run-psu-signed-auto-approve",
             auth_session_store=AuthSessionStore(),
             execution_logger=execution_logger,
             clock=FakeClock().monotonic,
@@ -58,7 +58,7 @@ def test_psu_headless_step_uses_signed_request_object_for_authorization_redirect
     assert result.url is not None
     assert "request=***" in result.url
     assert context.steps["psu"].response is not None
-    assert context.steps["psu"].response.body["code"] == "headless-code"
+    assert context.steps["psu"].response.body["code"] == "auto-approve-code"
     assert len(observed_urls) == 1
     assert "request=ey" in observed_urls[0]
     assert "request=***" not in observed_urls[0]
@@ -69,7 +69,7 @@ def test_psu_headless_step_uses_signed_request_object_for_authorization_redirect
     assert "request=***" in cast(str, psu_url_events[0].payload["url"])
 
 
-def test_psu_headless_step_resolves_openbanking_intent_id_into_generated_request_object(tmp_path: Path) -> None:
+def test_psu_auto_approve_step_resolves_openbanking_intent_id_into_generated_request_object(tmp_path: Path) -> None:
     """Generated PSU request objects embed a resolved Open Banking consent id.
 
     Args:
@@ -92,17 +92,17 @@ def test_psu_headless_step_resolves_openbanking_intent_id_into_generated_request
             request: Browser-like authorisation redirect emitted by the executor.
 
         Returns:
-            Redirect response completing the headless PSU flow.
+            Redirect response completing the auto-approve PSU flow.
         """
         observed_urls.append(str(request.url))
         return httpx.Response(
             302,
-            headers={"Location": f"https://conformance.example.com/callback?state={state}&code=headless-code"},
+            headers={"Location": f"https://conformance.example.com/callback?state={state}&code=auto-approve-code"},
         )
 
     with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True) as client:
         result, _ = _execute_v1_psu_step(
-            psu_headless_step(
+            psu_auto_approve_step(
                 state=state,
                 request_object=GeneratedRequestObject(
                     source="fapi-signing",
@@ -111,9 +111,9 @@ def test_psu_headless_step_resolves_openbanking_intent_id_into_generated_request
             ),
             context=context,
             client=client,
-            run_id="run-psu-signed-intent-headless",
+            run_id="run-psu-signed-intent-auto-approve",
             auth_session_store=AuthSessionStore(),
-            execution_logger=BufferedExecutionLogger(run_id="run-psu-signed-intent-headless", developer_mode=False),
+            execution_logger=BufferedExecutionLogger(run_id="run-psu-signed-intent-auto-approve", developer_mode=False),
             clock=FakeClock().monotonic,
             sleep=FakeClock().sleep,
             fapi_signing_config=signing_config,
@@ -139,8 +139,8 @@ def test_psu_headless_step_resolves_openbanking_intent_id_into_generated_request
     }
 
 
-def test_psu_headless_step_captures_code_from_redirect() -> None:
-    """Headless mode parses a 3xx Location and records code for placeholders."""
+def test_psu_auto_approve_step_captures_code_from_redirect() -> None:
+    """Auto-approve mode parses a 3xx Location and records code for placeholders."""
     state = "h" * 32
     store = AuthSessionStore()
     requested_urls: list[str] = []
@@ -149,16 +149,16 @@ def test_psu_headless_step_captures_code_from_redirect() -> None:
         requested_urls.append(str(request.url))
         return httpx.Response(
             302,
-            headers={"Location": f"https://conformance.example.com/callback?state={state}&code=headless-code"},
+            headers={"Location": f"https://conformance.example.com/callback?state={state}&code=auto-approve-code"},
         )
 
-    execution_logger = BufferedExecutionLogger(run_id="run-headless", developer_mode=False)
+    execution_logger = BufferedExecutionLogger(run_id="run-auto-approve", developer_mode=False)
     with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True) as client:
         result, context = _execute_v1_psu_step(
-            psu_headless_step(state=state),
+            psu_auto_approve_step(state=state),
             context=ExecutionContext(),
             client=client,
-            run_id="run-headless",
+            run_id="run-auto-approve",
             auth_session_store=store,
             execution_logger=execution_logger,
             clock=FakeClock().monotonic,
@@ -167,7 +167,7 @@ def test_psu_headless_step_captures_code_from_redirect() -> None:
 
     assert result.status == "passed"
     assert context.steps["psu"].response is not None
-    assert context.steps["psu"].response.body["code"] == "headless-code"
+    assert context.steps["psu"].response.body["code"] == "auto-approve-code"
     assert len(requested_urls) == 1
     requested_url = urlsplit(requested_urls[0])
     assert requested_url.scheme == "https"
@@ -188,8 +188,8 @@ def test_psu_headless_step_captures_code_from_redirect() -> None:
     assert redirect_events[0].payload == {"state": state, "status": 302}
 
 
-def test_psu_headless_step_records_authorization_error_redirect() -> None:
-    """Headless mode converts an ASPSP error redirect into a failed step."""
+def test_psu_auto_approve_step_records_authorization_error_redirect() -> None:
+    """Auto-approve mode converts an ASPSP error redirect into a failed step."""
     state = "e" * 32
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -205,12 +205,12 @@ def test_psu_headless_step_records_authorization_error_redirect() -> None:
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result, context = _execute_v1_psu_step(
-            psu_headless_step(state=state),
+            psu_auto_approve_step(state=state),
             context=ExecutionContext(),
             client=client,
-            run_id="run-headless-error",
+            run_id="run-auto-approve-error",
             auth_session_store=AuthSessionStore(),
-            execution_logger=BufferedExecutionLogger(run_id="run-headless-error", developer_mode=False),
+            execution_logger=BufferedExecutionLogger(run_id="run-auto-approve-error", developer_mode=False),
             clock=FakeClock().monotonic,
             sleep=FakeClock().sleep,
         )
@@ -221,16 +221,16 @@ def test_psu_headless_step_records_authorization_error_redirect() -> None:
     assert context.steps["psu"].response is None
 
 
-def test_psu_headless_step_fails_when_redirect_location_missing() -> None:
-    """Headless mode fails cleanly when a 3xx response omits Location."""
+def test_psu_auto_approve_step_fails_when_redirect_location_missing() -> None:
+    """Auto-approve mode fails cleanly when a 3xx response omits Location."""
     with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(302))) as client:
         result, context = _execute_v1_psu_step(
-            psu_headless_step(state="l" * 32),
+            psu_auto_approve_step(state="l" * 32),
             context=ExecutionContext(),
             client=client,
-            run_id="run-headless-missing-location",
+            run_id="run-auto-approve-missing-location",
             auth_session_store=AuthSessionStore(),
-            execution_logger=BufferedExecutionLogger(run_id="run-headless-missing-location", developer_mode=False),
+            execution_logger=BufferedExecutionLogger(run_id="run-auto-approve-missing-location", developer_mode=False),
             clock=FakeClock().monotonic,
             sleep=FakeClock().sleep,
         )
@@ -241,8 +241,8 @@ def test_psu_headless_step_fails_when_redirect_location_missing() -> None:
     assert context.steps["psu"].response is None
 
 
-def test_psu_headless_step_fails_on_mismatched_redirect_target() -> None:
-    """Headless mode rejects redirects to any host/path other than redirectUri."""
+def test_psu_auto_approve_step_fails_on_mismatched_redirect_target() -> None:
+    """Auto-approve mode rejects redirects to any host/path other than redirectUri."""
     state = "x" * 32
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -253,12 +253,12 @@ def test_psu_headless_step_fails_on_mismatched_redirect_target() -> None:
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result, context = _execute_v1_psu_step(
-            psu_headless_step(state=state),
+            psu_auto_approve_step(state=state),
             context=ExecutionContext(),
             client=client,
-            run_id="run-headless-mismatch",
+            run_id="run-auto-approve-mismatch",
             auth_session_store=AuthSessionStore(),
-            execution_logger=BufferedExecutionLogger(run_id="run-headless-mismatch", developer_mode=False),
+            execution_logger=BufferedExecutionLogger(run_id="run-auto-approve-mismatch", developer_mode=False),
             clock=FakeClock().monotonic,
             sleep=FakeClock().sleep,
         )
@@ -271,24 +271,24 @@ def test_psu_headless_step_fails_on_mismatched_redirect_target() -> None:
     assert context.steps["psu"].response is None
 
 
-def test_psu_headless_step_accepts_redirect_with_explicit_default_https_port() -> None:
-    """Headless redirect matching treats omitted HTTPS port and ``:443`` as equivalent."""
+def test_psu_auto_approve_step_accepts_redirect_with_explicit_default_https_port() -> None:
+    """Auto-approve redirect matching treats omitted HTTPS port and ``:443`` as equivalent."""
     state = "p" * 32
 
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             302,
-            headers={"Location": f"https://conformance.example.com:443/callback?state={state}&code=headless-code"},
+            headers={"Location": f"https://conformance.example.com:443/callback?state={state}&code=auto-approve-code"},
         )
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result, context = _execute_v1_psu_step(
-            psu_headless_step(state=state),
+            psu_auto_approve_step(state=state),
             context=ExecutionContext(),
             client=client,
-            run_id="run-headless-default-port",
+            run_id="run-auto-approve-default-port",
             auth_session_store=AuthSessionStore(),
-            execution_logger=BufferedExecutionLogger(run_id="run-headless-default-port", developer_mode=False),
+            execution_logger=BufferedExecutionLogger(run_id="run-auto-approve-default-port", developer_mode=False),
             clock=FakeClock().monotonic,
             sleep=FakeClock().sleep,
         )
@@ -297,37 +297,37 @@ def test_psu_headless_step_accepts_redirect_with_explicit_default_https_port() -
     assert context.steps["psu"].response is not None
 
 
-def test_psu_headless_step_fails_when_authorization_endpoint_returns_ok() -> None:
-    """Headless mode fails on 200 OK rather than attempting consent automation."""
+def test_psu_auto_approve_step_fails_when_authorization_endpoint_returns_ok() -> None:
+    """Auto-approve mode fails on 200 OK rather than attempting consent automation."""
     with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, json={}))) as client:
         result, context = _execute_v1_psu_step(
-            psu_headless_step(state="o" * 32),
+            psu_auto_approve_step(state="o" * 32),
             context=ExecutionContext(),
             client=client,
-            run_id="run-headless-ok",
+            run_id="run-auto-approve-ok",
             auth_session_store=AuthSessionStore(),
-            execution_logger=BufferedExecutionLogger(run_id="run-headless-ok", developer_mode=False),
+            execution_logger=BufferedExecutionLogger(run_id="run-auto-approve-ok", developer_mode=False),
             clock=FakeClock().monotonic,
             sleep=FakeClock().sleep,
         )
 
     assert result.status == "failed"
     assert result.status_code == 200
-    assert "did not return a redirect" in result.message
+    assert "did not complete with a redirect (got HTTP 200)" in result.message
     assert context.steps["psu"].response is None
 
 
-def _run_headless(
+def _run_auto_approve(
     handler: Callable[[httpx.Request], httpx.Response], *, state: str
 ) -> tuple[dict[str, object], list[tuple[str, dict[str, object]]]]:
-    """Run one headless PSU step and return its result JSON and log events."""
-    execution_logger = BufferedExecutionLogger(run_id="run-headless-evidence", developer_mode=False)
+    """Run one auto-approve PSU step and return its result JSON and log events."""
+    execution_logger = BufferedExecutionLogger(run_id="run-auto-approve-evidence", developer_mode=False)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result, _context = _execute_v1_psu_step(
-            psu_headless_step(state=state),
+            psu_auto_approve_step(state=state),
             context=ExecutionContext(),
             client=client,
-            run_id="run-headless-evidence",
+            run_id="run-auto-approve-evidence",
             auth_session_store=AuthSessionStore(),
             execution_logger=execution_logger,
             clock=FakeClock().monotonic,
@@ -337,7 +337,7 @@ def _run_headless(
     return result.to_json_object(), events
 
 
-def test_psu_headless_login_page_is_logged_and_diagnosed() -> None:
+def test_psu_auto_approve_login_page_is_logged_and_diagnosed() -> None:
     """An HTML login page response is logged and its title recorded as evidence."""
     page = "<html><head><title> Ozone &amp; Bank\n Login </title></head><body>secret-form</body></html>"
 
@@ -348,7 +348,7 @@ def test_psu_headless_login_page_is_logged_and_diagnosed() -> None:
             text=page,
         )
 
-    result, events = _run_headless(handler, state="t" * 32)
+    result, events = _run_auto_approve(handler, state="t" * 32)
 
     event_types = [event_type for event_type, _payload in events]
     assert event_types.index("request-sent") < event_types.index("response-received")
@@ -365,21 +365,21 @@ def test_psu_headless_login_page_is_logged_and_diagnosed() -> None:
     assert "abc" not in json.dumps(response["headers"])
 
 
-def test_psu_headless_json_error_body_is_recorded_masked() -> None:
+def test_psu_auto_approve_json_error_body_is_recorded_masked() -> None:
     """A JSON error from the authorisation endpoint is kept, with sensitive keys masked."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(400, json={"error": "invalid_request", "id_token": "leak"})
 
-    result, events = _run_headless(handler, state="j" * 32)
+    result, events = _run_auto_approve(handler, state="j" * 32)
 
     details = cast("dict[str, dict[str, object]]", result["details"])
     assert details["response"]["body"] == {"error": "invalid_request", "id_token": "***"}
     assert ("response-received", {"statusCode": 400, "url": result["url"], "contentType": "application/json"}) in events
 
 
-def test_psu_headless_success_attaches_masked_redirect_evidence() -> None:
-    """A successful headless redirect keeps evidence but masks the authorisation code."""
+def test_psu_auto_approve_success_attaches_masked_redirect_evidence() -> None:
+    """A successful auto-approve redirect keeps evidence but masks the authorisation code."""
     state = "s" * 32
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -388,7 +388,7 @@ def test_psu_headless_success_attaches_masked_redirect_evidence() -> None:
             headers={"Location": f"https://conformance.example.com/callback?state={state}&code=secret-code"},
         )
 
-    result, _events = _run_headless(handler, state=state)
+    result, _events = _run_auto_approve(handler, state=state)
 
     details = cast("dict[str, dict[str, object]]", result["details"])
     assert result["status"] == "passed"
@@ -397,7 +397,7 @@ def test_psu_headless_success_attaches_masked_redirect_evidence() -> None:
     assert "secret-code" not in json.dumps(result)
 
 
-def test_psu_headless_off_target_redirect_records_target_without_parameters() -> None:
+def test_psu_auto_approve_off_target_redirect_records_target_without_parameters() -> None:
     """A redirect elsewhere (for example an ASPSP error page) records origin and path only."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -406,7 +406,7 @@ def test_psu_headless_off_target_redirect_records_target_without_parameters() ->
             302, headers={"Location": f"https://{userinfo}login.aspsp.example:8443/perry/error?session=s3cret#frag"}
         )
 
-    result, _events = _run_headless(handler, state="o" * 32)
+    result, _events = _run_auto_approve(handler, state="o" * 32)
 
     details = cast("dict[str, dict[str, object]]", result["details"])
     rendered = json.dumps(result)
@@ -419,7 +419,7 @@ def test_psu_headless_off_target_redirect_records_target_without_parameters() ->
     assert "operator" not in rendered
 
 
-def test_psu_headless_step_reads_hybrid_flow_fragment_response() -> None:
+def test_psu_auto_approve_step_reads_hybrid_flow_fragment_response() -> None:
     """OIDC hybrid-flow redirects return ``code``/``id_token`` in the fragment; both are read and masked."""
     state = "f" * 32
 
@@ -431,7 +431,7 @@ def test_psu_headless_step_reads_hybrid_flow_fragment_response() -> None:
             },
         )
 
-    result, _events = _run_headless(handler, state=state)
+    result, _events = _run_auto_approve(handler, state=state)
 
     details = cast("dict[str, dict[str, object]]", result["details"])
     rendered = json.dumps(result)
@@ -441,7 +441,7 @@ def test_psu_headless_step_reads_hybrid_flow_fragment_response() -> None:
     assert "#code=***&id_token=***" in str(details["response"]["location"])
 
 
-def test_psu_headless_same_origin_error_page_is_followed_and_summarised() -> None:
+def test_psu_auto_approve_same_origin_error_page_is_followed_and_summarised() -> None:
     """A same-origin redirect to an ASPSP error page is followed with its session cookie and its text captured."""
     error_page = (
         "<html><head><title>OBL Error</title><style>.x{}</style></head><body>"
@@ -459,7 +459,7 @@ def test_psu_headless_same_origin_error_page_is_followed_and_summarised() -> Non
             )
         return httpx.Response(200, headers={"Content-Type": "text/html"}, text=error_page)
 
-    result, events = _run_headless(handler, state="e" * 32)
+    result, events = _run_auto_approve(handler, state="e" * 32)
 
     details = cast("dict[str, dict[str, object]]", result["details"])
     page = cast("dict[str, object]", details["response"]["errorPage"])
@@ -477,7 +477,7 @@ def test_psu_headless_same_origin_error_page_is_followed_and_summarised() -> Non
     assert [payload["url"] for payload in followed] == ["https://auth.example.com/perry/error"] * 2
 
 
-def test_psu_headless_cross_origin_redirect_is_not_followed() -> None:
+def test_psu_auto_approve_cross_origin_redirect_is_not_followed() -> None:
     """Redirects to another origin are reported but never requested."""
     seen: list[httpx.Request] = []
 
@@ -485,14 +485,14 @@ def test_psu_headless_cross_origin_redirect_is_not_followed() -> None:
         seen.append(request)
         return httpx.Response(302, headers={"Location": "https://login.other.example/error"})
 
-    result, _events = _run_headless(handler, state="c" * 32)
+    result, _events = _run_auto_approve(handler, state="c" * 32)
 
     details = cast("dict[str, dict[str, object]]", result["details"])
     assert len(seen) == 1
     assert "errorPage" not in details["response"]
 
 
-def test_psu_headless_error_redirect_following_is_bounded() -> None:
+def test_psu_auto_approve_error_redirect_following_is_bounded() -> None:
     """A same-origin redirect loop stops after the hop limit."""
     seen: list[httpx.Request] = []
 
@@ -500,7 +500,7 @@ def test_psu_headless_error_redirect_following_is_bounded() -> None:
         seen.append(request)
         return httpx.Response(302, headers={"Location": f"/loop/{len(seen)}"})
 
-    result, _events = _run_headless(handler, state="l" * 32)
+    result, _events = _run_auto_approve(handler, state="l" * 32)
 
     details = cast("dict[str, dict[str, object]]", result["details"])
     page = cast("dict[str, object]", details["response"]["errorPage"])
@@ -509,7 +509,7 @@ def test_psu_headless_error_redirect_following_is_bounded() -> None:
     assert "text" not in page
 
 
-def test_psu_headless_error_page_transport_error_is_recorded() -> None:
+def test_psu_auto_approve_error_page_transport_error_is_recorded() -> None:
     """A transport failure while following the error redirect is recorded, not raised."""
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -517,7 +517,7 @@ def test_psu_headless_error_page_transport_error_is_recorded() -> None:
             return httpx.Response(302, headers={"Location": "/perry/error"})
         raise httpx.ConnectError("boom", request=request)
 
-    result, _events = _run_headless(handler, state="t" * 32)
+    result, _events = _run_auto_approve(handler, state="t" * 32)
 
     details = cast("dict[str, dict[str, object]]", result["details"])
     page = cast("dict[str, object]", details["response"]["errorPage"])
@@ -526,7 +526,7 @@ def test_psu_headless_error_page_transport_error_is_recorded() -> None:
     assert "url" not in page
 
 
-def test_psu_headless_error_page_json_body_is_masked() -> None:
+def test_psu_auto_approve_error_page_json_body_is_masked() -> None:
     """A JSON error page reached by redirect is recorded with sensitive keys masked."""
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -534,7 +534,7 @@ def test_psu_headless_error_page_json_body_is_masked() -> None:
             return httpx.Response(302, headers={"Location": "/oauth/error"})
         return httpx.Response(400, json={"error": "invalid_request", "access_token": "leaky"})
 
-    result, _events = _run_headless(handler, state="j" * 32)
+    result, _events = _run_auto_approve(handler, state="j" * 32)
 
     details = cast("dict[str, dict[str, object]]", result["details"])
     page = cast("dict[str, object]", details["response"]["errorPage"])

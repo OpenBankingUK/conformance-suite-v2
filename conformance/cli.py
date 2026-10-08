@@ -196,7 +196,7 @@ def _callback_listener_for(
 
     The listener is only started when the plan will wait for a manual PSU
     authorisation callback and a ``redirectUri`` is configured; otherwise a
-    no-op context is returned so headless and non-PSU runs never bind a port.
+    no-op context is returned so auto-approve and non-PSU runs never bind a port.
 
     Args:
         config: Parsed run config carrying the OAuth ``redirectUri``.

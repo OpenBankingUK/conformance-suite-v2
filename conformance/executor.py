@@ -680,7 +680,7 @@ def _apply_psu_execution_settings(
 ) -> tuple[V1Step, ...]:
     """Apply plan-level PSU authorisation settings to every PSU step.
 
-    Custom headers are attached only in headless mode, so manual-mode browser
+    Custom headers are attached only in auto-approve mode, so manual-mode browser
     redirects never carry them, and no other step type is changed.
 
     Args:
@@ -693,7 +693,7 @@ def _apply_psu_execution_settings(
     psu_settings = settings.psu_authorization
     if psu_settings.is_default:
         return steps
-    headers = psu_settings.headers if psu_settings.mode == "headless" else ()
+    headers = psu_settings.headers if psu_settings.mode == "auto-approve" else ()
     return tuple(
         replace(
             step,
@@ -711,7 +711,7 @@ def compiled_plan_requires_psu_callback(compiled_plan: CompiledTestPlan) -> bool
     """Return whether a compiled plan will wait for a manual PSU callback.
 
     Used by the CLI to decide whether to start its HTTPS callback listener
-    before execution. Headless PSU authorisation captures the redirect
+    before execution. Auto-approve PSU authorisation captures the redirect
     directly and never needs the listener.
 
     Args:
@@ -3215,7 +3215,7 @@ def _execute_v1_psu_step(
     Args:
         manifest_step: Parsed PSU authorisation step to execute.
         context: Current execution context with earlier step records.
-        client: Preconfigured synchronous HTTP client. Used by headless mode
+        client: Preconfigured synchronous HTTP client. Used by auto-approve mode
             to issue the authorisation request with redirect following disabled.
         run_id: Run identifier used to scope the auth-session registration.
         auth_session_store: Store used to register and poll the session.
@@ -3271,12 +3271,12 @@ def _execute_v1_psu_step_inner(
     clock: Callable[[], float],
     sleep: Callable[[float], None],
 ) -> tuple[StepResult, ExecutionContext]:
-    """Run the PSU authorisation flow (manual or headless) without lifecycle wrapper events.
+    """Run the PSU authorisation flow (manual or auto-approve) without lifecycle wrapper events.
 
     Args:
         manifest_step: Parsed PSU authorisation step to execute.
         context: Current execution context with earlier step records.
-        client: Preconfigured synchronous HTTP client. Used by headless mode
+        client: Preconfigured synchronous HTTP client. Used by auto-approve mode
             to issue the authorisation request with redirect following disabled.
         run_id: Run identifier used to scope the auth-session registration.
         auth_session_store: Store used to register and poll the session.
@@ -3473,8 +3473,8 @@ def _execute_v1_psu_step_inner(
         },
     )
 
-    if manifest_step.mode == "headless":
-        return _execute_headless_psu_authorization(
+    if manifest_step.mode == "auto-approve":
+        return _execute_auto_approve_psu_authorization(
             manifest_step,
             context=context,
             client=client,
@@ -3691,8 +3691,8 @@ def _generate_psu_request_object(
     return signed_request_object.token
 
 
-def _headless_non_redirect_message(status_code: int, content_type: str | None) -> str:
-    """Describe why a headless PSU authorisation response was not usable.
+def _auto_approve_non_redirect_message(status_code: int, content_type: str | None) -> str:
+    """Describe why an auto-approve PSU authorisation response was not usable.
 
     Args:
         status_code: HTTP status returned by the authorisation endpoint.
@@ -3701,18 +3701,20 @@ def _headless_non_redirect_message(status_code: int, content_type: str | None) -
     Returns:
         Actionable failure message for the step result.
     """
-    if 200 <= status_code < 300 and content_type is not None and "html" in content_type.lower():
+    if content_type is not None and "html" in content_type.lower():
         return (
-            f"PSU authorisation headless request returned an HTML page (HTTP {status_code}) instead of a redirect; "
-            "the ASPSP is likely showing a login or consent page. Check the headless headers/parameters, "
-            "or use manual mode"
+            f"Auto-approve PSU authorisation did not complete with a redirect: the ASPSP returned an HTML page "
+            f"(HTTP {status_code}). See the step's response evidence for what was returned"
         )
-    return f"PSU authorisation headless request did not return a redirect (got HTTP {status_code})"
+    return (
+        f"Auto-approve PSU authorisation did not complete with a redirect (got HTTP {status_code}). "
+        "See the step's response evidence for what was returned"
+    )
 
 
 _HTML_TITLE_PATTERN: Final = re.compile(r"<title[^>]*>(.*?)</title\s*>", re.IGNORECASE | re.DOTALL)
 _MAX_HTML_TITLE_LENGTH: Final = 200
-_MAX_HEADLESS_JSON_BODY_BYTES: Final = 16384
+_MAX_AUTO_APPROVE_JSON_BODY_BYTES: Final = 16384
 
 
 def _redirect_target_without_parameters(location: str) -> str:
@@ -3734,10 +3736,10 @@ def _redirect_target_without_parameters(location: str) -> str:
     return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
 
 
-def _headless_response_evidence(response: httpx.Response, *, redirect_uri: str) -> dict[str, JsonValue]:
-    """Build masked diagnostic evidence for a headless PSU authorisation response.
+def _auto_approve_response_evidence(response: httpx.Response, *, redirect_uri: str) -> dict[str, JsonValue]:
+    """Build masked diagnostic evidence for an auto-approve PSU authorisation response.
 
-    The OAuth 2.0 authorisation endpoint is expected to answer a headless
+    The OAuth 2.0 authorisation endpoint is expected to answer an auto-approve
     request with a redirect to ``redirectUri``. When it does not, the evidence
     gives enough to tell why: an HTML login/consent page (by its ``<title>``)
     or a JSON error body. ``Location`` is recorded only when it targets the
@@ -3773,7 +3775,7 @@ def _headless_response_evidence(response: httpx.Response, *, redirect_uri: str) 
         if title_match is not None:
             title = " ".join(html.unescape(title_match.group(1)).split())
             evidence["htmlTitle"] = title[:_MAX_HTML_TITLE_LENGTH]
-    elif media_type.endswith("json") and len(response.content) <= _MAX_HEADLESS_JSON_BODY_BYTES:
+    elif media_type.endswith("json") and len(response.content) <= _MAX_AUTO_APPROVE_JSON_BODY_BYTES:
         try:
             body = cast("JsonValue", response.json())
         except ValueError:
@@ -3783,7 +3785,7 @@ def _headless_response_evidence(response: httpx.Response, *, redirect_uri: str) 
     return evidence
 
 
-_MAX_HEADLESS_FOLLOW_HOPS: Final = 3
+_MAX_AUTO_APPROVE_FOLLOW_HOPS: Final = 3
 _MAX_ERROR_PAGE_TEXT_LENGTH: Final = 2048
 _MAX_ERROR_PAGE_MESSAGE_LENGTH: Final = 500
 _NON_CONTENT_ELEMENT_PATTERN: Final = re.compile(
@@ -3835,10 +3837,10 @@ def _follow_authorization_error_redirects(
     Many ASPSPs answer an invalid OAuth 2.0 authorisation request (RFC 6749
     section 4.1.2.1: a request that cannot safely be returned to the client)
     by redirecting to an error page on their own authorisation server, and
-    render the reason only for that browser session. Headless mode has no
-    browser, so up to ``_MAX_HEADLESS_FOLLOW_HOPS`` same-origin redirects are
+    render the reason only for that browser session. Auto-approve mode has no
+    browser, so up to ``_MAX_AUTO_APPROVE_FOLLOW_HOPS`` same-origin redirects are
     followed, carrying only the cookies the ASPSP set along the way. Custom
-    headless headers are deliberately not re-sent. Cross-origin redirects are
+    auto-approve headers are deliberately not re-sent. Cross-origin redirects are
     never followed.
 
     Args:
@@ -3855,7 +3857,7 @@ def _follow_authorization_error_redirects(
     current = response
     hops: list[JsonValue] = []
     cookies: dict[str, str] = {}
-    for _ in range(_MAX_HEADLESS_FOLLOW_HOPS):
+    for _ in range(_MAX_AUTO_APPROVE_FOLLOW_HOPS):
         location = current.headers.get("Location")
         if not 300 <= current.status_code < 400 or location is None:
             break
@@ -3895,7 +3897,7 @@ def _follow_authorization_error_redirects(
             if text:
                 evidence["text"] = text
         elif content_type.lower().split(";", 1)[0].strip().endswith("json") and (
-            len(current.content) <= _MAX_HEADLESS_JSON_BODY_BYTES
+            len(current.content) <= _MAX_AUTO_APPROVE_JSON_BODY_BYTES
         ):
             try:
                 evidence["body"] = _mask_result_json_value(cast("JsonValue", current.json()))
@@ -3904,7 +3906,7 @@ def _follow_authorization_error_redirects(
     return evidence
 
 
-def _execute_headless_psu_authorization(
+def _execute_auto_approve_psu_authorization(
     manifest_step: PsuAuthorizationStep,
     *,
     context: ExecutionContext,
@@ -3919,7 +3921,7 @@ def _execute_headless_psu_authorization(
     registered_state: str,
     redirect_uri: str,
 ) -> tuple[StepResult, ExecutionContext]:
-    """Execute a headless PSU authorisation redirect exchange.
+    """Execute an auto-approve PSU authorisation redirect exchange.
 
     Args:
         manifest_step: Parsed PSU authorisation step being executed.
@@ -3952,14 +3954,14 @@ def _execute_headless_psu_authorization(
         execution_logger.emit(
             "application-error",
             step_id=manifest_step.id,
-            payload={"message": f"PSU authorisation headless request failed: {error}"},
+            payload={"message": f"Auto-approve PSU authorisation request failed: {error}"},
         )
         return (
             _attach_evidence(
                 StepResult(
                     name=manifest_step.id,
                     status="failed",
-                    message=f"PSU authorisation headless request failed: {error}",
+                    message=f"Auto-approve PSU authorisation request failed: {error}",
                     url=result_url,
                 ),
                 request_evidence=request_evidence,
@@ -3969,7 +3971,7 @@ def _execute_headless_psu_authorization(
         )
 
     content_type = response.headers.get("Content-Type")
-    response_evidence = _headless_response_evidence(response, redirect_uri=redirect_uri)
+    response_evidence = _auto_approve_response_evidence(response, redirect_uri=redirect_uri)
     execution_logger.emit(
         "response-received",
         step_id=manifest_step.id,
@@ -3985,7 +3987,7 @@ def _execute_headless_psu_authorization(
                 StepResult(
                     name=manifest_step.id,
                     status="failed",
-                    message=_headless_non_redirect_message(response.status_code, content_type),
+                    message=_auto_approve_non_redirect_message(response.status_code, content_type),
                     url=result_url,
                     status_code=response.status_code,
                 ),
@@ -4002,7 +4004,7 @@ def _execute_headless_psu_authorization(
                 StepResult(
                     name=manifest_step.id,
                     status="failed",
-                    message="PSU authorisation headless redirect was missing a Location header",
+                    message="Auto-approve PSU authorisation redirect was missing a Location header",
                     url=result_url,
                     status_code=response.status_code,
                 ),
@@ -4015,7 +4017,7 @@ def _execute_headless_psu_authorization(
     if not redirect_matches_registered_uri(location=location, redirect_uri=redirect_uri):
         redirect_target = _redirect_target_without_parameters(urljoin(str(response.url), location))
         message = (
-            f"PSU authorisation redirected to {redirect_target}, not the configured redirectUri; headless mode "
+            f"PSU authorisation redirected to {redirect_target}, not the configured redirectUri; auto-approve mode "
             "expects the ASPSP to auto-approve and redirect straight back to redirectUri"
         )
         error_page = _follow_authorization_error_redirects(
@@ -4159,9 +4161,9 @@ def _complete_psu_step_from_session(
         authorization_url: Fully built authorisation URL.
         result_url: Masked authorisation URL safe to embed in result files.
         current_session: Terminal auth session captured by manual callback
-            polling or by the headless redirect parser.
+            polling or by the auto-approve redirect parser.
         response_evidence: Masked authorisation-endpoint response evidence.
-            Only headless mode has one; when present it is attached to the
+            Only auto-approve mode has one; when present it is attached to the
             result on success as well as failure.
 
     Returns:

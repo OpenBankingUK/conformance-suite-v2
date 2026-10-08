@@ -130,7 +130,7 @@ class BuilderDraft:
             across guided editing and import/export.
         metadata: Optional participant/export metadata retained with the plan.
         execution_mode: Canonical execution mode retained with the plan.
-        psu_authorization_mode: Manual or headless PSU authorisation mode.
+        psu_authorization_mode: Manual or auto-approve PSU authorisation mode.
         psu_authorization_headers: Header rows retained while editing, including in manual mode.
         psu_authorization_parameters: Parameter rows applied in either PSU mode.
         discovery_metadata: Session-only non-secret discovery helper state used
@@ -397,7 +397,7 @@ class BuilderDraft:
         """Return a copy with PSU authorisation settings saved.
 
         Args:
-            mode: Manual or headless authorisation mode.
+            mode: Manual or auto-approve authorisation mode.
             headers: Header rows retained for later use, even in manual mode.
             parameters: Typed authorisation parameter name/value pairs.
 
@@ -779,7 +779,7 @@ def _psu_authorization_mode(value: object) -> PsuAuthorizationModeSetting:
     Returns:
         Valid mode, defaulting to manual for malformed legacy state.
     """
-    return value if value in ("manual", "headless") else "manual"
+    return value if value in ("manual", "auto-approve") else "manual"
 
 
 def _string_pairs(value: object) -> tuple[tuple[str, str], ...]:

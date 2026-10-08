@@ -180,7 +180,7 @@ def test_parse_v1_psu_step_accepts_placeholder_in_authorization_endpoint() -> No
                 "kind": "psu-authorization",
                 "id": "psu",
                 "name": "PSU",
-                "mode": "headless",
+                "mode": "auto-approve",
                 "authorizationEndpoint": "${steps.discovery.response.body.authorization_endpoint}",
                 "clientId": "c",
                 "redirectUri": "https://conformance.example.com/callback",
@@ -190,7 +190,7 @@ def test_parse_v1_psu_step_accepts_placeholder_in_authorization_endpoint() -> No
     manifest = parse_manifest(raw_manifest)
     psu_step = manifest.steps[1]
     assert isinstance(psu_step, PsuAuthorizationStep)
-    assert psu_step.mode == "headless"
+    assert psu_step.mode == "auto-approve"
 
 
 def test_parse_v1_psu_step_accepts_config_redirect_uri_placeholder() -> None:

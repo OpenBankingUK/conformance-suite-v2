@@ -82,7 +82,7 @@ case id below.
 
 | Retired module | Replacement modules | Subject boundary |
 | --- | --- | --- |
-| `tests/unit/execution/test_executor.py` (5,662 lines) | `test_executor_http.py`, `test_executor_dependencies.py`, `test_executor_token_auth.py`, `test_executor_detached_jws.py`, `test_executor_response_signatures.py`, `test_executor_evidence.py`, `test_executor_run_orchestration.py`, `test_executor_compiled_payments.py`, `test_executor_compiled_accounts.py`, `test_executor_psu_manual.py`, `test_executor_psu_headless.py` | Request dispatch; step dependencies and skip semantics; token-endpoint client auth and signing-credential lifecycle; detached JWS write profiles; response-signature validation; outcome/evidence masking; run orchestration (plan selection, eligibility, run identity, engine errors); compiled PIS/VRP plans; compiled AIS/CBPII plans; PSU manual handoff; PSU headless redirects. |
+| `tests/unit/execution/test_executor.py` (5,662 lines) | `test_executor_http.py`, `test_executor_dependencies.py`, `test_executor_token_auth.py`, `test_executor_detached_jws.py`, `test_executor_response_signatures.py`, `test_executor_evidence.py`, `test_executor_run_orchestration.py`, `test_executor_compiled_payments.py`, `test_executor_compiled_accounts.py`, `test_executor_psu_manual.py`, `test_executor_psu_auto_approve.py` | Request dispatch; step dependencies and skip semantics; token-endpoint client auth and signing-credential lifecycle; detached JWS write profiles; response-signature validation; outcome/evidence masking; run orchestration (plan selection, eligibility, run identity, engine errors); compiled PIS/VRP plans; compiled AIS/CBPII plans; PSU manual handoff; PSU auto-approve redirects. |
 | `tests/unit/validation/test_manifest.py` (3,185 lines) | `test_manifest_v0.py`, `test_manifest_assertions.py`, `test_manifest_requests.py`, `test_manifest_placeholders.py`, `test_manifest_steps.py`, `test_manifest_psu.py`, `test_manifest_policies.py` | Legacy v0 documents; assertion vocabulary and response-schema assertions; request shape (methods, headers, bodies); placeholder and step-dependency validation; step structure, metadata, and certification coverage; PSU authorisation steps; runtime signing directives. |
 | `tests/component/api/test_run_endpoints.py` (1,544 lines) | `test_run_endpoints.py`, `test_auth_session_endpoints.py` | Run lifecycle endpoints (create/status/result/log, loopback guard) versus PSU auth-session endpoints (register/read/discard). |
 | `tests/component/django/test_ui_views.py` (1,113 lines) | `test_builder_wizard_views.py`, `test_run_detail_views.py` | Builder wizard routes and rendered pages versus run detail routes and rendered run state. Builder form and draft-state behaviour stays in the unit suite. |
@@ -313,7 +313,7 @@ Compiled catalogue plans execute through the existing hardened executor path.
 Regression coverage should prove that replacing public manifests did not weaken:
 
 - HTTP execution, status/header/body assertions, and response-schema assertions.
-- PSU authorisation handoff and headless test helpers.
+- PSU authorisation handoff and auto-approve test helpers.
 - FAPI signing, token endpoint auth policy, detached JWS signing, and mTLS checks.
 - Masking in result JSON, NDJSON logs, browser downloads, and API log snapshots.
 - CLI `--test-plan` validation and rejection of public `--manifest` and

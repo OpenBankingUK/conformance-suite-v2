@@ -205,13 +205,14 @@ dedicated v3.1 catalogue areas; it is not routed through the v4 catalogues.
 
 ### PSU authorisation and pipeline runs
 
-An optional top-level `execution` block in the plan controls how PSU
-authorisation is completed. If it is left out, the runner uses `manual` mode.
+An optional top-level `execution` block in the plan sets who completes PSU
+authorisation: the PSU in a browser (`manual`, the default) or the sandbox
+(`auto-approve`).
 
 ```json
 "execution": {
   "psuAuthorization": {
-    "mode": "headless",
+    "mode": "auto-approve",
     "headers": { "x-sandbox-auto-approve": "true" },
     "parameters": { "headless": true }
   }
@@ -221,9 +222,16 @@ authorisation is completed. If it is left out, the runner uses `manual` mode.
 | Mode | Behaviour |
 | --- | --- |
 | `manual` (default) | The CLI prints each PSU authorisation URL to stderr and starts a built-in HTTPS listener for the plan's `redirectUri`. Complete the consent in a browser and the run continues. Use `--open-browser` to open the URL automatically. |
-| `headless` | The runner fetches the authorisation URL itself. It expects the ASPSP (typically a sandbox) to redirect straight back to `redirectUri` with a code. It does not complete login or consent pages. This mode suits unattended CI/CD pipelines. |
+| `auto-approve` | The sandbox completes authorisation. The runner sends the authorisation request with an HTTP client, not a browser, so the sandbox must auto-approve and redirect straight back to `redirectUri` with a code. Login and consent pages are not automated. This mode suits unattended CI/CD pipelines. |
 
-- `headers` are only valid in `headless` mode. They are sent on the
+Auto-approval is a sandbox test facility, not an Open Banking UK or FAPI
+concept, and ASPSPs usually have to enable it for your client. Ozone and the
+legacy FCS call it "headless". A plan that still uses `"mode": "headless"` is
+rejected with a message asking you to change it to `auto-approve`. The
+`"headless": true` parameter above is just an example of a sandbox-specific
+custom parameter.
+
+- `headers` are only valid in `auto-approve` mode. They are sent on the
   authorisation request only and never on resource calls. You cannot override
   HTTP framing and hop-by-hop headers such as `Host`, `Content-Length` or
   `Connection`.
@@ -235,9 +243,9 @@ authorisation is completed. If it is left out, the runner uses `manual` mode.
   `nonce`, `scope` or `request`.
 - Results record the mode and the header and parameter names under
   `execution.psuAuthorization`, but never their values. Header values that
-  look sensitive are also blanked in the stored plan snapshot. Headless
-  automation does not change certification eligibility.
-- If the ASPSP redirects a headless request to one of its own pages (for
+  look sensitive are also blanked in the stored plan snapshot. Auto-approve
+  mode does not change certification eligibility.
+- If the ASPSP redirects an auto-approve request to one of its own pages (for
   example an error page) instead of `redirectUri`, the runner follows up to
   three redirects on the same origin. It sends only the cookies the ASPSP set
   and never resends your custom headers. The page's visible text (scripts,

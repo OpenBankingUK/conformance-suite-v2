@@ -48,7 +48,7 @@ def _rw_plan() -> JsonObject:
         "metadata": {},
         "execution": {
             "psuAuthorization": {
-                "mode": "headless",
+                "mode": "auto-approve",
                 "headers": {"X-Sandbox-Auto-Approve": "true"},
                 "parameters": {"sandbox_auto_approve": True, "psu_id": "user1"},
             }
@@ -60,7 +60,7 @@ def test_draft_store_round_trips_psu_authorization_values() -> None:
     """Session persistence keeps mode, headers, and typed parameters."""
     store = SessionBuilderDraftStore(SessionStore())
     draft = store.create().with_psu_authorization_settings(
-        mode="headless",
+        mode="auto-approve",
         headers=(("X-Sandbox-Auto-Approve", "true"),),
         parameters=(("sandbox_auto_approve", True), ("psu_id", "user1")),
     )
@@ -69,7 +69,7 @@ def test_draft_store_round_trips_psu_authorization_values() -> None:
 
     loaded = store.get(draft.draft_id)
     assert loaded is not None
-    assert loaded.psu_authorization_mode == "headless"
+    assert loaded.psu_authorization_mode == "auto-approve"
     assert loaded.psu_authorization_headers == (("X-Sandbox-Auto-Approve", "true"),)
     assert loaded.psu_authorization_parameters == (("sandbox_auto_approve", True), ("psu_id", "user1"))
 
@@ -78,7 +78,7 @@ def test_security_form_rejects_duplicate_parameter_and_reserved_header_names() -
     """Shared execution validation errors attach to the offending row fields."""
     duplicate = SecurityConfigForm(
         data={
-            "psu_authorization_mode": "headless",
+            "psu_authorization_mode": "auto-approve",
             "psu_parameter_name_0": "sandbox",
             "psu_parameter_value_0": "one",
             "psu_parameter_name_1": "SANDBOX",
@@ -90,7 +90,7 @@ def test_security_form_rejects_duplicate_parameter_and_reserved_header_names() -
 
     reserved = SecurityConfigForm(
         data={
-            "psu_authorization_mode": "headless",
+            "psu_authorization_mode": "auto-approve",
             "psu_header_name_0": "Host",
             "psu_header_value_0": "example.com",
         }
@@ -140,7 +140,7 @@ def test_import_draft_export_round_trip_and_compiled_plan_carry_settings() -> No
         include_secrets=False,
     )
     assert safe_export["execution"] == _rw_plan()["execution"]
-    assert document.execution_settings.psu_authorization.mode == "headless"
+    assert document.execution_settings.psu_authorization.mode == "auto-approve"
     compiled = compile_test_plan_document(document, supported_catalogues())
     assert compiled.execution_settings.psu_authorization.headers == (("X-Sandbox-Auto-Approve", "true"),)
     assert compiled.execution_settings.psu_authorization.parameters == (
@@ -152,7 +152,7 @@ def test_import_draft_export_round_trip_and_compiled_plan_carry_settings() -> No
 def test_review_summary_shows_names_without_parameter_or_header_values() -> None:
     """The review section lists setting names and never interpolates values."""
     draft = BuilderDraft.create().with_psu_authorization_settings(
-        mode="headless",
+        mode="auto-approve",
         headers=(("X-Sandbox-Auto-Approve", "private-header-value"),),
         parameters=(("psu_id", "private-parameter-value"),),
     )

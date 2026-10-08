@@ -4,21 +4,25 @@ The canonical test plan may declare an optional ``execution`` block::
 
     "execution": {
         "psuAuthorization": {
-            "mode": "headless",
+            "mode": "auto-approve",
             "headers": {"X-Sandbox-Auto-Approve": "true"},
             "parameters": {"sandbox_auto_approve": true}
         }
     }
 
-``mode`` selects how the runner completes OAuth 2.0 PSU authorisation steps:
-``manual`` hands the authorisation URL to a browser and waits for the
-``redirect_uri`` callback; ``headless`` issues the authorisation GET itself and
-captures the immediate redirect. Header and parameter names are participant
+``mode`` selects who completes OAuth 2.0 PSU authorisation steps: with
+``manual`` the PSU does, in a browser, and the runner waits for the
+``redirect_uri`` callback; with ``auto-approve`` the sandbox does. The runner
+sends the authorisation request with an HTTP client (not a browser) and
+expects the ASPSP to approve automatically and redirect straight back to
+``redirect_uri``; login and consent pages are not automated. Ozone and the
+legacy FCS call this facility "headless". Auto-approval is a sandbox test
+facility, not an Open Banking UK or FAPI concept. Header and parameter names are participant
 defined because sandbox auto-approval facilities are ASPSP-specific; they are
 not Open Banking UK standard fields and do not by themselves evidence PSU
 authentication, consent interaction, or SCA.
 
-* ``headers`` are attached only to the headless PSU authorisation request. A
+* ``headers`` are attached only to the auto-approve PSU authorisation request. A
   normal browser link cannot carry headers, so non-empty headers are rejected
   in ``manual`` mode.
 * ``parameters`` apply in both modes and only to the PSU authorisation
@@ -41,7 +45,7 @@ from typing import Final, Literal
 
 from conformance.json_types import JsonObject, JsonValue
 
-PsuAuthorizationModeSetting = Literal["manual", "headless"]
+PsuAuthorizationModeSetting = Literal["manual", "auto-approve"]
 """Plan-level PSU authorisation mode."""
 
 type PsuParameterValue = str | int | float | bool
@@ -115,9 +119,9 @@ class PsuAuthorizationSettings:
     """Plan-level configuration applied to every PSU authorisation step.
 
     Attributes:
-        mode: ``manual`` (browser hand-off and callback) or ``headless``
+        mode: ``manual`` (browser hand-off and callback) or ``auto-approve``
             (runner-issued authorisation GET).
-        headers: Ordered custom header name/value pairs for the headless
+        headers: Ordered custom header name/value pairs for the auto-approve
             authorisation request only.
         parameters: Ordered custom authorisation parameter name/value pairs.
     """
@@ -241,9 +245,13 @@ def parse_psu_authorization_settings(raw: object, *, location: str) -> PsuAuthor
     if unknown:
         raise ExecutionSettingsError(f"{location} contains unsupported key(s): {', '.join(unknown)}")
     raw_mode = raw.get("mode", "manual")
-    if raw_mode not in ("manual", "headless"):
-        raise ExecutionSettingsError(f"{location}.mode must be one of: manual, headless")
-    mode: PsuAuthorizationModeSetting = "headless" if raw_mode == "headless" else "manual"
+    if raw_mode == "headless":
+        raise ExecutionSettingsError(
+            f"{location}.mode 'headless' has been renamed to 'auto-approve'. Update the plan's execution settings"
+        )
+    if raw_mode not in ("manual", "auto-approve"):
+        raise ExecutionSettingsError(f"{location}.mode must be one of: manual, auto-approve")
+    mode: PsuAuthorizationModeSetting = "auto-approve" if raw_mode == "auto-approve" else "manual"
     headers = validate_psu_headers(_pairs(raw.get("headers"), location=f"{location}.headers"), location=location)
     parameters = validate_psu_parameters(
         _pairs(raw.get("parameters"), location=f"{location}.parameters"),
@@ -252,7 +260,7 @@ def parse_psu_authorization_settings(raw: object, *, location: str) -> PsuAuthor
     if mode == "manual" and headers:
         raise ExecutionSettingsError(
             f"{location}.headers cannot be used in manual mode: a browser authorisation link cannot carry "
-            "custom headers. Use mode 'headless' or remove the headers."
+            "custom headers. Use mode 'auto-approve' or remove the headers."
         )
     return PsuAuthorizationSettings(mode=mode, headers=headers, parameters=parameters)
 

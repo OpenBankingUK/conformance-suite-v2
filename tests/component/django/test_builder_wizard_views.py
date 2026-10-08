@@ -570,14 +570,14 @@ class TestBuilderWizardUi:
         assert security_page.status_code == 200
         security_html = security_page.content.decode("utf-8")
         assert 'value="manual"' in security_html
-        assert 'value="headless"' in security_html
+        assert 'value="auto-approve"' in security_html
         assert "Add parameter" in security_html
         assert "Add header" in security_html
 
         response = client.post(
             f"/builder/{draft_id}/config/security/",
             data=_valid_security_form_data(
-                psu_authorization_mode="headless",
+                psu_authorization_mode="auto-approve",
                 psu_header_name_0="X-Sandbox-Auto-Approve",
                 psu_header_value_0="true",
                 psu_parameter_name_0="sandbox_auto_approve",
@@ -588,7 +588,7 @@ class TestBuilderWizardUi:
         assert response.status_code == 302
         draft = SessionBuilderDraftStore(client.session).get(draft_id)
         assert draft is not None
-        assert draft.psu_authorization_mode == "headless"
+        assert draft.psu_authorization_mode == "auto-approve"
         assert draft.psu_authorization_headers == (("X-Sandbox-Auto-Approve", "true"),)
         assert draft.psu_authorization_parameters == (("sandbox_auto_approve", True),)
 

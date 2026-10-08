@@ -48,7 +48,7 @@ def build_authorization_url(
 
     Returns:
         Complete authorisation URL ready to surface to the participant or
-        issue in headless mode.
+        issue in auto-approve mode.
     """
     parts = urlsplit(endpoint)
     reserved_query_keys = {"client_id", "redirect_uri", "response_type", "scope", "state", "nonce", "request"}
@@ -115,7 +115,7 @@ def redirect_matches_registered_uri(*, location: str, redirect_uri: str) -> bool
     is normalised by :func:`urllib.parse.urlsplit`.
 
     Args:
-        location: Redirect URL received in the headless authorisation response.
+        location: Redirect URL received in the auto-approve authorisation response.
         redirect_uri: Manifest-configured callback URI for this PSU step.
 
     Returns:
@@ -166,7 +166,7 @@ def extract_redirect_parameters(location: str) -> dict[str, str]:
     value so callers get a simple mapping for validation.
 
     Args:
-        location: Redirect URL received in the headless authorisation response.
+        location: Redirect URL received in the auto-approve authorisation response.
 
     Returns:
         Parameter mapping with blank values preserved.
