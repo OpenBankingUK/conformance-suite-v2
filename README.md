@@ -1,10 +1,10 @@
-# Functional Conformance Suite v2 beta.10
+# Functional Conformance Suite v2 beta.11
 
 [![CI (main)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/ci.yml?query=branch%3Amain)
 [![Image promotion](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/auto-promote.yml/badge.svg)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/auto-promote.yml)
 [![Security re-scan](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/security-rescan.yml/badge.svg?branch=main)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/security-rescan.yml)
 
-**Beta only — not for certification.** FCS v2 `2.0.0-beta.10` is an MVP for
+**Beta only — not for certification.** FCS v2 `2.0.0-beta.11` is an MVP for
 evaluating the new Open Banking UK Functional Conformance Suite and providing
 feedback. It is **not approved for certification**; runs and reports from this
 beta must not be submitted as certification evidence, even if a plan or result

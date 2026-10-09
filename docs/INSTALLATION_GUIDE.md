@@ -3,7 +3,7 @@
 [Project README](../README.md) | [Usage guide](USAGE_GUIDE.md) |
 [Developer guide](DEVELOPER_GUIDE.md)
 
-**FCS v2 `2.0.0-beta.10` is for evaluation only, not certification.** Docker,
+**FCS v2 `2.0.0-beta.11` is for evaluation only, not certification.** Docker,
 locally built images and source runs have the same beta restriction. Continue
 using FCS v1 for certification.
 

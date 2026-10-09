@@ -183,7 +183,7 @@ wheels = [
 
 [[package]]
 name = "conformance-suite-v2"
-version = "2.0.0b10"
+version = "2.0.0b11"
 source = { virtual = "." }
 dependencies = [
     { name = "cryptography" },
