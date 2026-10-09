@@ -19,6 +19,8 @@ pytestmark = pytest.mark.unit
 
 _OAUTH_AND_SIGNING = {
     "fapiSigning",
+    "tokenEndpointAuth",
+    "requestObjectSigning",
     "oauth.authorizationEndpoint",
     "oauth.clientId",
     "oauth.issuer",
@@ -65,7 +67,7 @@ def _requirements_for(group: str) -> set[str]:
         ("AIS", _OAUTH_AND_SIGNING | {"discoveryUrl"}),
         ("PIS", _OAUTH_AND_SIGNING | {"discoveryUrl"}),
         ("VRP", _OAUTH_AND_SIGNING | {"discoveryUrl"}),
-        ("CBPII", _OAUTH_AND_SIGNING),
+        ("CBPII", _OAUTH_AND_SIGNING - {"fapiSigning"}),
     ],
 )
 def test_compiled_plan_run_config_requirements_per_resource_group(group: str, expected: set[str]) -> None:
@@ -74,15 +76,18 @@ def test_compiled_plan_run_config_requirements_per_resource_group(group: str, ex
 
 
 def test_required_run_config_keys_adds_mtls_pair_only_for_tls_client_auth() -> None:
-    """FAPI signing expands to its fields, plus the mTLS pair only for tls_client_auth."""
+    """Token authentication is independent from request and payload signing."""
     keys = required_run_config_keys(["fapiSigning"], {})
     assert "fapiSigning.kid" in keys
     assert "tls.clientCertificate" not in keys
 
     tls_keys = required_run_config_keys(
-        ["fapiSigning"], {}, security_environment={"clientAuthMethod": "tls_client_auth"}
+        ["tokenEndpointAuth"], {}, security_environment={"clientAuthMethod": "tls_client_auth"}
     )
-    assert {"tls.clientCertificate", "tls.clientPrivateKey"} <= set(tls_keys)
+    assert set(tls_keys) == {"fapiSigning.tokenEndpointAuthMethod", "tls.clientCertificate", "tls.clientPrivateKey"}
+    assert "fapiSigning.clientAssertionSubject" not in required_run_config_keys(
+        ["requestObjectSigning", "fapiSigning"], {}, security_environment={"clientAuthMethod": "tls_client_auth"}
+    )
 
 
 def test_missing_run_config_accepts_config_or_canonical_locations() -> None:

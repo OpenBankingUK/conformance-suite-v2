@@ -57,6 +57,48 @@ def _canonical_plan() -> dict[str, object]:
     }
 
 
+@pytest.mark.parametrize(
+    "version,endpoint_version,update",
+    [("3.1.11", "v3.1", "Release-5"), ("4.0.0", "v4.0", "Update-5"), ("4.0.1", "v4.0", "Update-1")],
+)
+def test_tls_auth_selected_signing_flow_requires_no_assertion_subject(
+    tmp_path: Path,
+    version: str,
+    endpoint_version: str,
+    update: str,
+) -> None:
+    raw_plan = _canonical_plan()
+    security = raw_plan["securityEnvironment"]
+    assert isinstance(security, dict)
+    security["clientAuthMethod"] = "tls_client_auth"
+    security.pop("clientAssertionSubject")
+    certificate = tmp_path / "transport.pem"
+    key = tmp_path / "transport.key"
+    certificate.write_text("fixture certificate reference")
+    key.write_text("fixture private key reference")
+    security["mtls"] = {"certificatePath": str(certificate), "privateKeyPath": str(key)}
+    raw_plan["specification"] = {
+        "family": "OBL_READ_WRITE",
+        "version": version,
+        "openApiDocumentUpdate": update,
+    }
+    raw_plan["resourceGroups"] = [
+        {
+            "id": "AIS",
+            "endpoints": [{"method": "GET", "path": f"/open-banking/{endpoint_version}/aisp/accounts"}],
+        }
+    ]
+    prepared = prepare_test_plan_for_run(raw_plan, base_dir=tmp_path)
+    assert prepared.validation.valid
+    assert prepared.config.fapi_signing is not None
+    assert prepared.config.fapi_signing.client_assertion_subject == ""
+
+    security.pop("signingPrivateKeyPath")
+    validation = validate_test_plan_for_run(raw_plan, base_dir=tmp_path)
+    assert not validation.valid
+    assert any("signingPrivateKeyPath" in issue.message for issue in validation.issues)
+
+
 def test_prepare_test_plan_for_run_returns_validation_and_safe_snapshot(tmp_path: Path) -> None:
     """Preparation compiles a canonical plan and snapshots it without secrets."""
     prepared = prepare_test_plan_for_run(_canonical_plan(), base_dir=tmp_path)

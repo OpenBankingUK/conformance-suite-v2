@@ -6,18 +6,146 @@ from typing import Any, cast
 
 import httpx
 import pytest
+from joserfc import jwk, jws
 
+from conformance.credentials import credential_bytes
 from conformance.execution_log import BufferedExecutionLogger
 from conformance.executor import run_manifest
 from conformance.json_types import JsonValue
 from conformance.manifest import (
     parse_manifest,
 )
-from conformance.model_bank_config import FapiSigningConfig, TokenEndpointClientAuthMode
+from conformance.model_bank_config import FapiSigningConfig, TokenEndpointClientAuthMode, parse_model_bank_config
 from conformance.signing_credentials import SigningCredentials, load_signing_credentials
 from tests.support.executor_signing import executor_signing_config, invalid_executor_signing_config
 
 pytestmark = pytest.mark.unit
+
+
+def test_tls_token_auth_and_detached_signing_use_independent_credentials(tmp_path: Path) -> None:
+    config = replace(
+        executor_signing_config(tmp_path),
+        token_endpoint_auth_method="tls_client_auth",  # noqa: S106 - protocol enum
+        client_assertion_subject="",
+    )
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "TLS token and signed write",
+            "steps": [
+                {
+                    "id": "token",
+                    "name": "Token",
+                    "request": {
+                        "method": "POST",
+                        "url": "https://bank.example/token",
+                        "body": {
+                            "encoding": "form",
+                            "fields": {"client_id": "registered-client", "grant_type": "client_credentials"},
+                        },
+                    },
+                    "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+                {
+                    "id": "write",
+                    "name": "Signed payload",
+                    "request": {
+                        "method": "POST",
+                        "url": "https://bank.example/open-banking/v4.0/aisp/account-access-consents",
+                        "detachedJws": {"source": "fapi-signing"},
+                        "body": {"Data": {}},
+                    },
+                    "assertions": [{"type": "http_status", "expected": 201}],
+                },
+            ],
+        }
+    )
+    observed: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        observed.append(request)
+        return httpx.Response(200 if request.url.path == "/token" else 201, json={})
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        result = run_manifest(manifest, client=client, fapi_signing_config=config, mtls_client_configured=True)
+    assert result.status == "passed"
+    assert dict(httpx.QueryParams(observed[0].content.decode())) == {
+        "client_id": "registered-client",
+        "grant_type": "client_credentials",
+    }
+    assert config.signing_certificate is not None
+    verified = jws.deserialize_compact(
+        observed[1].headers["x-jws-signature"],
+        jwk.import_key(credential_bytes(config.signing_certificate, label="signing certificate"), key_type="RSA"),
+        algorithms=["PS256"],
+        payload=observed[1].content,
+    )
+    assert verified.headers()["alg"] == "PS256"
+
+
+@pytest.mark.parametrize("grant", ["client_credentials", "authorization_code"])
+@pytest.mark.parametrize(
+    "invalid",
+    ["", "client_assertion", "client_assertion_type", "client_secret", "authorization", "client_id", "mtls"],
+)
+def test_tls_client_auth_without_signing_and_conflicting_credentials(tmp_path: Path, grant: str, invalid: str) -> None:
+    fields: dict[str, JsonValue] = {"client_id": "registered-client", "grant_type": grant}
+    headers: dict[str, JsonValue] = {}
+    if invalid in {"client_assertion", "client_assertion_type", "client_secret"}:
+        fields[invalid] = (
+            "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+            if invalid == "client_assertion_type"
+            else "conflicting-credential"
+        )
+    if invalid == "client_id":
+        fields.pop("client_id")
+    if invalid == "authorization":
+        headers["aUtHoRiZaTiOn"] = "Basic conflicting-credential"
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "Registered TLS client",
+            "steps": [
+                {
+                    "id": "token",
+                    "name": "Token",
+                    "request": {
+                        "method": "POST",
+                        "url": "https://bank.example/token",
+                        "headers": headers,
+                        "body": {"encoding": "form", "fields": fields},
+                    },
+                    "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                }
+            ],
+        }
+    )
+    config = parse_model_bank_config({"fapiSigning": {"tokenEndpointAuthMethod": "tls_client_auth"}}, base_dir=tmp_path)
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"access_token": "fixture-token"})
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        result = run_manifest(
+            manifest,
+            client=client,
+            fapi_signing_config=config.fapi_signing,
+            mtls_client_configured=invalid != "mtls",
+        )
+    if invalid:
+        assert result.status == "failed"
+        assert not requests
+        assert "client authentication" in result.steps[0].message
+    else:
+        assert result.status == "passed"
+        assert dict(httpx.QueryParams(requests[0].content.decode())) == fields
+        assert "authorization" not in requests[0].headers
+    assert "fixture-token" not in str(result.to_json_object())
+    assert "conflicting-credential" not in str(result.to_json_object())
 
 
 def test_run_manifest_v1_private_key_jwt_token_auth_policy_adds_client_assertion(tmp_path: Path) -> None:

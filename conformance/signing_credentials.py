@@ -73,6 +73,8 @@ def load_signing_credentials(signing_config: FapiSigningConfig) -> SigningCreden
             is malformed, or the certificate/public key does not match the
             configured private key.
     """
+    if signing_config.signing_certificate is None or signing_config.signing_private_key is None:
+        raise SigningCredentialError("FAPI signing requires a signing certificate and private key")
     certificate_pem = _read_pem_bytes(
         signing_config.signing_certificate,
         label="fapiSigning signing certificate",
