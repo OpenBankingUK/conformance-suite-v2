@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
+from conformance.cli_console import colour_label
 from conformance.json_types import JsonObject, JsonValue
 
 MAX_LISTED_STEPS = 20
@@ -27,6 +28,7 @@ def render_run_summary(
     run_label: str,
     result_path: Path,
     execution_log_path: Path,
+    colour: bool = False,
 ) -> str:
     """Render the end-of-run console summary.
 
@@ -35,12 +37,14 @@ def render_run_summary(
         run_label: Short description of what ran (for example the plan path).
         result_path: Path the result JSON was written to.
         execution_log_path: Path the NDJSON execution log was written to.
+        colour: Whether the CLI's stdout supports ANSI status labels.
 
     Returns:
         Multi-line plain-text summary ending with a newline.
     """
     status = str(result.get("status", "unknown")).upper()
-    lines = [f"Conformance run {status}: {run_label}"]
+    styled_status = colour_label(status, "passed" if status == "PASSED" else "failed", enabled=colour)
+    lines = [f"Conformance run {styled_status}: {run_label}"]
     catalogue = _object(result.get("catalogue"))
     if catalogue:
         lines.append(
@@ -61,7 +65,7 @@ def render_run_summary(
     failed = [step for step in steps if step.get("status") == "failed"]
     if failed:
         lines.append("")
-        lines.append(f"Failed steps ({len(failed)}):")
+        lines.append(colour_label(f"Failed steps ({len(failed)}):", "failed", enabled=colour))
         lines.extend(_step_line(step) for step in failed[:MAX_LISTED_STEPS])
         if len(failed) > MAX_LISTED_STEPS:
             lines.append(f"  ... and {len(failed) - MAX_LISTED_STEPS} more (see result file)")

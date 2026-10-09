@@ -29,20 +29,25 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from functools import cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from socketserver import TCPServer
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
+from django.template import Context, Engine
 
+from conformance import FEEDBACK_EMAIL
 from conformance.api.auth_session_store import (
     AuthSessionAlreadyResolvedError,
     AuthSessionStore,
     UnknownAuthSessionError,
 )
+from conformance.version import resolve_conformance_tool_version
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +129,34 @@ def _paths_match(request_path: str, callback_path: str) -> bool:
     return request_path.rstrip("/") == callback_path.rstrip("/")
 
 
+@cache
+def _beta_banner() -> str:
+    """Render the shared UI beta banner with a local email feedback option."""
+    templates = Path(__file__).parent / "api" / "templates"
+    engine = Engine(dirs=[str(templates)])
+    template = engine.get_template("conformance/partials/beta_notice.html")
+    version = resolve_conformance_tool_version()
+    subject = f"Conformance beta {version}: CLI feedback"
+    body = (
+        f"Tool version: {version}\nFlow: CLI\n\n"
+        "Summary:\n\nSteps to reproduce:\n\nExpected behaviour:\n\nActual behaviour:\n\n"
+        "Please remove credentials, tokens, certificates and personal/customer data before sending."
+    )
+    mailto = f"mailto:{FEEDBACK_EMAIL}?" + urlencode({"subject": subject, "body": body}, quote_via=quote)
+    return template.render(
+        Context(
+            {
+                "feedback_page": True,
+                "cli_feedback_email": FEEDBACK_EMAIL,
+                "cli_feedback_mailto": mailto,
+                "cli_feedback_template": f"To: {FEEDBACK_EMAIL}\nSubject: {subject}\n\n{body}",
+            },
+            use_l10n=False,
+            use_tz=False,
+        )
+    )
+
+
 def _render_page(title: str, body: str, *, script: str | None = None) -> bytes:
     """Render a minimal static HTML page.
 
@@ -138,8 +171,11 @@ def _render_page(title: str, body: str, *, script: str | None = None) -> bytes:
     script_block = f"<script>{script}</script>" if script is not None else ""
     return (
         "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
         "<meta name='robots' content='noindex,nofollow'><title>PSU authorization callback</title>"
-        f"{script_block}</head><body><h1>{html.escape(title)}</h1><p>{html.escape(body)}</p></body></html>"
+        f"{script_block}</head><body style='margin: 0; font-family: system-ui, sans-serif;'>"
+        f"{_beta_banner()}"
+        f"<main style='padding: 16px;'><h1>{html.escape(title)}</h1><p>{html.escape(body)}</p></main></body></html>"
     ).encode()
 
 
@@ -251,6 +287,18 @@ class _CallbackServer(ThreadingHTTPServer):
             self.address_family = socket.AF_INET6
         super().__init__(address, _CallbackHandler)
 
+    def server_bind(self) -> None:
+        """Bind without HTTPServer's unused reverse DNS lookup.
+
+        OAuth callback handling uses the configured path and one-shot state,
+        not a canonical server hostname. A resolver timeout must not delay
+        listener startup, including when bound to loopback or all interfaces.
+        """
+        TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = int(port)
+
 
 def _container_tls_material() -> tuple[Path, Path] | None:
     """Return container TLS certificate/key paths when present and readable."""
@@ -340,15 +388,18 @@ def psu_callback_listener(
                 f"Unable to start PSU callback listener on {bind_host}:{port}: {error}. "
                 "Free the port, change redirectUri, or pass --callback-listen HOST:PORT"
             ) from error
-        # Defer the handshake to the per-request worker thread so a stalled
-        # client cannot block the accept loop.
-        server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
-        thread = threading.Thread(target=server.serve_forever, name="psu-callback-listener", daemon=True)
-        thread.start()
+        thread: threading.Thread | None = None
         try:
+            # Defer the handshake to the per-request worker thread so a stalled
+            # client cannot block the accept loop.
+            server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
+            thread = threading.Thread(target=server.serve_forever, name="psu-callback-listener", daemon=True)
+            thread.start()
             bound_host, bound_port = server.server_address[0], server.server_address[1]
             yield str(bound_host), int(bound_port)
         finally:
-            server.shutdown()
+            if thread is not None and thread.ident is not None:
+                server.shutdown()
             server.server_close()
-            thread.join(timeout=5)
+            if thread is not None and thread.ident is not None:
+                thread.join(timeout=5)

@@ -17,13 +17,14 @@ from datetime import UTC, datetime
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 
+from conformance import FEEDBACK_EMAIL
 from conformance.catalogue import CompiledTestPlan, PlanDocumentV2, plan_document_to_json_object
 from conformance.json_types import JsonObject, JsonValue
 from conformance.masking import MASKED_VALUE, SENSITIVE_HEADER_NAMES, SENSITIVE_JSON_KEYS, mask_free_text
 from conformance.test_plan_validation import safe_test_plan_snapshot
 from conformance.version import resolve_conformance_tool_version
 
-RECIPIENT = "standardsteam@openbanking.org.uk"
+RECIPIENT = FEEDBACK_EMAIL
 MAX_BUNDLE_BYTES = 16 * 1024 * 1024
 REVIEW_WARNING = (
     "Credentials and certificates are masked, including developer-mode evidence. "

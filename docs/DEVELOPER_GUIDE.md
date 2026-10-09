@@ -268,6 +268,60 @@ rendered summaries, and are included in downloaded JSON only through the
 explicit export-with-secrets action.
 
 The CLI accepts canonical test plans through `--test-plan path/to/test-plan.json`.
+It prints the MVP beta notice once per run and flushes preparation, callback
+listener, HTTP/TLS setup, step progress and elapsed execution time to stderr.
+The final run summary remains on stdout; structured results and execution logs
+retain their existing format. The standalone CLI callback pages also show the
+beta notice.
+CLI startup also directs feedback to `standardsteam@openbanking.org.uk`.
+The CLI callback banner offers a pre-filled email link and an expandable,
+copyable email template for participants without a configured email app.
+Neither automatically includes callback parameters or run evidence; participants
+must review their feedback for credentials and personal/customer data before sending.
+
+For a slow CLI run, use the last progress message to distinguish application
+loading, plan preparation, listener/client setup, and an executing step. A
+manual PSU URL means the run is waiting for browser authorisation. Step progress
+does not print request/response payloads or credentials; use the masked result
+and execution log for details after the run. A delay before the first
+`[CLI] Loading conformance suite...` line is outside the application entry point:
+check `uv` environment setup separately. With dependencies already installed,
+`uv run --no-sync python main.py --help` isolates startup from dependency syncing,
+and `uv run --no-sync python -X importtime main.py --help` reports Python import
+costs without executing a plan. These probes are not a reason to bypass normal
+dependency syncing when running conformance checks.
+
+The CLI callback listener binds without a reverse DNS lookup: it does not need
+a canonical hostname to correlate OAuth callbacks. This avoids resolver-related
+stalls between the listener's starting and ready messages.
+
+CLI status labels use yellow for beta/warnings, cyan for progress and PSU
+prompts, green for passed, red for failed and dim text for skipped. Colours
+are enabled separately for stdout/stderr only when each is a terminal.
+Setting `NO_COLOR` (including an empty value) disables all CLI ANSI styling.
+Redirected logs and structured result files remain plain text.
+
+To cancel a CLI run, press **Ctrl+C** (exit code `130`), or have automation
+send **SIGTERM** to the Python process (exit code `143`). For example,
+`kill -TERM <python-pid>` on POSIX systems; the startup hint prints this PID
+(not the parent `uv` process PID). The CLI prints a cancellation
+message without a traceback, closes its HTTP client and callback listener,
+and does not save partial run results or flush the buffered execution log
+for an interrupted execution. Previously published evidence is not deleted.
+Files published after execution has completed may remain if cancellation
+arrives during final result/log publication; each file is published atomically,
+so it is never a truncated file. Automation must check the process exit code
+instead of mistaking an old result file for evidence of this run.
+
+Cancellation is handled during application loading as well as execution.
+It does not undo requests already accepted by an ASPSP, and native blocking
+operations may delay delivery. Executor workers stop PSU polling and do not
+dispatch further steps once signalled. An in-flight worker HTTP request must
+finish or hit its existing transport timeout before cleanup can complete.
+SIGKILL cannot be caught and does not permit
+cleanup. These process-signal handlers apply only to CLI calls; API/UI
+execution is unchanged.
+
 The REST API accepts the same document as the request body or under `testPlan`.
 The browser builder generates the same canonical document from selected
 specification, security environment, scope, and business data.
