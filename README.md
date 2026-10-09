@@ -1,5 +1,9 @@
 # Functional Conformance Suite v2 beta.10
 
+[![CI (main)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/ci.yml?query=branch%3Amain)
+[![Image promotion](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/auto-promote.yml/badge.svg)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/auto-promote.yml)
+[![Security re-scan](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/security-rescan.yml/badge.svg?branch=main)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/security-rescan.yml)
+
 **Beta only — not for certification.** FCS v2 `2.0.0-beta.10` is an MVP for
 evaluating the new Open Banking UK Functional Conformance Suite and providing
 feedback. It is **not approved for certification**; runs and reports from this
@@ -10,6 +14,22 @@ This applies to the published Docker image, a locally built image, and runs
 from source. **Keep using the existing FCS v1 for certification.** Open Banking
 UK will announce when a later FCS v2 release is formally approved; there is no
 need to migrate your certification process in advance.
+
+## Deployment and security highlights
+
+| Highlight | Live status and details |
+| --- | --- |
+| Published images | [Docker Hub](https://hub.docker.com/r/openbanking/conformance-suite-v2/tags) and [GitHub releases](https://github.com/OpenBankingUK/conformance-suite-v2/releases). Use `2.0.0-beta-latest` for evaluation or an exact published tag for reproducibility. |
+| Image deployment | [Automatic promotion runs](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/auto-promote.yml) show publication and release finalization. [Release policy](docs/CICD_STRATEGY.md#51-tagging-and-release-strategy) explains approvals and immutable-image promotion. |
+| Vulnerabilities | [Open vulnerability issues](https://github.com/OpenBankingUK/conformance-suite-v2/issues?q=is%3Aissue%20is%3Aopen%20label%3Avulnerability) track scheduled scan findings; [Dependabot alerts](https://github.com/OpenBankingUK/conformance-suite-v2/security/dependabot) cover repository dependency alerts (access required). |
+| Scan evidence | [Security re-scan runs](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/security-rescan.yml) provide reports for published images and default/release branches. See the [vulnerability gate and exceptions policy](docs/CICD_STRATEGY.md#32-vulnerability-scanning-and-the-pr-gate). |
+
+Badges report workflow status: CI is scoped to `main`, image promotion spans
+release channels, and security re-scans run daily or on demand. Promotion can
+skip publication when no eligible candidate exists; inspect its run and the
+registry/release links to confirm what was published. A green scan badge means
+the workflow passed its policy, not that every image has zero vulnerabilities
+or that this beta is approved for certification.
 
 ## Documentation
 

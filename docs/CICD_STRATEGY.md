@@ -671,13 +671,20 @@ repository administrator may merge despite failing status checks.
 
 ## 6. Build Status Badge
 
-The `main` branch CI status badge is embedded in [README.md](../README.md):
+The `main` branch CI status badge is embedded in [README.md](../README.md),
+alongside image-promotion and scheduled security re-scan status:
 
 ```markdown
-![CI](https://github.com/OpenBankingUK/ob-conformance-tool/actions/workflows/ci.yml/badge.svg?branch=main)
+[![CI (main)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/ci.yml?query=branch%3Amain)
 ```
 
 The badge reflects the latest CI run on the `main` branch. A red badge means the last merge to `main` broke CI — this should be treated as a P1 issue and resolved immediately.
+
+The promotion badge covers the automatic workflow across release channels,
+not a specific deployed image. A successful run may skip publication if no
+eligible candidate exists. The security re-scan badge reports workflow/policy
+status, not a zero-vulnerability guarantee. Follow the README's registry,
+release, scan-report and vulnerability-issue links for the underlying evidence.
 
 ---
 
