@@ -131,23 +131,25 @@ class FapiSigningConfig:
     ``signing_certificate``/``signing_private_key`` are either path references
     under the same optional read-only ``/certs`` mount described on
     :class:`TlsConfig`, or inline PEM material supplied through the wizard.
+    RFC 8705 ``tls_client_auth`` may omit both: token authentication uses
+    ``TlsConfig`` instead. JOSE operations validate signing material on use.
 
     Attributes:
         signing_certificate: X.509 certificate used for PS256 JOSE signing
             operations such as request objects and private-key JWT client
-            assertions.
+            assertions, or ``None`` for TLS-authenticated token-only flows.
         signing_private_key: Private key paired with ``signing_certificate``.
         key_id: JOSE ``kid`` header value associated with the signing key.
         client_assertion_issuer: ``iss`` claim value for token-endpoint
-            client assertions.
+            client assertions, JARs and payload signatures; empty when unused.
         client_assertion_subject: ``sub`` claim value for token-endpoint
-            client assertions.
+            client assertions; empty when unused.
         token_endpoint_auth_method: Declared client-authentication method for
             the token endpoint.
     """
 
-    signing_certificate: CredentialMaterial
-    signing_private_key: CredentialMaterial
+    signing_certificate: CredentialMaterial | None
+    signing_private_key: CredentialMaterial | None
     key_id: str
     client_assertion_issuer: str
     client_assertion_subject: str
@@ -587,22 +589,28 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue]) -> FapiSigningC
         inline_key="signingPrivateKeyPem",
         location="fapiSigning",
     )
-    if signing_certificate is None or signing_private_key is None:
+    token_endpoint_auth_method = _required_string_at(
+        raw_fapi_signing, "tokenEndpointAuthMethod", location="fapiSigning"
+    )
+    if token_endpoint_auth_method not in {"private_key_jwt", "tls_client_auth"}:
+        raise ConfigError("fapiSigning.tokenEndpointAuthMethod must be one of: private_key_jwt, tls_client_auth")
+    jwt_auth = token_endpoint_auth_method == "private_key_jwt"  # noqa: S105 - protocol enum, not a secret
+    if (signing_certificate is None) != (signing_private_key is None) or (jwt_auth and signing_certificate is None):
         raise ConfigError(
             "fapiSigning signing certificate and private key must be supplied together, "
             "each as either a path or inline PEM"
         )
 
-    key_id = _required_string_at(raw_fapi_signing, "kid", location="fapiSigning")
-    client_assertion_issuer = _required_string_at(raw_fapi_signing, "clientAssertionIssuer", location="fapiSigning")
-    client_assertion_subject = _required_string_at(raw_fapi_signing, "clientAssertionSubject", location="fapiSigning")
-    token_endpoint_auth_method = _required_string_at(
-        raw_fapi_signing,
-        "tokenEndpointAuthMethod",
-        location="fapiSigning",
+    key_id = (
+        _required_string_at(raw_fapi_signing, "kid", location="fapiSigning")
+        if signing_certificate is not None
+        else _optional_string_at(raw_fapi_signing, "kid", location="fapiSigning") or ""
     )
-    if token_endpoint_auth_method not in {"private_key_jwt", "tls_client_auth"}:
-        raise ConfigError("fapiSigning.tokenEndpointAuthMethod must be one of: private_key_jwt, tls_client_auth")
+    # Empty metadata is permitted only when unused; signing operations validate
+    # their own issuer/subject inputs before generating a JOSE artifact.
+    metadata_parser = _required_string_at if jwt_auth else _optional_string_at
+    client_assertion_issuer = metadata_parser(raw_fapi_signing, "clientAssertionIssuer", location="fapiSigning") or ""
+    client_assertion_subject = metadata_parser(raw_fapi_signing, "clientAssertionSubject", location="fapiSigning") or ""
     return FapiSigningConfig(
         signing_certificate=signing_certificate,
         signing_private_key=signing_private_key,

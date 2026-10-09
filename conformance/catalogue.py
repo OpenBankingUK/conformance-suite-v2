@@ -2363,12 +2363,24 @@ def _parse_canonical_plan_document(spec: Mapping[str, JsonValue]) -> PlanDocumen
     security_environment = _parse_canonical_security_environment(
         _required_object(spec, "securityEnvironment", location="testPlan")
     )
+    if definition.family == "OBL_READ_WRITE" and security_environment.get("clientAuthMethod") not in {
+        None,
+        "private_key_jwt",
+        "tls_client_auth",
+    }:
+        raise CatalogueError(
+            "Read/Write securityEnvironment.clientAuthMethod must be one of: private_key_jwt, tls_client_auth"
+        )
     business_test_data = _parse_canonical_business_test_data(spec) if definition.uses_resource_groups else {}
     metadata = _parse_canonical_metadata(spec)
     config = _canonical_plan_config(
         security_environment=security_environment,
         business_test_data=business_test_data,
     )
+    if definition.family == "OBL_DCR":
+        # DCR has independent JOSE/auth configuration, including secret methods
+        # and registration signing without a signing-certificate requirement.
+        config.pop("fapiSigning", None)
     return PlanDocumentV2(
         schema_version=_CANONICAL_PLAN_SCHEMA_VERSION,
         scheme=boundary.scheme,
@@ -3051,8 +3063,6 @@ def _oauth_config_from_security_environment(security_environment: Mapping[str, J
         source_key="signingAlgorithm",
         target_key="requestObjectSigningAlg",
     )
-    if oauth and ("clientId" not in oauth or "redirectUri" not in oauth):
-        return {}
     return oauth
 
 
@@ -3093,20 +3103,7 @@ def _fapi_signing_config_from_security_environment(security_environment: Mapping
         source_key="clientAuthMethod",
         target_key="tokenEndpointAuthMethod",
     )
-    required_fields = {
-        "kid",
-        "clientAssertionIssuer",
-        "clientAssertionSubject",
-        "tokenEndpointAuthMethod",
-    }
-    credential_pairs = (
-        ("signingCertificatePath", "signingCertificatePem"),
-        ("signingPrivateKeyPath", "signingPrivateKeyPem"),
-    )
-    complete = required_fields.issubset(signing) and all(
-        path_key in signing or inline_key in signing for path_key, inline_key in credential_pairs
-    )
-    return signing if complete else {}
+    return signing
 
 
 def _tls_config_from_security_environment(security_environment: Mapping[str, JsonValue]) -> JsonObject:

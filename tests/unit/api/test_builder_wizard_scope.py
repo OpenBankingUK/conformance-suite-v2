@@ -82,6 +82,41 @@ def test_security_config_form_requires_complete_conditional_groups() -> None:
     assert "mTLS client certificate and private key" in form.errors["tls_client_private_key_path"][0]
 
 
+def test_security_config_form_preserves_tls_auth_without_signing() -> None:
+    form = SecurityConfigForm(
+        data={
+            "oauth_client_id": "externally-registered",
+            "oauth_token_endpoint": "https://bank.example/token",
+            "signing_token_endpoint_auth_method": "tls_client_auth",
+            "tls_client_certificate_path": "/certs/transport.pem",
+            "tls_client_private_key_path": "/certs/transport.key",
+        }
+    )
+    assert form.is_valid(), form.errors.as_json()
+    assert form.config is not None
+    assert form.config["fapiSigning"] == {"tokenEndpointAuthMethod": "tls_client_auth"}
+    assert form.config["tls"] == {
+        "clientCertificatePath": "/certs/transport.pem",
+        "clientPrivateKeyPath": "/certs/transport.key",
+    }
+
+
+def test_tls_auth_with_signing_does_not_require_jwt_assertion_metadata() -> None:
+    form = SecurityConfigForm(
+        data={
+            "signing_token_endpoint_auth_method": "tls_client_auth",
+            "signing_kid": "kid",
+            "signing_certificate_path": "/certs/signing.pem",
+            "signing_private_key_path": "/certs/signing.key",
+        }
+    )
+    assert form.is_valid(), form.errors.as_json()
+    assert form.config is not None
+    signing = form.config["fapiSigning"]
+    assert isinstance(signing, dict)
+    assert "clientAssertionSubject" not in signing
+
+
 def test_session_builder_draft_store_persists_catalogue_boundary() -> None:
     """Session-backed Read/Write drafts derive and retain FAPI 1 Advanced."""
     session = SessionStore()

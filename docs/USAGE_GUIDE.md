@@ -21,7 +21,7 @@ browser, followed by advanced CLI and local REST reference.
 
 ## Beta scope
 
-**Beta only — not for certification.** FCS v2 `2.0.0-beta.11` is an MVP for
+**Beta only — not for certification.** FCS v2 `2.0.0-beta.12` is an MVP for
 evaluating the new Open Banking UK Functional Conformance Suite and providing
 feedback. It is **not approved for certification**; runs and reports from this
 beta must not be submitted as certification evidence, even if a plan or result
@@ -65,6 +65,22 @@ For repeated or unattended runs, the optional read-only
 [`/certs` mount](DOCKER_GUIDE.md#advanced-optional-certificate-mount) keeps file
 contents out of the browser draft. Paths must exist inside the running
 host/container, not just on your computer.
+
+### Read/Write TLS client authentication
+
+For Read/Write 3.1.11, 4.0.0 and 4.0.1, `tls_client_auth` is available
+alongside `private_key_jwt`. Use an already registered client; selecting the
+method in the plan does not change its registration. The client must be
+registered with `token_endpoint_auth_method: "tls_client_auth"` and
+`tls_client_auth_subject_dn` matching the transport certificate you supply.
+Read/Write runs do not register clients or execute DCR tests.
+
+TLS token requests do not need JWT signing credentials. Selected authorization
+request-object or API payload signing still requires signing credentials.
+An ASPSP error such as `tls_client_auth_not_registered` means the client's
+registration must be corrected, or the plan must use its registered method.
+See [TLS client authentication](DEVELOPER_GUIDE.md#readwrite-tls-client-authentication)
+for configuration details and the distinction from mTLS transport alone.
 
 ## Give beta feedback
 

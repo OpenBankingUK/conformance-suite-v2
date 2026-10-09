@@ -813,7 +813,7 @@ def compiled_plan_run_config_requirements(compiled_plan: CompiledTestPlan) -> fr
             if _catalogue_detached_jws_policy(request_step) is not None:
                 requirements.add("fapiSigning")
             if _catalogue_token_endpoint_auth_policy(request_step) is not None:
-                requirements.add("fapiSigning")
+                requirements.add("tokenEndpointAuth")
             if request_step.step_id == _AIS_CONSENT_CREATE_STEP_ID:
                 runtime_steps.extend(
                     _ais_psu_authorization_step(profile=profile)
@@ -840,14 +840,16 @@ def _runtime_step_config_requirements(step: V1Step) -> set[RunConfigRequirement]
     if isinstance(step, PsuAuthorizationStep):
         texts: list[str | None] = [step.authorization_endpoint, step.client_id, step.redirect_uri]
         if step.request_object is not None:
-            requirements.add("fapiSigning")
+            requirements.add("requestObjectSigning")
             if isinstance(step.request_object, GeneratedRequestObject):
                 texts.append(step.request_object.audience)
     else:
         texts = [step.request.url]
         if isinstance(step.request.body, FormBody):
             texts.extend(step.request.body.fields.values())
-        if step.token_endpoint_auth_policy is not None or step.request.detached_jws is not None:
+        if step.token_endpoint_auth_policy is not None:
+            requirements.add("tokenEndpointAuth")
+        if step.request.detached_jws is not None:
             requirements.add("fapiSigning")
     for text in texts:
         if text is None:
@@ -3138,6 +3140,7 @@ def _apply_token_endpoint_auth_policy(
     fapi_signing_service: _LazyFapiSigningService | None,
     resolved_url: str,
     mtls_client_configured: bool,
+    resolved_headers: Mapping[str, str] | None = None,
 ) -> dict[str, str] | None:
     """Apply runtime FAPI token-endpoint auth to a resolved form request.
 
@@ -3150,6 +3153,7 @@ def _apply_token_endpoint_auth_policy(
         resolved_url: Placeholder-resolved token endpoint URL.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured.
+        resolved_headers: Resolved headers checked for conflicting authentication.
 
     Returns:
         Final form field mapping to dispatch, or ``None`` when the step has no
@@ -3197,6 +3201,17 @@ def _apply_token_endpoint_auth_policy(
         return authenticated_form_body
 
     if fapi_signing_config.token_endpoint_auth_method == "tls_client_auth":  # noqa: S105 - FAPI auth-method enum, not a secret
+        if any(name.lower() == "authorization" for name in (resolved_headers or {})):
+            raise ValueError("TLS client authentication forbids an Authorization header")
+        conflicting_fields = sorted(
+            {"client_assertion", "client_assertion_type", "client_secret"} & resolved_form_body.keys()
+        )
+        if conflicting_fields:
+            raise ValueError("TLS client authentication forbids form fields: " + ", ".join(conflicting_fields))
+        if not resolved_form_body.get("client_id", "").strip():
+            raise ValueError("TLS client authentication requires client_id")
+        if urlsplit(resolved_url).scheme != "https":
+            raise ValueError("TLS client authentication requires an HTTPS token endpoint")
         if not mtls_client_configured:
             raise ValueError("Token endpoint auth policy requires a configured TLS client certificate and private key")
         return dict(resolved_form_body)
@@ -4565,6 +4580,7 @@ def _execute_v1_step_inner(
             fapi_signing_service=fapi_signing_service,
             resolved_url=resolved_url,
             mtls_client_configured=mtls_client_configured,
+            resolved_headers=resolved_headers,
         )
     except (SigningCredentialError, JwtSigningError, ValueError) as error:
         request_record = RequestRecord(method=method, url=resolved_url)

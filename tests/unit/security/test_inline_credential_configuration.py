@@ -61,6 +61,7 @@ def test_model_bank_config_accepts_inline_signing_and_tls_material(tmp_path: Pat
 
     assert config.fapi_signing is not None
     assert config.fapi_signing.signing_private_key == credential_from_inline(private_key_pem)
+    assert config.fapi_signing.signing_certificate is not None
     assert config.fapi_signing.signing_certificate.path is None
     assert config.tls.client_certificate == credential_from_inline(certificate_pem)
     assert config.tls.ca_bundle == credential_from_inline(certificate_pem)

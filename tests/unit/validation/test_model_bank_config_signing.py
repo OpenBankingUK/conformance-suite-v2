@@ -96,9 +96,19 @@ def test_parse_model_bank_config_accepts_missing_signing_files_until_runtime(tmp
         base_dir=tmp_path,
     )
     assert config.fapi_signing is not None
-    assert config.fapi_signing is not None
+    assert config.fapi_signing.signing_certificate is not None
+    assert config.fapi_signing.signing_private_key is not None
     assert config.fapi_signing.signing_certificate.path == certificate_root / "missing.crt"
     assert config.fapi_signing.signing_private_key.path == certificate_root / "missing.key"
+
+
+def test_tls_client_auth_needs_no_jwt_signing_material(tmp_path: Path) -> None:
+    config = parse_model_bank_config({"fapiSigning": {"tokenEndpointAuthMethod": "tls_client_auth"}}, base_dir=tmp_path)
+    assert config.fapi_signing is not None
+    assert config.fapi_signing.token_endpoint_auth_method == "tls_client_auth"  # noqa: S105 - protocol enum, not a secret
+    assert config.fapi_signing.signing_certificate is None
+    assert config.fapi_signing.signing_private_key is None
+    assert config.fapi_signing.client_assertion_subject == ""
 
 
 def test_parse_model_bank_config_rejects_non_object_fapi_signing(tmp_path: Path) -> None:

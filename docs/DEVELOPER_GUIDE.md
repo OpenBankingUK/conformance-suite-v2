@@ -275,12 +275,80 @@ To add a new update (for example `v4.0.1-Update-2`):
 5. Add a `CHANGELOG.md` entry under `[Unreleased]`.
 
 Each exact specification version declares its valid security profiles in
-`conformance.specification_registry`. Read/Write 4.0.x derives
+`conformance.specification_registry`. Read/Write 3.1.11 and 4.0.x derive
 `FAPI1_ADVANCED`; DCR 3.4 is profile-neutral and uses the internal `all` value.
 The profile remains in the compiler model for catalogue applicability, but it is
 not a participant choice when the selected version declares only one value.
 Token endpoint client authentication (`private_key_jwt` or `tls_client_auth`)
 is configured separately as part of the security environment.
+
+### Read/Write TLS client authentication
+
+All currently supported Read/Write versions use the tool's FAPI 1 Advanced
+profile:
+
+| Read/Write version | Security profile | Supported token authentication |
+| --- | --- | --- |
+| 3.1.11 | `fapi1-advanced` | `private_key_jwt`, `tls_client_auth` |
+| 4.0.0 | `fapi1-advanced` | `private_key_jwt`, `tls_client_auth` |
+| 4.0.1 | `fapi1-advanced` | `private_key_jwt`, `tls_client_auth` |
+
+[FAPI 1 Advanced section 5.2.2-14](https://openid.net/specs/openid-financial-api-part-2-1_0.html#authorization-server)
+permits certificate-based client authentication as an alternative to
+`private_key_jwt`. The tool does not support `self_signed_tls_client_auth`.
+OpenAPI document updates do not change the version's security-profile binding.
+
+Read/Write runs require an **already registered client**, including one
+registered through external DCR. They do not generate or register a client,
+or run DCR tests as a prerequisite. Per
+[OB DCR 3.4](https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html),
+register that client with `token_endpoint_auth_method: "tls_client_auth"` and
+the required `tls_client_auth_subject_dn` identifying the certificate presented
+at the token endpoint. That DN is RFC 2253 metadata with the DCR 3.4 pattern
+and 512-character limit; it is **not** a token-request parameter. The independent
+DCR runner derives and validates it. Read/Write cannot verify external
+registration metadata it has not received; the ASPSP authenticates the
+registered client against the presented certificate.
+
+In the builder, select `tls_client_auth` and supply the registered client ID,
+token endpoint and mTLS transport certificate/key. The equivalent canonical
+security section for a token-only flow is:
+
+```json
+{
+  "clientAuthMethod": "tls_client_auth",
+  "clientId": "already-registered-client",
+  "tokenEndpoint": "https://aspsp.example/mtls/token",
+  "mtls": {
+    "enabled": true,
+    "certificatePath": "/certs/transport.pem",
+    "privateKeyPath": "/certs/transport.key"
+  }
+}
+```
+
+Use the ASPSP's mTLS token endpoint, including its advertised alias where
+applicable: the runner uses the saved explicit `tokenEndpoint`, not automatic
+alias selection. Path references and inline PEM use the same credential input
+and safe-export rules as other flows.
+
+Client-credentials and authorization-code token requests send `client_id`
+and grant parameters over the certificate-authenticated TLS connection, without
+`client_assertion`, `client_assertion_type`, a client secret or an Authorization
+header. Missing credentials and mixed authentication are explicit failures.
+Transport mTLS, OAuth client authentication and certificate-bound access tokens
+are distinct mechanisms: configuring mTLS alone does not select
+`tls_client_auth`, and `private_key_jwt` may also use mTLS transport.
+
+Signing credentials are required only when the selected steps perform JOSE
+signing. TLS token-only flows need no signing certificate/key, `signingKeyId`,
+`clientAssertionIssuer` or `clientAssertionSubject`. Generated authorization
+request objects and signed API payloads still need the signing pair, key ID
+and issuer (`clientAssertionIssuer`, reused for those signing operations);
+they do not need `clientAssertionSubject` solely because they sign. Existing
+`private_key_jwt` flows retain their signing and assertion metadata requirements.
+Internally, the legacy `config.fapiSigning.tokenEndpointAuthMethod` mapping is
+retained for compatibility, but a TLS-only config can omit its signing material.
 
 Canonical sections such as `securityEnvironment`, `businessTestData`, and
 runtime `inputs` derive exact runtime inputs like `resourceBaseUrl`,

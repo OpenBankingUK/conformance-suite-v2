@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.12] - 2026-10-09
+
+### Fixed
+
+- Read/Write 3.1.11, 4.0.0 and 4.0.1 now support OAuth `tls_client_auth` with an already registered client without requiring private-key JWT signing credentials for token-only flows. Signing requirements remain scope-dependent for authorization request objects and API payloads. Builder validation and canonical import/export preserve the independent authentication choice, and TLS-authenticated token requests reject mixed JWT/secret authentication. DCR registration and subject-DN validation remain independent.
+
 ## [2.0.0-beta.11] - 2026-10-09
 
 ### Added

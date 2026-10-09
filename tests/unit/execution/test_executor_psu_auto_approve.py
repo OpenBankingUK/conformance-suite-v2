@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 from urllib.parse import parse_qsl, urlsplit
@@ -18,6 +19,7 @@ from conformance.executor import _execute_v1_psu_step
 from conformance.manifest import (
     GeneratedRequestObject,
 )
+from conformance.model_bank_config import TokenEndpointClientAuthMode
 from tests.support.executor_psu import FakeClock, psu_auto_approve_step
 from tests.support.executor_signing import executor_signing_config
 
@@ -69,7 +71,11 @@ def test_psu_auto_approve_step_uses_signed_request_object_for_authorization_redi
     assert "request=***" in cast(str, psu_url_events[0].payload["url"])
 
 
-def test_psu_auto_approve_step_resolves_openbanking_intent_id_into_generated_request_object(tmp_path: Path) -> None:
+@pytest.mark.parametrize("auth_method", ["private_key_jwt", "tls_client_auth"])
+def test_psu_auto_approve_step_resolves_openbanking_intent_id_into_generated_request_object(
+    tmp_path: Path,
+    auth_method: TokenEndpointClientAuthMode,
+) -> None:
     """Generated PSU request objects embed a resolved Open Banking consent id.
 
     Args:
@@ -77,7 +83,11 @@ def test_psu_auto_approve_step_resolves_openbanking_intent_id_into_generated_req
     """
     state = "h" * 32
     observed_urls: list[str] = []
-    signing_config = executor_signing_config(tmp_path)
+    signing_config = replace(
+        executor_signing_config(tmp_path),
+        token_endpoint_auth_method=auth_method,
+        client_assertion_subject="" if auth_method == "tls_client_auth" else "client-123",
+    )
     context = record_step(
         ExecutionContext(),
         "account-access-consent",
@@ -120,6 +130,7 @@ def test_psu_auto_approve_step_resolves_openbanking_intent_id_into_generated_req
         )
 
     request_params = dict(parse_qsl(urlsplit(observed_urls[0]).query))
+    assert signing_config.signing_certificate is not None
     public_key = jwk.import_key(
         credential_bytes(signing_config.signing_certificate, label="FAPI signing certificate"), key_type="RSA"
     )

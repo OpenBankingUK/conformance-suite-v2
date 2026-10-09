@@ -29,6 +29,8 @@ type RunConfigRequirement = Literal[
     "oauth.tokenEndpoint",
     "resourceBaseUrl",
     "fapiSigning",
+    "tokenEndpointAuth",
+    "requestObjectSigning",
 ]
 """Runner dependency derived from the steps a compiled plan will execute."""
 
@@ -60,6 +62,8 @@ _REQUIREMENT_ORDER: tuple[RunConfigRequirement, ...] = (
     "oauth.tokenEndpoint",
     "resourceBaseUrl",
     "fapiSigning",
+    "tokenEndpointAuth",
+    "requestObjectSigning",
 )
 
 _FAPI_SIGNING_KEYS: tuple[RunConfigKey, ...] = (
@@ -67,8 +71,6 @@ _FAPI_SIGNING_KEYS: tuple[RunConfigKey, ...] = (
     "fapiSigning.signingPrivateKey",
     "fapiSigning.kid",
     "fapiSigning.clientAssertionIssuer",
-    "fapiSigning.clientAssertionSubject",
-    "fapiSigning.tokenEndpointAuthMethod",
 )
 
 _MTLS_KEYS: tuple[RunConfigKey, ...] = ("tls.clientCertificate", "tls.clientPrivateKey")
@@ -181,9 +183,8 @@ def required_run_config_keys(
 ) -> tuple[RunConfigKey, ...]:
     """Expand runner dependencies into the individual config values they need.
 
-    The FAPI signing group expands to every value the runner's signing config
-    needs; the mTLS client certificate and key are added only when the
-    configured token endpoint auth method is ``tls_client_auth`` (RFC 8705).
+    Signing and OAuth client authentication have independent requirements.
+    RFC 8705 TLS authentication needs transport credentials, not a JOSE key.
 
     Args:
         requirements: Runner dependencies derived from a compiled plan.
@@ -201,14 +202,21 @@ def required_run_config_keys(
             continue
         if requirement == "fapiSigning":
             keys.extend(_FAPI_SIGNING_KEYS)
-            if "tls_client_auth" in {
-                _string_at(config, "fapiSigning", "tokenEndpointAuthMethod"),
-                _string_at(security_environment or {}, "clientAuthMethod"),
-            }:
+        elif requirement == "requestObjectSigning":
+            keys.extend(_FAPI_SIGNING_KEYS)
+        elif requirement == "tokenEndpointAuth":
+            keys.append("fapiSigning.tokenEndpointAuthMethod")
+            method = _string_at(security_environment or {}, "clientAuthMethod") or _string_at(
+                config, "fapiSigning", "tokenEndpointAuthMethod"
+            )
+            if method == "tls_client_auth":
                 keys.extend(_MTLS_KEYS)
+            else:
+                keys.extend(_FAPI_SIGNING_KEYS)
+                keys.append("fapiSigning.clientAssertionSubject")
         else:
             keys.append(requirement)
-    return tuple(keys)
+    return tuple(dict.fromkeys(keys))
 
 
 def missing_run_config(

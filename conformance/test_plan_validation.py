@@ -527,12 +527,6 @@ def prepare_test_plan_for_run(
     if any(issue.blocking for issue in issues):
         raise TestPlanValidationError(_validation_result(parsed, issues))
     try:
-        config = parse_model_bank_config(model_bank_config_from_plan_document(parsed), base_dir=base_dir)
-    except ConfigError as error:
-        issues.append(TestPlanValidationIssue("security", "error", f"Security environment validation failed: {error}"))
-        raise TestPlanValidationError(_validation_result(parsed, issues)) from error
-
-    try:
         compiled_plan = compile_test_plan_document(parsed, available_catalogues)
     except CatalogueError as error:
         issues.append(TestPlanValidationIssue(_catalogue_error_layer(str(error)), "error", str(error)))
@@ -542,6 +536,11 @@ def prepare_test_plan_for_run(
     validation = _validation_result(parsed, issues)
     if not validation.valid:
         raise TestPlanValidationError(validation)
+    try:
+        config = parse_model_bank_config(model_bank_config_from_plan_document(parsed), base_dir=base_dir)
+    except ConfigError as error:
+        issues.append(TestPlanValidationIssue("security", "error", f"Security environment validation failed: {error}"))
+        raise TestPlanValidationError(_validation_result(parsed, issues)) from error
     runtime_inputs = dict(parsed.runtime_inputs)
     if parsed.specification == "dynamic-client-registration":
         runtime_inputs.update(

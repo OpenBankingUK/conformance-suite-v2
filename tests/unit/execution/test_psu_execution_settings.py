@@ -382,6 +382,7 @@ def test_custom_parameters_become_signed_claims_with_generated_request_object(tm
         )
 
     query = dict(parse_qsl(urlsplit(observed[0]).query))
+    assert signing_config.signing_certificate is not None
     public_key = jwk.import_key(
         credential_bytes(signing_config.signing_certificate, label="FAPI signing certificate"), key_type="RSA"
     )

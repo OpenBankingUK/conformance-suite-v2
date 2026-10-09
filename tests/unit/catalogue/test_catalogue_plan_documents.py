@@ -19,6 +19,57 @@ pytestmark = pytest.mark.unit
 CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="ais", specification_version="4.0.0")
 
 
+@pytest.mark.parametrize("version,update", [("3.1.11", "Release-5"), ("4.0.0", "Update-5"), ("4.0.1", "Update-1")])
+def test_canonical_tls_client_auth_round_trips_without_signing(version: str, update: str) -> None:
+    security: dict[str, JsonValue] = {
+        "clientAuthMethod": "tls_client_auth",
+        "clientId": "externally-registered",
+        "tokenEndpoint": "https://bank.example/mtls/token",
+        "mtls": {"enabled": True, "certificatePath": "/certs/transport.pem", "privateKeyPath": "/certs/transport.key"},
+    }
+    document = parse_test_plan_document(
+        {
+            "schemaVersion": "1.0",
+            "specification": {
+                "family": "OBL_READ_WRITE",
+                "version": version,
+                "openApiDocumentUpdate": update,
+            },
+            "resourceGroups": ["AIS"],
+            "securityEnvironment": security,
+            "businessTestData": {},
+            "metadata": {},
+        }
+    )
+    assert isinstance(document, PlanDocumentV2)
+    assert document.config["fapiSigning"] == {"tokenEndpointAuthMethod": "tls_client_auth"}
+    assert document.config["oauth"] == {
+        "clientId": "externally-registered",
+        "tokenEndpoint": "https://bank.example/mtls/token",
+    }
+    exported = plan_document_to_json_object(document)
+    assert exported["securityEnvironment"] == security
+    round_trip = parse_test_plan_document(exported)
+    assert isinstance(round_trip, PlanDocumentV2)
+    assert round_trip.config == document.config
+    assert round_trip.security_profile == "fapi1-advanced"
+
+
+@pytest.mark.parametrize("method", ["client_secret_basic", "client_secret_jwt", "self_signed_tls_client_auth"])
+def test_read_write_rejects_auth_methods_outside_supported_fapi_profile(method: str) -> None:
+    with pytest.raises(CatalogueError, match="clientAuthMethod"):
+        parse_test_plan_document(
+            {
+                "schemaVersion": "1.0",
+                "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "openApiDocumentUpdate": "Update-1"},
+                "resourceGroups": [],
+                "securityEnvironment": {"clientAuthMethod": method},
+                "businessTestData": {},
+                "metadata": {},
+            }
+        )
+
+
 def test_parse_v2_plan_derives_runtime_inputs_from_structured_config() -> None:
     """Structured v2 config keeps fixture data separate from runtime inputs."""
     document = parse_test_plan_document(

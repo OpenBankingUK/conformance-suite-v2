@@ -547,8 +547,8 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         status="conditional",
         label="Conditional",
         type_hint="Enum: private_key_jwt or tls_client_auth",
-        description="FAPI token endpoint client-authentication mode.",
-        requirement="Required when FAPI signing/client-auth is configured for selected token or signing flows.",
+        description="Token authentication method of the already registered client; independent of JOSE signing.",
+        requirement="Required when selected flows obtain tokens. tls_client_auth uses the registered transport certificate.",
     ),
     SecurityFieldMetadata(
         name="signing_kid",
@@ -579,8 +579,8 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         status="conditional",
         label="Conditional",
         type_hint="String",
-        description="iss claim used when the runner signs private-key JWT client assertions.",
-        requirement="Required with the rest of the FAPI signing group when selected flows need private_key_jwt.",
+        description="Issuer used for private-key JWT assertions, generated JARs and Open Banking payload signatures.",
+        requirement="Required when selected flows sign client assertions, request objects or payloads.",
     ),
     SecurityFieldMetadata(
         name="signing_client_assertion_subject",
@@ -1527,18 +1527,27 @@ class SecurityConfigForm(forms.Form):
             for spec in SECURITY_CREDENTIAL_SPECS
         }
 
-        signing_fields = (
+        signing_fields: tuple[str, ...] = (
             "signing_kid",
             "signing_client_assertion_issuer",
             "signing_client_assertion_subject",
             "signing_token_endpoint_auth_method",
         )
+        tls_auth = cleaned_data.get("signing_token_endpoint_auth_method") == "tls_client_auth"
+        if tls_auth:
+            signing_fields = ("signing_kid",)
         signing_credentials = ("signing_certificate", "signing_private_key")
         if (
             not self.lenient
             and not self.dcr_mode
             and (
-                any(_cleaned_optional_string(cleaned_data.get(field_name)) is not None for field_name in signing_fields)
+                (
+                    not tls_auth
+                    and any(
+                        _cleaned_optional_string(cleaned_data.get(field_name)) is not None
+                        for field_name in signing_fields
+                    )
+                )
                 or any(self.credentials.get(name) is not None for name in signing_credentials)
             )
         ):
@@ -3314,7 +3323,7 @@ def security_field_requirements(
                 label="Required to run",
                 requirement=f"Required to run because {reason}.",
             )
-        elif name in _MTLS_FIELD_NAMES and "fapiSigning" in requirements:
+        elif name in _MTLS_FIELD_NAMES and "tokenEndpointAuth" in requirements:
             metadata[name] = replace(
                 metadata[name],
                 status="optional",
