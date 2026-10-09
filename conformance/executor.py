@@ -2984,23 +2984,30 @@ def _execute_v1_execution_groups_concurrently(
 
     max_workers = min(len(schedule_execution_groups), _MAX_EXECUTION_GROUP_WORKERS)
     ordered_futures: list[Future[list[StepResult]]] = []
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for execution_group in schedule_execution_groups:
-            ordered_futures.append(
-                executor.submit(
-                    _execute_v1_group,
-                    execution_group.steps,
-                    setup_context,
-                    client,
-                    execution_logger,
-                    run_id,
-                    auth_session_store,
-                    fapi_signing_config,
-                    fapi_signing_service,
-                    mtls_client_configured,
-                    response_signature_jwks_cache,
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    try:
+        with executor:
+            for execution_group in schedule_execution_groups:
+                ordered_futures.append(
+                    executor.submit(
+                        _execute_v1_group,
+                        execution_group.steps,
+                        setup_context,
+                        client,
+                        execution_logger,
+                        run_id,
+                        auth_session_store,
+                        fapi_signing_config,
+                        fapi_signing_service,
+                        mtls_client_configured,
+                        response_signature_jwks_cache,
+                    )
                 )
-            )
+    except BaseException:
+        # A signal can interrupt the context manager's join. Finish worker
+        # cleanup before the caller closes their shared HTTP client.
+        executor.shutdown(wait=True, cancel_futures=True)
+        raise
 
     completed_steps: list[StepResult] = []
     for future in ordered_futures:
@@ -3491,7 +3498,9 @@ def _execute_v1_psu_step_inner(
 
     deadline = clock() + PSU_AUTHORIZATION_TIMEOUT_SECONDS
     while clock() < deadline:
+        execution_logger.check_cancelled()
         sleep(0.5)
+        execution_logger.check_cancelled()
         current_session = auth_session_store.get(run_id, session.state)
         if current_session is None or current_session.status == "awaiting":
             continue

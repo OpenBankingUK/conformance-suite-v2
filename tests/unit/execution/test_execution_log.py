@@ -62,7 +62,10 @@ def test_null_logger_emit_is_a_no_op() -> None:
     logger.emit("step-completed", step_id="x", payload={"status": "passed"})
 
 
-def test_psu_url_console_logger_writes_to_stderr_and_flushes_when_console_streams_are_tty() -> None:
+def test_psu_url_console_logger_writes_to_stderr_and_flushes_when_console_streams_are_tty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
     wrapped = BufferedExecutionLogger(run_id="r", developer_mode=False)
     stdout = _TtyStringIO()
     stderr = _FlushRecordingTtyStringIO()
@@ -72,7 +75,7 @@ def test_psu_url_console_logger_writes_to_stderr_and_flushes_when_console_stream
     logger.emit("psu-authorization-url", step_id="psu", payload={"url": url})
 
     assert [event.type for event in wrapped.events()] == ["psu-authorization-url"]
-    assert stderr.getvalue() == f"\033[1m[PSU]\033[0m Open this URL to authorise: {url}\n"
+    assert stderr.getvalue() == f"\033[36m[PSU]\033[0m Open this URL to authorise: {url}\n"
     assert stderr.flush_count == 1
 
 
@@ -94,6 +97,18 @@ def test_psu_url_console_logger_prints_plain_url_when_stderr_is_not_tty() -> Non
 
     assert [event.type for event in wrapped.events()] == ["psu-authorization-url"]
     assert stderr.getvalue() == f"[PSU] Open this URL to authorise: {url}\n"
+
+
+def test_psu_url_console_logger_honours_no_color_on_tty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NO_COLOR", "")
+    stderr = _TtyStringIO()
+    logger = PsuAuthorizationUrlConsoleLogger(
+        NullExecutionLogger(), stdout=_TtyStringIO(), stderr=stderr, progress=True
+    )
+    logger.emit("psu-authorization-url", payload={"url": "https://auth.example.com"})
+    logger.emit("step-completed", step_id="step", payload={"status": "passed"})
+    assert "[PSU] Open this URL to authorise: https://auth.example.com" in stderr.getvalue()
+    assert "\033" not in stderr.getvalue()
 
 
 def test_psu_url_console_logger_is_quiet_for_auto_approve_mode() -> None:
@@ -132,6 +147,63 @@ def test_psu_url_console_logger_ignores_browser_failures() -> None:
     logger.emit("psu-authorization-url", step_id="psu", payload={"url": "https://a.example/x"})
 
     assert "https://a.example/x" in stderr.getvalue()
+
+
+def test_console_progress_is_flushed_timed_and_preserves_structured_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    ticks = iter([10.0, 20.0, 20.0, 25.0, 28.0, 30.0])
+    monkeypatch.setattr("conformance.execution_log.time.perf_counter", lambda: next(ticks))
+    wrapped = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    stdout = io.StringIO()
+    stderr = _FlushRecordingTtyStringIO()
+    monkeypatch.setenv("NO_COLOR", "")
+    logger = PsuAuthorizationUrlConsoleLogger(wrapped, stdout=stdout, stderr=stderr, progress=True)
+
+    logger.emit("run-started")
+    logger.emit("step-started", step_id="discovery")
+    logger.emit("step-completed", step_id="discovery", payload={"status": "passed", "message": "private-message"})
+    logger.emit("run-completed", payload={"status": "passed"})
+
+    assert stderr.getvalue() == (
+        "[Run +0.0s] Run started\n"
+        '[Run +5.0s] Step "discovery" started\n'
+        '[Run +8.0s] Step "discovery" passed\n'
+        "[Run +10.0s] Run passed\n"
+    )
+    assert stderr.flush_count == 4
+    assert stdout.getvalue() == ""
+    events = wrapped.events()
+    assert [event.type for event in events] == ["run-started", "step-started", "step-completed", "run-completed"]
+    assert events[2].payload == {"status": "passed", "message": "private-message"}
+
+
+def test_console_progress_does_not_mirror_sensitive_payloads_or_terminal_controls() -> None:
+    wrapped = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    stderr = io.StringIO()
+    logger = PsuAuthorizationUrlConsoleLogger(wrapped, stdout=io.StringIO(), stderr=stderr, progress=True)
+    private_payload = {"url": "https://example.com/?code=private-code", "message": "private-message"}
+
+    logger.emit("request-sent", step_id="step", payload=private_payload)
+    logger.emit("response-received", step_id="step", payload=private_payload)
+    logger.emit("application-error", payload=private_payload)
+    logger.emit("step-started", step_id="step\n\x1b[31m")
+    logger.emit("step-completed", step_id="step", payload={"status": "private-status", **private_payload})
+
+    output = stderr.getvalue()
+    assert "private-" not in output
+    assert "\x1b" not in output
+    assert 'Step "step\\n\\u001b[31m" started' in output
+    assert len(output.splitlines()) == 3
+    assert "Execution error recorded" in output
+    assert len(wrapped.events()) == 5
+
+
+@pytest.mark.parametrize("status", ["passed", "failed", "warn", "skipped"])
+def test_console_progress_reports_step_status(status: str) -> None:
+    stderr = io.StringIO()
+    logger = PsuAuthorizationUrlConsoleLogger(NullExecutionLogger(), stdout=io.StringIO(), stderr=stderr, progress=True)
+    logger.emit("step-completed", step_id="step", payload={"status": status})
+
+    assert f'Step "step" {status}\n' in stderr.getvalue()
 
 
 def test_buffered_logger_records_event_in_emission_order() -> None:

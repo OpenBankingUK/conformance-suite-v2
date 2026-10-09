@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.10] - 2026-10-09
+
+### Added
+
+- The CLI prints the MVP beta notice and Standards Team feedback email at startup. Its standalone HTTPS callback pages reuse the UI's yellow beta banner with matching colours, badge and spacing, plus a pre-filled email link and copyable feedback template without automatically including callback values or run evidence.
+- Flushed stderr progress now identifies CLI preparation, callback-listener and HTTP/TLS setup, running steps, elapsed execution time, and result writing. Step progress does not include request/response payloads or credentials; the final stdout summary and structured evidence are unchanged.
+- CLI status labels use terminal-only colours for progress, beta notices and outcomes. Redirected output stays plain, and `NO_COLOR` disables ANSI styling.
+- Ctrl+C/SIGINT and SIGTERM now cancel CLI runs cleanly with exit codes `130` and `143`, without a traceback or partial run results. Executor workers stop PSU polling and dispatching further steps; in-flight HTTP requests finish or reach their existing timeout before cleanup completes. HTTP clients and callback listeners are closed, previous signal handlers are restored, and a startup hint identifies the Python PID for machine cancellation.
+
+### Changed
+
+- The CLI entry point announces loading before importing the execution engine, so initial application loading no longer appears completely silent.
+
+### Fixed
+
+- The CLI HTTPS callback listener no longer performs an unused reverse DNS lookup during binding, avoiding resolver-related stalls after `Starting HTTPS callback listener...`.
+- Interrupted CLI result/log writes clean up staging files and preserve complete published evidence; callback sockets are also released if cancellation interrupts TLS wrapping or listener thread startup.
+
 ## [2.0.0-beta.9] - 2026-10-08
 
 ### Added
