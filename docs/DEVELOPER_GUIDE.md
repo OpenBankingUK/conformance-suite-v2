@@ -1,16 +1,52 @@
 # Developer Guide
 
+[Project README](../README.md) | [Installation guide](INSTALLATION_GUIDE.md) |
+[Usage guide](USAGE_GUIDE.md) | [Decision log](DECISION_LOG.md)
+
+Use this guide to set up a checkout, change the implementation and understand
+its architecture. Participant operations belong in the usage guide; advanced
+container deployment belongs in the [Docker guide](DOCKER_GUIDE.md).
+
+## Contents
+
+- [Prerequisites and setup](#prerequisites)
+- [Running the application](#running-the-application)
+- [Local checks](#local-checks)
+- [Environment variables](#environment-variables)
+- [Catalogue architecture](#catalogue-architecture)
+- [Shared plan-document contract](#shared-plan-document-contract)
+- [Browser plan builder](#browser-plan-builder)
+- [Internal certification validation](#certification-validation)
+- [CI pipeline](#ci-pipeline)
+- [Making a change](#making-a-change)
+
+## Documentation map
+
+| Reference | Purpose |
+| --- | --- |
+| [Decision log](DECISION_LOG.md) | Current design decisions, recorded rationale, tradeoffs and evidence. |
+| [Testing strategy](TESTING_STRATEGY.md) | Offline unit/component boundaries, fixtures and structured-result assertions. |
+| [CI/CD strategy](CICD_STRATEGY.md) | Branch/review controls, vulnerability gates and release promotion. |
+| [Legacy benchmark mapping](FCS_LEGACY_BENCHMARK_MAPPING.md) | Catalogue coverage and legacy source traceability. |
+| [DCR parity contract](DCR_3_4_PARITY_CONTRACT.md) | DCR request/state, migration and regression contract. |
+| [Read/Write endpoint requirements](READ_WRITE_ENDPOINT_REQUIREMENTS.md) | Specification endpoint classifications and source discrepancies. |
+
+The [draft PRD](FCS%20Rebuild%20-%20PRD%20v3%20%5BDRAFT%5D.md) describes product
+intent, including future work; it is not evidence that every proposed feature
+or design choice has been implemented.
+
 ## Prerequisites
 
-- Python 3.14+ (managed via `.python-version`)
+- Python 3.14.4+ (`.python-version` pins 3.14.4)
 - [uv](https://docs.astral.sh/uv/) package manager
-- Docker for container builds
-- GNU Make
+- Git, GNU Make and OpenSSL (with `req -addext` support for local HTTPS)
+- Docker for container builds; authenticate with `docker login dhi.io` before
+  pulling the Docker Hardened Image bases
 
 ## Getting started
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/OpenBankingUK/conformance-suite-v2.git
 cd conformance-suite-v2
 uv sync --frozen --no-install-project
 git config core.hooksPath .githooks
@@ -22,11 +58,17 @@ git config core.hooksPath .githooks
 | --- | --- | --- | --- |
 | `make dev` | Uvicorn (HTTPS) on `0.0.0.0:8443` | Yes | Day-to-day browser development. |
 | `make dev-unmasked` | Uvicorn (HTTPS) on `0.0.0.0:8443` | Yes | Local engine debugging with unmasked logs. |
-| `make serve` | Uvicorn on `0.0.0.0:8443` | No | Local production-behaviour check. |
-| `make docker` | Uvicorn in Docker | Yes | Hardened, production-like container run with generated local TLS (see [`docs/DOCKER_GUIDE.md`](DOCKER_GUIDE.md) for the full participant-facing guide). |
+| `make serve` | Uvicorn (HTTP) on `0.0.0.0:8443` | No | Local production-behaviour check, not hardened deployment. |
+| `make docker` | Uvicorn (HTTPS) in Docker, published on `127.0.0.1:8443` | No | Hardened container run with generated local TLS and persistent data (see the [Docker guide](DOCKER_GUIDE.md)). |
 
 All runtime entry points bind to port `8443` so callback registrations against
 the legacy FCS callback URI continue to reach the local application.
+
+Open `https://127.0.0.1:8443/` for `make dev`, `make dev-unmasked` or
+`make docker`; use `http://127.0.0.1:8443/` for `make serve`.
+The source server targets bind all interfaces: use a trusted local development
+machine and do not expose them to an untrusted network. Docker's documented
+publish binding is loopback-only.
 
 `make dev-unmasked` can write credentials and tokens in clear text to
 developer-visible logs. Use it only for local debugging.
@@ -301,25 +343,14 @@ are enabled separately for stdout/stderr only when each is a terminal.
 Setting `NO_COLOR` (including an empty value) disables all CLI ANSI styling.
 Redirected logs and structured result files remain plain text.
 
-To cancel a CLI run, press **Ctrl+C** (exit code `130`), or have automation
-send **SIGTERM** to the Python process (exit code `143`). For example,
-`kill -TERM <python-pid>` on POSIX systems; the startup hint prints this PID
-(not the parent `uv` process PID). The CLI prints a cancellation
-message without a traceback, closes its HTTP client and callback listener,
-and does not save partial run results or flush the buffered execution log
-for an interrupted execution. Previously published evidence is not deleted.
-Files published after execution has completed may remain if cancellation
-arrives during final result/log publication; each file is published atomically,
-so it is never a truncated file. Automation must check the process exit code
-instead of mistaking an old result file for evidence of this run.
+For participant-facing exit codes, evidence publication and signal handling,
+see [CLI progress and cancellation](USAGE_GUIDE.md#cli-progress-and-cancellation).
 
 Cancellation is handled during application loading as well as execution.
-It does not undo requests already accepted by an ASPSP, and native blocking
-operations may delay delivery. Executor workers stop PSU polling and do not
+Executor workers stop PSU polling and do not
 dispatch further steps once signalled. An in-flight worker HTTP request must
 finish or hit its existing transport timeout before cleanup can complete.
-SIGKILL cannot be caught and does not permit
-cleanup. These process-signal handlers apply only to CLI calls; API/UI
+These process-signal handlers apply only to CLI calls; API/UI
 execution is unchanged.
 
 The REST API accepts the same document as the request body or under `testPlan`.
@@ -574,6 +605,9 @@ Participant config may include `approvedReleasePolicyPath` for advisory
 self-assessment in generated reports. OBL-side validation remains authoritative
 and recomputes approved-release status from independently supplied inputs.
 
+**The current beta is not approved for certification.** Validator output does
+not override the participant-facing beta restriction.
+
 For Phase 1, validator authority is limited to consistency and
 certification-readiness. It must derive expected mandatory coverage and approved
 release status from OBL-controlled inputs and must not trust an eligibility
@@ -616,3 +650,17 @@ the PR; it is not typed into the workflow approval screen.
 There is no live-network or end-to-end workflow. Container startup and health
 checking validate packaging only; they are not an Ozone or conformance-system
 test.
+
+## Making a change
+
+Follow the branching and review process in the [CI/CD strategy](CICD_STRATEGY.md).
+Keep changes and tests aligned with the public browser/CLI/REST contract:
+use unit tests for isolated logic and component tests for boundary behaviour,
+mock external services, and assert structured result evidence where produced.
+Run the smallest relevant tests while iterating and `make check` before pushing.
+
+Update the participant guides when workflows or configuration change, and the
+specialised contract documents when coverage or conformance semantics change.
+For a material design choice, add or supersede an entry in the
+[decision log](DECISION_LOG.md#maintaining-this-log). Behaviour-changing fixes
+and features also need a `CHANGELOG.md` entry under `[Unreleased]`.

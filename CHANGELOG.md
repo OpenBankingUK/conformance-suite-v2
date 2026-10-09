@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.11] - 2026-10-09
+
+### Added
+
+- Dedicated installation and usage guides, with prominent README links to all
+  three documentation categories and a lightweight, evidence-backed design
+  decision log.
+- Live CI, image-promotion and security re-scan badges, plus README deployment
+  and vulnerability highlights linking to images, releases, scan evidence and
+  security findings. Workflow status is explicitly not a zero-vulnerability or
+  certification guarantee.
+
+### Changed
+
+- Consolidated participant workflows into the usage guide and improved
+  developer navigation while preserving the quick start, existing README
+  section anchors and beta safety warnings.
+
+### Fixed
+
+- Corrected operational documentation for source HTTP/HTTPS, Docker reload
+  behaviour, DCR inline credential support, persisted versus process-local run
+  state, and JSON versus NDJSON execution logs.
+- Corrected the CI/CD guide's outdated CI badge repository URL.
+
 ## [2.0.0-beta.10] - 2026-10-09
 
 ### Added
