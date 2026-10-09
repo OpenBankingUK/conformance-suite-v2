@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.10] - 2026-10-09
+
 ### Added
 
 - The CLI prints the MVP beta notice and Standards Team feedback email at startup. Its standalone HTTPS callback pages reuse the UI's yellow beta banner with matching colours, badge and spacing, plus a pre-filled email link and copyable feedback template without automatically including callback values or run evidence.

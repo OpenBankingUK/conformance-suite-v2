@@ -1,11 +1,11 @@
 # Docker deployment guide
 
-**FCS v2 `2.0.0-beta.9` is an evaluation beta, not a certification release.**
+**FCS v2 `2.0.0-beta.10` is an evaluation beta, not a certification release.**
 Use it to try the new Functional Conformance Suite and provide feedback. Do
 not use beta runs or reports as certification evidence, even if the builder
 or a result displays certification-related labels.
 
-The primary beta.9 workflow is the local browser UI: run the Docker image,
+The primary beta.10 workflow is the local browser UI: run the Docker image,
 build a test plan, and paste credentials into the builder. The image runs
 non-root and requires no manually supplied Django secret. The persistence,
 certificate mount, Compose, and CLI options later in this guide are advanced
@@ -53,7 +53,7 @@ warning for the locally generated self-signed HTTPS certificate. Keep the
    keep it. **Export safe JSON** at plan review removes secret values and
    requires you to re-enter them after import. **Export with secrets** includes
    sensitive values: avoid it unless necessary and protect any copy you make.
-   Neither export nor the result is certification evidence in beta.9.
+   Neither export nor the result is certification evidence in beta.10.
 
 Stop with Ctrl+C. With this disposable command, browser sessions, generated
 results, logs, and the local certificate are lost when the container exits;
@@ -73,7 +73,7 @@ If the repository requires authentication, log in to Docker Hub with
 credentials that grant access before pulling.
 
 For reproducible runs, replace `2.0.0-beta-latest` in the commands in this guide
-with an exact published tag, for example `2.0.0-beta.9` once published.
+with an exact published tag, for example `2.0.0-beta.10` once published.
 See [`CICD_STRATEGY.md`](CICD_STRATEGY.md) for the full preview/beta/GA
 versioning and promotion model. `latest` refers only to the current GA release.
 For convenient MVP beta evaluation, `2.0.0-beta-latest` tracks the highest
