@@ -124,11 +124,15 @@ curl --fail-with-body -H 'Content-Type: application/json' \
 ```
 
 The REST API is loopback-only by default. DCR file references name files already
-provisioned inside the running host/container; the API never accepts inline PEM,
-SSA, client-secret, registration-token, grant-token, assertion, authorization,
-or token-response material.
+provisioned inside the running host/container. The shared canonical credential
+contract also accepts supported inline PEM/SSA fields, one source per credential;
+requests or exports containing these secrets must be protected. See the
+[Usage guide](USAGE_GUIDE.md#browser-and-rest-launch) for local server transport,
+REST lifecycle and evidence retrieval. The HTTP example above assumes
+`make serve`; Docker and `make dev` use HTTPS.
 
-Required shared configuration:
+Required shared configuration (path keys shown; supported inline alternatives
+are listed below):
 
 - `securityEnvironment.discoveryUrl`;
 - `securityEnvironment.clientAuthMethod`;
@@ -142,6 +146,10 @@ Required shared configuration:
 signing-certificate, transport subject-DN, numeric-OID, and disable-keepalive
 values are optional explicit overrides; derivation is preferred.
 Every path is absolute and must reference an existing local file before launch.
+Supported inline alternatives include `securityEnvironment.signingPrivateKeyPem`,
+`securityEnvironment.mtls.certificatePem` / `privateKeyPem` / `caBundlePem`,
+and `dynamicClientRegistration.softwareStatementAssertion` /
+`signingCertificatePem`. Use either a path or its inline alternative, never both.
 
 Endpoint combinations are POST alone or POST plus any combination of GET, PUT,
 and DELETE. POST cannot be unchecked. GET/PUT/DELETE gates are independent, but

@@ -1,5 +1,8 @@
 # Docker deployment guide
 
+[Project README](../README.md) | [Installation guide](INSTALLATION_GUIDE.md) |
+[Usage guide](USAGE_GUIDE.md)
+
 **FCS v2 `2.0.0-beta.10` is an evaluation beta, not a certification release.**
 Use it to try the new Functional Conformance Suite and provide feedback. Do
 not use beta runs or reports as certification evidence, even if the builder
@@ -25,35 +28,15 @@ Open `https://127.0.0.1:8443/` on the same computer and accept the browser's
 warning for the locally generated self-signed HTTPS certificate. Keep the
 `127.0.0.1` Docker port binding so the UI stays local.
 
-1. Select **Create new test plan with builder** on the main menu. Choose the
-   scheme, specification, and version (the latest OpenAPI document update is
-   preselected), then tick the resource groups and endpoints you implement.
-   Ticking a group selects all of its endpoints and optional features;
-   mandatory ones stay locked.
-2. On **Connection & security**, enter your OpenID discovery URL and choose
-   **Fetch and fill** to fill empty OAuth/FAPI fields from it, then confirm the
-   OAuth/FAPI and resource-server values relevant to your environment. Select
-   **Paste or upload** under **Supply this credential as** for each required
-   credential. Paste your PEM certificate or private key into **Paste PEM
-   text** (and supply the other credentials requested for your chosen plan).
-   Leave **Absolute file path** blank: a path on your computer is not a path
-   inside the container. No `/certs` mount is needed for pasted credentials.
-   Supply each credential by only one method.
-3. Fill in the requested business data and review the generated plan. Once a
-   specification is chosen, the step bar lets you move between steps in any
-   order, and leaving a page saves what you entered. Review lists any
-   remaining issues with a **Fix** button for each step; choose **Launch run**
-   when they are resolved. A PSU authorisation handoff may still be needed
-   during execution. For tests requiring PSU authorisation, enter the exact
-   callback URI registered for your test client with the ASPSP in the
-   builder's **Redirect URI** field; it is independent of the UI address.
-   To switch to an existing plan at any point, choose **Import plan** at the
-   top of any builder page.
-4. Inspect the run details and open the **JSON** masked report if you want to
-   keep it. **Export safe JSON** at plan review removes secret values and
-   requires you to re-enter them after import. **Export with secrets** includes
-   sensitive values: avoid it unless necessary and protect any copy you make.
-   Neither export nor the result is certification evidence in beta.10.
+Continue with the [browser builder walkthrough](USAGE_GUIDE.md#browser-builder-workflow)
+to select your scope, supply credentials, review and launch. Paste/upload needs
+no `/certs` mount; absolute paths refer to files inside the container. Supply
+each credential by only one method. Your registered PSU redirect URI is
+independent of the UI address.
+
+See [run monitoring and results](USAGE_GUIDE.md#monitor-a-run-and-interpret-results)
+for keeping evidence and interpreting outcomes. Safe plan exports omit secrets;
+exports with secrets must be protected.
 
 Stop with Ctrl+C. With this disposable command, browser sessions, generated
 results, logs, and the local certificate are lost when the container exits;
@@ -136,6 +119,9 @@ local image instead (see the repository `Makefile`). What each flag buys you:
 If `/data` is not mounted (as in the ephemeral quick start), the container
 still starts: it falls back to an in-memory secret key and Django's own
 `/tmp`-based session default. Only persistence is lost, not functionality.
+
+The volume persists files, not active execution or process-local run/feedback
+stores. Restarting does not resume a run or restore its run-detail API record.
 
 ## Advanced: optional certificate mount
 
@@ -248,8 +234,8 @@ inside the container on the `redirectUri` port. Publish that port to the host
 on loopback, for example `-p 127.0.0.1:8443:8443` for
 `https://0.0.0.0:8443/conformancesuite/callback`, so the browser redirect
 reaches the run. Plans with `"execution": {"psuAuthorization": {"mode":
-"auto-approve"}}` don't need a published port. See the README section *PSU
-authorisation and pipeline runs*.
+"auto-approve"}}` don't need a published port. See
+[PSU authorisation and pipeline runs](USAGE_GUIDE.md#psu-authorisation-and-pipeline-runs).
 
 Structured results and execution logs from this run land under
 `/data/results/test-results.json` and `/data/logs/execution-log.ndjson` by
