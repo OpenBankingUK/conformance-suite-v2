@@ -232,23 +232,21 @@ closed; re-push them to a branch in this repository.
 
 #### Exceptions
 
-**Temporary Expat and zlib base-image patch:** Security approved upgrading
-`expat` and `libexpat` to exactly `2.9.0-r0` from Alpine edge/main for
-CVE-2026-102633 and CVE-2026-77214, and `zlib` to exactly `1.3.2-r1` from
-Alpine v3.24/main for CVE-2026-85091, while the pinned DHI images lack the
-fixes. APK verifies package signatures with the base's trusted Alpine keys;
-the build rejects changes to any other dev-image package, including musl.
-Only the three upgraded records are merged into the runtime APK database;
-dev-only packages are not imported. The old shared libraries are removed and
-the new libraries and `xmlwf` are copied into the distroless runtime.
-Root is used only during image construction; runtime remains UID/GID 65532.
-The embedded SPDX documents in both pinned runtime platforms contain only
-the DHI base descriptor, not Expat or zlib inventory, so they remain unchanged.
-CI's Scout/Snyk inventories and generated candidate SBOM describe the patched
-filesystem. No scanner, gate, VEX or exception policy is relaxed.
-Remove the patch stage/helper and bump the DHI digests (and assessed runtime
-constant) when `dhi.io/python:3.14-alpine3.24` ships Expat >= 2.9.0 and
-zlib >= 1.3.2-r1.
+**Upstream Expat and zlib fixes:** The pinned DHI Python 3.14.8 Alpine 3.24
+runtime now includes `expat`/`libexpat` `2.9.0-r1` and `zlib` `1.3.2-r1`
+on both supported architectures, replacing the temporary Alpine-package
+patch stage and its inventory-merging helper. No libraries or APK records
+are transplanted into the runtime. Hardened smoke tests check the libraries
+Python actually loads and the patched certifi trust bundle, in addition to
+the normal scanner and non-root runtime checks.
+
+**Unresolved musl finding:** This base still includes `musl` `1.2.6-r3`,
+affected by CVE-2026-107891; the scanner identifies `1.2.6-r6` as fixed.
+Track resolution in [#244](https://github.com/OpenBankingUK/conformance-suite-v2/issues/244).
+The existing gate continues to block this fixable finding. Do not transplant
+musl or add a vulnerability exception for it; a subsequent reviewed DHI
+digest update is needed. These dependency/base updates do not make existing
+published images safe or authorize promotion of a blocked candidate.
 
 `security/vulnerability-exceptions.toml` is the **only** place a vulnerability
 may be accepted. Each entry needs `id` (CVE/GHSA/…), `package`, `reason`,

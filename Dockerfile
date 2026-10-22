@@ -1,24 +1,3 @@
-# Temporary, Security-approved fixes for CVE-2026-102633 and CVE-2026-77214
-# (Expat) and CVE-2026-85091 (zlib). The pinned DHI images lack these fixes;
-# use signature-verified Alpine edge (Expat) and v3.24 (zlib) packages.
-# Remove this stage and bump the DHI digests when
-# dhi.io/python:3.14-alpine3.24 ships expat >= 2.9.0 and zlib >= 1.3.2-r1.
-FROM dhi.io/python:3.14-alpine3.24@sha256:4361d30a5f505dd5509622eff5c7bef79afa798b4f3eedd3f5cb1abc92be9168 AS runtime-base
-FROM dhi.io/python:3.14-alpine3.24-dev@sha256:a40c90f9eb46f8a1c8d56ea1bb990c556677622e4b7d3d7130d713a9de4b4b1d AS base-package-patch
-
-COPY --from=runtime-base /lib/apk/db/installed /patch/lib/apk/db/installed
-COPY docker/patch_base_packages.py /patch_base_packages.py
-# Pin both the Expat CLI and shared library: upgrading expat alone does not
-# upgrade libexpat. zlib resolves from the image's configured Alpine v3.24
-# repository. Fail if apk changes any other package (including musl).
-RUN cp /lib/apk/db/installed /before-installed && \
-    apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/edge/main \
-        'expat=2.9.0-r0' 'libexpat=2.9.0-r0' 'zlib=1.3.2-r1' && \
-    python3 /patch_base_packages.py && \
-    mkdir -p /patch/usr/lib /patch/usr/bin && \
-    cp -a /usr/lib/libexpat.so.1* /usr/lib/libz.so.1* /patch/usr/lib/ && \
-    cp -a /usr/bin/xmlwf /patch/usr/bin/
-
 # ─── Build stage ──────────────────────────────────────────────────────────────
 # Docker Hardened Image (DHI), Alpine 3.24, "-dev" variant: has a shell, apk,
 # and pip so it can build the venv, but is otherwise the same underlying
@@ -31,7 +10,7 @@ RUN cp /lib/apk/db/installed /before-installed && \
 # organisation-owned credential. Pinned to an exact digest for
 # reproducibility; base updates require a reviewed digest bump and scanner
 # policy reassessment.
-FROM dhi.io/python:3.14-alpine3.24-dev@sha256:a40c90f9eb46f8a1c8d56ea1bb990c556677622e4b7d3d7130d713a9de4b4b1d AS builder
+FROM dhi.io/python:3.14-alpine3.24-dev@sha256:a8b209bdf92fa536c182203eb2b09f0ddf55b4d3c37a4ab00eed2602d7ac33bb AS builder
 
 # Install uv for fast, reproducible dependency resolution
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /usr/local/bin/uv
@@ -65,14 +44,7 @@ RUN mkdir -p /data/results /data/logs /data/sessions && \
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 # Distroless DHI runtime variant: no shell, defaults to non-root UID/GID 65532.
 # Pinned to an exact digest for the same reasons as the builder stage above.
-FROM dhi.io/python:3.14-alpine3.24@sha256:4361d30a5f505dd5509622eff5c7bef79afa798b4f3eedd3f5cb1abc92be9168 AS runtime
-
-# Build-time root only, using exec-form Python because this image has no shell.
-# Remove the old libraries before COPY; merging directories cannot remove them.
-USER 0:0
-RUN ["python3", "-c", "from pathlib import Path; [p.unlink() for g in ('libexpat.so.1*', 'libz.so.1*') for p in Path('/usr/lib').glob(g)]"]
-COPY --from=base-package-patch /patch/ /
-USER 65532:65532
+FROM dhi.io/python:3.14-alpine3.24@sha256:7b8e15f81d4e76a30fad2c41eeab9c84da93ddc44144fbf51664ccf2d355d1ff AS runtime
 
 WORKDIR /app
 

@@ -39,6 +39,17 @@ echo "==> Checking image runs as non-root UID/GID 65532"
 IMAGE_USER="$(docker inspect --format='{{.Config.User}}' "$IMAGE_REF")"
 [[ "$IMAGE_USER" == "65532:65532" ]] || fail "expected image User=65532:65532, got '$IMAGE_USER'"
 
+echo "==> Checking the loaded Expat/zlib libraries and certifi trust bundle retain security fixes"
+docker run --rm --network none --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+  --entrypoint python3 "$IMAGE_REF" -c "
+import certifi
+import pyexpat
+import zlib
+assert pyexpat.version_info >= (2, 9, 0), pyexpat.EXPAT_VERSION
+assert tuple(map(int, zlib.ZLIB_RUNTIME_VERSION.split('.'))) >= (1, 3, 2), zlib.ZLIB_RUNTIME_VERSION
+assert tuple(map(int, certifi.__version__.split('.'))) >= (2026, 10, 19), certifi.__version__
+" || fail "expected fixed Expat/zlib libraries and certifi trust bundle"
+
 echo "==> Checking the runtime image has no shell"
 if docker run --rm --entrypoint /bin/sh "$IMAGE_REF" -c true >/dev/null 2>&1; then
   fail "expected no shell in the runtime image, but /bin/sh executed successfully"

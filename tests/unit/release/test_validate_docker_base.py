@@ -17,6 +17,12 @@ from scripts.validate_docker_base import (
 pytestmark = pytest.mark.unit
 
 
+def test_repository_dockerfile_uses_assessed_runtime_base() -> None:
+    """A reviewed DHI digest bump must update the Dockerfile and guard together."""
+    dockerfile = Path(__file__).resolve().parents[3] / "Dockerfile"
+    validate_runtime_base(dockerfile.read_text(encoding="utf-8"))
+
+
 def test_accepts_exact_pinned_runtime_base() -> None:
     """The exact digest assessed by Docker's signed VEX is accepted."""
     dockerfile = f"FROM python:3.14-alpine AS builder\nFROM {EXPECTED_RUNTIME_BASE} AS runtime\n"
