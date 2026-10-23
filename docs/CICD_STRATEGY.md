@@ -198,8 +198,8 @@ consolidated container vulnerability gate on **every pull request and push**:
   (author must be `@docker.com`; see `scripts/validate_docker_base.py`)
   suppresses only base-image OS findings with the exact package version. It
   never applies to application packages under `/app/`. If Docker Scout
-  explicitly reports that the image has no VEX attestations, scanning
-  continues without VEX suppressions.
+  has no applicable signed evidence, scanning continues without VEX
+  suppressions. Replaced Python components are excluded from vendor assessments.
 - Scanner, authentication, signature or parsing errors fail closed. Snyk runs
   from an empty directory, so a `.snyk` file cannot silently ignore findings.
 
@@ -219,15 +219,21 @@ introduces the gate may bootstrap from its own copy, and it emits an explicit
 warning. Because the workflow definition for `pull_request` events is still
 read from the PR head, CODEOWNERS review of `.github/` remains the control for
 workflow changes; CODEOWNERS review of `scripts/` and `security/` protects the
-policy code and exception data. When available, Docker's VEX is fetched with
-`--verify` against Docker's DHI signing key, checked in as
+policy code and exception data. `scripts/fetch_dhi_vex.py` verifies Docker's
+signed OCI artifact with checksum-pinned regctl 0.11.7 and cosign 3.1.4 against
+Docker's DHI signing key, checked in as
 `.github/actions/vulnerability-scan/dhi-signing-key.pub` and pinned by
 SHA-256 (rotate via a reviewed PR against
 [docker-hardened-images/keyring](https://github.com/docker-hardened-images/keyring)).
-`--skip-tlog` is used because Docker does not publish DHI VEX attestations to
-the public Rekor log; the signature itself is still verified. An explicit
-"no VEX attestations found" response is the only non-fatal VEX-fetch outcome;
-all other failures remain blocking. PRs from forks have no secrets and fail
+Cosign's `--insecure-ignore-tlog=true` is used because Docker does not publish
+DHI VEX attestations to the public Rekor log; the signature itself is still
+verified. Artifact and layer SHA-256 checks plus OCI and in-toto subject
+bindings tie the extracted OpenVEX to the exact platform manifest. Only an
+empty successful referrers response or a published image without the assessed
+base's exact layer prefix is non-fatal; all other failures remain blocking.
+Scout's `--vex-author '^$'` prevents implicit vendor suppressions before the
+combined gate evaluates independently verified evidence.
+PRs from forks have no secrets and fail
 closed; re-push them to a branch in this repository.
 
 #### Exceptions
@@ -243,6 +249,30 @@ Add exceptions only through a reviewed PR with Security approval; never widen
 an entry beyond one ID and one package.
 
 #### Release hygiene
+
+The Debian DHI tooling rollout is a prerequisite, not an image release.
+`EXPECTED_RUNTIME_BASE` selects the exact Debian digest for published-image
+ancestry checks; `APPROVED_RUNTIME_BASES` also retains the previous exact Alpine
+digest for existing candidates. No arbitrary DHI digests are approved.
+Scheduled published scans authenticate to `dhi.io` before checking that the
+published platform's layers start with the assessed Debian base's layers.
+Other published images continue without Debian VEX. The default-branch
+promotion workflow and scheduled scans execute only trusted tooling.
+
+Land the reviewed tooling on `main` and the release branch, then align the
+image migration candidate with the trusted copies and rebuild. The promotion
+consistency comparison includes `scripts/fetch_dhi_vex.py` as well as the base
+validator and scan action. Existing archive checksums, metadata verification,
+thresholds and exception rules remain unchanged. The shared smoke script retains
+generic hardening and lifecycle checks for main's existing assessed Alpine
+runtime. Debian additionally requires the replacement Python 3.14.9, package
+inventory, Expat, zlib and certifi checks; unknown distributions fail explicitly.
+Distribution detection selects smoke compatibility only: the security gate
+separately approves the exact base digest. CI's changed-digest fallback emits
+a warning and scans without VEX when the trusted validator does not approve
+the PR's base; it does not authorize that base for promotion.
+Main's application Dockerfile,
+dependencies and release version are not changed by this prerequisite.
 
 The promotion re-scan and daily re-scan mean a newly disclosed vulnerability
 can block an already-built candidate. Fix it (or add a reviewed exception on

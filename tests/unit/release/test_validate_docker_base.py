@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from scripts.validate_docker_base import (
+    APPROVED_RUNTIME_BASES,
     EXPECTED_RUNTIME_BASE,
     DockerBaseError,
     get_runtime_base,
@@ -17,11 +18,20 @@ from scripts.validate_docker_base import (
 pytestmark = pytest.mark.unit
 
 
-def test_accepts_exact_pinned_runtime_base() -> None:
+@pytest.mark.parametrize("runtime_base", APPROVED_RUNTIME_BASES)
+def test_accepts_exact_pinned_runtime_base(runtime_base: str) -> None:
     """The exact digest assessed by Docker's signed VEX is accepted."""
-    dockerfile = f"FROM python:3.14-alpine AS builder\nFROM {EXPECTED_RUNTIME_BASE} AS runtime\n"
+    dockerfile = f"FROM python:3.14-alpine AS builder\nFROM {runtime_base} AS runtime\n"
     validate_runtime_base(dockerfile)
-    assert get_runtime_base(dockerfile) == EXPECTED_RUNTIME_BASE
+    assert get_runtime_base(dockerfile) == runtime_base
+
+
+def test_approved_runtime_bases_are_only_reviewed_digests() -> None:
+    assert APPROVED_RUNTIME_BASES == (
+        "dhi.io/python:3.14-alpine3.24@sha256:4361d30a5f505dd5509622eff5c7bef79afa798b4f3eedd3f5cb1abc92be9168",
+        "dhi.io/python:3.14-debian13@sha256:36c38f4be040b095f67fbb0982d18875518f1b58d23b9ad3cc8bc903a7f7524e",
+    )
+    assert EXPECTED_RUNTIME_BASE == APPROVED_RUNTIME_BASES[1]
 
 
 @pytest.mark.parametrize(
@@ -29,6 +39,8 @@ def test_accepts_exact_pinned_runtime_base() -> None:
     [
         "dhi.io/python:3.14-alpine3.24",
         "dhi.io/python:3.14-alpine3.24@sha256:" + "0" * 64,
+        "dhi.io/python:3.14-debian13",
+        "dhi.io/python:3.14-debian13@sha256:" + "0" * 64,
         "python:3.14-alpine",
     ],
 )

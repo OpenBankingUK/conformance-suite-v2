@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Trusted promotion and scheduled scans verify Docker-signed OCI OpenVEX with
+  platform, artifact, layer and in-toto subject bindings before applying OS
+  assessments. Replaced Python components remain unsuppressed and Scout exports
+  raw findings. Approve the exact Debian DHI runtime alongside the existing
+  Alpine digest as tooling prerequisites; no runtime image is released here.
+- Shared candidate smoke checks preserve main's assessed Alpine compatibility
+  while checking Debian replacement Python and OS inventory. Unassessed digest
+  changes receive full raw scans without vendor VEX; promotion still requires
+  an approved exact base and byte-identical trusted tooling.
+
 - Automatic and manual preview, beta, and GA promotions share a caller-level
   concurrency lock through publication and Git tag/GitHub Release finalization,
   preventing overlapping release boundaries without nested reusable-workflow locks.
