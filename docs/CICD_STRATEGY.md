@@ -232,6 +232,15 @@ closed; re-push them to a branch in this repository.
 
 #### Exceptions
 
+**PR base-image updates:** The secret-bearing scan job runs the base branch's
+trusted validator, not PR-head Python code. If that validator does not approve
+the PR's runtime digest, the job emits a warning and scans the image without
+OpenVEX exclusions rather than rejecting it before scanning. The candidate
+build still requires its Dockerfile and assessed digest to agree, and trusted
+promotion retains the exact-digest check. This permits digest-update PRs to
+receive scan results without allowing them to authorize their own VEX
+exclusions or bypass the vulnerability gate.
+
 **Upstream Expat and zlib fixes:** The pinned DHI Python 3.14.8 Alpine 3.24
 runtime now includes `expat`/`libexpat` `2.9.0-r1` and `zlib` `1.3.2-r1`
 on both supported architectures, replacing the temporary Alpine-package

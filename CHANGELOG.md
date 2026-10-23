@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Allow PR image scans to assess DHI digest updates before the trusted base
+  branch adopts them. Unrecognised runtime bases receive full scans without
+  OpenVEX exclusions; exact-digest candidate/promotion checks remain enforced.
 - Update certifi to `2026.10.19` to remove the emSign roots affected by
   compromised intermediate CA keys (GHSA-6q48-6c7w-9gw2).
 - Refresh the digest-pinned Python 3.14 Alpine DHI builder/runtime to Python
