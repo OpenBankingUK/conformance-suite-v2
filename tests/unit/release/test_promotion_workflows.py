@@ -59,3 +59,12 @@ def test_preview_remains_publication_only_and_auto_resolution_keeps_its_own_grou
     assert "    environment:" not in resolve
     assert "needs.resolve.outputs.should_promote == 'true'" in automatic
     assert "(needs.resolve.outputs.channel == 'ga' || needs.resolve.outputs.channel == 'beta')" in automatic
+
+
+def test_published_rescan_authenticates_for_assessed_dhi_ancestry() -> None:
+    workflow = (WORKFLOWS / "security-rescan.yml").read_text()
+    published = workflow.split("\n  scan-image:\n", 1)[1].split("\n  issues:\n", 1)[0]
+    assert 'vex-requires-dhi-login: "true"' in published
+    assert "vex-image: docker.io/openbanking/conformance-suite-v2:${{ matrix.tag }}" in published
+    assert "gate-directory: ." in published
+    assert "exceptions-file: security/vulnerability-exceptions.toml" in published

@@ -5,7 +5,8 @@ When Docker publishes signed OpenVEX evidence, the vulnerability gate
 Hardened Image digest below. Candidate CI and trusted promotion both use this
 check so a different runtime base cannot inherit that assessment. Updating
 the digest (for example from a Dependabot pull request) requires updating this
-constant in the same reviewed change.
+allowlist in the same reviewed change. The previous assessed Alpine digest is
+retained for existing candidates during the Debian rollout.
 """
 
 from __future__ import annotations
@@ -16,7 +17,11 @@ import sys
 from pathlib import Path
 
 EXPECTED_RUNTIME_BASE = (
-    "dhi.io/python:3.14-alpine3.24@sha256:4361d30a5f505dd5509622eff5c7bef79afa798b4f3eedd3f5cb1abc92be9168"
+    "dhi.io/python:3.14-debian13@sha256:36c38f4be040b095f67fbb0982d18875518f1b58d23b9ad3cc8bc903a7f7524e"
+)
+APPROVED_RUNTIME_BASES = (
+    "dhi.io/python:3.14-alpine3.24@sha256:4361d30a5f505dd5509622eff5c7bef79afa798b4f3eedd3f5cb1abc92be9168",
+    EXPECTED_RUNTIME_BASE,
 )
 _FROM_PATTERN = re.compile(r"^\s*FROM\s+(.+?)\s*$", re.IGNORECASE)
 
@@ -61,8 +66,10 @@ def get_runtime_base(dockerfile: str) -> str:
     if len(runtime_bases) != 1:
         raise DockerBaseError(f"Dockerfile must define exactly one runtime stage; found {len(runtime_bases)}.")
     runtime_base, runtime_stage_number = runtime_bases[0]
-    if runtime_base != EXPECTED_RUNTIME_BASE:
-        raise DockerBaseError(f"Runtime base must be exactly {EXPECTED_RUNTIME_BASE!r}; found {runtime_base!r}.")
+    if runtime_base not in APPROVED_RUNTIME_BASES:
+        raise DockerBaseError(
+            f"Runtime base must be exactly one of {APPROVED_RUNTIME_BASES!r}; found {runtime_base!r}."
+        )
     if runtime_stage_number != from_count:
         raise DockerBaseError("The assessed runtime stage must be the final Dockerfile stage.")
     return runtime_base
