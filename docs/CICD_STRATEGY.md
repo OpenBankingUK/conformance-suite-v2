@@ -197,9 +197,10 @@ consolidated container vulnerability gate on **every pull request and push**:
 - When published, Docker's signed OpenVEX for the exact DHI runtime base
   (author must be `@docker.com`; see `scripts/validate_docker_base.py`)
   suppresses only base-image OS findings with the exact package version. It
-  never applies to application packages under `/app/`. If Docker Scout
-  explicitly reports that the image has no VEX attestations, scanning
-  continues without VEX suppressions.
+  never applies to application packages under `/app/` or the Python components
+  replaced by our derivative. Scout's own VEX filtering is disabled
+  (`--vex-author '^$'`); only the central gate applies verified assessments.
+  A successful OCI referrers query with no OpenVEX continues without VEX.
 - Scanner, authentication, signature or parsing errors fail closed. Snyk runs
   from an empty directory, so a `.snyk` file cannot silently ignore findings.
 
@@ -219,36 +220,82 @@ introduces the gate may bootstrap from its own copy, and it emits an explicit
 warning. Because the workflow definition for `pull_request` events is still
 read from the PR head, CODEOWNERS review of `.github/` remains the control for
 workflow changes; CODEOWNERS review of `scripts/` and `security/` protects the
-policy code and exception data. When available, Docker's VEX is fetched with
-`--verify` against Docker's DHI signing key, checked in as
+policy code and exception data. When available, Docker's OCI OpenVEX artifact
+is verified by checksum-pinned `regctl` and `cosign` tooling against Docker's
+DHI signing key, checked in as
 `.github/actions/vulnerability-scan/dhi-signing-key.pub` and pinned by
 SHA-256 (rotate via a reviewed PR against
 [docker-hardened-images/keyring](https://github.com/docker-hardened-images/keyring)).
-`--skip-tlog` is used because Docker does not publish DHI VEX attestations to
-the public Rekor log; the signature itself is still verified. An explicit
-"no VEX attestations found" response is the only non-fatal VEX-fetch outcome;
-all other failures remain blocking. PRs from forks have no secrets and fail
-closed; re-push them to a branch in this repository.
+`--insecure-ignore-tlog=true` is used because DHI VEX verification cannot rely
+on public Rekor inclusion; key-based signature verification remains mandatory.
+`scripts/fetch_dhi_vex.py` verifies artifact and layer SHA-256 digests, the OCI
+artifact subject and the embedded in-toto subject against the resolved platform
+manifest. This avoids Scout's in-toto VEX export failure. Published-image scans
+apply these assessments only when the image's layer prefix matches the current
+assessed DHI base; other published bases receive raw scans. Missing evidence is
+non-fatal; registry, signature, digest, binding and parsing errors fail closed.
+PRs from forks have no secrets and fail closed; re-push them to a branch in this
+repository.
 
 #### Exceptions
 
-**Temporary Expat and zlib base-image patch:** Security approved upgrading
-`expat` and `libexpat` to exactly `2.9.0-r0` from Alpine edge/main for
-CVE-2026-102633 and CVE-2026-77214, and `zlib` to exactly `1.3.2-r1` from
-Alpine v3.24/main for CVE-2026-85091, while the pinned DHI images lack the
-fixes. APK verifies package signatures with the base's trusted Alpine keys;
-the build rejects changes to any other dev-image package, including musl.
-Only the three upgraded records are merged into the runtime APK database;
-dev-only packages are not imported. The old shared libraries are removed and
-the new libraries and `xmlwf` are copied into the distroless runtime.
-Root is used only during image construction; runtime remains UID/GID 65532.
-The embedded SPDX documents in both pinned runtime platforms contain only
-the DHI base descriptor, not Expat or zlib inventory, so they remain unchanged.
-CI's Scout/Snyk inventories and generated candidate SBOM describe the patched
-filesystem. No scanner, gate, VEX or exception policy is relaxed.
-Remove the patch stage/helper and bump the DHI digests (and assessed runtime
-constant) when `dhi.io/python:3.14-alpine3.24` ships Expat >= 2.9.0 and
-zlib >= 1.3.2-r1.
+**PR base-image updates:** The secret-bearing scan job runs the base branch's
+trusted validator, not PR-head Python code. If that validator does not approve
+the PR's runtime digest, the job emits a warning and scans the image without
+OpenVEX exclusions rather than rejecting it before scanning. The candidate
+build still requires its Dockerfile and assessed digest to agree, and trusted
+promotion retains the exact-digest check. This permits digest-update PRs to
+receive scan results without allowing them to authorize their own VEX
+exclusions or bypass the vulnerability gate.
+
+**Maintained Debian derivative:** Both stages use pinned Debian 13 DHI images.
+The build downloads CPython `3.14.9` from python.org and verifies SHA-256
+`e02d9ac21cebda6e46435369744a92c65cc7cd8669697694122cf97ffacd1e53`,
+also published in the official Python image recipe. It builds against DHI's
+system libraries, requires the application-facing extension modules, and runs
+upstream tempfile, tarfile, TLS, SQLite and venv tests before installation.
+The maintenance release includes gh-157579/CVE-2026-12345 and gh-157265's
+tarfile custom-filter fallback fix; individual downstream CPython backports
+are not maintained.
+
+`docker/replace_python.py` removes only files owned by the pinned base's Python,
+pip, setuptools and wheel packages, retains shared directories and unrelated
+OS libraries, and replaces both monolithic and split dpkg inventory with
+`conformance-python` `3.14.9-1+ob1` (source `python-3.14`). The new interpreter
+lives at `/opt/python`;
+the application venv is rebuilt with it and Python downloads are disabled in
+uv. There is no second old interpreter or stdlib in the runtime filesystem.
+Build tools stay in the builder. The final image remains shell-free, non-root,
+read-only compatible and uses the existing `/data` and TLS contracts.
+
+DHI's zlib version is `1:1.3.dfsg+really1.3.1-1+dhi4`, not upstream `1.3.2`.
+Its signed VEX identifies a backported fix for CVE-2026-85091; do not judge
+Debian backports by the upstream version string alone. Smoke tests check the
+actual Python/Expat/zlib runtime, package inventory and certifi trust bundle.
+The Debian image does not contain musl, but previously published Alpine images
+remain affected: [#244](https://github.com/OpenBankingUK/conformance-suite-v2/issues/244)
+must remain open until affected releases are dealt with.
+
+Two unfixed medium Python findings remain visible under the unchanged policy.
+For tarfile CVE-2026-19672, the application does not use tarfile extraction or
+`shutil.unpack_archive`. For CVE-2026-5713, it does not attach to other processes
+using remote debugging, `python -m asyncio ps`/`pstree` or sampling profiling,
+and the runtime runs as non-root without extra capabilities. These are
+reachability observations, not VEX claims or vulnerability exceptions.
+Reassess them when adding archive extraction or process introspection,
+upgrading CPython or refreshing scanner evidence.
+
+**Trusted rollout:** This PR cannot approve its own new VEX tooling. The
+reviewed fetcher, action and assessed-base constant must reach the PR's trusted
+base branch before PR scans can use them, and `main` before promotion and
+scheduled scans can use them. Until then raw PR scans may remain blocked by
+vendor-backported findings. Never switch a secret-bearing job to PR-head
+tooling to bypass this requirement. Return to stock DHI Python once an
+appropriate maintenance release is available, removing the custom build and
+replacement helper in the same reviewed update.
+The validator's explicit transition allowlist retains the previously assessed
+Alpine digest as well as the new Debian digest; arbitrary tags or digests remain
+rejected. This approval does not waive either image's vulnerability gate.
 
 `security/vulnerability-exceptions.toml` is the **only** place a vulnerability
 may be accepted. Each entry needs `id` (CVE/GHSA/…), `package`, `reason`,

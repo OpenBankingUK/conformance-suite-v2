@@ -203,8 +203,8 @@ jobs:
           echo "slug=$slug" >> "$GITHUB_OUTPUT"
 
       - name: Scan published image
-        # VEX comes from the published image itself (Docker resolves the DHI
-        # base assessment through its provenance); exceptions are main's.
+        # The trusted fetcher checks that the published image's layer prefix
+        # matches the assessed DHI base before applying its OS-only VEX.
         uses: ./.github/actions/vulnerability-scan
         with:
           image: docker.io/openbanking/conformance-suite-v2:${{ matrix.tag }}
@@ -212,6 +212,7 @@ jobs:
           platform: ${{ matrix.platform }}
           target: "published openbanking/conformance-suite-v2:${{ matrix.tag }} (${{ matrix.platform }})"
           vex-image: docker.io/openbanking/conformance-suite-v2:${{ matrix.tag }}
+          vex-requires-dhi-login: "true"
           gate-directory: .
           exceptions-file: security/vulnerability-exceptions.toml
           report-name: vulnerability-report-image-${{ steps.name.outputs.slug }}

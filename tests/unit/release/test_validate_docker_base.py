@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from scripts.validate_docker_base import (
+    APPROVED_RUNTIME_BASES,
     EXPECTED_RUNTIME_BASE,
     DockerBaseError,
     get_runtime_base,
@@ -17,11 +18,23 @@ from scripts.validate_docker_base import (
 pytestmark = pytest.mark.unit
 
 
+def test_repository_dockerfile_uses_assessed_runtime_base() -> None:
+    """A reviewed DHI digest bump must update the Dockerfile and guard together."""
+    dockerfile = Path(__file__).resolve().parents[3] / "Dockerfile"
+    validate_runtime_base(dockerfile.read_text(encoding="utf-8"))
+
+
 def test_accepts_exact_pinned_runtime_base() -> None:
     """The exact digest assessed by Docker's signed VEX is accepted."""
     dockerfile = f"FROM python:3.14-alpine AS builder\nFROM {EXPECTED_RUNTIME_BASE} AS runtime\n"
     validate_runtime_base(dockerfile)
     assert get_runtime_base(dockerfile) == EXPECTED_RUNTIME_BASE
+
+
+@pytest.mark.parametrize("runtime_base", APPROVED_RUNTIME_BASES)
+def test_accepts_only_reviewed_transition_bases(runtime_base: str) -> None:
+    """Trusted rollout preserves existing candidates without approving arbitrary digests."""
+    assert get_runtime_base(f"FROM {runtime_base} AS runtime\n") == runtime_base
 
 
 @pytest.mark.parametrize(
