@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -59,3 +62,69 @@ def test_preview_remains_publication_only_and_auto_resolution_keeps_its_own_grou
     assert "    environment:" not in resolve
     assert "needs.resolve.outputs.should_promote == 'true'" in automatic
     assert "(needs.resolve.outputs.channel == 'ga' || needs.resolve.outputs.channel == 'beta')" in automatic
+
+
+@pytest.mark.parametrize("base_case", ["alpine", "debian", "updated", "invalid"])
+def test_pr_scan_executes_only_trusted_validator(tmp_path: Path, base_case: str) -> None:
+    """Only exact approved bases authorize VEX; PR-head code remains inert."""
+    from scripts.validate_docker_base import APPROVED_RUNTIME_BASES, EXPECTED_RUNTIME_BASE
+
+    root = WORKFLOWS.parents[1]
+    trusted_scripts = tmp_path / "scripts"
+    trusted_scripts.mkdir()
+    (trusted_scripts / "validate_docker_base.py").write_text((root / "scripts/validate_docker_base.py").read_text())
+    scan_input = tmp_path / ".scan-input"
+    scan_input.mkdir()
+    runtime_base = APPROVED_RUNTIME_BASES[0] if base_case == "alpine" else EXPECTED_RUNTIME_BASE
+    if base_case == "updated":
+        runtime_base = EXPECTED_RUNTIME_BASE.split("@")[0] + "@sha256:" + "0" * 64
+    dockerfile = f"FROM {runtime_base} AS runtime\n" if base_case != "invalid" else "not a Dockerfile\n"
+    (scan_input / "Dockerfile").write_text(dockerfile)
+    (scan_input / "scripts").mkdir()
+    (scan_input / "scripts/validate_docker_base.py").write_text("raise RuntimeError('head code executed')\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    uv = bin_dir / "uv"
+    uv.write_text('#!/bin/sh\nshift 2\nexec "$TRUSTED_PYTHON" "$@"\n')
+    uv.chmod(0o755)
+    output = tmp_path / "output"
+    workflow = (WORKFLOWS / "ci.yml").read_text()
+    step = workflow.split("      - name: Resolve the DHI runtime base reference\n", 1)[1]
+    run = step.split("        run: |\n", 1)[1].split("\n      - name:", 1)[0]
+    script = "\n".join(line[10:] for line in run.splitlines())
+    result = subprocess.run(  # noqa: S603 - Repository-owned workflow with an isolated trusted-validator fixture.
+        ["/bin/bash", "-eu", "-c", script],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "TRUSTED_PYTHON": sys.executable,
+            "IS_HARDENED": "true",
+            "GITHUB_OUTPUT": str(output),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "head code executed" not in result.stderr
+    if base_case in {"alpine", "debian"}:
+        assert result.returncode == 0, result.stderr
+        assert output.read_text() == f"ref={runtime_base}\n"
+    else:
+        assert result.returncode != 0
+        assert not output.exists()
+        assert "error:" in result.stderr
+    assert "github.event.pull_request.base.sha" in workflow
+    scan = workflow.split("      - name: Scan for vulnerabilities\n", 1)[1].split("\n  vulnerability-scan:", 1)[0]
+    assert "vex-image: ${{ steps.runtime_base.outputs.ref }}" in scan
+    assert "gate-directory: ." in scan
+    assert "fail-on-findings:" not in scan
+    assert "        if:" not in scan
+
+
+def test_published_scan_authenticates_for_ancestry_verification() -> None:
+    """Published scans need DHI access even though their target is on Docker Hub."""
+    workflow = (WORKFLOWS / "security-rescan.yml").read_text()
+    scan = workflow.split("      - name: Scan published image\n", 1)[1].split("\n  issues:", 1)[0]
+    assert 'vex-requires-dhi-login: "true"' in scan
+    assert "gate-directory: ." in scan

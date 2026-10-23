@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Prepare trusted CI and promotion tooling to verify Docker-signed OCI/in-toto
+  OpenVEX, bind evidence to exact platform digests, and exclude replaced Python
+  products. Keep raw scanner findings and unchanged vulnerability thresholds,
+  and explicitly approve the assessed Debian digest alongside the existing
+  Alpine digest without changing the runtime image or publishing a release.
+
 ## [2.0.0-beta.12] - 2026-10-09
 
 ### Fixed
