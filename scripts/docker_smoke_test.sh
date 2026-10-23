@@ -39,16 +39,30 @@ echo "==> Checking image runs as non-root UID/GID 65532"
 IMAGE_USER="$(docker inspect --format='{{.Config.User}}' "$IMAGE_REF")"
 [[ "$IMAGE_USER" == "65532:65532" ]] || fail "expected image User=65532:65532, got '$IMAGE_USER'"
 
-echo "==> Checking the loaded Expat/zlib libraries and certifi trust bundle retain security fixes"
+echo "==> Checking the replacement Python, DHI library inventory and certifi trust bundle"
 docker run --rm --network none --read-only --cap-drop=ALL --security-opt=no-new-privileges \
   --entrypoint python3 "$IMAGE_REF" -c "
 import certifi
 import pyexpat
+import sys
 import zlib
+from pathlib import Path
+assert sys.version_info[:3] == (3, 14, 9), sys.version
+assert sys.base_prefix == '/opt/python', sys.base_prefix
 assert pyexpat.version_info >= (2, 9, 0), pyexpat.EXPAT_VERSION
-assert tuple(map(int, zlib.ZLIB_RUNTIME_VERSION.split('.'))) >= (1, 3, 2), zlib.ZLIB_RUNTIME_VERSION
+# DHI backports the zlib fix without changing its upstream 1.3.1 version.
+status = Path('/var/lib/dpkg/status').read_text()
+assert 'Package: conformance-python\n' in status
+assert 'Package: python-3.14' not in status
+assert not tuple(Path('/var/lib/dpkg/status.d').glob('*python-3.14*'))
+assert not Path('/usr/lib/python3.14').exists()
+assert not Path('/usr/lib/python3/dist-packages/setuptools').exists()
+assert not tuple(Path('/usr/lib').glob('*/libpython3.14.so*'))
+zlib_package = next(p for p in status.split('\n\n') if p.startswith('Package: zlib1g\n'))
+assert 'Version: 1:1.3.dfsg+really1.3.1-1+dhi4\n' in zlib_package, zlib_package
+assert zlib.ZLIB_RUNTIME_VERSION == '1.3.1', zlib.ZLIB_RUNTIME_VERSION
 assert tuple(map(int, certifi.__version__.split('.'))) >= (2026, 10, 19), certifi.__version__
-" || fail "expected fixed Expat/zlib libraries and certifi trust bundle"
+" || fail "expected replacement Python, assessed DHI libraries and fixed certifi"
 
 echo "==> Checking the runtime image has no shell"
 if docker run --rm --entrypoint /bin/sh "$IMAGE_REF" -c true >/dev/null 2>&1; then

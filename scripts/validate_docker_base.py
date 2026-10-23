@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 EXPECTED_RUNTIME_BASE = (
-    "dhi.io/python:3.14-alpine3.24@sha256:7b8e15f81d4e76a30fad2c41eeab9c84da93ddc44144fbf51664ccf2d355d1ff"
+    "dhi.io/python:3.14-debian13@sha256:36c38f4be040b095f67fbb0982d18875518f1b58d23b9ad3cc8bc903a7f7524e"
 )
 _FROM_PATTERN = re.compile(r"^\s*FROM\s+(.+?)\s*$", re.IGNORECASE)
 

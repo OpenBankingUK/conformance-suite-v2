@@ -437,6 +437,7 @@ jobs:
             scripts/update_beta_latest.py \
             scripts/validate_docker_base.py \
             scripts/vulnerability_gate.py \
+            scripts/fetch_dhi_vex.py \
             .github/actions/vulnerability-scan/action.yml \
             .github/actions/vulnerability-scan/dhi-signing-key.pub \
             security/vulnerability-exceptions.toml; then
