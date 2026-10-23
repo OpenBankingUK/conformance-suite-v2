@@ -293,6 +293,9 @@ vendor-backported findings. Never switch a secret-bearing job to PR-head
 tooling to bypass this requirement. Return to stock DHI Python once an
 appropriate maintenance release is available, removing the custom build and
 replacement helper in the same reviewed update.
+The validator's explicit transition allowlist retains the previously assessed
+Alpine digest as well as the new Debian digest; arbitrary tags or digests remain
+rejected. This approval does not waive either image's vulnerability gate.
 
 `security/vulnerability-exceptions.toml` is the **only** place a vulnerability
 may be accepted. Each entry needs `id` (CVE/GHSA/…), `package`, `reason`,

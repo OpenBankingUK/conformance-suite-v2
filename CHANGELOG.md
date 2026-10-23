@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Allow PR image scans to assess DHI digest updates before the trusted base
   branch adopts them. Unrecognised runtime bases receive full scans without
   OpenVEX exclusions; exact-digest candidate/promotion checks remain enforced.
+  Retain the previously assessed Alpine digest alongside the new Debian digest
+  in an explicit transition allowlist for trusted-tooling rollout.
 - Update certifi to `2026.10.19` to remove the emSign roots affected by
   compromised intermediate CA keys (GHSA-6q48-6c7w-9gw2).
 - Move to digest-pinned Debian 13 DHI and build checksum-verified upstream

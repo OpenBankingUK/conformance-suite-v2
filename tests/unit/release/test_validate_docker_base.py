@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from scripts.validate_docker_base import (
+    APPROVED_RUNTIME_BASES,
     EXPECTED_RUNTIME_BASE,
     DockerBaseError,
     get_runtime_base,
@@ -28,6 +29,12 @@ def test_accepts_exact_pinned_runtime_base() -> None:
     dockerfile = f"FROM python:3.14-alpine AS builder\nFROM {EXPECTED_RUNTIME_BASE} AS runtime\n"
     validate_runtime_base(dockerfile)
     assert get_runtime_base(dockerfile) == EXPECTED_RUNTIME_BASE
+
+
+@pytest.mark.parametrize("runtime_base", APPROVED_RUNTIME_BASES)
+def test_accepts_only_reviewed_transition_bases(runtime_base: str) -> None:
+    """Trusted rollout preserves existing candidates without approving arbitrary digests."""
+    assert get_runtime_base(f"FROM {runtime_base} AS runtime\n") == runtime_base
 
 
 @pytest.mark.parametrize(
