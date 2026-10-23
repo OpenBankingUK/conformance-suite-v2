@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import ast
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -66,7 +68,7 @@ def test_preview_remains_publication_only_and_auto_resolution_keeps_its_own_grou
 
 @pytest.mark.parametrize("base_case", ["alpine", "debian", "updated", "invalid"])
 def test_pr_scan_executes_only_trusted_validator(tmp_path: Path, base_case: str) -> None:
-    """Only exact approved bases authorize VEX; PR-head code remains inert."""
+    """Unapproved bases receive raw scans without VEX; PR-head code remains inert."""
     from scripts.validate_docker_base import APPROVED_RUNTIME_BASES, EXPECTED_RUNTIME_BASE
 
     root = WORKFLOWS.parents[1]
@@ -111,8 +113,9 @@ def test_pr_scan_executes_only_trusted_validator(tmp_path: Path, base_case: str)
         assert result.returncode == 0, result.stderr
         assert output.read_text() == f"ref={runtime_base}\n"
     else:
-        assert result.returncode != 0
-        assert not output.exists()
+        assert result.returncode == 0, result.stderr
+        assert output.read_text() == "ref=\n"
+        assert "Scanning continues without OpenVEX exclusions." in result.stdout
         assert "error:" in result.stderr
     assert "github.event.pull_request.base.sha" in workflow
     scan = workflow.split("      - name: Scan for vulnerabilities\n", 1)[1].split("\n  vulnerability-scan:", 1)[0]
@@ -128,3 +131,57 @@ def test_published_scan_authenticates_for_ancestry_verification() -> None:
     scan = workflow.split("      - name: Scan published image\n", 1)[1].split("\n  issues:", 1)[0]
     assert 'vex-requires-dhi-login: "true"' in scan
     assert "gate-directory: ." in scan
+
+
+def test_hardened_smoke_callers_remain_separate_from_plain_image_checks() -> None:
+    workflow = (WORKFLOWS / "ci.yml").read_text()
+    calls = re.findall(
+        r"      - name: Run hardened smoke test\n(.*?)(?=\n      - name:)",
+        workflow,
+        re.DOTALL,
+    )
+    assert len(calls) == 2
+    for call in calls:
+        assert "if: needs.plan.outputs.is_hardened == 'true'" in call
+        assert "./scripts/docker_smoke_test.sh" in call
+
+
+@pytest.mark.parametrize("distro", ["alpine", "debian", "unknown"])
+@pytest.mark.parametrize("valid_inventory", [True, False])
+def test_shared_smoke_distribution_checks(tmp_path: Path, distro: str, valid_inventory: bool) -> None:
+    smoke = (WORKFLOWS.parents[1] / "scripts/docker_smoke_test.sh").read_text()
+    code = smoke.split('--entrypoint python3 "$IMAGE_REF" -c "\n', 1)[1].split('\n" || fail ', 1)[0]
+    tree = ast.parse(code)
+
+    class FixtureImports(ast.NodeTransformer):
+        def visit_Import(self, node: ast.Import) -> ast.Pass:
+            return ast.copy_location(ast.Pass(), node)
+
+        def visit_ImportFrom(self, node: ast.ImportFrom) -> ast.Pass:
+            return ast.copy_location(ast.Pass(), node)
+
+    tree = FixtureImports().visit(tree)
+    status = tmp_path / "var/lib/dpkg/status"
+    status.parent.mkdir(parents=True)
+    status.write_text(
+        "Package: conformance-python\nVersion: 3.14.9\n\nPackage: zlib1g\nVersion: 1:1.3.dfsg+really1.3.1-1+dhi4\n"
+        if valid_inventory
+        else "Package: python-3.14\nVersion: 3.14.8\n"
+    )
+    namespace = {
+        "platform": SimpleNamespace(freedesktop_os_release=lambda: {"ID": distro}),
+        "Path": lambda path: tmp_path / path.removeprefix("/"),
+        "sys": SimpleNamespace(version_info=(3, 14, 9), version="3.14.9", base_prefix="/opt/python"),
+        "pyexpat": SimpleNamespace(version_info=(2, 9, 0), EXPAT_VERSION="expat_2.9.0"),
+        "zlib": SimpleNamespace(ZLIB_RUNTIME_VERSION="1.3.1"),
+        "certifi": SimpleNamespace(__version__="2026.10.19"),
+    }
+    compiled = compile(ast.fix_missing_locations(tree), "<smoke-runtime-check>", "exec")
+    if distro == "unknown":
+        with pytest.raises(RuntimeError, match="Unsupported runtime distribution"):
+            exec(compiled, namespace)  # noqa: S102 - Fixed repository smoke code, isolated fixture dependencies.
+    elif distro == "debian" and not valid_inventory:
+        with pytest.raises(AssertionError):
+            exec(compiled, namespace)  # noqa: S102 - Fixed repository smoke code, isolated fixture dependencies.
+    else:
+        exec(compiled, namespace)  # noqa: S102 - Fixed repository smoke code, isolated fixture dependencies.

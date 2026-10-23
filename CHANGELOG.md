@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   products. Keep raw scanner findings and unchanged vulnerability thresholds,
   and explicitly approve the assessed Debian digest alongside the existing
   Alpine digest without changing the runtime image or publishing a release.
+  Align the shared hardened smoke helper for existing Alpine and planned Debian
+  candidates, and scan unassessed PR bases without VEX rather than trusting
+  PR-head tooling.
 
 ## [2.0.0-beta.12] - 2026-10-09
 

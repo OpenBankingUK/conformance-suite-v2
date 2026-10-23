@@ -445,8 +445,15 @@ jobs:
             echo "ref=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          base_ref="$(uv run python -m scripts.validate_docker_base --stdin --print-runtime-base < .scan-input/Dockerfile)"
-          echo "ref=$base_ref" >> "$GITHUB_OUTPUT"
+          # The trusted base checkout may predate a PR's digest update. Only
+          # that checkout can authorize VEX; an unassessed base still gets a
+          # full scan, without any base-image VEX exclusions.
+          if base_ref="$(uv run python -m scripts.validate_docker_base --stdin --print-runtime-base < .scan-input/Dockerfile)"; then
+            echo "ref=$base_ref" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=Unassessed DHI runtime base::The trusted validator did not approve this base. Scanning continues without OpenVEX exclusions."
+            echo "ref=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Scan for vulnerabilities
         uses: ./.github/actions/vulnerability-scan

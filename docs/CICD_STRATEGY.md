@@ -267,6 +267,15 @@ Promotion compares its candidate's trusted release-tooling files, now including
 branches and in the candidate before requesting promotion. The prerequisite
 does not self-approve deployment, and Environment approval remains required.
 
+The shared hardened smoke helper preserves the existing generic hardening and
+lifecycle checks for both Alpine and Debian. Debian additionally requires the
+planned CPython 3.14.9 replacement and its package/library inventory; unknown
+distributions fail. Distribution detection selects assertions, not runtime-base
+approval. If trusted PR-base tooling predates a candidate's new digest, CI still
+runs the complete raw vulnerability scan without VEX; the candidate-side exact
+base check and promotion checks remain strict. PR-head tooling never approves
+its own evidence.
+
 #### Exceptions
 
 **Temporary Expat and zlib base-image patch:** Security approved upgrading
