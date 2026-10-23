@@ -197,9 +197,11 @@ consolidated container vulnerability gate on **every pull request and push**:
 - When published, Docker's signed OpenVEX for the exact DHI runtime base
   (author must be `@docker.com`; see `scripts/validate_docker_base.py`)
   suppresses only base-image OS findings with the exact package version. It
-  never applies to application packages under `/app/`. If Docker Scout
-  explicitly reports that the image has no VEX attestations, scanning
-  continues without VEX suppressions.
+  never applies to application packages under `/app/` or replaced Python
+  products. An empty successful OCI referrers response, or a published image
+  without the assessed Debian base's layer prefix, continues without VEX
+  suppressions. Docker Scout runs with `--vex-author '^$'` so the gate sees raw
+  findings and only the independently verified evidence can suppress them.
 - Scanner, authentication, signature or parsing errors fail closed. Snyk runs
   from an empty directory, so a `.snyk` file cannot silently ignore findings.
 
@@ -219,16 +221,60 @@ introduces the gate may bootstrap from its own copy, and it emits an explicit
 warning. Because the workflow definition for `pull_request` events is still
 read from the PR head, CODEOWNERS review of `.github/` remains the control for
 workflow changes; CODEOWNERS review of `scripts/` and `security/` protects the
-policy code and exception data. When available, Docker's VEX is fetched with
-`--verify` against Docker's DHI signing key, checked in as
+policy code and exception data. When available, `scripts/fetch_dhi_vex.py`
+retrieves Docker's OCI artifact with checksum-pinned `regctl` 0.11.7 and verifies
+its signature using checksum-pinned `cosign` 3.1.4 against Docker's DHI signing
+key, checked in as
 `.github/actions/vulnerability-scan/dhi-signing-key.pub` and pinned by
 SHA-256 (rotate via a reviewed PR against
 [docker-hardened-images/keyring](https://github.com/docker-hardened-images/keyring)).
-`--skip-tlog` is used because Docker does not publish DHI VEX attestations to
-the public Rekor log; the signature itself is still verified. An explicit
-"no VEX attestations found" response is the only non-fatal VEX-fetch outcome;
-all other failures remain blocking. PRs from forks have no secrets and fail
+`--insecure-ignore-tlog=true` is used because Docker does not publish DHI VEX
+attestations to the public Rekor log; the signature itself is still verified.
+The fetcher verifies the artifact and layer SHA-256 digests, OCI subject
+binding, and in-toto subject binding to the selected platform manifest before
+extracting OpenVEX. Only Debian OS products are retained; Python, libpython,
+the derivative `conformance-python` package and Python packaging tools are
+excluded because the planned derivative replaces them. Published-image scans
+log in to DHI to verify the assessed base's layer prefix before fetching its
+evidence. Registry, authentication, signature, malformed-data and binding
+failures remain blocking. PRs from forks have no secrets and fail
 closed; re-push them to a branch in this repository.
+
+#### Trusted tooling rollout prerequisite
+
+This tooling change does **not** migrate the Dockerfile, update application
+dependencies or release versions, or publish an image. The current Alpine
+runtime and its temporary package patch below remain unchanged. The validator's
+`APPROVED_RUNTIME_BASES` contains only these two reviewed full references:
+
+- Existing Alpine:
+  `dhi.io/python:3.14-alpine3.24@sha256:4361d30a5f505dd5509622eff5c7bef79afa798b4f3eedd3f5cb1abc92be9168`.
+- Assessed Debian target (`EXPECTED_RUNTIME_BASE`):
+  `dhi.io/python:3.14-debian13@sha256:36c38f4be040b095f67fbb0982d18875518f1b58d23b9ad3cc8bc903a7f7524e`.
+
+Retaining the existing digest avoids invalidating unchanged candidates during
+the rollout; it is **not** acceptance of their vulnerabilities. Other digests,
+tag-only references and non-final runtime stages still fail validation. Known
+musl and certifi findings in the Alpine baseline must continue to block under
+the unchanged policy; no exception or scanner bypass is introduced here.
+
+PR scans execute the **base branch's** action, fetcher, validator and gate.
+Consequently this prerequisite PR cannot use its own tooling to approve its
+scan. Review the equivalent tooling changes into `release/2.0.0` and `main`
+before rebuilding the separate Debian/Python migration candidate (PR #245).
+Promotion compares its candidate's trusted release-tooling files, now including
+`scripts/fetch_dhi_vex.py`, byte-for-byte with `main`; align those files on both
+branches and in the candidate before requesting promotion. The prerequisite
+does not self-approve deployment, and Environment approval remains required.
+
+The shared hardened smoke helper preserves the existing generic hardening and
+lifecycle checks for both Alpine and Debian. Debian additionally requires the
+planned CPython 3.14.9 replacement and its package/library inventory; unknown
+distributions fail. Distribution detection selects assertions, not runtime-base
+approval. If trusted PR-base tooling predates a candidate's new digest, CI still
+runs the complete raw vulnerability scan without VEX; the candidate-side exact
+base check and promotion checks remain strict. PR-head tooling never approves
+its own evidence.
 
 #### Exceptions
 
