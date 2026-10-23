@@ -263,7 +263,15 @@ Land the reviewed tooling on `main` and the release branch, then align the
 image migration candidate with the trusted copies and rebuild. The promotion
 consistency comparison includes `scripts/fetch_dhi_vex.py` as well as the base
 validator and scan action. Existing archive checksums, metadata verification,
-thresholds and exception rules remain unchanged. Main's application Dockerfile,
+thresholds and exception rules remain unchanged. The shared smoke script retains
+generic hardening and lifecycle checks for main's existing assessed Alpine
+runtime. Debian additionally requires the replacement Python 3.14.9, package
+inventory, Expat, zlib and certifi checks; unknown distributions fail explicitly.
+Distribution detection selects smoke compatibility only: the security gate
+separately approves the exact base digest. CI's changed-digest fallback emits
+a warning and scans without VEX when the trusted validator does not approve
+the PR's base; it does not authorize that base for promotion.
+Main's application Dockerfile,
 dependencies and release version are not changed by this prerequisite.
 
 The promotion re-scan and daily re-scan mean a newly disclosed vulnerability
