@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   zlib `1.3.2-r1` replace the temporary Alpine package overlay for
   CVE-2026-102633, CVE-2026-77214, and CVE-2026-85091, preserving the
   distroless non-root runtime and existing vulnerability gates.
+- Align the trusted runtime-base approval with the reviewed prerequisite
+  tooling, accepting only the exact existing and refreshed Alpine indexes.
 
 ## [2.0.0-beta.12] - 2026-10-09
 

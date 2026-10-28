@@ -239,7 +239,7 @@ temporary package overlay for CVE-2026-102633, CVE-2026-77214, and
 CVE-2026-85091. The runtime base filesystem and APK inventory are no longer
 patched locally, and the build no longer fetches Alpine edge packages.
 Both image references pin multi-architecture index digests; update the
-Dockerfile and `EXPECTED_RUNTIME_BASE` together in a reviewed change, verify
+Dockerfile and `APPROVED_RUNTIME_BASES` together in a reviewed change, verify
 package inventories on both platforms, and retain the existing per-platform
 scanner and signed OpenVEX gates. Runtime remains distroless UID/GID 65532.
 This community image is not the FIPS variant, and a base refresh does not
@@ -302,7 +302,7 @@ PR runs the `Vulnerability Scan`, also add `DOCKER_ORG_USERNAME`, the
 Never store the write-capable token there. Without them, Dependabot PRs fail
 closed. `.github/dependabot.yml` updates `uv.lock`, Dockerfile base-image
 digests and GitHub Actions; a DHI digest update must also update
-`EXPECTED_RUNTIME_BASE` in `scripts/validate_docker_base.py`.
+`APPROVED_RUNTIME_BASES` in `scripts/validate_docker_base.py`.
 
 There are currently no repository-level variables required by CI: the
 supported pytest suite is fully offline and does not target a live model bank
