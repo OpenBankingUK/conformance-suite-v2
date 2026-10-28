@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Upgrade locked certifi to `2026.10.23` to remove compromised emSign trust
+  roots identified by GHSA-6q48-6c7w-9gw2.
 - Refresh the digest-pinned community DHI Python 3.14 / Alpine 3.24 builder
   and runtime for amd64 and arm64. Upstream Expat/libexpat `2.9.0-r1` and
   zlib `1.3.2-r1` replace the temporary Alpine package overlay for
