@@ -2,10 +2,10 @@
 
 When Docker publishes signed OpenVEX evidence, the vulnerability gate
 (``scripts/vulnerability_gate.py``) consumes it only for the exact Docker
-Hardened Image digest below. Candidate CI and trusted promotion both use this
-check so a different runtime base cannot inherit that assessment. Updating
-the digest (for example from a Dependabot pull request) requires updating this
-constant in the same reviewed change.
+Hardened Image reference selected from the immutable approval set below.
+Candidate CI and trusted promotion both use this check so an unapproved runtime
+base cannot inherit that assessment. Adding a digest (for example from a
+Dependabot pull request) requires a reviewed update to the approval set.
 """
 
 from __future__ import annotations
@@ -17,6 +17,12 @@ from pathlib import Path
 
 EXPECTED_RUNTIME_BASE = (
     "dhi.io/python:3.14-alpine3.24@sha256:4361d30a5f505dd5509622eff5c7bef79afa798b4f3eedd3f5cb1abc92be9168"
+)
+APPROVED_RUNTIME_BASES = frozenset(
+    {
+        EXPECTED_RUNTIME_BASE,
+        "dhi.io/python:3.14-alpine3.24@sha256:00f9aeadee003dec0cafd5ebd3b36e668ac2a4e120e0c059967ad249e1130179",
+    }
 )
 _FROM_PATTERN = re.compile(r"^\s*FROM\s+(.+?)\s*$", re.IGNORECASE)
 
@@ -61,15 +67,18 @@ def get_runtime_base(dockerfile: str) -> str:
     if len(runtime_bases) != 1:
         raise DockerBaseError(f"Dockerfile must define exactly one runtime stage; found {len(runtime_bases)}.")
     runtime_base, runtime_stage_number = runtime_bases[0]
-    if runtime_base != EXPECTED_RUNTIME_BASE:
-        raise DockerBaseError(f"Runtime base must be exactly {EXPECTED_RUNTIME_BASE!r}; found {runtime_base!r}.")
+    if runtime_base not in APPROVED_RUNTIME_BASES:
+        raise DockerBaseError(
+            f"Runtime base must be an approved exact reference in {sorted(APPROVED_RUNTIME_BASES)!r}; "
+            f"found {runtime_base!r}."
+        )
     if runtime_stage_number != from_count:
         raise DockerBaseError("The assessed runtime stage must be the final Dockerfile stage.")
     return runtime_base
 
 
 def validate_runtime_base(dockerfile: str) -> None:
-    """Require exactly one final runtime stage using the assessed DHI digest.
+    """Require exactly one final runtime stage using an approved DHI digest.
 
     Args:
         dockerfile: Complete Dockerfile contents.
