@@ -9,12 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.13] - 2026-10-28
+
+### Security
+
+- Upgrade locked certifi to `2026.10.23` to remove compromised emSign trust
+  roots identified by GHSA-6q48-6c7w-9gw2.
+- Refresh the digest-pinned community DHI Python 3.14 / Alpine 3.24 builder
+  and runtime for amd64 and arm64. Upstream Expat/libexpat `2.9.0-r1` and
+  zlib `1.3.2-r1` replace the temporary Alpine package overlay for
+  CVE-2026-102633, CVE-2026-77214, and CVE-2026-85091, preserving the
+  distroless non-root runtime and existing vulnerability gates.
+- Align the trusted runtime-base approval with the reviewed prerequisite
+  tooling, accepting only the exact existing and refreshed Alpine indexes.
+
 ### Fixed
 
 - Allow the reviewed Alpine DHI runtime index refresh through the trusted
   base-image validator while retaining the existing baseline digest. Approval
-  remains limited to exact immutable image references; runtime images, scanner
-  policy and vulnerability exceptions are unchanged.
+  remains limited to exact immutable image references; the prerequisite
+  tooling change leaves runtime images, scanner policy and vulnerability
+  exceptions unchanged.
 
 ## [2.0.0-beta.12] - 2026-10-09
 
