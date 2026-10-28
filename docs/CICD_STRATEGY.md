@@ -301,8 +301,13 @@ PR runs the `Vulnerability Scan`, also add `DOCKER_ORG_USERNAME`, the
 **read-only** `DOCKER_ORG_ACCESS_TOKEN` and `SNYK_TOKEN` as Dependabot secrets.
 Never store the write-capable token there. Without them, Dependabot PRs fail
 closed. `.github/dependabot.yml` updates `uv.lock`, Dockerfile base-image
-digests and GitHub Actions; a DHI digest update must also update
-`APPROVED_RUNTIME_BASES` in `scripts/validate_docker_base.py`.
+digests and GitHub Actions; a DHI digest update must first add the exact
+image reference to `APPROVED_RUNTIME_BASES` in
+`scripts/validate_docker_base.py` on the trusted PR base and promotion
+branches. The immutable allowlist retains the existing baseline reference
+alongside the approved refresh; tags alone, arbitrary digests and individual
+platform manifest references are not approved. The validator returns the
+selected reference so signed VEX evidence remains bound to that exact image.
 
 There are currently no repository-level variables required by CI: the
 supported pytest suite is fully offline and does not target a live model bank

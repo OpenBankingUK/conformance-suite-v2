@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Align the trusted runtime-base approval with the reviewed prerequisite
   tooling, accepting only the exact existing and refreshed Alpine indexes.
 
+### Fixed
+
+- Allow the reviewed Alpine DHI runtime index refresh through the trusted
+  base-image validator while retaining the existing baseline digest. Approval
+  remains limited to exact immutable image references; the prerequisite
+  tooling change leaves runtime images, scanner policy and vulnerability
+  exceptions unchanged.
+
 ## [2.0.0-beta.12] - 2026-10-09
 
 ### Fixed
