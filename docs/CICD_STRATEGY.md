@@ -232,23 +232,18 @@ closed; re-push them to a branch in this repository.
 
 #### Exceptions
 
-**Temporary Expat and zlib base-image patch:** Security approved upgrading
-`expat` and `libexpat` to exactly `2.9.0-r0` from Alpine edge/main for
-CVE-2026-102633 and CVE-2026-77214, and `zlib` to exactly `1.3.2-r1` from
-Alpine v3.24/main for CVE-2026-85091, while the pinned DHI images lack the
-fixes. APK verifies package signatures with the base's trusted Alpine keys;
-the build rejects changes to any other dev-image package, including musl.
-Only the three upgraded records are merged into the runtime APK database;
-dev-only packages are not imported. The old shared libraries are removed and
-the new libraries and `xmlwf` are copied into the distroless runtime.
-Root is used only during image construction; runtime remains UID/GID 65532.
-The embedded SPDX documents in both pinned runtime platforms contain only
-the DHI base descriptor, not Expat or zlib inventory, so they remain unchanged.
-CI's Scout/Snyk inventories and generated candidate SBOM describe the patched
-filesystem. No scanner, gate, VEX or exception policy is relaxed.
-Remove the patch stage/helper and bump the DHI digests (and assessed runtime
-constant) when `dhi.io/python:3.14-alpine3.24` ships Expat >= 2.9.0 and
-zlib >= 1.3.2-r1.
+**Upstream Expat and zlib fixes:** The pinned community DHI Python 3.14 /
+Alpine 3.24 builder and runtime now include `expat` and `libexpat` `2.9.0-r1`
+and `zlib` `1.3.2-r1` on both `linux/amd64` and `linux/arm64`, replacing the
+temporary package overlay for CVE-2026-102633, CVE-2026-77214, and
+CVE-2026-85091. The runtime base filesystem and APK inventory are no longer
+patched locally, and the build no longer fetches Alpine edge packages.
+Both image references pin multi-architecture index digests; update the
+Dockerfile and `EXPECTED_RUNTIME_BASE` together in a reviewed change, verify
+package inventories on both platforms, and retain the existing per-platform
+scanner and signed OpenVEX gates. Runtime remains distroless UID/GID 65532.
+This community image is not the FIPS variant, and a base refresh does not
+establish that the application has no vulnerabilities.
 
 `security/vulnerability-exceptions.toml` is the **only** place a vulnerability
 may be accepted. Each entry needs `id` (CVE/GHSA/…), `package`, `reason`,

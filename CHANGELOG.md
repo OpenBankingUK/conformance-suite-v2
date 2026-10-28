@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.13] - 2026-10-28
+
+### Security
+
+- Refresh the digest-pinned community DHI Python 3.14 / Alpine 3.24 builder
+  and runtime for amd64 and arm64. Upstream Expat/libexpat `2.9.0-r1` and
+  zlib `1.3.2-r1` replace the temporary Alpine package overlay for
+  CVE-2026-102633, CVE-2026-77214, and CVE-2026-85091, preserving the
+  distroless non-root runtime and existing vulnerability gates.
+
 ## [2.0.0-beta.12] - 2026-10-09
 
 ### Fixed

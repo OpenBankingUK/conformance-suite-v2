@@ -21,7 +21,7 @@ browser, followed by advanced CLI and local REST reference.
 
 ## Beta scope
 
-**Beta only — not for certification.** FCS v2 `2.0.0-beta.12` is an MVP for
+**Beta only — not for certification.** FCS v2 `2.0.0-beta.13` is an MVP for
 evaluating the new Open Banking UK Functional Conformance Suite and providing
 feedback. It is **not approved for certification**; runs and reports from this
 beta must not be submitted as certification evidence, even if a plan or result

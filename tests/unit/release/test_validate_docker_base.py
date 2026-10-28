@@ -24,16 +24,25 @@ def test_accepts_exact_pinned_runtime_base() -> None:
     assert get_runtime_base(dockerfile) == EXPECTED_RUNTIME_BASE
 
 
+def test_repository_dockerfile_uses_assessed_runtime_base() -> None:
+    """The shipped Dockerfile must match the multi-platform base assessed by CI."""
+    dockerfile = Path(__file__).resolve().parents[3] / "Dockerfile"
+
+    assert get_runtime_base(dockerfile.read_text(encoding="utf-8")) == EXPECTED_RUNTIME_BASE
+
+
 @pytest.mark.parametrize(
     "runtime_base",
     [
         "dhi.io/python:3.14-alpine3.24",
         "dhi.io/python:3.14-alpine3.24@sha256:" + "0" * 64,
+        "dhi.io/python:3.14-alpine3.24@sha256:4361d30a5f505dd5509622eff5c7bef79afa798b4f3eedd3f5cb1abc92be9168",
+        "dhi.io/python:3.14-alpine3.24@sha256:9564e9ed8450fba6a3b6ed808f300d614f9bd7220749c7285789b05bd8ce4d6c",
         "python:3.14-alpine",
     ],
 )
 def test_rejects_unassessed_runtime_base(runtime_base: str) -> None:
-    """Tag-only, changed-digest, and unrelated runtime bases fail closed."""
+    """Unpinned, former, platform-only, and unrelated runtime bases fail closed."""
     with pytest.raises(DockerBaseError, match="Runtime base must be exactly"):
         validate_runtime_base(f"FROM {runtime_base} AS runtime\n")
 
