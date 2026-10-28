@@ -27,7 +27,7 @@ updates:
 
   - package-ecosystem: docker
     # Digest bumps for the DHI runtime base also require updating
-    # EXPECTED_RUNTIME_BASE in scripts/validate_docker_base.py.
+    # APPROVED_RUNTIME_BASES in scripts/validate_docker_base.py through review.
     directory: /
     registries: [dhi]
     schedule:
