@@ -8,7 +8,7 @@ dependencies = [
     "django>=6.0.8",
     "httpx>=0.28.1",
     "jsonschema>=4.25.1",
-    "joserfc>=1.7.1",
+    "joserfc>=1.7.6",
     "uvicorn[standard]>=0.34.0",
 ]
 
