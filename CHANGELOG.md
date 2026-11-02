@@ -26,10 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Temporarily replace the pinned DHI runtime's Expat `2.9.0-r1` packages with
   signature-verified Alpine v3.24 `main` packages `2.10.0-r0` to address
   CVE-2026-115506, CVE-2026-113351, CVE-2026-117610 and CVE-2026-118370.
-  Published after candidate CI passed, these advisories failed promotion #46's
-  rescan. The overlay replaces the runtime shared library, CLI and APK
-  inventory records; remove it after both approved DHI indexes include fixed
-  Expat packages.
+  The overlay replaces the runtime shared library, CLI and APK inventory
+  records; remove it after both approved DHI indexes include fixed Expat
+  packages.
 
 ### Fixed
 
