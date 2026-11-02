@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Refresh the digest-pinned DHI Python 3.14 / Alpine 3.24 builder and runtime
+  for amd64 and arm64 to the reviewed beta.13 pair, including Expat/libexpat
+  `2.9.0-r1`, zlib `1.3.2-r1`, and refreshed musl packages, addressing
+  CVE-2026-102633, CVE-2026-77214, and CVE-2026-85091 while preserving the
+  distroless non-root runtime and existing vulnerability gates.
+- Upgrade locked certifi from `2026.5.20` to `2026.10.23` to remove compromised
+  emSign trust roots identified by GHSA-6q48-6c7w-9gw2.
+- Raise the joserfc minimum requirement to `1.7.6` and upgrade its lock from
+  `1.7.1` to `1.7.7`, addressing CVE-2026-119283 (GHSA-jpxq-7h8p-2q76) and
+  CVE-2026-119284 (GHSA-9pg5-8c7x-5hfx).
+
 ### Fixed
 
 - Trusted runtime-base validation permits the reviewed DHI Python 3.14 Alpine
