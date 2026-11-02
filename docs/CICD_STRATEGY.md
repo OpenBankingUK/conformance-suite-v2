@@ -238,10 +238,12 @@ and `zlib` `1.3.2-r1` on both `linux/amd64` and `linux/arm64`, replacing the
 temporary package overlay for CVE-2026-102633, CVE-2026-77214, and
 CVE-2026-85091. The runtime base filesystem and APK inventory are no longer
 patched locally, and the build no longer fetches Alpine edge packages.
-Both image references pin multi-architecture index digests; update the
-Dockerfile and `APPROVED_RUNTIME_BASES` together in a reviewed change, verify
-package inventories on both platforms, and retain the existing per-platform
-scanner and signed OpenVEX gates. Runtime remains distroless UID/GID 65532.
+The refreshed images align Python and bytecode packages at `3.14.10-r1` on
+both platforms. Both image references pin multi-architecture index digests;
+coordinate Dockerfile and `APPROVED_RUNTIME_BASES` updates through the staged
+review described below, verify package inventories on both platforms, and
+retain the existing per-platform scanner and signed OpenVEX gates. Runtime
+remains distroless UID/GID 65532.
 This community image is not the FIPS variant, and a base refresh does not
 establish that the application has no vulnerabilities.
 
@@ -305,9 +307,17 @@ digests and GitHub Actions; a DHI digest update must first add the exact
 image reference to `APPROVED_RUNTIME_BASES` in
 `scripts/validate_docker_base.py` on the trusted PR base and promotion
 branches. The immutable allowlist retains the existing baseline reference
-alongside the approved refresh; tags alone, arbitrary digests and individual
+alongside the approved refreshes; tags alone, arbitrary digests and individual
 platform manifest references are not approved. The validator returns the
 selected reference so signed VEX evidence remains bound to that exact image.
+
+Land the approval-set change as a policy-only prerequisite, leaving the
+Dockerfile pins unchanged, then synchronize it from `main` into the target
+release branch before updating the builder and runtime pins. Two commits in
+one unmerged PR do not satisfy this ordering: PR scans execute the validator
+from the trusted PR base, and promotion requires the candidate pipeline files
+(including this validator) to match trusted `main`. Approving an index does
+not itself refresh the runtime image or relax the vulnerability policy.
 
 There are currently no repository-level variables required by CI: the
 supported pytest suite is fully offline and does not target a live model bank

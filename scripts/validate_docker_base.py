@@ -22,6 +22,7 @@ APPROVED_RUNTIME_BASES = frozenset(
     {
         EXPECTED_RUNTIME_BASE,
         "dhi.io/python:3.14-alpine3.24@sha256:00f9aeadee003dec0cafd5ebd3b36e668ac2a4e120e0c059967ad249e1130179",
+        "dhi.io/python:3.14-alpine3.24@sha256:3d7fbfaca07a97d63e0d9efa00a4abc412f0044710efcae292ae7fa211fe1359",
     }
 )
 _FROM_PATTERN = re.compile(r"^\s*FROM\s+(.+?)\s*$", re.IGNORECASE)
