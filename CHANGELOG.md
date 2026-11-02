@@ -24,10 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Trusted runtime-base validation permits the exact reviewed refreshed DHI
-  Python 3.14 Alpine 3.24 index alongside the existing baseline index, returning
-  the selected reference for digest-bound VEX retrieval. Dockerfile defaults,
-  scanner policy and runtime dependencies are unchanged.
+- Trusted runtime-base validation permits the reviewed DHI Python 3.14 Alpine
+  3.24 multi-architecture index (`3d7fbfac...`) alongside the existing approved
+  indexes, returning the selected reference for digest-bound VEX retrieval.
+  Dockerfile defaults, scanner policy and runtime dependencies are unchanged.
 - Automatic and manual preview, beta, and GA promotions share a caller-level
   concurrency lock through publication and Git tag/GitHub Release finalization,
   preventing overlapping release boundaries without nested reusable-workflow locks.

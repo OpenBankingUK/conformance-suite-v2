@@ -23,6 +23,7 @@ pytestmark = pytest.mark.unit
     [
         EXPECTED_RUNTIME_BASE,
         "dhi.io/python:3.14-alpine3.24@sha256:00f9aeadee003dec0cafd5ebd3b36e668ac2a4e120e0c059967ad249e1130179",
+        "dhi.io/python:3.14-alpine3.24@sha256:3d7fbfaca07a97d63e0d9efa00a4abc412f0044710efcae292ae7fa211fe1359",
     ],
 )
 def test_accepts_exact_pinned_runtime_base(runtime_base: str) -> None:
@@ -38,6 +39,7 @@ def test_approval_set_is_limited_to_reviewed_indexes() -> None:
         {
             EXPECTED_RUNTIME_BASE,
             "dhi.io/python:3.14-alpine3.24@sha256:00f9aeadee003dec0cafd5ebd3b36e668ac2a4e120e0c059967ad249e1130179",
+            "dhi.io/python:3.14-alpine3.24@sha256:3d7fbfaca07a97d63e0d9efa00a4abc412f0044710efcae292ae7fa211fe1359",
         }
     )
 
@@ -49,6 +51,8 @@ def test_approval_set_is_limited_to_reviewed_indexes() -> None:
         "dhi.io/python:3.14-alpine3.24@sha256:" + "0" * 64,
         "dhi.io/python:3.14-alpine3.24@sha256:9564e9ed8450fba6a3b6ed808f300d614f9bd7220749c7285789b05bd8ce4d6c",
         "dhi.io/python:3.14-alpine3.24@sha256:ffcb7098a6d37a4f92c34959bcde8e78284c7535a72c5c9d34ee3b014d46c8b4",
+        "dhi.io/python:3.14-alpine3.24@sha256:4631e4679526eced8cd4bf815b8734ad1c13d4d8035e169b9bf5970ee031cd1f",
+        "dhi.io/python:3.14-alpine3.24@sha256:1820dd28f2cfc94d77280101412274b30f14a58dc8a4c326d9d25c975d095348",
         "python:3.14-alpine",
     ],
 )
