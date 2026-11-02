@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Require joserfc `>=1.7.6` and upgrade the locked version to `1.7.7` to
   address CVE-2026-119283 (GHSA-jpxq-7h8p-2q76) and
   CVE-2026-119284 (GHSA-9pg5-8c7x-5hfx).
+- Temporarily replace the pinned DHI runtime's Expat `2.9.0-r1` packages with
+  signature-verified Alpine v3.24 `main` packages `2.10.0-r0` to address
+  CVE-2026-115506, CVE-2026-113351, CVE-2026-117610 and CVE-2026-118370.
+  The overlay replaces the runtime shared library, CLI and APK inventory
+  records; remove it after both approved DHI indexes include fixed Expat
+  packages.
 
 ### Fixed
 
