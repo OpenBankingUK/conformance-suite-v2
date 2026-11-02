@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.14] - 2026-11-02
+
+### Changed
+
+- Refresh the digest-pinned DHI Python 3.14 / Alpine 3.24 builder and runtime,
+  aligning Python and bytecode packages at `3.14.10-r1`. The runtime index
+  includes the selected amd64 image and its arm64 counterpart, preserving
+  both supported architectures and the existing distroless non-root runtime.
+
 ### Security
 
 - Require joserfc `>=1.7.6` and upgrade the locked version to `1.7.7` to

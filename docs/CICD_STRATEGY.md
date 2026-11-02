@@ -238,10 +238,12 @@ and `zlib` `1.3.2-r1` on both `linux/amd64` and `linux/arm64`, replacing the
 temporary package overlay for CVE-2026-102633, CVE-2026-77214, and
 CVE-2026-85091. The runtime base filesystem and APK inventory are no longer
 patched locally, and the build no longer fetches Alpine edge packages.
-Both image references pin multi-architecture index digests; update the
-Dockerfile and `APPROVED_RUNTIME_BASES` together in a reviewed change, verify
-package inventories on both platforms, and retain the existing per-platform
-scanner and signed OpenVEX gates. Runtime remains distroless UID/GID 65532.
+The refreshed images align Python and bytecode packages at `3.14.10-r1` on
+both platforms. Both image references pin multi-architecture index digests;
+coordinate Dockerfile and `APPROVED_RUNTIME_BASES` updates through the staged
+review described below, verify package inventories on both platforms, and
+retain the existing per-platform scanner and signed OpenVEX gates. Runtime
+remains distroless UID/GID 65532.
 This community image is not the FIPS variant, and a base refresh does not
 establish that the application has no vulnerabilities.
 

@@ -7,10 +7,10 @@
 #
 # Pulling from `dhi.io` requires `docker login dhi.io` using a Docker account
 # (see docs/DEVELOPER_GUIDE.md); CI authenticates with a read-only
-# organisation-owned credential. Pinned to an exact digest for
-# reproducibility; base updates require a reviewed digest bump and scanner
-# policy reassessment.
-FROM dhi.io/python:3.14-alpine3.24-dev@sha256:455286c3c9bea72bc093f9ba861c6ddbeac1923f12c5f5c71eafc4271819baca AS builder
+# organisation-owned credential. Both stages pin multi-architecture index
+# digests for reproducibility on amd64 and arm64; base updates require a
+# reviewed digest bump and scanner policy reassessment.
+FROM dhi.io/python:3.14-alpine3.24-dev@sha256:a856bc8f2464347152d6bdcbf43fe995c79551e9fc2482ee2f00c5ec2642e406 AS builder
 
 # Install uv for fast, reproducible dependency resolution
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /usr/local/bin/uv
@@ -44,7 +44,7 @@ RUN mkdir -p /data/results /data/logs /data/sessions && \
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 # Distroless DHI runtime variant: no shell, defaults to non-root UID/GID 65532.
 # Pinned to an exact digest for the same reasons as the builder stage above.
-FROM dhi.io/python:3.14-alpine3.24@sha256:00f9aeadee003dec0cafd5ebd3b36e668ac2a4e120e0c059967ad249e1130179 AS runtime
+FROM dhi.io/python:3.14-alpine3.24@sha256:3d7fbfaca07a97d63e0d9efa00a4abc412f0044710efcae292ae7fa211fe1359 AS runtime
 
 WORKDIR /app
 
