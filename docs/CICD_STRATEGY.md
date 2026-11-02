@@ -232,6 +232,17 @@ closed; re-push them to a branch in this repository.
 
 #### Exceptions
 
+**Temporary Expat overlay for beta.14:** The approved DHI indexes contain
+`expat` and `libexpat` `2.9.0-r1`, while signed Alpine v3.24/main packages
+`2.10.0-r0` fix the newly reported Expat findings on both supported
+architectures. The Dockerfile installs only those exact packages through
+`apk`'s signature verification, rejects any additional APK changes, and
+replaces the runtime shared library, `xmlwf` binary and APK inventory records.
+This derived-image overlay is not covered by the upstream DHI attestations;
+the existing per-architecture vulnerability scans and aggregate gate remain
+required. Remove the overlay once both approved DHI indexes include fixed
+Expat packages, using the normal staged digest-approval and review process.
+
 **Upstream Expat and zlib fixes:** The pinned community DHI Python 3.14 /
 Alpine 3.24 builder and runtime now include `expat` and `libexpat` `2.9.0-r1`
 and `zlib` `1.3.2-r1` on both `linux/amd64` and `linux/arm64`, replacing the

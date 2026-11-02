@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Temporarily replace the pinned DHI runtime's Expat `2.9.0-r1` packages with
+  signature-verified Alpine v3.24 `main` packages `2.10.0-r0`, including the
+  runtime shared library, CLI and APK inventory records. Remove the overlay
+  after both approved DHI indexes include fixed Expat packages.
+
 ## [2.0.0-beta.14] - 2026-11-02
 
 ### Changed
