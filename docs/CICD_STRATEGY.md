@@ -290,11 +290,14 @@ Never store the write-capable token there. Without them, Dependabot PRs fail
 closed. `.github/dependabot.yml` updates `uv.lock`, Dockerfile base-image
 digests and GitHub Actions; a DHI runtime digest update requires reviewed
 approval of its exact reference in `APPROVED_RUNTIME_BASES` in
-`scripts/validate_docker_base.py`. The immutable set permits only the baseline
-Alpine index (`4361d30a...`) and the refreshed Alpine index (`00f9aead...`),
-not arbitrary digests or platform-specific manifests. `EXPECTED_RUNTIME_BASE`
-remains the unchanged baseline default; the validator returns the actual
-selected approved reference so VEX retrieval stays bound to that image.
+`scripts/validate_docker_base.py`. Approval changes are policy-only: merge the
+approval to `main`, sync it to the release branch, and only then update the
+Dockerfile pin. The immutable set permits only the baseline Alpine index
+(`4361d30a...`) and the reviewed refreshed Alpine indexes (`00f9aead...` and
+`3d7fbfac...`), not arbitrary digests or platform-specific manifests.
+`EXPECTED_RUNTIME_BASE` remains the unchanged baseline default; the validator
+returns the actual selected approved reference so VEX retrieval stays bound to
+that image.
 
 There are currently no repository-level variables required by CI: the
 supported pytest suite is fully offline and does not target a live model bank
