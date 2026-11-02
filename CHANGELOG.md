@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Require joserfc `>=1.7.6` and upgrade the locked version to `1.7.7` to
+  address CVE-2026-119283 (GHSA-jpxq-7h8p-2q76) and
+  CVE-2026-119284 (GHSA-9pg5-8c7x-5hfx).
+
 ## [2.0.0-beta.13] - 2026-10-28
 
 ### Security
