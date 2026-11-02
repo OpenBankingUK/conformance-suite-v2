@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   address CVE-2026-119283 (GHSA-jpxq-7h8p-2q76) and
   CVE-2026-119284 (GHSA-9pg5-8c7x-5hfx).
 
+### Fixed
+
+- Add the next DHI Python 3.14 / Alpine 3.24 runtime index to the exact-reference
+  approval set for amd64 and arm64 while retaining both existing approvals.
+  This policy-only prerequisite leaves Dockerfile pins, scanner policy, and
+  vulnerability exceptions unchanged so it can land in the trusted branches
+  before the image refresh.
+
 ## [2.0.0-beta.13] - 2026-10-28
 
 ### Security

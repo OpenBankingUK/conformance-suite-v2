@@ -305,9 +305,17 @@ digests and GitHub Actions; a DHI digest update must first add the exact
 image reference to `APPROVED_RUNTIME_BASES` in
 `scripts/validate_docker_base.py` on the trusted PR base and promotion
 branches. The immutable allowlist retains the existing baseline reference
-alongside the approved refresh; tags alone, arbitrary digests and individual
+alongside the approved refreshes; tags alone, arbitrary digests and individual
 platform manifest references are not approved. The validator returns the
 selected reference so signed VEX evidence remains bound to that exact image.
+
+Land the approval-set change as a policy-only prerequisite, leaving the
+Dockerfile pins unchanged, then synchronize it from `main` into the target
+release branch before updating the builder and runtime pins. Two commits in
+one unmerged PR do not satisfy this ordering: PR scans execute the validator
+from the trusted PR base, and promotion requires the candidate pipeline files
+(including this validator) to match trusted `main`. Approving an index does
+not itself refresh the runtime image or relax the vulnerability policy.
 
 There are currently no repository-level variables required by CI: the
 supported pytest suite is fully offline and does not target a live model bank
