@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
 import pytest
 from django.test import Client
+from joserfc import jwt
 
 import tests.support.dcr_test_service as dcr_test_service_module
 from conformance import cli
@@ -118,18 +120,41 @@ def _wait_for_terminal_run(*, timeout_seconds: float = 20.0) -> JsonObject | Non
 
 
 @pytest.mark.usefixtures("api_singleton_stores")
+@pytest.mark.parametrize(
+    ("redirect_uri", "use_override"),
+    [
+        ("https://client.example.test/callback", False),
+        ("https://127.0.0.1:9443/conformancesuite/callback", False),
+        ("https://0.0.0.0:8443/conformancesuite/callback", False),
+        ("https://0.0.0.0:8443/conformancesuite/callback", True),
+    ],
+)
 def test_cli_plan_load_prepare_run_and_safe_result(
     dcr_test_service: DcrTestService,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    redirect_uri: str,
+    use_override: bool,
 ) -> None:
     """CLI executes canonical POST coverage and persists only safe evidence.
 
     Kept on the loopback listener because the CLI builds its own mTLS client
     from the participant's configured certificate, key, and CA bundle.
     """
+    software_statement = jwt.encode(
+        {"alg": "PS256", "kid": "fixture-signing-key"},
+        {"software_id": "fixturesoftwareid", "software_redirect_uris": [redirect_uri]},
+        dcr_test_service.protocol.signing_key,
+        algorithms=["PS256"],
+    )
+    dcr_test_service.protocol = replace(dcr_test_service.protocol, software_statement_assertion=software_statement)
     plan_path = tmp_path / "dcr-plan.json"
-    plan_path.write_text(json.dumps(_canonical_dcr_plan(dcr_test_service, tmp_path)), encoding="utf-8")
+    plan = _canonical_dcr_plan(dcr_test_service, tmp_path)
+    if use_override:
+        dcr = plan["dynamicClientRegistration"]
+        assert isinstance(dcr, dict)
+        dcr["redirectUrisOverride"] = [redirect_uri]
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
     monkeypatch.setattr(dcr_test_service_module, "_FIXED_NOW", int(time.time()))
     monkeypatch.chdir(tmp_path)
 
