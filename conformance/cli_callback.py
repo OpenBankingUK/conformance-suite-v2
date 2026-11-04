@@ -47,6 +47,7 @@ from conformance.api.auth_session_store import (
     AuthSessionStore,
     UnknownAuthSessionError,
 )
+from conformance.url_validation import HttpsUrlValidationError, validate_oauth_redirect_uri
 from conformance.version import resolve_conformance_tool_version
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,7 @@ CONTAINER_TLS_DIRECTORIES = (Path("/data/tls"), Path("/tmp/conformance-suite-tls
 _TLS_CERTIFICATE_FILENAME = "localhost-certificate.pem"
 _TLS_PRIVATE_KEY_FILENAME = "localhost-private-key.pem"  # noqa: S105 - a filename constant, not a credential value.  # pragma: allowlist secret
 _LOOPBACK_HOST = "127.0.0.1"
+_IPV6_LOOPBACK_HOST = "::1"
 _ALL_INTERFACES_HOST = "0.0.0.0"  # noqa: S104 - only used for the container / explicit 0.0.0.0 redirect case.
 _MAX_QUERY_BYTES = 16384
 """Upper bound on callback request-target size accepted by the listener."""
@@ -94,6 +96,12 @@ class CallbackListenerError(RuntimeError):
 def callback_bind_address(redirect_uri: str, *, listen: str | None = None) -> tuple[str, int, str]:
     """Derive the listener bind host, port, and path from the redirect URI.
 
+    The listener binds ``0.0.0.0`` for the FCS v1 callback and inside the
+    published container, ``::1`` for an IPv6 loopback redirect URI, and
+    ``127.0.0.1`` otherwise. Any other redirect host (a DNS name or a
+    non-loopback IP address) must resolve to this machine, or be reached via
+    ``--callback-listen``.
+
     Args:
         redirect_uri: Configured OAuth ``redirectUri`` (HTTPS).
         listen: Optional ``HOST:PORT`` override from ``--callback-listen``.
@@ -104,9 +112,11 @@ def callback_bind_address(redirect_uri: str, *, listen: str | None = None) -> tu
     Raises:
         CallbackListenerError: If the redirect URI or override is unusable.
     """
+    try:
+        validate_oauth_redirect_uri(redirect_uri, label="redirectUri")
+    except HttpsUrlValidationError as error:
+        raise CallbackListenerError(str(error)) from error
     parts = urlsplit(redirect_uri)
-    if parts.scheme != "https" or not parts.hostname:
-        raise CallbackListenerError("redirectUri must be an absolute https:// URL for the CLI callback listener")
     path = parts.path or "/"
     if listen is not None:
         host, separator, port_text = listen.rpartition(":")
@@ -116,6 +126,8 @@ def callback_bind_address(redirect_uri: str, *, listen: str | None = None) -> tu
     port = parts.port or 443
     if parts.hostname == _ALL_INTERFACES_HOST or _running_in_container():
         return _ALL_INTERFACES_HOST, port, path
+    if parts.hostname == _IPV6_LOOPBACK_HOST:
+        return _IPV6_LOOPBACK_HOST, port, path
     return _LOOPBACK_HOST, port, path
 
 

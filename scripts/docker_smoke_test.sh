@@ -67,10 +67,15 @@ done
 echo "==> Checking the browser home endpoint"
 curl -ksf -o /dev/null https://127.0.0.1:8443/ || fail "home endpoint did not return 200"
 
-echo "==> Checking the legacy PSU callback reaches the localhost-published container"
+echo "==> Checking the 127.0.0.1 PSU callback reaches the localhost-published container"
+CALLBACK_STATUS="$(curl --noproxy '*' -ks -o /dev/null -w '%{http_code}' \
+  https://127.0.0.1:8443/conformancesuite/callback)"
+[[ "$CALLBACK_STATUS" == "200" ]] || fail "127.0.0.1 callback returned HTTP $CALLBACK_STATUS instead of 200"
+
+echo "==> Checking the FCS v1 0.0.0.0 PSU callback reaches the localhost-published container"
 CALLBACK_STATUS="$(curl --noproxy '*' -ks -o /dev/null -w '%{http_code}' \
   https://0.0.0.0:8443/conformancesuite/callback)"
-[[ "$CALLBACK_STATUS" == "200" ]] || fail "legacy callback returned HTTP $CALLBACK_STATUS instead of 200"
+[[ "$CALLBACK_STATUS" == "200" ]] || fail "0.0.0.0 callback returned HTTP $CALLBACK_STATUS instead of 200"
 
 echo "==> Checking the read-only root filesystem blocks writes outside /data and /tmp"
 if docker exec "$CONTAINER_NAME" python3 -c "open('/app/should-fail', 'w').write('x')" >/dev/null 2>&1; then

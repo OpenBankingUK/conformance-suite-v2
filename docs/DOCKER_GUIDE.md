@@ -189,16 +189,124 @@ local development certificates) if unset.
 ## Transport
 
 The container serves HTTPS on port 8443 using a generated self-signed
-certificate covering `localhost`, `127.0.0.1`, `::1`, and the legacy FCS
-callback host `0.0.0.0`. With a named `/data` volume, the certificate and
+certificate covering `localhost`, `127.0.0.1`, `::1`, and the FCS v1 callback
+host `0.0.0.0`. With a named `/data` volume, the certificate and
 private key persist across restarts; without one they are ephemeral.
 
-If your existing ASPSP client is registered for the legacy redirect URI
-`https://0.0.0.0:8443/conformancesuite/callback`, enter that exact URI in
-the builder and visit `https://0.0.0.0:8443/` to accept its browser
-certificate warning before PSU authorisation. On supported local hosts
-it reaches the same container; keep the Docker port bound to `127.0.0.1`.
-UI TLS/LAN exposure beyond localhost remains out of scope.
+For local PSU callbacks, enter the exact redirect URI registered for your
+client in the builder. The usual local forms are:
+
+- `https://127.0.0.1:8443/conformancesuite/callback`
+- `https://0.0.0.0:8443/conformancesuite/callback` (the FCS v1 callback)
+
+Before PSU authorisation, visit the matching origin (`https://127.0.0.1:8443/`
+or `https://0.0.0.0:8443/`) to accept the local certificate warning. The
+browser must run on the Docker host, because both addresses refer to the
+browser's own machine rather than a remote Docker server; on supported local
+hosts they reach the same container. Keep the published port bound to
+`127.0.0.1`. This certificate is separate from the TPP's outbound mTLS
+certificate and signing key; changing the callback must not disable
+verification of ASPSP TLS. UI TLS/LAN exposure beyond localhost remains out of
+scope.
+
+### OAuth redirect policy
+
+FCS applies the same redirect policy to OAuth configuration, PSU steps and DCR
+redirect values. It enforces what the cited standards require (an absolute
+HTTPS URI with no fragment, no `localhost` host, and exact matching against the
+registered value) and rejects forms that are ambiguous or not valid unicast
+destinations. Acceptance by FCS is not proof of Directory or bank registration.
+
+| URI | FCS policy |
+| --- | --- |
+| HTTPS with a DNS hostname other than `localhost` or a `.localhost` name | Supported; use a controlled hostname for hosted deployments. |
+| HTTPS with a dotted-decimal IPv4 literal, such as `127.0.0.1` or `192.168.1.10` | Supported, including a configured port, callback path and fixed query. The address must be registered, reachable by the browser and named by the callback certificate. |
+| HTTPS with a bracketed IPv6 literal, such as `https://[::1]:8443/conformancesuite/callback` | Supported. The CLI listener binds `::1` for a `[::1]` redirect outside a container. In Docker the port must also be published on the host's IPv6 loopback (for example `-p [::1]:8443:8443`), which depends on your Docker platform. The default `DJANGO_ALLOWED_HOSTS` already includes `[::1]`; add it yourself if you override that variable. |
+| `https://0.0.0.0:8443/conformancesuite/callback` (also with a trailing slash) | Supported: the FCS v1 callback, accepted only with this exact host, port and path and no query or fragment. |
+| HTTPS with `localhost` | Rejected under OB DCR 3.4; case/trailing-dot variants and `.localhost` names are also rejected. |
+| `0.0.0.0` with any other port, path or query; other unspecified, multicast or reserved addresses (`0.0.0.0/8`, `240.0.0.0/4`, broadcast); IPv6 link-local, scoped or IPv4-mapped addresses | Rejected: not valid unicast destinations for a browser redirect. |
+| Non-canonical IPv4 spellings (`127.1`, `2130706433`, `0x7f000001`, leading zeros, trailing dot) and bracketed IPv4 | Rejected as ambiguous; use dotted-decimal. |
+| HTTP, embedded credentials, fragments, backslashes or wildcard hostnames | Rejected. A fixed query is allowed and must match the registration. A `*` in a path or query is a literal character: FCS never expands wildcards. |
+
+Outbound targets such as discovery, token and API endpoints are validated
+separately and still require HTTPS DNS hostnames; this redirect policy does not
+change them.
+
+The `0.0.0.0` callback is not extended to other ports or paths, because
+`0.0.0.0` is the unspecified address rather than a designated loopback
+destination (see [Standards basis](#standards-basis)). FCS preserves the
+configured URI exactly: it does not rewrite `0.0.0.0` to `127.0.0.1`, or the
+reverse, and does not select a random port.
+
+To add or change a redirect for an existing client, work in this order:
+
+1. Add the exact URI to the software statement's redirect list in the
+   Directory or with your SSA issuer, then obtain a newly issued/signed SSA.
+   Do not edit the payload of an existing signed JWT.
+2. Register or update the client at the ASPSP using an allowed subset of the
+   SSA's `software_redirect_uris`. Confirm which URIs the bank actually registered.
+3. Change the FCS redirect only after registration succeeds. Preserve the exact
+   scheme, host, port, path, trailing slash and any query.
+4. Ensure the callback listener is reachable and its certificate covers the
+   chosen host: an IP SAN for an IP literal, or a DNS SAN for a DNS hostname.
+   The bundled Docker certificate names only `127.0.0.1`, `::1`, `0.0.0.0` and
+   `localhost` (which is not a permitted redirect host). Any other host needs a
+   listener or reverse proxy that you control with a suitable certificate;
+   otherwise the browser reports a certificate name mismatch.
+
+No SSA schema change is needed, and FCS does not modify a participant's Directory
+entry or bank registration. Directory/ASPSP acceptance remains environment-specific;
+if your Directory or ASPSP does not accept the redirect you need, use an approved,
+reachable HTTPS DNS callback with suitable certificates and routing instead. The
+read/write workflow uses an existing client registration and does not independently
+verify its SSA or fetch its registered redirect list.
+
+`0.0.0.0` as the **container bind address** ("listen on all container
+interfaces") is a separate, unchanged concern from the registered redirect URI,
+which is the destination the browser is sent to. Likewise, `localhost` may still
+be used to visit the UI; the DCR restriction applies to the OAuth redirect, not
+every local HTTPS URL.
+
+### Standards basis
+
+- [IANA IPv4 Special-Purpose Address Space](https://www.iana.org/assignments/iana-ipv4-special-registry/)
+  distinguishes `0.0.0.0/32` ("This host on this network") from `127.0.0.0/8`
+  (loopback), referencing RFC 1122 section 3.2.1.3. `0.0.0.0` is an unspecified
+  address, not the designated loopback destination, and its local-destination
+  behaviour is platform-dependent. FCS therefore supports it only as the FCS v1
+  callback shape rather than as a general redirect host. The registry's
+  destination/forwarding flags concern traffic between devices, not whether
+  loopback works within one machine.
+- [RFC 8252 sections 7.3 and 8.3](https://www.rfc-editor.org/rfc/rfc8252.html#section-8.3)
+  identify `127.0.0.1` / `::1` as loopback redirect addresses and prefer IP literals
+  to `localhost` to avoid name-resolution and interface-selection problems.
+  **Scope matters:** this is native-app guidance, with HTTP and flexible-port
+  provisions. It supports the address choice, not an exemption from OB HTTPS,
+  FAPI exact matching, or permission to reclassify FCS's DCR web client as native.
+- [RFC 6749 section 3.1.2](https://www.rfc-editor.org/rfc/rfc6749#section-3.1.2)
+  requires an absolute redirect URI without a fragment; a query is allowed and,
+  under exact matching, must match the registration.
+- [RFC 9525 section 6.4](https://www.rfc-editor.org/rfc/rfc9525.html#section-6.4)
+  matches an IP-address reference identity against an `iPAddress` subject
+  alternative name, which is why the callback certificate must name any IP literal.
+- [OpenID Connect Registration section 2](https://openid.net/specs/openid-connect-registration-1_0.html#ClientMetadata)
+  requires exact redirect matching. Its `application_type` rules distinguish web
+  and native clients; the HTTPS/`localhost` restriction there specifically concerns
+  web clients using the implicit grant type.
+- [OB DCR 3.4, `redirect_uris`](https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html#data-dictionary)
+  independently requires HTTPS, forbids host `localhost`, and requires redirects
+  to match or be a subset of a master set defined by the SSA. It does not explicitly
+  prohibit all IP literals, nor guarantee that any given Directory/ASPSP accepts them.
+- [FAPI 1 Baseline section 5.2.2, items 8-10 and 20](https://openid.net/specs/openid-financial-api-part-1-1_0.html#authorization-server)
+  requires pre-registration, exact matching and HTTPS. These remain unchanged.
+
+FCS enforces what these sources require (HTTPS, no fragment, exact matching and,
+for OB DCR, no `localhost`) and does not otherwise restrict IP literals, which OB
+DCR neither mandates nor lists. The narrow `0.0.0.0` acceptance is a
+compatibility allowance for the FCS v1 callback; it does not depend on a claim
+that browsers block `0.0.0.0` OAuth redirects. Acceptance by a Directory or
+ASPSP remains environment-specific, and FCS assumes no test-tool exemption from
+the specifications above.
 
 ## Health check
 
@@ -232,6 +340,7 @@ docker run --pull=always --rm \
 For manual PSU authorisation, the CLI starts its own HTTPS callback listener
 inside the container on the `redirectUri` port. Publish that port to the host
 on loopback, for example `-p 127.0.0.1:8443:8443` for
+`https://127.0.0.1:8443/conformancesuite/callback` or the FCS v1
 `https://0.0.0.0:8443/conformancesuite/callback`, so the browser redirect
 reaches the run. Plans with `"execution": {"psuAuthorization": {"mode":
 "auto-approve"}}` don't need a published port. See

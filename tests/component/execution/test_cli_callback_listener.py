@@ -9,6 +9,7 @@ fragment bridge, and no listener outside the callback path.
 
 from __future__ import annotations
 
+import ipaddress
 import signal
 import socket
 import ssl
@@ -20,6 +21,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
+from cryptography import x509
 from django.template import Context, Engine
 
 from conformance import FEEDBACK_EMAIL
@@ -203,6 +205,58 @@ def test_listener_starts_and_receives_callback_without_reverse_dns(monkeypatch: 
     assert resolved.code == "abc"
 
 
+def _ipv6_loopback_available() -> bool:
+    """Return whether this host can bind the IPv6 loopback address."""
+    if not socket.has_ipv6:
+        return False
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as probe:
+            probe.bind(("::1", 0))
+    except OSError:
+        return False
+    return True
+
+
+@pytest.mark.skipif(not _ipv6_loopback_available(), reason="IPv6 loopback is unavailable on this host")
+def test_listener_serves_callback_on_ipv6_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("conformance.cli_callback.CONTAINER_TLS_DIRECTORIES", (Path("/nonexistent"),))
+    store = AuthSessionStore()
+    session = store.register("run-ipv6")
+
+    with psu_callback_listener("https://[::1]:8443/callback/", session_store=store, listen="[::1]:0") as (host, port):
+        assert host == "::1"
+        with _client() as client:
+            response = client.get(f"https://[{host}]:{port}/callback/", params={"state": session.state, "code": "abc"})
+
+    assert response.status_code == 200
+    resolved = store.get("run-ipv6", session.state)
+    assert resolved is not None
+    assert resolved.code == "abc"
+
+
+@pytest.mark.parametrize("hostname", ["::1", "127.0.0.1", "192.168.1.10"])
+def test_ephemeral_certificate_covers_ip_redirect_hosts(tmp_path: Path, hostname: str) -> None:
+    """RFC 9525 section 6.4: an IP redirect host is matched against an iPAddress SAN."""
+    from conformance import cli_callback
+
+    certificate_path, _private_key_path = cli_callback._write_ephemeral_tls_material(tmp_path, hostname)
+
+    certificate = x509.load_pem_x509_certificate(certificate_path.read_bytes())
+    san = certificate.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    assert ipaddress.ip_address(hostname) in san.get_values_for_type(x509.IPAddress)
+
+
+def test_ephemeral_certificate_covers_dns_redirect_host(tmp_path: Path) -> None:
+    """RFC 9525 section 6.3: a DNS redirect host is matched against a dNSName SAN."""
+    from conformance import cli_callback
+
+    certificate_path, _private_key_path = cli_callback._write_ephemeral_tls_material(tmp_path, "callback.example.test")
+
+    certificate = x509.load_pem_x509_certificate(certificate_path.read_bytes())
+    san = certificate.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    assert "callback.example.test" in san.get_values_for_type(x509.DNSName)
+
+
 @pytest.mark.parametrize("start_thread", [False, True])
 def test_listener_releases_socket_and_thread_if_startup_is_cancelled(
     monkeypatch: pytest.MonkeyPatch, start_thread: bool
@@ -240,9 +294,13 @@ def test_listener_releases_socket_and_thread_if_startup_is_cancelled(
     ("redirect_uri", "listen", "expected"),
     [
         ("https://127.0.0.1:8443/callback/", None, ("127.0.0.1", 8443, "/callback/")),
-        ("https://localhost/cb", None, ("127.0.0.1", 443, "/cb")),
+        ("https://tpp.example.com/cb", None, ("127.0.0.1", 443, "/cb")),
+        ("https://192.168.1.10:9443/cb", None, ("127.0.0.1", 9443, "/cb")),
+        ("https://[::1]:8443/conformancesuite/callback", None, ("::1", 8443, "/conformancesuite/callback")),
+        ("https://[::1]/cb", None, ("::1", 443, "/cb")),
         ("https://0.0.0.0:8443/conformancesuite/callback", None, ("0.0.0.0", 8443, "/conformancesuite/callback")),  # noqa: S104 - expected bind address for 0.0.0.0 redirect URIs.
         ("https://tpp.example.com/cb", "127.0.0.1:9443", ("127.0.0.1", 9443, "/cb")),
+        ("https://tpp.example.com/cb", "[::1]:9443", ("::1", 9443, "/cb")),
     ],
 )
 def test_bind_address_derivation(
@@ -256,9 +314,26 @@ def test_bind_address_derivation(
     assert callback_bind_address(redirect_uri, listen=listen) == expected
 
 
+@pytest.mark.parametrize("redirect_uri", ["https://[::1]:8443/callback", "https://127.0.0.1:8443/callback"])
+def test_bind_address_in_container_listens_on_all_ipv4_interfaces(
+    monkeypatch: pytest.MonkeyPatch, redirect_uri: str
+) -> None:
+    monkeypatch.setattr("conformance.cli_callback._running_in_container", lambda: True)
+
+    assert callback_bind_address(redirect_uri) == ("0.0.0.0", 8443, "/callback")  # noqa: S104 - published containers bind all interfaces.
+
+
 @pytest.mark.parametrize(
     ("redirect_uri", "listen"),
-    [("http://127.0.0.1/cb", None), ("https://127.0.0.1/cb", "no-port"), ("https://127.0.0.1/cb", "h:99999")],
+    [
+        ("http://127.0.0.1/cb", None),
+        ("https://localhost/cb", None),
+        ("https://[fe80::1]/cb", None),
+        ("https://0.0.0.0:9443/cb", None),
+        ("https://127.0.0.1/cb#fragment", None),
+        ("https://127.0.0.1/cb", "no-port"),
+        ("https://127.0.0.1/cb", "h:99999"),
+    ],
 )
 def test_bind_address_rejects_invalid_input(redirect_uri: str, listen: str | None) -> None:
     with pytest.raises(CallbackListenerError):
