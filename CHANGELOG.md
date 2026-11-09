@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Migrate the digest-pinned DHI Python 3.14 builder and distroless runtime
+  from Alpine 3.24 to Debian 13 for amd64 and arm64, removing musl and the
+  temporary Expat/zlib APK overlay. Remove unused Debian system pip with
+  fail-closed layout checks, require locked binary wheels, and verify
+  pip absence, glibc/manylinux and OpenSSL package inventory in per-platform
+  CI smoke tests. Preserve the non-root runtime and existing vulnerability
+  gates without adding exceptions or suppressions.
 - Forward-port the temporary Expat/zlib overlay and approved DHI Python 3.14 /
   Alpine 3.24 base pair to main. Install signed, pinned Alpine v3.24/main
   `expat`/`libexpat` `2.10.0-r0` and `zlib` `1.4-r0`, replacing only their

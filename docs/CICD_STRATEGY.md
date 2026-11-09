@@ -266,18 +266,18 @@ not managed by this sync. Docker Hub tags and GitHub Releases are untouched.
 
 #### Exceptions
 
-**Temporary Expat and zlib overlay:** The approved DHI indexes contain
-`expat` and `libexpat` `2.9.0-r1` and `zlib` `1.3.2-r1`. Signed Alpine
-v3.24/main packages `2.10.0-r0` and `1.4-r0`, respectively, fix the reported
-findings on both supported architectures. The Dockerfile installs only those
-exact packages (and the matching staging-only `zlib-dev`) through `apk`'s
-signature verification, rejects any additional APK changes, and replaces the
-runtime shared libraries, `xmlwf` binary and APK inventory records. This
-derived-image overlay is not covered by the upstream DHI attestations; the
-existing per-architecture vulnerability scans and aggregate gate remain
-required. Remove each package overlay once both approved DHI indexes include
-the corresponding fixed packages, using the normal staged digest-approval and
-review process.
+**Debian 13 runtime:** The digest-pinned DHI builder and distroless runtime
+use glibc on amd64 and arm64; the former Alpine Expat/zlib package overlay is
+removed. Production dependencies must install from locked binary wheels
+(`uv sync --frozen --no-dev --no-install-project --no-build`). Unused Debian
+system pip, its metadata and executables are removed in an exec-form Python
+build step that fails on a missing or unexpected layout, before restoring
+UID/GID `65532`. Each platform's hardened smoke test checks Debian/glibc,
+manylinux wheels and pip absence, and prints the OpenSSL package versions
+from the Debian inventory. The existing per-platform scans and aggregate gate
+remain authoritative; the change adds no vulnerability exception or VEX
+suppression. In particular, an Alpine `sqlite` exception does not cover Debian
+`sqlite3` or `libsqlite3-0`.
 
 `security/vulnerability-exceptions.toml` is the **only** place a vulnerability
 may be accepted. Each entry needs `id` (CVE/GHSA/…), `package`, `reason`,
@@ -343,9 +343,9 @@ digests and GitHub Actions; a DHI runtime digest update requires reviewed
 approval of its exact reference in `APPROVED_RUNTIME_BASES` in
 `scripts/validate_docker_base.py`. Approval changes are policy-only: merge the
 approval to `main`, sync it to the release branch, and only then update the
-Dockerfile pin. The immutable set permits only the baseline Alpine index
-(`4361d30a...`) and the reviewed refreshed Alpine indexes (`00f9aead...` and
-`3d7fbfac...`), not arbitrary digests or platform-specific manifests.
+Dockerfile pin. The immutable set permits only explicitly reviewed exact
+references, not arbitrary digests or platform-specific manifests; previously
+approved indexes remain available for historical published-image rescans.
 `EXPECTED_RUNTIME_BASE` remains the unchanged baseline default; the validator
 returns the actual selected approved reference so VEX retrieval stays bound to
 that image.
