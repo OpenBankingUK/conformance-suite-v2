@@ -50,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The shared vulnerability scan action retries transient Docker Scout CLI
+  download failures within a bounded window, while retaining the pinned release
+  and architecture-specific checksum verification.
 - Apply one OAuth redirect URI policy, aligned with Open Banking DCR 3.4,
   RFC 6749 and FAPI 1, across configuration, manifests, DCR, the DCR builder
   and PSU execution. HTTPS DNS hostnames and unicast IPv4/IPv6 literals are
