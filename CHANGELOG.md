@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Scheduled published-image rescans fetch signed OpenVEX from the approved
+  runtime base in the matching release git tag, including digest-matched aliases,
+  rather than from derived images. Scan the newest beta, rc and GA versions
+  plus unknown tags, deduplicated by immutable digest; list superseded versions
+  as skipped and close old-only vulnerability issues only after exact current
+  target report coverage. Historical tags and Releases remain unchanged.
 - Accept HTTPS IP-literal OAuth callbacks, such as
   `https://127.0.0.1:8443/conformancesuite/callback`, by validating browser
   redirect URIs separately from outbound HTTPS targets. The FCS v1 `0.0.0.0`
