@@ -44,6 +44,35 @@ if docker run --rm --entrypoint /bin/sh "$IMAGE_REF" -c true >/dev/null 2>&1; th
   fail "expected no shell in the runtime image, but /bin/sh executed successfully"
 fi
 
+echo "==> Checking Debian/glibc, binary wheels, system pip removal, and OpenSSL inventory"
+docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+  --entrypoint python3 "$IMAGE_REF" -c "
+import importlib.metadata
+import importlib.util
+import os
+import ssl
+from pathlib import Path
+
+assert os.confstr('CS_GNU_LIBC_VERSION').startswith('glibc '), 'expected glibc'
+assert 'VERSION_ID=\"13\"' in Path('/etc/os-release').read_text(), 'expected Debian 13'
+assert not list(Path('/usr/lib/python3/dist-packages').glob('pip*')), 'system pip remains'
+assert not any(Path(p).exists() or Path(p).is_symlink() for p in ('/usr/bin/pip', '/usr/bin/pip3')), 'pip executable remains'
+assert importlib.util.find_spec('pip') is None, 'pip is importable'
+for name in ('cffi', 'cryptography', 'httptools', 'uvloop', 'watchfiles'):
+    wheel = importlib.metadata.distribution(name).read_text('WHEEL')
+    assert wheel is not None and 'manylinux' in wheel and 'musllinux' not in wheel, f'{name}: expected manylinux wheel'
+    print(name, wheel.strip(), sep='\n')
+packages = {}
+for record in Path('/var/lib/dpkg/status').read_text().split('\n\n'):
+    fields = dict(line.split(': ', 1) for line in record.splitlines() if ': ' in line and not line.startswith(' '))
+    if fields.get('Package') in ('openssl', 'libssl3t64', 'openssl-provider-legacy'):
+        assert fields.get('Status') == 'install ok installed', fields
+        packages[fields['Package']] = fields['Version']
+assert 'openssl' in packages and 'libssl3t64' in packages, 'OpenSSL inventory missing'
+print('OpenSSL Debian packages:', packages)
+print('Python SSL:', ssl.OPENSSL_VERSION)
+" || fail "Debian runtime, wheel, pip, or OpenSSL inventory check failed"
+
 echo "==> Creating persistent volume and starting the container under the hardened profile"
 docker volume create "$VOLUME_NAME" >/dev/null
 docker run -d --name "$CONTAINER_NAME" \

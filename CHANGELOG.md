@@ -9,14 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.16] - 2026-11-09
+
 ### Security
 
-- Approve the exact DHI Python 3.14 / Debian 13 multi-architecture index
-  (`4491196f...`) on the release branch for staged runtime migration, retaining
-  all Alpine approvals and rejecting standalone platform manifests. This is
-  policy-only: the Dockerfile pin, baseline default, vulnerability gates and
-  exceptions remain unchanged; runtime migration and the beta.16 version bump
-  follow separately after this approval lands.
+- Migrate the digest-pinned DHI builder and distroless runtime to Debian 13 /
+  glibc for amd64 and arm64 using the separately approved runtime index.
+  Remove the obsolete Alpine Expat/zlib APK overlay and its helper.
+  Require locked binary wheels and remove unused system pip with fail-closed
+  layout checks, preserving UID/GID `65532` and all scan gates.
+- Remove the stale CVE-2026-119586 / Alpine `sqlite` acceptance after both
+  Debian platform scans reported no matching finding. This is not a SQLite
+  fix or a vendor not-affected determination; no new exceptions are added.
+
+### Fixed
+
+- Retry transient pinned Docker Scout downloads with bounded retries while
+  retaining checksum verification; clarify that signed VEX comes from the
+  assessed runtime base, not its derived published images.
 
 ## [2.0.0-beta.15] - 2026-11-09
 
@@ -704,7 +714,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.15...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.16...HEAD
+[2.0.0-beta.16]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.15...v2.0.0-beta.16
 [2.0.0-beta.15]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.14...v2.0.0-beta.15
 [2.0.0-beta.9]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.8...v2.0.0-beta.9
 [2.0.0-beta.8]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.7...v2.0.0-beta.8

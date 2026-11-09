@@ -230,33 +230,27 @@ the public Rekor log; the signature itself is still verified. An explicit
 all other failures remain blocking. PRs from forks have no secrets and fail
 closed; re-push them to a branch in this repository.
 
+The pinned Scout CLI download retries transient failures within a bounded
+60-second retry window and still verifies the archive checksum before
+installation. VEX must come from the assessed runtime base: derived published
+images do not inherit its attestations.
+
 #### Exceptions
 
-**Temporary Expat and zlib overlay for beta.14:** The approved DHI indexes
-contain `expat` and `libexpat` `2.9.0-r1` and `zlib` `1.3.2-r1`. Signed Alpine
-v3.24/main packages `2.10.0-r0` and `1.4-r0`, respectively, fix the reported
-findings on both supported architectures. The Dockerfile installs only those
-exact packages (and the matching staging-only `zlib-dev`) through `apk`'s
-signature verification, rejects any additional APK changes, and replaces the
-runtime shared libraries, `xmlwf` binary and APK inventory records. This
-derived-image overlay is not covered by the upstream DHI attestations; the
-existing per-architecture vulnerability scans and aggregate gate remain
-required. Remove each package overlay once both approved DHI indexes include
-the corresponding fixed packages, using the normal staged digest-approval and
-review process.
-
-**Upstream Expat and zlib fixes:** The pinned community DHI Python 3.14 /
-Alpine 3.24 builder and runtime now include `expat` and `libexpat` `2.9.0-r1`
-and `zlib` `1.3.2-r1` on both `linux/amd64` and `linux/arm64`, replacing the
-temporary package overlay for CVE-2026-102633, CVE-2026-77214, and
-CVE-2026-85091. The runtime base filesystem and APK inventory are no longer
-patched locally, and the build no longer fetches Alpine edge packages.
-The refreshed images align Python and bytecode packages at `3.14.10-r1` on
-both platforms. Both image references pin multi-architecture index digests;
-coordinate Dockerfile and `APPROVED_RUNTIME_BASES` updates through the staged
-review described below, verify package inventories on both platforms, and
-retain the existing per-platform scanner and signed OpenVEX gates. Runtime
-remains distroless UID/GID 65532.
+**Debian 13 runtime:** The digest-pinned DHI builder and distroless runtime
+use glibc on amd64 and arm64; the former Alpine Expat/zlib package overlay is
+removed. Production dependencies must install from locked binary wheels
+(`uv sync --frozen --no-dev --no-install-project --no-build`). Unused Debian
+system pip, its metadata and executables are removed in an exec-form Python
+build step that fails on a missing or unexpected layout, before restoring
+UID/GID `65532`. Each platform's hardened smoke test checks Debian/glibc,
+manylinux wheels and pip absence, and prints the OpenSSL package versions
+from the Debian inventory. The existing per-platform scans and aggregate gate
+remain authoritative; the change adds no vulnerability exception or VEX
+suppression. Both Debian platform scans reported no CVE-2026-119586 finding,
+so the stale Alpine `sqlite` acceptance was removed rather than retargeted to
+Debian `sqlite3` or `libsqlite3-0`. Absence from these scanner reports is not
+proof that the SQLite flaw is fixed or that Debian is unaffected.
 This community image is not the FIPS variant, and a base refresh does not
 establish that the application has no vulnerabilities.
 
@@ -341,10 +335,12 @@ The release approval set matches trusted `main`: the baseline Alpine index
 `3d7fbfac...`), and the reviewed Debian 13 index
 `dhi.io/python:3.14-debian13@sha256:4491196f15b7afb538ea121eed173cdd136297f616b15b34f66c25610bf80241`.
 The Debian amd64 (`32a85a1e...`) and arm64 (`ae64317c...`) manifests are not
-approved standalone references. `EXPECTED_RUNTIME_BASE` remains the unchanged
-Alpine baseline default. This release-branch policy approval leaves the
-Dockerfile, vulnerability gates and exceptions unchanged; the Debian migration
-and beta.16 version bump follow in a separate PR after this prerequisite lands.
+approved standalone references. Previously approved indexes remain available
+for historical published-image rescans. `EXPECTED_RUNTIME_BASE` remains the
+unchanged Alpine baseline default; the validator returns the actual selected
+approved reference so VEX retrieval stays bound to that image. The Debian
+runtime migration follows the separately landed policy approvals on trusted
+`main` and the release branch; vulnerability gates are unchanged.
 
 There are currently no repository-level variables required by CI: the
 supported pytest suite is fully offline and does not target a live model bank
