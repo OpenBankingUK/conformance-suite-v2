@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Allow the same named GitHub user to own and approve a documented,
+  time-limited vulnerability exception. Both identity fields and the reason
+  remain required; scans, expiry, fix-available rejection, trusted-main
+  promotion, and GitHub PR/review restrictions are unchanged.
 - `.github/workflows/_finalize-ga-release.yml` is replaced by
   `.github/workflows/_finalize-release.yml`, which handles both beta and GA
   publications. The manual **Promote beta image** recovery workflow now also
