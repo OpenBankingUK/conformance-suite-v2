@@ -260,8 +260,12 @@ establish that the application has no vulnerabilities.
 
 `security/vulnerability-exceptions.toml` is the **only** place a vulnerability
 may be accepted. Each entry needs `id` (CVE/GHSA/…), `package`, `reason`,
-`owner` and `approver` (distinct GitHub users or teams), `created` and
-`expires` (at most **90 days**). The gate fails when an exception is expired,
+`owner` and `approver` (GitHub user or team handles), `created` and
+`expires` (at most **90 days**). Both identity fields and the reason remain
+required, but the same named GitHub user may own and approve an exception.
+Self-approval records that user's risk acceptance, not independent review;
+GitHub PR/review restrictions are unchanged.
+The gate fails when an exception is expired,
 malformed, duplicated, when a fix becomes available, or when it is **stale**
 (the vulnerability is no longer found or is already covered by VEX). Upgrade
 PRs — including Dependabot's — must therefore delete the matching exception.

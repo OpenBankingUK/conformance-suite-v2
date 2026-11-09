@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Include `[::1]` in the container's default `DJANGO_ALLOWED_HOSTS`, so a
   callback published on the IPv6 loopback is not rejected by Django's
   host-header validation.
+- Allow the same named GitHub user to own and approve a documented,
+  time-limited vulnerability exception. Both identity fields and the reason
+  remain required; scans, expiry, fix-available rejection, trusted-main
+  promotion, and GitHub PR/review restrictions are unchanged.
 
 ### Fixed
 
