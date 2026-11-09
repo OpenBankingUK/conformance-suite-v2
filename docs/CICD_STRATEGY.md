@@ -276,8 +276,10 @@ UID/GID `65532`. Each platform's hardened smoke test checks Debian/glibc,
 manylinux wheels and pip absence, and prints the OpenSSL package versions
 from the Debian inventory. The existing per-platform scans and aggregate gate
 remain authoritative; the change adds no vulnerability exception or VEX
-suppression. In particular, an Alpine `sqlite` exception does not cover Debian
-`sqlite3` or `libsqlite3-0`.
+suppression. Both Debian platform scans reported no CVE-2026-119586 finding,
+so the stale Alpine `sqlite` acceptance was removed rather than retargeted to
+Debian `sqlite3` or `libsqlite3-0`. Absence from these scanner reports is not
+proof that the SQLite flaw is fixed or that Debian is unaffected.
 
 `security/vulnerability-exceptions.toml` is the **only** place a vulnerability
 may be accepted. Each entry needs `id` (CVE/GHSA/…), `package`, `reason`,

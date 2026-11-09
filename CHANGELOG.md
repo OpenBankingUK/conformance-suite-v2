@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fail-closed layout checks, require locked binary wheels, and verify
   pip absence, glibc/manylinux and OpenSSL package inventory in per-platform
   CI smoke tests. Preserve the non-root runtime and existing vulnerability
-  gates without adding exceptions or suppressions.
+  gates without adding exceptions or suppressions. Remove the stale Alpine
+  `sqlite` acceptance for CVE-2026-119586 after both Debian platform scans
+  report no matching finding; this is not evidence that the SQLite flaw is fixed.
 - Approve the exact DHI Python 3.14 / Debian 13 multi-architecture index
   (`4491196f...`) for staged runtime migration, retaining all Alpine approvals
   and rejecting standalone platform manifests. This is policy-only: the
