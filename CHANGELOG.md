@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Record a self-approved, 90-day risk acceptance for CVE-2026-119586 in
+  `sqlite`, expiring 2027-02-07. The assessment concerns SQLite CLI `.recover`
+  command injection and the inspected runtime's absence of the CLI, not a
+  vendor-confirmed not-affected determination; fix-available and stale-entry
+  rejection remain enforced.
 - Refresh the digest-pinned DHI Python 3.14 / Alpine 3.24 builder and runtime
   for amd64 and arm64 to the reviewed beta.13 pair, including Expat/libexpat
   `2.9.0-r1`, zlib `1.3.2-r1`, and refreshed musl packages, addressing
