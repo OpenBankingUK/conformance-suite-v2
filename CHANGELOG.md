@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ## [2.0.0-beta.15] - 2026-11-09
+### Security
+
+- Record a self-approved, 90-day risk acceptance for CVE-2026-119586 in
+  `sqlite`, expiring 2027-02-07. The assessment concerns SQLite CLI `.recover`
+  command injection and the inspected runtime's absence of the CLI, not a
+  vendor-confirmed not-affected determination; fix-available and stale-entry
+  rejection remain enforced.
 
 ### Changed
 
@@ -27,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Include `[::1]` in the container's default `DJANGO_ALLOWED_HOSTS`, so a
   callback published on the IPv6 loopback is not rejected by Django's
   host-header validation.
+- Allow the same named GitHub user to own and approve a documented,
+  time-limited vulnerability exception. Both identity fields and the reason
+  remain required; scans, expiry, fix-available rejection, trusted-main
+  promotion, and GitHub PR/review restrictions are unchanged.
 
 ### Fixed
 
