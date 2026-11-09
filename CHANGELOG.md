@@ -11,12 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Migrate the digest-pinned DHI builder and distroless runtime to Debian 13 /
+  glibc for amd64 and arm64, removing the obsolete Alpine Expat/zlib APK
+  overlay. Require locked binary wheels and remove unused system pip with
+  fail-closed layout checks, preserving UID/GID `65532` and all scan gates.
+- Remove the stale CVE-2026-119586 / Alpine `sqlite` acceptance after both
+  Debian platform scans reported no matching finding. This is not a SQLite
+  fix or a vendor not-affected determination; no new exceptions are added.
+
 - Approve the exact DHI Python 3.14 / Debian 13 multi-architecture index
   (`4491196f...`) on the release branch for staged runtime migration, retaining
   all Alpine approvals and rejecting standalone platform manifests. This is
   policy-only: the Dockerfile pin, baseline default, vulnerability gates and
   exceptions remain unchanged; runtime migration and the beta.16 version bump
   follow separately after this approval lands.
+
+### Fixed
+
+- Retry transient pinned Docker Scout downloads with bounded retries while
+  retaining checksum verification; clarify that signed VEX comes from the
+  assessed runtime base, not its derived published images.
 
 ## [2.0.0-beta.15] - 2026-11-09
 

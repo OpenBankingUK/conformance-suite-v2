@@ -1,36 +1,16 @@
-# Temporary Expat and zlib fixes for the pinned DHI indexes. apk verifies the
-# signed Alpine v3.24/main index and packages; only these exact package
-# upgrades are accepted, and their runtime files and APK records are copied.
-FROM dhi.io/python:3.14-alpine3.24@sha256:3d7fbfaca07a97d63e0d9efa00a4abc412f0044710efcae292ae7fa211fe1359 AS runtime-base
-
-FROM dhi.io/python:3.14-alpine3.24-dev@sha256:a856bc8f2464347152d6bdcbf43fe995c79551e9fc2482ee2f00c5ec2642e406 AS package-patch
-
-COPY --from=runtime-base /lib/apk/db/installed /patch/lib/apk/db/installed
-COPY docker/patch_base_packages.py /patch_base_packages.py
-RUN cp /lib/apk/db/installed /before-installed && \
-    apk add --no-cache \
-        --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/main \
-        'expat=2.10.0-r0' 'libexpat=2.10.0-r0' \
-        'zlib=1.4-r0' 'zlib-dev=1.4-r0' && \
-    python3 /patch_base_packages.py && \
-    mkdir -p /patch/usr/lib /patch/usr/bin && \
-    cp -a /usr/lib/libexpat.so.1* /patch/usr/lib/ && \
-    cp -a /usr/lib/libz.so.1* /patch/usr/lib/ && \
-    cp -a /usr/bin/xmlwf /patch/usr/bin/
-
 # ─── Build stage ──────────────────────────────────────────────────────────────
-# Docker Hardened Image (DHI), Alpine 3.24, "-dev" variant: has a shell, apk,
+# Docker Hardened Image (DHI), Debian 13, "-dev" variant: has a shell, apt,
 # and pip so it can build the venv, but is otherwise the same underlying
-# Python 3.14/musl environment as the distroless runtime stage below.
+# Python 3.14/glibc environment as the distroless runtime stage below.
 # Uvicorn's C-extension dependencies (httptools, uvloop, and watchfiles)
-# provide prebuilt musllinux wheels, so no compiler toolchain is required.
+# provide prebuilt manylinux wheels, so no compiler toolchain is required.
 #
 # Pulling from `dhi.io` requires `docker login dhi.io` using a Docker account
 # (see docs/DEVELOPER_GUIDE.md); CI authenticates with a read-only
 # organisation-owned credential. Both stages pin multi-architecture index
 # digests for reproducibility on amd64 and arm64; base updates require a
 # reviewed digest bump and scanner policy reassessment.
-FROM dhi.io/python:3.14-alpine3.24-dev@sha256:a856bc8f2464347152d6bdcbf43fe995c79551e9fc2482ee2f00c5ec2642e406 AS builder
+FROM dhi.io/python:3.14-debian13-dev@sha256:290766784d2488991d638bc8c52a53a3c5012513075da9b7bc67705510d7cb2d AS builder
 
 # Install uv for fast, reproducible dependency resolution
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /usr/local/bin/uv
@@ -42,7 +22,7 @@ COPY pyproject.toml uv.lock ./
 
 # Install production dependencies only (no dev group, no project install — this
 # is a container-deployed Django app, not a distributable Python package)
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project --no-build
 
 # Copy application source (docs/, tests/, scripts/, and other CI/participant-
 # only files are excluded via .dockerignore)
@@ -64,14 +44,13 @@ RUN mkdir -p /data/results /data/logs /data/sessions && \
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 # Distroless DHI runtime variant: no shell, defaults to non-root UID/GID 65532.
 # Pinned to an exact digest for the same reasons as the builder stage above.
-FROM dhi.io/python:3.14-alpine3.24@sha256:3d7fbfaca07a97d63e0d9efa00a4abc412f0044710efcae292ae7fa211fe1359 AS runtime
+FROM dhi.io/python:3.14-debian13@sha256:4491196f15b7afb538ea121eed173cdd136297f616b15b34f66c25610bf80241 AS runtime
 
-# The runtime base already has files from the vulnerable package. Remove the
-# old shared library before the overlay COPY, which otherwise only merges files.
+# System pip and its vendored packages are unused by the uv-managed venv.
+# Require the inspected Debian layout so an upstream change cannot silently
+# leave a second pip installation behind. CI also checks the final filesystem.
 USER 0:0
-RUN ["python3", "-c", "from pathlib import Path; [p.unlink() for pattern in ('libexpat.so.1*', 'libz.so.1*') for p in Path('/usr/lib').glob(pattern)]; Path('/usr/bin/xmlwf').unlink(missing_ok=True)"]
-COPY --from=package-patch /patch/ /
-USER 65532:65532
+RUN ["python3", "-c", "import shutil; from pathlib import Path; root = Path('/usr/lib/python3/dist-packages'); metadata, = root.glob('pip-*.dist-info'); shutil.rmtree(root / 'pip'); shutil.rmtree(metadata); Path('/usr/bin/pip').unlink(); Path('/usr/bin/pip3').unlink()\nif list(root.glob('pip*')): raise RuntimeError('Unexpected system pip files remain')"]
 
 WORKDIR /app
 
