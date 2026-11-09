@@ -266,19 +266,20 @@ not managed by this sync. Docker Hub tags and GitHub Releases are untouched.
 
 #### Exceptions
 
-**Temporary Expat and zlib overlay:** The approved Alpine DHI indexes contain
-`expat` and `libexpat` `2.9.0-r1` and `zlib` `1.3.2-r1`. Signed Alpine
-v3.24/main packages `2.10.0-r0` and `1.4-r0`, respectively, fix the reported
-findings on both supported architectures. The Dockerfile installs only those
-exact packages (and the matching staging-only `zlib-dev`) through `apk`'s
-signature verification, rejects any additional APK changes, and replaces the
-runtime shared libraries, `xmlwf` binary and APK inventory records. This
-derived-image overlay is not covered by the upstream DHI attestations; the
-existing per-architecture vulnerability scans and aggregate gate remain
-required. Remove each package overlay once the selected approved Alpine index
-includes the corresponding fixed packages on both supported architectures,
-or when migrating to an approved Debian index, using the normal staged
-digest-approval and review process.
+**Debian 13 runtime:** The digest-pinned DHI builder and distroless runtime
+use glibc on amd64 and arm64; the former Alpine Expat/zlib package overlay is
+removed. Production dependencies must install from locked binary wheels
+(`uv sync --frozen --no-dev --no-install-project --no-build`). Unused Debian
+system pip, its metadata and executables are removed in an exec-form Python
+build step that fails on a missing or unexpected layout, before restoring
+UID/GID `65532`. Each platform's hardened smoke test checks Debian/glibc,
+manylinux wheels and pip absence, and prints the OpenSSL package versions
+from the Debian inventory. The existing per-platform scans and aggregate gate
+remain authoritative; the change adds no vulnerability exception or VEX
+suppression. Both Debian platform scans reported no CVE-2026-119586 finding,
+so the stale Alpine `sqlite` acceptance was removed rather than retargeted to
+Debian `sqlite3` or `libsqlite3-0`. Absence from these scanner reports is not
+proof that the SQLite flaw is fixed or that Debian is unaffected.
 
 `security/vulnerability-exceptions.toml` is the **only** place a vulnerability
 may be accepted. Each entry needs `id` (CVE/GHSA/…), `package`, `reason`,
@@ -349,6 +350,7 @@ Dockerfile pin. The immutable set permits only the baseline Alpine index
 `3d7fbfac...`), and the reviewed Debian 13 index (`4491196f...`), not arbitrary
 digests or platform-specific manifests. The Debian amd64 (`32a85a1e...`) and
 arm64 (`ae64317c...`) manifests are not approved standalone references.
+Previously approved indexes remain available for historical published-image rescans.
 `EXPECTED_RUNTIME_BASE` remains the unchanged baseline default; the validator
 returns the actual selected approved reference so VEX retrieval stays bound to
 that image.

@@ -7,7 +7,11 @@
 - Docker for container builds
 - GNU Make
 
-Docker builds use digest-pinned Docker Hardened Images from `dhi.io`.
+Docker builds use digest-pinned Debian 13 Docker Hardened Images from `dhi.io`
+for amd64 and arm64. The builder installs locked binary wheels for glibc
+(manylinux), without source builds. The distroless runtime removes unused
+system pip and runs as UID/GID `65532`; per-platform CI smoke tests verify
+these properties and record the OpenSSL package versions before scanning.
 Authenticate before building with `docker login dhi.io`, using a Docker
 account with access to those images. CI already uses organisation credentials.
 
