@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from cryptography import x509
+from django.http.request import split_domain_port, validate_host
 
 import docker.entrypoint as entrypoint
 from docker.entrypoint import (
@@ -96,6 +97,12 @@ class TestPrepareEnvironment:
         assert environ["DJANGO_ALLOWED_HOSTS"] == DEFAULT_ALLOWED_HOSTS
         assert environ["CONFORMANCE_DATA_DIR"] == str(tmp_path / "data")
         assert environ["DJANGO_SESSION_FILE_PATH"] == str(tmp_path / "data" / "sessions")
+
+    @pytest.mark.parametrize("host_header", ["127.0.0.1:8443", "localhost:8443", "0.0.0.0:8443", "[::1]:8443"])
+    def test_default_allowed_hosts_accept_local_host_headers(self, host_header: str) -> None:
+        """Django accepts the Host header of each local callback host the bundled certificate covers."""
+        domain, _port = split_domain_port(host_header)
+        assert validate_host(domain, DEFAULT_ALLOWED_HOSTS.split(","))
 
     def test_ephemeral_mode_skips_session_path(self, tmp_path: Path) -> None:
         """An unwritable data root still fills in a key and hosts but not a session path."""

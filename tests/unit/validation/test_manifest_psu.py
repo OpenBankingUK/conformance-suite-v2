@@ -122,6 +122,20 @@ def test_parse_v1_psu_step_applies_defaults() -> None:
     assert psu_step.phase == "execution"
 
 
+def test_parse_psu_loopback_redirect_preserves_exact_uri() -> None:
+    uri = "https://127.0.0.1:9443/conformancesuite/callback"
+    manifest = parse_manifest(psu_manifest_with(redirectUri=uri))
+    step = manifest.steps[0]
+    assert isinstance(step, PsuAuthorizationStep)
+    assert step.redirect_uri == uri
+
+
+@pytest.mark.parametrize("uri", ["https://localhost/callback", "https://tpp.example.com/callback#fragment"])
+def test_parse_psu_rejects_nonconforming_redirect(uri: str) -> None:
+    with pytest.raises(ManifestError):
+        parse_manifest(psu_manifest_with(redirectUri=uri))
+
+
 def test_parse_v1_psu_step_accepts_all_fields() -> None:
     """Every optional PSU field round-trips when populated."""
     raw = psu_manifest()

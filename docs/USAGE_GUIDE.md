@@ -21,7 +21,7 @@ browser, followed by advanced CLI and local REST reference.
 
 ## Beta scope
 
-**Beta only — not for certification.** FCS v2 `2.0.0-beta.14` is an MVP for
+**Beta only — not for certification.** FCS v2 `2.0.0-beta.15` is an MVP for
 evaluating the new Open Banking UK Functional Conformance Suite and providing
 feedback. It is **not approved for certification**; runs and reports from this
 beta must not be submitted as certification evidence, even if a plan or result
@@ -51,6 +51,13 @@ builder identifies them. For PSU authorisation, use the exact redirect URI
 registered for your client, not necessarily the UI address. DCR also requires a
 software statement assertion and registration audience; see the
 [DCR contract](DCR_3_4_PARITY_CONTRACT.md#participant-and-operator-workflow).
+For a new local registration, `https://127.0.0.1:8443/conformancesuite/callback`
+and the FCS v1 callback `https://0.0.0.0:8443/conformancesuite/callback` are
+both supported, as are other HTTPS DNS hostnames and IP addresses; `localhost`
+is not allowed as an OAuth redirect. Update the
+software statement and bank registration before changing an existing client's
+redirect; see the
+[redirect policy and registration changes](DOCKER_GUIDE.md#oauth-redirect-policy).
 
 Use test credentials and data appropriate for your environment. Runs send real
 requests to the configured ASPSP and can create resources; stopping the tool
@@ -185,7 +192,7 @@ between building and importing a plan.
 
 The UI shows generated tests, counts, source traceability, runtime/auth
 requirements, launch blockers, and internal certification-status labels after
-preview. **Those labels do not make beta.11 runs valid for certification.**
+preview. **Those labels do not make beta.15 runs valid for certification.**
 Generated tests are read-only: participants cannot select exact generated
 tests. Lower-level request and assertion details stay collapsed under audit
 details.
@@ -285,10 +292,13 @@ custom parameter.
   evidence, and the start of it is added to the step message. Redirects to
   another origin are reported but not followed.
 
-The manual-mode listener binds to the host and port of `redirectUri`. Inside
-the container it binds to all interfaces. It uses the container certificate
-when one is available; otherwise it uses a temporary self-signed certificate.
-If you can't bind that port (for example, port 443 without root), pass
+The manual-mode listener uses the port of `redirectUri`. It binds `127.0.0.1`
+by default, `::1` for a `[::1]` redirect, and all interfaces for the FCS v1
+`0.0.0.0` redirect or inside the container. For any other redirect host, make
+that host reach the listener, or pass `--callback-listen HOST:PORT` with the
+address to bind. It uses the container certificate when one is available;
+otherwise it uses a temporary self-signed certificate that names the redirect
+host. If you can't bind that port (for example, port 443 without root), pass
 `--callback-listen HOST:PORT` and forward the registered redirect to it.
 
 At the end of each run, the CLI prints a short summary to stdout. It shows the
