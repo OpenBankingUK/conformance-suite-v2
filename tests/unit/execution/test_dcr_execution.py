@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -232,6 +233,84 @@ def test_dcr_jwks_accepts_rfc7517_extension_use_value() -> None:
 
     dcr_execution._validate_jwks(  # noqa: SLF001 - focused RFC 7517 extension-use validation.
         cast("JsonObject", {"keys": [public_key]})
+    )
+
+
+@pytest.mark.parametrize(
+    "redirect_uri",
+    ["https://localhost/callback", "https://tpp.example.com/callback#fragment", "https://0.0.0.0:9443/callback"],
+)
+def test_dcr_rejects_unsupported_ssa_redirect_before_registration(
+    dcr_protocol_service: DcrProtocolService, tmp_path: Path, redirect_uri: str
+) -> None:
+    service = dcr_protocol_service
+    statement = jwt.encode(
+        {"alg": "PS256", "kid": "fixture-signing-key"},
+        {"software_id": "fixturesoftwareid", "software_redirect_uris": [redirect_uri]},
+        service.protocol.signing_key,
+        algorithms=["PS256"],
+    )
+    service.protocol = replace(service.protocol, software_statement_assertion=statement)
+    with service.client() as client:
+        report = _adapter(service, tmp_path, client=client).run().to_json_object()
+    assert report["status"] == "failed"
+    steps = report["steps"]
+    assert isinstance(steps, list)
+    assert any(
+        isinstance(step, dict) and step["status"] == "failed" and "DCR redirect_uri" in str(step["message"])
+        for step in steps
+    )
+    assert all(event.method == "GET" for event in service.events)
+
+
+@pytest.mark.parametrize(
+    "redirect_uri",
+    [
+        "https://127.0.0.1:8443/conformancesuite/callback",
+        "https://[::1]:8443/conformancesuite/callback",
+        "https://0.0.0.0:8443/conformancesuite/callback",
+    ],
+)
+def test_dcr_registers_ip_literal_ssa_redirect(
+    dcr_protocol_service: DcrProtocolService, tmp_path: Path, redirect_uri: str
+) -> None:
+    service = dcr_protocol_service
+    statement = jwt.encode(
+        {"alg": "PS256", "kid": "fixture-signing-key"},
+        {"software_id": "fixturesoftwareid", "software_redirect_uris": [redirect_uri]},
+        service.protocol.signing_key,
+        algorithms=["PS256"],
+    )
+    service.protocol = replace(service.protocol, software_statement_assertion=statement)
+    with service.client() as client:
+        report = _adapter(service, tmp_path, client=client).run().to_json_object()
+    steps = report["steps"]
+    assert isinstance(steps, list)
+    assert report["status"] == "passed", [
+        step for step in steps if isinstance(step, dict) and step["status"] != "passed"
+    ]
+    assert any(event.method == "POST" for event in service.events)
+
+
+@pytest.mark.parametrize(
+    "redirect_uri",
+    ["https://localhost/callback", "https://tpp.example.com/callback#fragment", "https://0.0.0.0:9443/callback"],
+)
+def test_dcr_rejects_nonconforming_registration_response_redirect(
+    dcr_protocol_service: DcrProtocolService, tmp_path: Path, redirect_uri: str
+) -> None:
+    service = dcr_protocol_service
+    service.response_overrides["POST"] = {"redirect_uris": [redirect_uri]}
+    with service.client() as client:
+        report = _adapter(service, tmp_path, client=client).run().to_json_object()
+    assert report["status"] == "failed"
+    steps = report["steps"]
+    assert isinstance(steps, list)
+    assert any(
+        isinstance(step, dict)
+        and step["status"] == "failed"
+        and "registration response redirect_uri" in str(step["message"])
+        for step in steps
     )
 
 

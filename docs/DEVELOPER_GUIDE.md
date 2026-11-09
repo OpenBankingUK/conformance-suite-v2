@@ -134,7 +134,7 @@ untracked local files, or deployment secret stores.
 | --- | --- | --- |
 | `DJANGO_SECRET_KEY` | No | Django signing key. `docker/entrypoint.py` generates and persists one automatically inside the container when unset; local source runs fall back to `settings.py`'s safe `django-insecure-` default. |
 | `DJANGO_DEBUG` | No | Enables Django debug mode when `"true"`. |
-| `DJANGO_ALLOWED_HOSTS` | No | Comma-separated allowed hosts. The container entrypoint defaults to `127.0.0.1,localhost` when unset, matching the documented localhost-only publish profile. |
+| `DJANGO_ALLOWED_HOSTS` | No | Comma-separated allowed hosts. The container entrypoint defaults to `127.0.0.1,localhost,0.0.0.0,[::1]` when unset, matching the documented localhost-only publish profile. |
 | `DJANGO_SESSION_ENGINE` | No | Overrides the default server-side file session backend. |
 | `DJANGO_SESSION_FILE_PATH` | No | Optional directory for file-backed browser session drafts. The container entrypoint defaults this to `<data-dir>/sessions` when a writable `/data` mount is present. |
 | `CONFORMANCE_DATA_DIR` | No | Overrides the container's persistent data root (`/data` by default). Also redirects CLI `resultOutputPath`/`executionLogPath` defaults under `<data-dir>/results` and `<data-dir>/logs`. |

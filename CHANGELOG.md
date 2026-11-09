@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.15] - 2026-11-09
+
+### Changed
+
+- Apply one OAuth redirect URI policy, aligned with Open Banking DCR 3.4,
+  RFC 6749 and FAPI 1, across the configuration, manifest, DCR, DCR builder,
+  PSU execution and CLI callback listener validators. HTTPS DNS hostnames and
+  unicast IPv4/IPv6 literals are accepted, together with the FCS v1
+  `https://0.0.0.0:8443/conformancesuite/callback`. `localhost` (which was
+  previously accepted), `.localhost` names, fragments, backslashes,
+  non-canonical IPv4 spellings such as `127.1` or `2130706433`, and
+  non-unicast addresses are rejected. Registered redirect values, ports and
+  paths are preserved exactly.
+- Bind the CLI callback listener to `::1` for an `https://[::1]:…` redirect URI
+  when run outside a container.
+- Include `[::1]` in the container's default `DJANGO_ALLOWED_HOSTS`, so a
+  callback published on the IPv6 loopback is not rejected by Django's
+  host-header validation.
+
+### Fixed
+
+- Accept HTTPS IP-literal OAuth callbacks, such as
+  `https://127.0.0.1:8443/conformancesuite/callback`, by validating browser
+  redirect URIs separately from outbound HTTPS targets. The FCS v1 `0.0.0.0`
+  callback keeps working, and outbound HTTPS target validation, which still
+  requires DNS hostnames, is unchanged.
+
 ### Security
 
 - Temporarily replace the pinned DHI runtime's zlib `1.3.2-r1` with the
@@ -659,7 +686,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.9...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.15...HEAD
+[2.0.0-beta.15]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.14...v2.0.0-beta.15
 [2.0.0-beta.9]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.8...v2.0.0-beta.9
 [2.0.0-beta.8]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.7...v2.0.0-beta.8
 [2.0.0-beta.7]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.6...v2.0.0-beta.7

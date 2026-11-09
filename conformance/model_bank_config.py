@@ -65,7 +65,9 @@ class OAuthConfig:
             server. Not a secret; used by FAPI flows in the authorisation
             request.
         redirect_uri: HTTPS redirect URI registered with the authorisation
-            server. Must use the HTTPS scheme with a valid DNS hostname.
+            server. Uses a DNS hostname (not localhost) or an IP address such
+            as ``127.0.0.1`` or ``[::1]``, or the FCS v1 callback
+            ``https://0.0.0.0:8443/conformancesuite/callback``.
         authorization_endpoint: Optional HTTPS authorisation endpoint override
             for environments whose client registration targets a legacy
             endpoint instead of the endpoint published by discovery.

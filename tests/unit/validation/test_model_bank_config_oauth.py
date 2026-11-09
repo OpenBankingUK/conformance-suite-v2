@@ -279,15 +279,51 @@ def test_parse_model_bank_config_rejects_http_oauth_redirect_uri(tmp_path: Path)
         )
 
 
-def test_parse_model_bank_config_rejects_ip_literal_oauth_redirect_uri(tmp_path: Path) -> None:
-    with pytest.raises(ConfigError, match="oauth.redirectUri must use a DNS hostname"):
+@pytest.mark.parametrize(
+    "redirect_uri",
+    [
+        "https://192.0.2.1/callback",
+        "https://127.0.0.1:8443/conformancesuite/callback",
+        "https://[::1]:8443/conformancesuite/callback",
+    ],
+)
+def test_parse_model_bank_config_accepts_ip_literal_oauth_redirect_uri(tmp_path: Path, redirect_uri: str) -> None:
+    config = parse_model_bank_config(
+        {
+            "environment": "sandbox",
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            "oauth": {
+                "clientId": "my-client-001",
+                "redirectUri": redirect_uri,
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.oauth is not None
+    assert config.oauth.redirect_uri == redirect_uri
+
+
+@pytest.mark.parametrize(
+    ("redirect_uri", "message"),
+    [
+        ("https://localhost:8443/callback", "oauth.redirectUri must not use localhost"),
+        ("https://127.1/callback", "oauth.redirectUri must use a DNS hostname, a dotted-decimal IPv4"),
+        ("https://[::]:8443/callback", "oauth.redirectUri must use a unicast IP address or DNS hostname"),
+        ("https://0.0.0.0:9443/callback", "oauth.redirectUri may use 0.0.0.0 only as the FCS v1 callback"),
+    ],
+)
+def test_parse_model_bank_config_rejects_unsupported_oauth_redirect_hosts(
+    tmp_path: Path, redirect_uri: str, message: str
+) -> None:
+    with pytest.raises(ConfigError, match=message):
         parse_model_bank_config(
             {
                 "environment": "sandbox",
                 "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
                 "oauth": {
                     "clientId": "my-client-001",
-                    "redirectUri": "https://127.0.0.1/callback",
+                    "redirectUri": redirect_uri,
                 },
             },
             base_dir=tmp_path,
@@ -309,6 +345,13 @@ def test_parse_model_bank_config_accepts_legacy_fcs_oauth_redirect_uri(tmp_path:
 
     assert config.oauth is not None
     assert config.oauth.redirect_uri == "https://0.0.0.0:8443/conformancesuite/callback"
+
+
+def test_parse_model_bank_config_preserves_registered_loopback_uri(tmp_path: Path) -> None:
+    redirect_uri = "https://127.0.0.1:9443/conformancesuite/callback?registration=one"
+    config = parse_model_bank_config({"oauth": {"redirectUri": redirect_uri}}, base_dir=tmp_path)
+    assert config.oauth is not None
+    assert config.oauth.redirect_uri == redirect_uri
 
 
 def test_parse_model_bank_config_accepts_oauth_authorization_endpoint(tmp_path: Path) -> None:

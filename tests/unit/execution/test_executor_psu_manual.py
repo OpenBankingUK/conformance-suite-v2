@@ -434,7 +434,17 @@ def test_run_manifest_mandatory_psu_timeout_counts_as_mandatory_failed(monkeypat
     assert eligibility["reason"] == "1 mandatory step(s) failed"
 
 
-def test_run_manifest_psu_manual_step_feeds_downstream_token_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    "redirect_uri",
+    [
+        "https://conformance.example.com/callback",
+        "https://127.0.0.1:9443/conformancesuite/callback",
+        "https://0.0.0.0:8443/conformancesuite/callback",
+    ],
+)
+def test_run_manifest_psu_manual_step_feeds_downstream_token_exchange(
+    monkeypatch: pytest.MonkeyPatch, redirect_uri: str
+) -> None:
     """A downstream form step can claim ``${steps.psu.response.body.code}``."""
     state = "m" * 32
     store = AuthSessionStore()
@@ -450,7 +460,7 @@ def test_run_manifest_psu_manual_step_feeds_downstream_token_exchange(monkeypatc
                 "mode": "manual",
                 "authorizationEndpoint": "https://auth.example.com/authorize",
                 "clientId": "client-123",
-                "redirectUri": "https://conformance.example.com/callback",
+                "redirectUri": redirect_uri,
                 "state": state,
             },
             {
@@ -464,6 +474,7 @@ def test_run_manifest_psu_manual_step_feeds_downstream_token_exchange(monkeypatc
                         "fields": {
                             "grant_type": "authorization_code",
                             "code": "${steps.psu.response.body.code}",
+                            "redirect_uri": redirect_uri,
                         },
                     },
                 },
@@ -500,3 +511,4 @@ def test_run_manifest_psu_manual_step_feeds_downstream_token_exchange(monkeypatc
     assert result.status == "passed"
     assert [step.status for step in result.steps] == ["passed", "passed"]
     assert captured_token_body["code"] == "downstream-code"
+    assert captured_token_body["redirect_uri"] == redirect_uri
