@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ## [2.0.0-beta.15] - 2026-11-09
+### Security
+
+- Record a self-approved, 90-day risk acceptance for CVE-2026-119586 in
+  `sqlite`, expiring 2027-02-07. The assessment concerns SQLite CLI `.recover`
+  command injection and the inspected runtime's absence of the CLI, not a
+  vendor-confirmed not-affected determination; fix-available and stale-entry
+  rejection remain enforced.
 
 ### Changed
 
@@ -27,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Include `[::1]` in the container's default `DJANGO_ALLOWED_HOSTS`, so a
   callback published on the IPv6 loopback is not rejected by Django's
   host-header validation.
+- Allow the same named GitHub user to own and approve a documented,
+  time-limited vulnerability exception. Both identity fields and the reason
+  remain required; scans, expiry, fix-available rejection, trusted-main
+  promotion, and GitHub PR/review restrictions are unchanged.
 
 ### Fixed
 
@@ -35,6 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redirect URIs separately from outbound HTTPS targets. The FCS v1 `0.0.0.0`
   callback keeps working, and outbound HTTPS target validation, which still
   requires DNS hostnames, is unchanged.
+
+### Security
+
+- Temporarily replace the pinned DHI runtime's zlib `1.3.2-r1` with the
+  signature-verified Alpine v3.24/main package `1.4-r0` to address
+  CVE-2026-4738.
 
 ## [2.0.0-beta.14] - 2026-11-02
 

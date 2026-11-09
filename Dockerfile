@@ -1,19 +1,21 @@
-# Temporary Expat fix for the pinned DHI indexes. apk verifies the signed
-# Alpine v3.24/main index and packages; only these exact package upgrades are
-# accepted, and their runtime files and APK records are copied into the image.
+# Temporary Expat and zlib fixes for the pinned DHI indexes. apk verifies the
+# signed Alpine v3.24/main index and packages; only these exact package
+# upgrades are accepted, and their runtime files and APK records are copied.
 FROM dhi.io/python:3.14-alpine3.24@sha256:3d7fbfaca07a97d63e0d9efa00a4abc412f0044710efcae292ae7fa211fe1359 AS runtime-base
 
-FROM dhi.io/python:3.14-alpine3.24-dev@sha256:a856bc8f2464347152d6bdcbf43fe995c79551e9fc2482ee2f00c5ec2642e406 AS expat-patch
+FROM dhi.io/python:3.14-alpine3.24-dev@sha256:a856bc8f2464347152d6bdcbf43fe995c79551e9fc2482ee2f00c5ec2642e406 AS package-patch
 
 COPY --from=runtime-base /lib/apk/db/installed /patch/lib/apk/db/installed
 COPY docker/patch_base_packages.py /patch_base_packages.py
 RUN cp /lib/apk/db/installed /before-installed && \
     apk add --no-cache \
         --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/main \
-        'expat=2.10.0-r0' 'libexpat=2.10.0-r0' && \
+        'expat=2.10.0-r0' 'libexpat=2.10.0-r0' \
+        'zlib=1.4-r0' 'zlib-dev=1.4-r0' && \
     python3 /patch_base_packages.py && \
     mkdir -p /patch/usr/lib /patch/usr/bin && \
     cp -a /usr/lib/libexpat.so.1* /patch/usr/lib/ && \
+    cp -a /usr/lib/libz.so.1* /patch/usr/lib/ && \
     cp -a /usr/bin/xmlwf /patch/usr/bin/
 
 # ─── Build stage ──────────────────────────────────────────────────────────────
@@ -67,8 +69,8 @@ FROM dhi.io/python:3.14-alpine3.24@sha256:3d7fbfaca07a97d63e0d9efa00a4abc412f004
 # The runtime base already has files from the vulnerable package. Remove the
 # old shared library before the overlay COPY, which otherwise only merges files.
 USER 0:0
-RUN ["python3", "-c", "from pathlib import Path; [p.unlink() for p in Path('/usr/lib').glob('libexpat.so.1*')]; Path('/usr/bin/xmlwf').unlink(missing_ok=True)"]
-COPY --from=expat-patch /patch/ /
+RUN ["python3", "-c", "from pathlib import Path; [p.unlink() for pattern in ('libexpat.so.1*', 'libz.so.1*') for p in Path('/usr/lib').glob(pattern)]; Path('/usr/bin/xmlwf').unlink(missing_ok=True)"]
+COPY --from=package-patch /patch/ /
 USER 65532:65532
 
 WORKDIR /app

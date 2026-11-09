@@ -232,16 +232,18 @@ closed; re-push them to a branch in this repository.
 
 #### Exceptions
 
-**Temporary Expat overlay for beta.14:** The approved DHI indexes contain
-`expat` and `libexpat` `2.9.0-r1`, while signed Alpine v3.24/main packages
-`2.10.0-r0` fix the newly reported Expat findings on both supported
-architectures. The Dockerfile installs only those exact packages through
-`apk`'s signature verification, rejects any additional APK changes, and
-replaces the runtime shared library, `xmlwf` binary and APK inventory records.
-This derived-image overlay is not covered by the upstream DHI attestations;
-the existing per-architecture vulnerability scans and aggregate gate remain
-required. Remove the overlay once both approved DHI indexes include fixed
-Expat packages, using the normal staged digest-approval and review process.
+**Temporary Expat and zlib overlay for beta.14:** The approved DHI indexes
+contain `expat` and `libexpat` `2.9.0-r1` and `zlib` `1.3.2-r1`. Signed Alpine
+v3.24/main packages `2.10.0-r0` and `1.4-r0`, respectively, fix the reported
+findings on both supported architectures. The Dockerfile installs only those
+exact packages (and the matching staging-only `zlib-dev`) through `apk`'s
+signature verification, rejects any additional APK changes, and replaces the
+runtime shared libraries, `xmlwf` binary and APK inventory records. This
+derived-image overlay is not covered by the upstream DHI attestations; the
+existing per-architecture vulnerability scans and aggregate gate remain
+required. Remove each package overlay once both approved DHI indexes include
+the corresponding fixed packages, using the normal staged digest-approval and
+review process.
 
 **Upstream Expat and zlib fixes:** The pinned community DHI Python 3.14 /
 Alpine 3.24 builder and runtime now include `expat` and `libexpat` `2.9.0-r1`
@@ -260,8 +262,12 @@ establish that the application has no vulnerabilities.
 
 `security/vulnerability-exceptions.toml` is the **only** place a vulnerability
 may be accepted. Each entry needs `id` (CVE/GHSA/…), `package`, `reason`,
-`owner` and `approver` (distinct GitHub users or teams), `created` and
-`expires` (at most **90 days**). The gate fails when an exception is expired,
+`owner` and `approver` (GitHub user or team handles), `created` and
+`expires` (at most **90 days**). Both identity fields and the reason remain
+required, but the same named GitHub user may own and approve an exception.
+Self-approval records that user's risk acceptance, not independent review;
+GitHub PR/review restrictions are unchanged.
+The gate fails when an exception is expired,
 malformed, duplicated, when a fix becomes available, or when it is **stale**
 (the vulnerability is no longer found or is already covered by VEX). Upgrade
 PRs — including Dependabot's — must therefore delete the matching exception.
