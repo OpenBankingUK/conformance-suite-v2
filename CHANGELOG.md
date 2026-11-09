@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Approve the exact DHI Python 3.14 / Debian 13 multi-architecture index
+  (`4491196f...`) on the release branch for staged runtime migration, retaining
+  all Alpine approvals and rejecting standalone platform manifests. This is
+  policy-only: the Dockerfile pin, baseline default, vulnerability gates and
+  exceptions remain unchanged; runtime migration and the beta.16 version bump
+  follow separately after this approval lands.
+
 ## [2.0.0-beta.15] - 2026-11-09
 
 ### Changed

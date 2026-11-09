@@ -336,6 +336,16 @@ from the trusted PR base, and promotion requires the candidate pipeline files
 (including this validator) to match trusted `main`. Approving an index does
 not itself refresh the runtime image or relax the vulnerability policy.
 
+The release approval set matches trusted `main`: the baseline Alpine index
+(`4361d30a...`), reviewed refreshed Alpine indexes (`00f9aead...` and
+`3d7fbfac...`), and the reviewed Debian 13 index
+`dhi.io/python:3.14-debian13@sha256:4491196f15b7afb538ea121eed173cdd136297f616b15b34f66c25610bf80241`.
+The Debian amd64 (`32a85a1e...`) and arm64 (`ae64317c...`) manifests are not
+approved standalone references. `EXPECTED_RUNTIME_BASE` remains the unchanged
+Alpine baseline default. This release-branch policy approval leaves the
+Dockerfile, vulnerability gates and exceptions unchanged; the Debian migration
+and beta.16 version bump follow in a separate PR after this prerequisite lands.
+
 There are currently no repository-level variables required by CI: the
 supported pytest suite is fully offline and does not target a live model bank
 or Ozone environment.

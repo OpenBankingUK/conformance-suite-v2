@@ -24,22 +24,24 @@ pytestmark = pytest.mark.unit
         EXPECTED_RUNTIME_BASE,
         "dhi.io/python:3.14-alpine3.24@sha256:00f9aeadee003dec0cafd5ebd3b36e668ac2a4e120e0c059967ad249e1130179",
         "dhi.io/python:3.14-alpine3.24@sha256:3d7fbfaca07a97d63e0d9efa00a4abc412f0044710efcae292ae7fa211fe1359",
+        "dhi.io/python:3.14-debian13@sha256:4491196f15b7afb538ea121eed173cdd136297f616b15b34f66c25610bf80241",
     ],
 )
 def test_accepts_exact_pinned_runtime_base(runtime_base: str) -> None:
-    """Reviewed index references are accepted and returned unchanged."""
+    """All reviewed Alpine and Debian indexes are accepted and returned unchanged."""
     dockerfile = f"FROM python:3.14-alpine AS builder\nFROM {runtime_base} AS runtime\n"
     validate_runtime_base(dockerfile)
     assert get_runtime_base(dockerfile) == runtime_base
 
 
 def test_approval_set_is_limited_to_reviewed_indexes() -> None:
-    """Approval is immutable and limited to the reviewed Alpine indexes."""
+    """Approval is immutable and limited to reviewed Alpine and Debian indexes."""
     assert APPROVED_RUNTIME_BASES == frozenset(
         {
             EXPECTED_RUNTIME_BASE,
             "dhi.io/python:3.14-alpine3.24@sha256:00f9aeadee003dec0cafd5ebd3b36e668ac2a4e120e0c059967ad249e1130179",
             "dhi.io/python:3.14-alpine3.24@sha256:3d7fbfaca07a97d63e0d9efa00a4abc412f0044710efcae292ae7fa211fe1359",
+            "dhi.io/python:3.14-debian13@sha256:4491196f15b7afb538ea121eed173cdd136297f616b15b34f66c25610bf80241",
         }
     )
 
@@ -53,6 +55,9 @@ def test_approval_set_is_limited_to_reviewed_indexes() -> None:
         "dhi.io/python:3.14-alpine3.24@sha256:ffcb7098a6d37a4f92c34959bcde8e78284c7535a72c5c9d34ee3b014d46c8b4",
         "dhi.io/python:3.14-alpine3.24@sha256:4631e4679526eced8cd4bf815b8734ad1c13d4d8035e169b9bf5970ee031cd1f",
         "dhi.io/python:3.14-alpine3.24@sha256:1820dd28f2cfc94d77280101412274b30f14a58dc8a4c326d9d25c975d095348",
+        "dhi.io/python:3.14-debian13",
+        "dhi.io/python:3.14-debian13@sha256:32a85a1e3c70a0239547475f508d8d4c2146a54479ec833b208fe2be35d1427b",
+        "dhi.io/python:3.14-debian13@sha256:ae64317c76c6ecd00a803b3d9eeff09507c253a7817fe2c93c4cebaff7553bc6",
         "python:3.14-alpine",
     ],
 )
