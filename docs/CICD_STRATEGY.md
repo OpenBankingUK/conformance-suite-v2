@@ -343,9 +343,12 @@ digests and GitHub Actions; a DHI runtime digest update requires reviewed
 approval of its exact reference in `APPROVED_RUNTIME_BASES` in
 `scripts/validate_docker_base.py`. Approval changes are policy-only: merge the
 approval to `main`, sync it to the release branch, and only then update the
-Dockerfile pin. The immutable set permits only explicitly reviewed exact
-references, not arbitrary digests or platform-specific manifests; previously
-approved indexes remain available for historical published-image rescans.
+Dockerfile pin. The immutable set permits only the baseline Alpine index
+(`4361d30a...`), the reviewed refreshed Alpine indexes (`00f9aead...` and
+`3d7fbfac...`), and the reviewed Debian 13 index (`4491196f...`), not arbitrary
+digests or platform-specific manifests. The Debian amd64 (`32a85a1e...`) and
+arm64 (`ae64317c...`) manifests are not approved standalone references.
+Previously approved indexes remain available for historical published-image rescans.
 `EXPECTED_RUNTIME_BASE` remains the unchanged baseline default; the validator
 returns the actual selected approved reference so VEX retrieval stays bound to
 that image.

@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pip absence, glibc/manylinux and OpenSSL package inventory in per-platform
   CI smoke tests. Preserve the non-root runtime and existing vulnerability
   gates without adding exceptions or suppressions.
+- Approve the exact DHI Python 3.14 / Debian 13 multi-architecture index
+  (`4491196f...`) for staged runtime migration, retaining all Alpine approvals
+  and rejecting standalone platform manifests. This is policy-only: the
+  Dockerfile pin, baseline default, vulnerability gates and exceptions remain
+  unchanged; runtime migration follows after approval reaches main and release.
 - Forward-port the temporary Expat/zlib overlay and approved DHI Python 3.14 /
   Alpine 3.24 base pair to main. Install signed, pinned Alpine v3.24/main
   `expat`/`libexpat` `2.10.0-r0` and `zlib` `1.4-r0`, replacing only their
