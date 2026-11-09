@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Forward-port the temporary Expat/zlib overlay and approved DHI Python 3.14 /
+  Alpine 3.24 base pair to main. Install signed, pinned Alpine v3.24/main
+  `expat`/`libexpat` `2.10.0-r0` and `zlib` `1.4-r0`, replacing only their
+  runtime files and APK inventory records. This addresses CVE-2026-4738,
+  CVE-2026-113351, CVE-2026-115506, CVE-2026-117610, and CVE-2026-118370
+  while retaining the distroless non-root runtime and existing scan gates.
 - Record a self-approved, 90-day risk acceptance for CVE-2026-119586 in
   `sqlite`, expiring 2027-02-07. The assessment concerns SQLite CLI `.recover`
   command injection and the inspected runtime's absence of the CLI, not a
