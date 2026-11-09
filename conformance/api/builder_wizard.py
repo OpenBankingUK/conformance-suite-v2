@@ -39,7 +39,7 @@ from conformance.specification_registry import (
     supported_specifications,
 )
 from conformance.test_plan_validation import safe_test_plan_snapshot
-from conformance.url_validation import HttpsUrlValidationError, validate_https_url
+from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
 
 _SCHEME_LABELS = {definition.scheme: definition.scheme_display_name for definition in supported_specifications()}
 """Participant-facing labels for supported v2 plan schemes."""
@@ -476,7 +476,11 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         status="conditional",
         label="Conditional",
         type_hint="HTTPS URL",
-        description="Redirect URI registered for the OAuth client.",
+        description=(
+            "Exact HTTPS URI registered for the OAuth client: a DNS hostname or an IP address such as "
+            "127.0.0.1 or [::1], or the FCS v1 callback https://0.0.0.0:8443/conformancesuite/callback. "
+            "localhost is not permitted."
+        ),
         requirement="Required only when the selected run performs browser/PSU authorisation or resolves redirect_uri.",
     ),
     SecurityFieldMetadata(
@@ -3626,7 +3630,7 @@ def _validate_dcr_form_fields(form: SecurityConfigForm, cleaned_data: Mapping[st
         )
     for redirect in _dcr_redirect_uri_lines(cleaned_data.get("dcr_redirect_uris_override")):
         try:
-            validate_https_url(redirect, label="Redirect URI override")
+            validate_oauth_redirect_uri(redirect, label="Redirect URI override")
         except HttpsUrlValidationError as error:
             form.add_error("dcr_redirect_uris_override", str(error))
     subject_dn = _cleaned_optional_string(cleaned_data.get("dcr_transport_subject_dn_override"))

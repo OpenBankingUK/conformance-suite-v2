@@ -60,8 +60,8 @@ DJANGO_SECRET_KEY_ENV = "DJANGO_SECRET_KEY"  # noqa: S105 - the env var *name*, 
 DJANGO_ALLOWED_HOSTS_ENV = "DJANGO_ALLOWED_HOSTS"
 DJANGO_SESSION_FILE_PATH_ENV = "DJANGO_SESSION_FILE_PATH"
 
-DEFAULT_ALLOWED_HOSTS = "127.0.0.1,localhost,0.0.0.0"
-"""Safe default matching the documented localhost-only publish profile."""
+DEFAULT_ALLOWED_HOSTS = "127.0.0.1,localhost,0.0.0.0,[::1]"
+"""Safe default matching the documented localhost-only publish profile, including the IPv6 loopback callback host."""
 
 
 def prepare_data_dir(data_dir: Path) -> bool:
