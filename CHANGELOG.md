@@ -47,6 +47,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   callback keeps working, and outbound HTTPS target validation, which still
   requires DNS hostnames, is unchanged.
 
+### Security
+
+- Temporarily replace the pinned DHI runtime's zlib `1.3.2-r1` with the
+  signature-verified Alpine v3.24/main package `1.4-r0` to address
+  CVE-2026-4738.
+
 ## [2.0.0-beta.14] - 2026-11-02
 
 ### Changed
