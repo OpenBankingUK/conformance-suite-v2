@@ -186,7 +186,7 @@ consolidated container vulnerability gate on **every pull request and push**:
 | Snyk Code (SAST) | Every PR (Snyk portal) | `high` + `critical` severity |
 | **`Vulnerability Scan`** (Docker Scout + Snyk Container `--app-vulns` + pip-audit of `uv.lock`) | Every PR and push, per platform | See policy below |
 | Promotion re-scan | Every promotion, **before** the Environment approval gate | Same policy, current data, `main`'s exceptions |
-| Scheduled re-scan (`security-rescan.yml`) | Daily: `main`, `release/*`, and every published Docker Hub tag | Opens/updates one issue per vulnerability |
+| Scheduled re-scan (`security-rescan.yml`) | Daily: `main`, `release/*`, and current published Docker Hub digests | Opens/updates one issue per vulnerability |
 
 **Policy** (`scripts/vulnerability_gate.py`):
 
@@ -229,6 +229,40 @@ the public Rekor log; the signature itself is still verified. An explicit
 "no VEX attestations found" response is the only non-fatal VEX-fetch outcome;
 all other failures remain blocking. PRs from forks have no secrets and fail
 closed; re-push them to a branch in this repository.
+
+**Published-image rescan scope**: `scripts/rescan_published_images.py` retains
+the numerically newest strict SemVer version independently in each beta, rc
+and GA channel (across release lines). Older versions in those channels are
+superseded, not deleted or repaired. Non-version tags, including preview and
+unrecognised tags, remain in scope conservatively. All tags sharing a retained
+manifest-index digest are represented together in reports and issues, with one
+scan per digest per supported platform (`linux/amd64`, `linux/arm64`). Thus a
+current version and its `beta-latest`/`latest` alias stay covered without duplicate
+scans. An unknown tag pointing at an older version keeps that digest in scope.
+The selection summary lists every retained digest and skipped superseded tag.
+Missing/invalid digests, contradictory tag records or an empty tag listing fail
+closed; scans use the selected digest, not a mutable tag.
+
+Published images do **not** inherit the DHI base's VEX attestations. For each
+selected digest with a version tag, the rescan reads the Dockerfile at the
+matching `refs/tags/v<version>` as data, using `main`'s code and
+`APPROVED_RUNTIME_BASES` to approve the exact final runtime base. Aliases use
+the version tag sharing their digest, never an assumed alias-to-release mapping.
+Docker Scout fetches the base's signed OpenVEX with DHI authentication and the
+same signature verification as branch scans; exceptions remain `main`'s.
+Unknown versions, missing release git tags and unapproved bases are explicitly
+reported and scanned **without** VEX, not skipped. Git, scanner, authentication
+and signature errors still fail closed.
+
+The target selection manifest is saved with each run. Issue sync only closes
+managed vulnerability issues after all current scan jobs succeed and the
+downloaded reports cover every selected branch/digest/platform exactly once.
+Missing, duplicate or unexpected reports prevent closure; partial runs can
+still report findings but cannot close issues. Findings held open solely by
+superseded tags can then close with a comment explaining the retirement policy,
+not claiming those historical images were fixed. Findings on any current
+target remain open, and manual policy issues without a vulnerability key are
+not managed by this sync. Docker Hub tags and GitHub Releases are untouched.
 
 #### Exceptions
 
