@@ -12,8 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Propose a single, 30-day exception for `CVE-2026-119586` / `sqlite` based on
-  the suspected SQLite CLI applicability mismatch documented in #274; retain
-  `sqlite-libs` and scanner records, with Security approval pending.
+  the suspected SQLite CLI applicability mismatch supported by candidate-image
+  evidence; retain `sqlite-libs` and scanner records, with Security approval
+  pending.
 - Refresh the digest-pinned DHI Python 3.14 / Alpine 3.24 builder and runtime
   for amd64 and arm64 to the reviewed beta.13 pair, including Expat/libexpat
   `2.9.0-r1`, zlib `1.3.2-r1`, and refreshed musl packages, addressing
