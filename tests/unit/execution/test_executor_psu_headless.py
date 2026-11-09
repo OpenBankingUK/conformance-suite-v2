@@ -10,16 +10,76 @@ import pytest
 from joserfc import jwk, jwt
 
 from conformance.api.auth_session_store import AuthSessionStore
-from conformance.context import ExecutionContext, RequestRecord, ResponseRecord, record_step
+from conformance.context import ExecutionContext, RequestRecord, ResponseRecord, RuntimeConfig, record_step
 from conformance.execution_log import BufferedExecutionLogger
-from conformance.executor import _execute_v1_psu_step
+from conformance.executor import _execute_v1_psu_step, run_manifest
 from conformance.manifest import (
     GeneratedRequestObject,
+    parse_manifest,
 )
 from tests.support.executor_psu import FakeClock, psu_headless_step
 from tests.support.executor_signing import executor_signing_config
+from tests.support.manifest_documents import psu_manifest_with
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.parametrize(
+    "redirect_uri",
+    [
+        "https://127.0.0.1:9443/conformancesuite/callback",
+        "https://[::1]:9443/conformancesuite/callback",
+        "https://192.168.1.10:9443/callback",
+        "https://0.0.0.0:8443/conformancesuite/callback",
+    ],
+)
+@pytest.mark.parametrize("outcome", ["code=callback-code", "error=access_denied"])
+def test_headless_supported_callbacks_preserve_redirect_uri(redirect_uri: str, outcome: str) -> None:
+    state = "s" * 32
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(302, headers={"Location": f"{redirect_uri}?state={state}&{outcome}"})
+
+    manifest = parse_manifest(
+        psu_manifest_with(mode="headless", redirectUri="${config.oauth.redirectUri}", state=state)
+    )
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        report = run_manifest(
+            manifest, client=client, runtime_config=RuntimeConfig(oauth_redirect_uri=redirect_uri)
+        ).to_json_object()
+    steps = report["steps"]
+    assert isinstance(steps, list)
+    step = steps[0]
+    assert isinstance(step, dict)
+    expected_status = "failed" if outcome.startswith("error") else "passed"
+    assert report["status"] == expected_status
+    assert step["status"] == expected_status
+    assert len(requests) == 1
+    assert requests[0].url.params["redirect_uri"] == redirect_uri
+    assert requests[0].url.host not in {"127.0.0.1", "0.0.0.0"}  # noqa: S104 - assertion about a destination, not a bind.
+
+
+@pytest.mark.parametrize(
+    "redirect_uri",
+    ["https://localhost/callback", "https://127.0.0.1/callback#fragment", "https://0.0.0.0:9443/callback"],
+)
+def test_runtime_redirect_policy_rejects_resolved_placeholders_before_http(redirect_uri: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        pytest.fail(f"Invalid redirect must not send an authorization request to {request.url.host}")
+
+    manifest = parse_manifest(psu_manifest_with(mode="headless", redirectUri="${config.oauth.redirectUri}"))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        report = run_manifest(
+            manifest, client=client, runtime_config=RuntimeConfig(oauth_redirect_uri=redirect_uri)
+        ).to_json_object()
+    assert report["status"] == "failed"
+    steps = report["steps"]
+    assert isinstance(steps, list)
+    step = steps[0]
+    assert isinstance(step, dict)
+    assert "redirectUri" in str(step["message"])
 
 
 def test_psu_headless_step_uses_signed_request_object_for_authorization_redirect(tmp_path: Path) -> None:

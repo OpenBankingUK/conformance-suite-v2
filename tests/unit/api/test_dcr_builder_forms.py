@@ -60,3 +60,56 @@ def test_dcr_security_form_requires_shared_credentials_and_serialises_overrides(
         "https://tpp.example.com/two",
     ]
     assert form.metadata == {"brandName": "Retail"}
+
+
+def _dcr_security_form(tmp_path: Path, redirect_uris: str) -> SecurityConfigForm:
+    """Build a DCR security form that is valid apart from the supplied redirect overrides."""
+    return SecurityConfigForm(
+        data={
+            "signing_private_key_path": str(tmp_path / "signing.key"),
+            "signing_kid": "kid-123",
+            "signing_token_endpoint_auth_method": "client_secret_basic",
+            "signing_client_auth_algorithm": "PS256",
+            "tls_client_certificate_path": str(tmp_path / "transport.crt"),
+            "tls_client_private_key_path": str(tmp_path / "transport.key"),
+            "dcr_software_statement_assertion_path": str(tmp_path / "ssa.jwt"),
+            "dcr_registration_audience": "aspsp123",
+            "dcr_execution_mode": "certification",
+            "dcr_redirect_uris_override": redirect_uris,
+        },
+        dcr_mode=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "redirect_uris",
+    [
+        "https://127.0.0.1:8443/conformancesuite/callback",
+        "https://[::1]:8443/conformancesuite/callback",
+        "https://0.0.0.0:8443/conformancesuite/callback",
+        "https://127.0.0.1:8443/conformancesuite/callback\nhttps://tpp.example.com/callback",
+    ],
+)
+def test_dcr_redirect_override_accepts_supported_callbacks(tmp_path: Path, redirect_uris: str) -> None:
+    """The DCR override form applies the callback policy, not the outbound IP-literal restriction."""
+    form = _dcr_security_form(tmp_path, redirect_uris)
+
+    assert form.is_valid(), form.errors.as_json()
+    assert form.dynamic_client_registration is not None
+    assert form.dynamic_client_registration["redirectUrisOverride"] == redirect_uris.split("\n")
+
+
+@pytest.mark.parametrize(
+    "redirect_uri",
+    [
+        "https://localhost:8443/callback",
+        "https://tpp.example.com/callback#fragment",
+        "https://0.0.0.0:9443/callback",
+        "http://127.0.0.1:8443/callback",
+    ],
+)
+def test_dcr_redirect_override_rejects_unsupported_callbacks(tmp_path: Path, redirect_uri: str) -> None:
+    form = _dcr_security_form(tmp_path, redirect_uri)
+
+    assert form.is_valid() is False
+    assert list(form.errors) == ["dcr_redirect_uris_override"]

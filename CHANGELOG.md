@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Accept HTTPS IP-literal OAuth callbacks, such as
+  `https://127.0.0.1:8443/conformancesuite/callback`, by validating browser
+  redirect URIs separately from outbound HTTPS targets. The FCS v1 `0.0.0.0`
+  callback keeps working, and outbound HTTPS target validation still requires
+  DNS hostnames. The Docker smoke test checks both local callback hosts.
 - Trusted runtime-base validation permits the reviewed DHI Python 3.14 Alpine
   3.24 multi-architecture index (`3d7fbfac...`) alongside the existing approved
   indexes, returning the selected reference for digest-bound VEX retrieval.
@@ -34,6 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Apply one OAuth redirect URI policy, aligned with Open Banking DCR 3.4,
+  RFC 6749 and FAPI 1, across configuration, manifests, DCR, the DCR builder
+  and PSU execution. HTTPS DNS hostnames and unicast IPv4/IPv6 literals are
+  accepted, together with the FCS v1
+  `https://0.0.0.0:8443/conformancesuite/callback`. Reject `localhost`
+  (previously accepted), `.localhost` names, fragments, backslashes,
+  non-canonical IPv4 spellings and non-unicast addresses. Preserve registered
+  redirect values, ports and paths exactly. Include `[::1]` in the container's
+  default `DJANGO_ALLOWED_HOSTS` for IPv6 loopback callbacks.
 - `.github/workflows/_finalize-ga-release.yml` is replaced by
   `.github/workflows/_finalize-release.yml`, which handles both beta and GA
   publications. The manual **Promote beta image** recovery workflow now also
