@@ -55,6 +55,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Trusted assessment and promotion re-scans emit unquoted decisions only
+  after validating exactly one result per supported platform. Missing,
+  malformed or unknown results remain blocking, including alongside eligible
+  risks. Approved assessments publish the same candidate-bound receipt filename
+  as passing assessments, and a failed final candidate check now fails the
+  assessment workflow so automatic promotion cannot consume a failed assessment.
 - Trusted security assessments read candidate identity from the preserved
   `artifacts/candidate-context.json` archive path and explicitly use GET when
   fetching source files from the exact verified commit, fixing the post-CI

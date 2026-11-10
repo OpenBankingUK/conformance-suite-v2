@@ -382,12 +382,23 @@ jobs:
         run: |
           set -euo pipefail
           decision=blocked
-          if [[ "$RESCAN_RESULT" == "success" ]] && compgen -G "$RUNNER_TEMP/decisions/decision-*.json" >/dev/null; then
-            decision="$(jq -s '
-              if any(.[]; .decision == "blocked") then "blocked"
+          files=("$RUNNER_TEMP"/decisions/decision-*.json)
+          if [[ "$RESCAN_RESULT" == "success" && "${#files[@]}" -eq 2 ]]; then
+            if ! decision="$(jq -nr \
+              --slurpfile amd64 "$RUNNER_TEMP/decisions/decision-linux-amd64.json" \
+              --slurpfile arm64 "$RUNNER_TEMP/decisions/decision-linux-arm64.json" '
+              if ($amd64 | length) != 1 or ($arm64 | length) != 1 then "blocked"
+              else $amd64 + $arm64 |
+              if (all(.[]; type == "object"
+                    and (.decision == "pass" or .decision == "approval_required" or .decision == "blocked")) | not)
+              then "blocked"
+              elif (map(.platform) | sort) != ["linux-amd64", "linux-arm64"] then "blocked"
+              elif any(.[]; .decision == "blocked") then "blocked"
               elif any(.[]; .decision == "approval_required") then "approval_required"
-              elif length == 2 and all(.[]; .decision == "pass") then "pass"
-              else "blocked" end' "$RUNNER_TEMP"/decisions/decision-*.json)"
+              else "pass" end end')"; then
+              echo "::error::Platform decision evidence is malformed; promotion is blocked." >&2
+              decision=blocked
+            fi
           fi
           echo "decision=$decision" >> "$GITHUB_OUTPUT"
           {
@@ -403,6 +414,10 @@ jobs:
             echo
             echo "Review the per-platform vulnerability report artifacts before proceeding."
           } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$decision" == "blocked" ]]; then
+            echo "::error::Promotion is blocked. Review the re-scan evidence." >&2
+            exit 1
+          fi
 
   approve-risk:
     name: Approve promotion risk exception
