@@ -30,6 +30,7 @@
     - [3.1 GitHub Security Features](#31-github-security-features)
     - [3.2 Vulnerability Scanning and the PR Gate](#32-vulnerability-scanning-and-the-pr-gate)
     - [3.3 Required Repository Secrets](#33-required-repository-secrets)
+  - [DHI Image Security Approval Runbook](IMAGE_SECURITY_APPROVALS.md)
   - [4. CI/CD Pipeline Design](#4-cicd-pipeline-design)
     - [4.1 Workflow Overview](#41-workflow-overview)
     - [4.2 Workflow Files](#42-workflow-files)
@@ -112,11 +113,11 @@ These rules **must** be configured in **GitHub → Repository Settings → Branc
 | Rule | Setting |
 |---|---|
 | Require a pull request before merging | **Enabled** |
-| Required approving reviews | **2** (1 Copilot + 1 human) |
+| Required approving reviews | **1** human (Copilot review is advisory and does not count as an approval) |
 | Dismiss stale pull request approvals when new commits are pushed | **Enabled** |
 | Require review from Code Owners | **Enabled** |
-| Require status checks to pass before merging | Pending enablement after the `release/2.0.0` merge-back; see [branch rulesets](settings/BRANCH_RULESETS.md) |
-| Required status checks to enable | `Check`, `Docker Build`, `Vulnerability Scan`, and `code/snyk (Standards)` |
+| Require status checks to pass before merging | Pending manual configuration after the trusted `Vulnerability Scan` check appears; see [branch rulesets](settings/BRANCH_RULESETS.md) and the [DHI approval runbook](IMAGE_SECURITY_APPROVALS.md) |
+| Required status checks to enable | `Check`, `Docker Build`, `Image (linux/amd64)`, `Image (linux/arm64)`, `Vulnerability Scan`, and `code/snyk (Standards)`, plus CodeQL code scanning results (High or higher) |
 | Require branches to be up to date before merging | **Enabled** |
 | Require conversation resolution before merging | **Enabled** |
 | Require linear history | **Enabled** (merge squash or rebase only) |
@@ -131,8 +132,8 @@ These rules **must** be configured in **GitHub → Repository Settings → Branc
 | Required approving reviews | **1** (human) |
 | Dismiss stale pull request approvals when new commits are pushed | **Enabled** |
 | Require review from Code Owners | **Enabled** |
-| Require status checks to pass before merging | Pending enablement after the `release/2.0.0` merge-back; see [branch rulesets](settings/BRANCH_RULESETS.md) |
-| Required status checks to enable | `Check`, `Docker Build`, `Vulnerability Scan`, and `code/snyk (Standards)` |
+| Require status checks to pass before merging | Pending manual configuration after the trusted `Vulnerability Scan` check appears; see [branch rulesets](settings/BRANCH_RULESETS.md) and the [DHI approval runbook](IMAGE_SECURITY_APPROVALS.md) |
+| Required status checks to enable | `Check`, `Docker Build`, `Image (linux/amd64)`, `Image (linux/arm64)`, `Vulnerability Scan`, and `code/snyk (Standards)`, plus CodeQL code scanning results (High or higher) |
 | Require branches to be up to date before merging | **Enabled** |
 | Require conversation resolution before merging | **Enabled** |
 | Allow administrators to bypass | **Enabled** — repository admins may override in exceptional circumstances; see [Section 5.4](#54-release-exception-process) |
@@ -151,8 +152,8 @@ GitHub Copilot code review is enabled as follows:
 1. **GitHub Repository Settings → Copilot → Code review**
    - Enable "Automatic review requests" for pull requests targeting `main` and `develop`
 2. In the **branch protection rules** for `main`:
-   - Set required approving reviews to **2**
-   - The Copilot review counts as one of the required reviews when it approves
+   - Set required approving reviews to **1** (human)
+   - Copilot review is advisory: it comments but never counts as an approving review
 3. Add `@github-copilot` to `CODEOWNERS` for all paths (see [CODEOWNERS](../. github/CODEOWNERS))
 
 > **Note**: GitHub Copilot code review requires GitHub Enterprise or Copilot Business/Enterprise licences with the Copilot Code Review feature enabled for the organisation.
@@ -177,23 +178,29 @@ The following GitHub security features **must** be enabled at the organisation a
 ### 3.2 Vulnerability Scanning and the PR Gate
 
 Snyk is the company's primary security scanning platform. The repository is
-linked via the **Snyk portal** for dependency and code checks, and CI runs a
-consolidated container vulnerability gate on **every pull request and push**:
+linked via the **Snyk portal** for dependency and code checks, and a trusted
+post-CI assessment runs the consolidated container vulnerability gate:
 
 | Scan Type | Trigger | Blocks |
 |---|---|---|
 | Snyk Open Source (dependencies) | Every PR (Snyk portal, `code/snyk (Standards)`) | `high` + `critical` severity |
 | Snyk Code (SAST) | Every PR (Snyk portal) | `high` + `critical` severity |
-| **`Vulnerability Scan`** (Docker Scout + Snyk Container `--app-vulns` + pip-audit of `uv.lock`) | Every PR and push, per platform | See policy below |
-| Promotion re-scan | Every promotion, **before** the Environment approval gate | Same policy, current data, `main`'s exceptions |
-| Scheduled re-scan (`security-rescan.yml`) | Daily: `main`, `release/*`, and every published Docker Hub tag | Opens/updates one issue per vulnerability |
+| **`Vulnerability Scan`** (Docker Scout + Snyk Container `--app-vulns` + pip-audit of `uv.lock`) | Trusted assessment after successful same-repository PR/push CI, per platform | See policy below |
+| Promotion re-scan | Every promotion, before risk acceptance and publication Environment gates | Same policy, current data, no candidate-supplied exceptions |
+| Scheduled re-scan (`security-rescan.yml`) | Daily: `main`, `release/*`, and current published Docker Hub digests | Opens/updates one issue per vulnerability |
 
 **Policy** (`scripts/vulnerability_gate.py`):
 
 - Any finding with a fixed version available fails, **whatever its severity**.
-- Unfixed `critical`/`high` findings fail. Findings with no severity from any
-  scanner are treated as `high` (fail closed).
+- Unfixed `critical`/`high` findings, and findings with no severity (treated as
+  `high`), require an explicit candidate-bound approval in the protected
+  `security-exception` GitHub Environment. Approval is risk acceptance, not a
+  claim that the finding is fixed.
 - Unfixed `medium`/`low` findings are reported but do not fail.
+- A successfully retrieved DHI attestation listing that explicitly lacks SLSA
+  v1 provenance also requires that approval. Digest, subject, signature,
+  parsing, registry, authentication and scanner errors are hard failures and
+  cannot be overridden.
 - When published, Docker's signed OpenVEX for the exact DHI runtime base
   (author must be `@docker.com`; see `scripts/validate_docker_base.py`)
   suppresses only base-image OS findings with the exact package version. It
@@ -206,20 +213,43 @@ consolidated container vulnerability gate on **every pull request and push**:
 The job summary, GitHub annotations and SARIF all report **every** finding:
 blocking findings as errors, informational open findings as warnings, and
 VEX-assessed or accepted findings as notices/suppressed SARIF results. The
-required check is the aggregate `Vulnerability Scan` job.
+trusted `security-assessment.yml` workflow creates the stable `Vulnerability
+Scan` check on the PR head SHA (after validating the CI synthetic merge
+commit's base/head parents) or the push SHA. It retrieves scanner inputs from
+the exact candidate commit as data and never uses the candidate's exception
+file as approval authority. CI's image-building jobs do not run the scanner
+or receive the Snyk token; the separate trusted workflow runs only after CI
+succeeds.
 
-**Trust model**: PR image builds run in an untrusted job that checks out
-the PR head, builds the Docker archive, and performs only non-secret local
-verification; it does not receive `SNYK_TOKEN` or run the vulnerability gate.
-The secret-bearing scan runs later in a clean dependent job. That job checks
-out the PR base commit as the workspace root, falls back to `main` if the base
-predates the gate, and uses the PR head's Dockerfile, lock file, pyproject and
-exception file only as data under `.scan-input/`. Only the one-time PR that
-introduces the gate may bootstrap from its own copy, and it emits an explicit
-warning. Because the workflow definition for `pull_request` events is still
-read from the PR head, CODEOWNERS review of `.github/` remains the control for
-workflow changes; CODEOWNERS review of `scripts/` and `security/` protects the
-policy code and exception data. When available, Docker's VEX is fetched with
+Assessment and promotion re-scan decisions require exactly one valid result
+for each of `linux-amd64` and `linux-arm64` before either passing or requesting
+approval. Unknown, malformed, missing or duplicate platform results block the
+candidate; an eligible risk on the other platform cannot override them.
+Passing and explicitly approved assessments both upload
+`security-assessment-receipt` containing `assessment-receipt.json`, bound to
+the source CI run, candidate commit and checked commit. The final candidate
+check and assessment workflow must both succeed before automatic promotion
+can consume that receipt. A failed check also fails the assessment workflow;
+blocked promotion re-scans fail rather than reporting a skipped publication
+as success.
+
+**Trust model**: CI builds PR and push image archives, but no longer runs
+secret-bearing vulnerability scans. A separate workflow on the trusted
+default branch verifies the exact CI workflow ID/path, first attempt, run
+result, PR association and merge parents before reading the image artifact.
+CI's `candidate-context` artifact preserves the repository-relative
+`artifacts/candidate-context.json` path alongside `Dockerfile`, `pyproject.toml`
+and `uv.lock`; both identity checks read that nested JSON after download.
+The source Dockerfile and dependency lock are fetched from the verified commit
+through explicit GET requests to GitHub's content API with the verified SHA as
+`ref` (not from the uploaded copies) and treated only as data; trusted policy and
+scanner code are checked out from the default branch. Only an explicit
+absence of signed DHI provenance or eligible unfixed high-severity findings
+can pause for approval. The environment approval record and exact comment
+must be present in that assessment run; source-controlled candidate files
+cannot approve themselves. Fork PRs are not scanned with repository secrets
+and must be assessed from a same-repository branch. When available, Docker's
+VEX is fetched with
 `--verify` against Docker's DHI signing key, checked in as
 `.github/actions/vulnerability-scan/dhi-signing-key.pub` and pinned by
 SHA-256 (rotate via a reviewed PR against
@@ -234,6 +264,41 @@ The pinned Scout CLI download retries transient failures within a bounded
 60-second retry window and still verifies the archive checksum before
 installation. VEX must come from the assessed runtime base: derived published
 images do not inherit its attestations.
+
+**Published-image rescan scope**: `scripts/rescan_published_images.py` retains
+the numerically newest strict SemVer version independently in each beta, rc
+and GA channel (across release lines). Older versions in those channels are
+superseded, not deleted or repaired. Non-version tags, including preview and
+unrecognised tags, remain in scope conservatively. All tags sharing a retained
+manifest-index digest are represented together in reports and issues, with one
+scan per digest per supported platform (`linux/amd64`, `linux/arm64`). Thus a
+current version and its `beta-latest`/`latest` alias stay covered without duplicate
+scans. An unknown tag pointing at an older version keeps that digest in scope.
+The selection summary lists every retained digest and skipped superseded tag.
+Missing/invalid digests, contradictory tag records or an empty tag listing fail
+closed; scans use the selected digest, not a mutable tag.
+
+Published images do **not** inherit the DHI base's VEX attestations. For each
+selected digest with a version tag, the rescan reads the Dockerfile at the
+matching `refs/tags/v<version>` as data, using `main`'s code. Current candidate
+DHI files are checked against the fixed builder/runtime family and digest
+syntax; historical files use `APPROVED_RUNTIME_BASES`. Aliases use
+the version tag sharing their digest, never an assumed alias-to-release mapping.
+Docker Scout fetches the base's signed OpenVEX with DHI authentication and the
+same signature verification as branch scans; exceptions remain `main`'s.
+Unknown versions, missing release git tags and unapproved bases are explicitly
+reported and scanned **without** VEX, not skipped. Git, scanner, authentication
+and signature errors still fail closed.
+
+The target selection manifest is saved with each run. Issue sync only closes
+managed vulnerability issues after all current scan jobs succeed and the
+downloaded reports cover every selected branch/digest/platform exactly once.
+Missing, duplicate or unexpected reports prevent closure; partial runs can
+still report findings but cannot close issues. Findings held open solely by
+superseded tags can then close with a comment explaining the retirement policy,
+not claiming those historical images were fixed. Findings on any current
+target remain open, and manual policy issues without a vulnerability key are
+not managed by this sync. Docker Hub tags and GitHub Releases are untouched.
 
 #### Exceptions
 
@@ -254,8 +319,9 @@ proof that the SQLite flaw is fixed or that Debian is unaffected.
 This community image is not the FIPS variant, and a base refresh does not
 establish that the application has no vulnerabilities.
 
-`security/vulnerability-exceptions.toml` is the **only** place a vulnerability
-may be accepted. Each entry needs `id` (CVE/GHSA/…), `package`, `reason`,
+`security/vulnerability-exceptions.toml` is the only persistent
+source-controlled exception list; it is not the authority for candidate
+assessment or promotion re-scan. Each entry needs `id` (CVE/GHSA/…), `package`, `reason`,
 `owner` and `approver` (GitHub user or team handles), `created` and
 `expires` (at most **90 days**). Both identity fields and the reason remain
 required, but the same named GitHub user may own and approve an exception.
@@ -265,16 +331,19 @@ The gate fails when an exception is expired,
 malformed, duplicated, when a fix becomes available, or when it is **stale**
 (the vulnerability is no longer found or is already covered by VEX). Upgrade
 PRs — including Dependabot's — must therefore delete the matching exception.
-Add exceptions only through a reviewed PR with Security approval; never widen
-an entry beyond one ID and one package.
+Add persistent exceptions only through a reviewed PR with Security approval;
+never widen an entry beyond one ID and one package. Candidate-bound approvals
+are separate, expire with the workflow evidence, and require a fresh
+environment approval on promotion if a current-data re-scan still finds an
+eligible risk.
 
 #### Release hygiene
 
 The promotion re-scan and daily re-scan mean a newly disclosed vulnerability
-can block an already-built candidate. Fix it (or add a reviewed exception on
-`main`, then merge `main` into the release branch) **before** bumping the
-release version, so the version bump is the last commit and produces the
-candidate that is promoted.
+can block an already-built candidate. Fix it before bumping the release
+version where possible. Eligible unfixed risks require fresh candidate-bound
+approval for both assessment and promotion; persistent exceptions do not
+override those gates.
 
 > **Developer tooling**: All developers should install the **Snyk IDE extension** (VS Code or JetBrains) to catch security issues locally before raising a PR. See [Section 10](#10-onboarding-checklist-for-new-developers).
 
@@ -288,7 +357,7 @@ The following secrets must be configured in **Repository Settings → Secrets an
 | `DOCKER_ORG_USERNAME` | Organisation Docker account used to pull Docker Hardened Images, authenticate Docker Scout, and publish the approved image |
 | `DOCKER_ORG_ACCESS_TOKEN` (repository secret) | **Read-only** organisation access token used by CI jobs to pull Docker Hardened Images from `dhi.io` and to authenticate the Docker Scout CLI (`DOCKER_SCOUT_HUB_USER`/`DOCKER_SCOUT_HUB_PASSWORD`) |
 | `DOCKER_ORG_ACCESS_TOKEN` (environment secret on `preview-release`, `beta-release`, `ga-release`) | **Write-capable** organisation access token scoped to push on `openbanking/conformance-suite-v2`; overrides the read-only repository secret only inside the approved promotion job |
-| `SNYK_TOKEN` | Token used by the `Vulnerability Scan`, promotion re-scan and scheduled re-scan jobs (also required as a Dependabot secret) |
+| `SNYK_TOKEN` | Token used by the trusted `Vulnerability Scan`, promotion re-scan and scheduled re-scan workflows |
 
 Before enabling promotion, a repository administrator must create the Docker
 Hub repository `openbanking/conformance-suite-v2` (public) and configure two
@@ -307,40 +376,35 @@ caller. Push credentials are therefore only released after a required
 reviewer approves the Environment gate; candidate builds never publish
 images.
 
-**Dependabot pull requests** cannot read repository Actions secrets; they only
-receive secrets configured under **Settings → Secrets and variables →
-Dependabot**. Because hardened `Docker Build` runs log in to `dhi.io` and every
-PR runs the `Vulnerability Scan`, also add `DOCKER_ORG_USERNAME`, the
-**read-only** `DOCKER_ORG_ACCESS_TOKEN` and `SNYK_TOKEN` as Dependabot secrets.
-Never store the write-capable token there. Without them, Dependabot PRs fail
-closed. `.github/dependabot.yml` updates `uv.lock`, Dockerfile base-image
-digests and GitHub Actions; a DHI digest update must first add the exact
-image reference to `APPROVED_RUNTIME_BASES` in
-`scripts/validate_docker_base.py` on the trusted PR base and promotion
-branches. The immutable allowlist retains the existing baseline reference
-alongside the approved refreshes; tags alone, arbitrary digests and individual
-platform manifest references are not approved. The validator returns the
-selected reference so signed VEX evidence remains bound to that exact image.
-
-Land the approval-set change as a policy-only prerequisite, leaving the
-Dockerfile pins unchanged, then synchronize it from `main` into the target
-release branch before updating the builder and runtime pins. Two commits in
-one unmerged PR do not satisfy this ordering: PR scans execute the validator
-from the trusted PR base, and promotion requires the candidate pipeline files
-(including this validator) to match trusted `main`. Approving an index does
-not itself refresh the runtime image or relax the vulnerability policy.
-
-The release approval set matches trusted `main`: the baseline Alpine index
-(`4361d30a...`), reviewed refreshed Alpine indexes (`00f9aead...` and
-`3d7fbfac...`), and the reviewed Debian 13 index
-`dhi.io/python:3.14-debian13@sha256:4491196f15b7afb538ea121eed173cdd136297f616b15b34f66c25610bf80241`.
-The Debian amd64 (`32a85a1e...`) and arm64 (`ae64317c...`) manifests are not
-approved standalone references. Previously approved indexes remain available
-for historical published-image rescans. `EXPECTED_RUNTIME_BASE` remains the
-unchanged Alpine baseline default; the validator returns the actual selected
-approved reference so VEX retrieval stays bound to that image. The Debian
-runtime migration follows the separately landed policy approvals on trusted
-`main` and the release branch; vulnerability gates are unchanged.
+**Dependabot pull requests** cannot read repository Actions secrets in their
+CI workflow; they only receive secrets configured under **Settings → Secrets
+and variables → Dependabot**. Because hardened Docker builds log in to
+`dhi.io`, add `DOCKER_ORG_USERNAME` and the **read-only**
+`DOCKER_ORG_ACCESS_TOKEN` as Dependabot secrets. The trusted post-CI
+assessment uses repository Actions secrets and does not require `SNYK_TOKEN`
+to be copied into Dependabot settings. Never store the write-capable token
+there. Without the read-only registry credentials, Dependabot image builds
+fail closed. `.github/dependabot.yml` updates `uv.lock`, Dockerfile base-image
+digests and GitHub Actions. Because Dependabot reads its configuration only
+from `main`, a second Docker entry sets `target-branch` to the active
+`release/*` branch so base-image digest PRs also open there for manual review;
+update that entry when a new release branch is cut. Both Docker entries group
+the `dhi.io/python` builder and runtime references so Dependabot proposes the
+pair together for review each day. A DHI candidate update is admitted only for
+the fixed Python 3.14 / Debian 13
+builder/runtime image families with digest-pinned references; the trusted
+assessment verifies Docker's signed SLSA v1 provenance for each platform.
+`APPROVED_RUNTIME_BASES` remains for historical references and scheduled
+rescans, not as a prerequisite for each new digest. The immutable set permits
+only previously reviewed historical indexes such as the baseline Alpine index
+(`4361d30a...`), the reviewed refreshed Alpine indexes (`00f9aead...` and
+`3d7fbfac...`), and the reviewed Debian 13 index (`4491196f...`), not arbitrary
+digests or platform-specific manifests. The Debian amd64 (`32a85a1e...`) and
+arm64 (`ae64317c...`) manifests are not approved standalone references.
+Previously approved indexes remain available for historical published-image rescans.
+`EXPECTED_RUNTIME_BASE` remains the unchanged baseline default; the validator
+uses it for the historical allowlist path and returns the actual selected
+reference so VEX retrieval stays bound to that image.
 
 There are currently no repository-level variables required by CI: the
 supported pytest suite is fully offline and does not target a live model bank
@@ -363,16 +427,19 @@ dispatched from `main`.
 │ release/*, hotfix/*)                                            │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
-               ┌───────────────┴───────────────┐
-               ▼                               ▼
-           [Check]                      [Docker Build]
-     make check with full                build image
-     tracked-file secret scan           start container
-     ruff + mypy                         probe /health/
-     unit + component tests
-     aggregate coverage          [Image (amd64/arm64)] → [Vulnerability Scan]
-                                 build, smoke test, Scout + Snyk + pip-audit,
-                                 vulnerability gate (Section 3.2)
+               ┌───────────────┴────────────────────┐
+               ▼                                    ▼
+           [Check]                           [Docker Build]
+     make check with full                     build and smoke test
+     tracked-file secret scan
+     ruff + mypy                      [Image (amd64/arm64) artifacts]
+     unit + component tests           build and smoke-test exact archives
+     aggregate coverage                            │
+                                                   ▼
+                                    [Trusted security assessment]
+                                    verify CI/PR identity; Scout + Snyk +
+                                    pip-audit; signed DHI provenance;
+                                    publish the `Vulnerability Scan` check
 
 The external Snyk integration reports its own PR status independently.
 ```
@@ -380,35 +447,34 @@ The external Snyk integration reports its own PR status independently.
 Pushes to `preview/*`, `release/*`, and `main` additionally build candidate
 artifacts when the source tree contains the hardened Docker contract (a DHI
 base, explicit UID/GID `65532:65532`, and `docker/entrypoint.py`). Each
-`linux/amd64` and `linux/arm64` image is built once, smoke-tested, blocked by
-the vulnerability gate (Section 3.2), accompanied by an SPDX SBOM,
-and uploaded as a GitHub Actions artifact. Candidate jobs have read-only
-repository permissions and never push an image.
+`linux/amd64` and `linux/arm64` image is built once, smoke-tested, accompanied
+by an SPDX SBOM, and uploaded as a GitHub Actions artifact. The separate
+trusted assessment scans those exact archives before a candidate can pass
+the required `Vulnerability Scan` check or be promoted. Candidate jobs have
+read-only repository permissions and never push an image.
 
-This Docker-contract check is a deliberate bootstrap compatibility gate:
-today's `main` Docker build and smoke test remain unchanged, so installing the
-trusted promotion code does not require importing the MVP Docker/application
-implementation. A `release/2.0.0` branch containing that hardened Docker
-implementation automatically produces candidates with versions such as
-`2.0.0-beta.N`; once the same implementation reaches `main`, GA candidates
-are produced there too.
+This Docker-contract check is a bootstrap compatibility gate. The hardened
+Docker implementation on `release/2.0.0` produces candidates with versions
+such as `2.0.0-beta.N`, while `main` produces GA candidates.
 
 ### 4.2 Workflow Files
 
 | File | Triggers | Purpose |
 |---|---|---|
 | `.github/workflows/ci.yml` | PR + push to protected branches | Canonical checks, unchanged baseline Docker smoke test, and gated multi-architecture candidate artifacts |
-| `.github/workflows/auto-promote.yml` | Successful push CI completion on `main`, `release/**`, or `preview/**` | Resolve eligible candidates and automatically start their gated promotion |
+| `.github/workflows/security-assessment.yml` | Successful CI completion + manual fresh reassessment | Verify candidate identity, assess both platforms, and create the required `Vulnerability Scan` check |
+| `.github/workflows/auto-promote.yml` | Successful trusted security assessment of a push candidate | Resolve eligible candidates and automatically start their gated promotion |
 | `.github/workflows/promote-preview.yml` | Manual dispatch from `main` | Recovery/backfill path for a `preview/*` candidate |
 | `.github/workflows/promote-beta.yml` | Manual dispatch from `main` | Recovery/backfill path for a `release/X.Y.Z` beta candidate |
 | `.github/workflows/promote-ga.yml` | Manual dispatch from `main` | Recovery/backfill path for a tagged `main` candidate |
-| `.github/workflows/_promote-image.yml` | Called by automatic and manual promotion workflows | Trusted validation, pre-approval vulnerability re-scan, and exact-artifact Docker Hub publication implementation |
+| `.github/workflows/_promote-image.yml` | Called by automatic and manual promotion workflows | Require a candidate-bound assessment receipt, re-scan, request eligible risk acceptance, and publish the exact artifact |
 | `.github/workflows/security-rescan.yml` | Daily schedule + manual dispatch | Re-scan `main`, `release/*` and published images; sync one issue per vulnerability |
 | `.github/workflows/_finalize-release.yml` | Called after successful beta or GA publication | Create the `vX.Y.Z-beta.N`/`vX.Y.Z` Git tag at the source SHA, create the immutable GitHub Release, and (GA only) open the develop merge-back PR |
 
-Promotion locates the successful push CI run for the exact source SHA and
-branch, re-scans its exact image archives with current vulnerability data and
-`main`'s policy before any Environment approval is requested, downloads its immutable artifacts, verifies archive checksums,
+Promotion requires the successful trusted assessment receipt for the exact
+source SHA and CI run, re-scans its exact image archives with current
+vulnerability data before requesting an eligible `security-exception`
+approval or publication Environment approval, downloads its immutable artifacts, verifies archive checksums,
 revalidates release metadata using scripts checked out from `main`, and
 confirms the source SHA belongs to the requested branch and a merged pull
 request (direct pushes are rejected). If that pull request has no recorded

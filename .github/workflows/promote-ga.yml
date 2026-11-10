@@ -9,6 +9,9 @@ on:
       tag:
         required: true
         description: "The exact vX.Y.Z Git tag identifying the release commit on main."
+      security_assessment_run_id:
+        required: true
+        description: "Successful Trusted security assessment Actions run ID for this commit."
 
 permissions:
   contents: read
@@ -28,6 +31,7 @@ jobs:
       branch: main
       tag: ${{ inputs.tag }}
       environment_name: ga-release
+      security_assessment_run_id: ${{ inputs.security_assessment_run_id }}
     permissions:
       contents: read
       actions: read

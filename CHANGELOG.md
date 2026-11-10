@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Trusted assessment and promotion re-scans emit unquoted decisions only
+  after validating exactly one result per supported platform. Missing,
+  malformed or unknown results remain blocking, including alongside eligible
+  risks. Approved assessments publish the same candidate-bound receipt filename
+  as passing assessments, and a failed final candidate check now fails the
+  assessment workflow so automatic promotion cannot consume a failed assessment.
+- Trusted security assessments read candidate identity from the preserved
+  `artifacts/candidate-context.json` archive path and explicitly use GET when
+  fetching source files from the exact verified commit, fixing the post-CI
+  identity/input handoff without changing trust or vulnerability gates.
+
+### Security
+
+- Add daily grouped DHI digest refreshes and a trusted candidate-bound security
+  assessment with signed provenance verification and protected risk approvals.
+  Promotion requires an assessment receipt and a fresh vulnerability scan.
+- Scan current published image digests using their validated runtime base for
+  VEX, and require complete scan coverage before closing vulnerability issues.
+
 ## [2.0.0-beta.16] - 2026-11-09
 
 ### Security

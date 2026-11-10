@@ -38,6 +38,10 @@ on:
         type: string
         default: ""
         description: "Exact successful CI run to promote; omitted for manual recovery dispatches."
+      security_assessment_run_id:
+        required: true
+        type: string
+        description: "Successful trusted security-assessment run with a receipt bound to this candidate."
     secrets:
       DOCKER_ORG_USERNAME:
         required: true
@@ -69,6 +73,7 @@ env:
   INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
   INPUT_TAG: ${{ inputs.tag }}
   INPUT_CI_RUN_ID: ${{ inputs.ci_run_id }}
+  INPUT_ASSESSMENT_RUN_ID: ${{ inputs.security_assessment_run_id }}
 
 jobs:
   locate:
@@ -79,6 +84,7 @@ jobs:
       actions: read
     outputs:
       run_id: ${{ steps.locate.outputs.run_id }}
+      assessment_run_id: ${{ steps.locate.outputs.assessment_run_id }}
 
     steps:
       - name: Require a trusted main-branch dispatch
@@ -150,7 +156,53 @@ jobs:
             echo "::error::CI run $run_id is not the trusted successful push CI run for $INPUT_SOURCE_SHA on $INPUT_BRANCH." >&2
             exit 1
           fi
+          if ! [[ "$INPUT_ASSESSMENT_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::security_assessment_run_id must be a numeric Actions run ID." >&2
+            exit 1
+          fi
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "assessment_run_id=$INPUT_ASSESSMENT_RUN_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Download candidate-bound security assessment receipt
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.locate.outputs.assessment_run_id }}
+          name: security-assessment-receipt
+          path: ${{ runner.temp }}/security-assessment
+
+      - name: Require receipt for this exact CI candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ steps.locate.outputs.run_id }}
+          ASSESSMENT_RUN_ID: ${{ steps.locate.outputs.assessment_run_id }}
+        run: |
+          set -euo pipefail
+          assessment="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ASSESSMENT_RUN_ID")"
+          assessment_workflow_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/security-assessment.yml" --jq '.id')"
+          jq -e --arg repository "$GITHUB_REPOSITORY" --argjson workflow_id "$assessment_workflow_id" \
+            '.workflow_id == $workflow_id
+             and .name == "Trusted security assessment"
+             and .path == ".github/workflows/security-assessment.yml"
+             and .head_repository.full_name == $repository
+             and .conclusion == "success"
+             and .run_attempt == 1' <<<"$assessment" >/dev/null || {
+              echo "::error::The security assessment run is not a successful first-attempt run of the trusted assessment workflow." >&2
+              exit 1
+            }
+          receipt="$RUNNER_TEMP/security-assessment/assessment-receipt.json"
+          jq -e \
+            --arg run_id "$CI_RUN_ID" \
+            --arg sha "$INPUT_SOURCE_SHA" \
+            '.schema_version == 1
+             and (.decision == "pass" or .decision == "approved")
+             and (.source_run_id | tostring) == $run_id
+             and .source_sha == $sha
+             and .checked_sha == $sha' \
+            "$receipt" >/dev/null || {
+              echo "::error::Security assessment receipt is not bound to the exact candidate CI run and commit." >&2
+              exit 1
+            }
 
       - name: Download the promotion manifest for approval details
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -259,13 +311,14 @@ jobs:
           for file in Dockerfile pyproject.toml uv.lock; do
             git show "$INPUT_SOURCE_SHA:$file" > "$src/$file"
           done
-          base_ref="$(uv run python -m scripts.validate_docker_base --stdin --print-runtime-base < "$src/Dockerfile")"
+          base_ref="$(uv run python -m scripts.validate_docker_base --candidate-dhi --stdin --print-runtime-base < "$src/Dockerfile")"
           {
             echo "dir=$src"
             echo "runtime_base=$base_ref"
           } >> "$GITHUB_OUTPUT"
 
       - name: Re-scan with main's vulnerability gate
+        id: scan
         uses: ./.github/actions/vulnerability-scan
         with:
           image: ${{ steps.load.outputs.local_tag }}
@@ -279,13 +332,131 @@ jobs:
           gate-directory: .
           exceptions-file: security/vulnerability-exceptions.toml
           report-name: promotion-vulnerability-report-${{ inputs.channel }}-${{ matrix.slug }}
+          fail-on-findings: "false"
+          verify-dhi-provenance: "true"
+          allow-exceptions: "false"
           snyk-token: ${{ secrets.SNYK_TOKEN }}
           docker-username: ${{ secrets.DOCKER_ORG_USERNAME }}
           docker-password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
 
+      - name: Save promotion scan decision
+        env:
+          DECISION: ${{ steps.scan.outputs.decision }}
+          SLUG: ${{ matrix.slug }}
+        run: |
+          set -euo pipefail
+          jq -n --arg platform "$SLUG" --arg decision "$DECISION" \
+            '{platform:$platform,decision:$decision}' > "$RUNNER_TEMP/decision-$SLUG.json"
+
+      - name: Upload promotion scan decision
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: promotion-decision-${{ matrix.slug }}
+          path: ${{ runner.temp }}/decision-${{ matrix.slug }}.json
+          retention-days: 7
+
+  risk-decision:
+    name: Decide promotion risk
+    needs: [locate, rescan]
+    if: always() && needs.locate.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      decision: ${{ steps.combine.outputs.decision }}
+
+    steps:
+      - name: Download platform decisions
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: promotion-decision-*
+          path: ${{ runner.temp }}/decisions
+          merge-multiple: true
+
+      - name: Combine decisions
+        id: combine
+        env:
+          RESCAN_RESULT: ${{ needs.rescan.result }}
+        run: |
+          set -euo pipefail
+          decision=blocked
+          files=("$RUNNER_TEMP"/decisions/decision-*.json)
+          if [[ "$RESCAN_RESULT" == "success" && "${#files[@]}" -eq 2 ]]; then
+            if ! decision="$(jq -nr \
+              --slurpfile amd64 "$RUNNER_TEMP/decisions/decision-linux-amd64.json" \
+              --slurpfile arm64 "$RUNNER_TEMP/decisions/decision-linux-arm64.json" '
+              if ($amd64 | length) != 1 or ($arm64 | length) != 1 then "blocked"
+              else $amd64 + $arm64 |
+              if (all(.[]; type == "object"
+                    and (.decision == "pass" or .decision == "approval_required" or .decision == "blocked")) | not)
+              then "blocked"
+              elif (map(.platform) | sort) != ["linux-amd64", "linux-arm64"] then "blocked"
+              elif any(.[]; .decision == "blocked") then "blocked"
+              elif any(.[]; .decision == "approval_required") then "approval_required"
+              else "pass" end end')"; then
+              echo "::error::Platform decision evidence is malformed; promotion is blocked." >&2
+              decision=blocked
+            fi
+          fi
+          echo "decision=$decision" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Promotion security re-scan"
+            echo
+            echo "- Candidate: \`$INPUT_SOURCE_SHA\`"
+            echo "- Decision: \`$decision\`"
+            if [[ "$decision" == "approval_required" ]]; then
+              echo "- To accept this candidate's unfixed high-severity findings or missing DHI provenance, approve the \`security-exception\` environment with the exact comment: \`APPROVE $INPUT_SOURCE_SHA\`."
+            elif [[ "$decision" == "blocked" ]]; then
+              echo "- Fixable findings, invalid evidence, or scanner errors block promotion; these cannot be overridden."
+            fi
+            echo
+            echo "Review the per-platform vulnerability report artifacts before proceeding."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$decision" == "blocked" ]]; then
+            echo "::error::Promotion is blocked. Review the re-scan evidence." >&2
+            exit 1
+          fi
+
+  approve-risk:
+    name: Approve promotion risk exception
+    needs: [locate, risk-decision]
+    if: needs['risk-decision'].outputs.decision == 'approval_required'
+    runs-on: ubuntu-latest
+    environment: security-exception
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: Require fresh candidate-bound environment approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_COMMENT: APPROVE ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          approvals="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals?per_page=100")"
+          jq -e --arg comment "$EXPECTED_COMMENT" '
+            any(.[];
+              .state == "approved"
+              and .comment == $comment
+              and any(.environments[]?; .name == "security-exception")
+            )' <<<"$approvals" >/dev/null || {
+              echo "::error::Approval must be recorded for security-exception with the exact candidate SHA." >&2
+              exit 1
+            }
+
   promote:
     name: Promote (${{ inputs.channel }})
-    needs: [locate, rescan]
+    needs: [locate, rescan, risk-decision, approve-risk]
+    if: >-
+      always() &&
+      needs.locate.result == 'success' &&
+      needs.rescan.result == 'success' &&
+      needs['risk-decision'].result == 'success' &&
+      (needs['risk-decision'].outputs.decision == 'pass' ||
+       (needs['risk-decision'].outputs.decision == 'approval_required' && needs['approve-risk'].result == 'success'))
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment_name }}
     outputs:
@@ -368,6 +539,7 @@ jobs:
              and .head_branch == $branch
              and .event == "push"
              and .conclusion == "success"
+             and .run_attempt == 1
              and .head_repository.full_name == $repository' \
             <<<"$run_json" >/dev/null; then
             echo "::error::CI run $run_id is not the trusted successful push CI run for $INPUT_SOURCE_SHA on $INPUT_BRANCH." >&2
@@ -414,7 +586,7 @@ jobs:
             exit 1
           fi
           git show "$INPUT_SOURCE_SHA:Dockerfile" \
-            | uv run python -m scripts.validate_docker_base --stdin
+            | uv run python -m scripts.validate_docker_base --candidate-dhi --stdin
           if [[ -n "$INPUT_TAG" ]]; then
             tag_refs="$(git ls-remote --tags origin "refs/tags/$INPUT_TAG" "refs/tags/$INPUT_TAG^{}")"
             tag_target_sha="$(
@@ -437,8 +609,11 @@ jobs:
             scripts/update_beta_latest.py \
             scripts/validate_docker_base.py \
             scripts/vulnerability_gate.py \
+            scripts/verify_dhi_provenance.py \
             .github/actions/vulnerability-scan/action.yml \
             .github/actions/vulnerability-scan/dhi-signing-key.pub \
+            .github/workflows/security-assessment.yml \
+            .github/workflows/auto-promote.yml \
             security/vulnerability-exceptions.toml; then
             echo "::error::Candidate pipeline files differ from trusted main. Merge main into $INPUT_BRANCH and rebuild." >&2
             exit 1

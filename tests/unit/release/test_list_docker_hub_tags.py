@@ -5,7 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from scripts.list_docker_hub_tags import list_tags, main
+from scripts.list_docker_hub_tags import DockerHubTag, list_tag_records, list_tags, main
 
 pytestmark = pytest.mark.unit
 
@@ -79,3 +79,35 @@ def test_reports_non_404_http_errors(monkeypatch: pytest.MonkeyPatch, capsys: py
 
     assert main() == 1
     assert "500" in capsys.readouterr().err
+
+
+def test_preserves_manifest_index_digest_not_architecture_digest(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Alias grouping uses the index digest covering both supported platforms."""
+    digest = "sha256:" + "a" * 64
+    response = httpx.Response(
+        200,
+        request=httpx.Request("GET", "https://hub.docker.com/tags"),
+        json={
+            "results": [
+                {"name": "2.0.0-beta.15", "digest": digest, "images": [{"digest": "sha256:" + "b" * 64}]},
+                {"name": "2.0.0-beta-latest", "digest": digest},
+            ],
+            "next": None,
+        },
+    )
+    monkeypatch.setattr(httpx, "get", lambda url, **kwargs: response)
+    assert list_tag_records() == [
+        DockerHubTag("2.0.0-beta.15", digest),
+        DockerHubTag("2.0.0-beta-latest", digest),
+    ]
+
+
+def test_rejects_malformed_digest_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    response = httpx.Response(
+        200,
+        request=httpx.Request("GET", "https://hub.docker.com/tags"),
+        json={"results": [{"name": "latest", "digest": 42}], "next": None},
+    )
+    monkeypatch.setattr(httpx, "get", lambda url, **kwargs: response)
+    with pytest.raises(ValueError, match="invalid tag digest"):
+        list_tag_records()

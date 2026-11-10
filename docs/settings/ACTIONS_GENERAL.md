@@ -103,3 +103,4 @@ Once CI workflows are committed, verify:
 - [ ] Actions pinned by SHA execute without permission errors
 - [ ] Fork PRs from external contributors are held for approval before workflows run
 - [ ] Workflow GITHUB_TOKEN has read-only access unless explicitly escalated in YAML
+- [ ] Trusted `workflow_run` security assessment can create the `Vulnerability Scan` check on the verified pull-request head SHA
