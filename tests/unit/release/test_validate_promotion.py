@@ -338,7 +338,9 @@ def test_summary_is_in_ungated_job_for_verified_candidate() -> None:
     assert 'uv run python -m scripts.validate_promotion "${args[@]}"' in locate
     assert "    needs: locate\n" in workflow.split("  rescan:\n", 1)[1]
     protected_job = workflow.split("  promote:\n", 1)[1]
-    assert "    needs: [locate, rescan]\n" in protected_job
+    assert "    needs: [locate, rescan, risk-decision, approve-risk]\n" in protected_job
+    assert "needs['risk-decision'].outputs.decision == 'approval_required'" in workflow.split("  approve-risk:\n", 1)[1]
+    assert "environment: security-exception" in workflow.split("  approve-risk:\n", 1)[1]
     assert "    environment: ${{ inputs.environment_name }}\n" in protected_job
 
 

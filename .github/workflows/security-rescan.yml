@@ -120,23 +120,29 @@ jobs:
           BRANCH: ${{ matrix.branch }}
         run: |
           set -euo pipefail
-          # The default branch's validator decides whether the branch uses the
-          # assessed DHI base, so only then is Docker's VEX applied.
-          if base_ref="$(uv run python -m scripts.validate_docker_base --stdin --print-runtime-base < target/Dockerfile 2>/dev/null)"; then
+          # Candidate DHI families admit daily digest refreshes without a
+          # source-controlled digest allowlist. Historical approved references
+          # remain readable for old branches and published images.
+          if base_ref="$(uv run python -m scripts.validate_docker_base \
+            --candidate-dhi --stdin --print-runtime-base < target/Dockerfile 2>/dev/null)"; then
             hardened=true
+            base_policy=candidate-dhi
+          elif base_ref="$(uv run python -m scripts.validate_docker_base \
+            --stdin --print-runtime-base < target/Dockerfile 2>/dev/null)"; then
+            hardened=true
+            base_policy=historical-approved
+            echo "::notice::$BRANCH uses a historical approved DHI base; candidate-family admission does not apply."
           else
             hardened=false
+            base_policy=unrecognised
             base_ref=""
           fi
-          exceptions="target/security/vulnerability-exceptions.toml"
-          if [[ ! -f "$exceptions" ]]; then
-            echo "::warning::$BRANCH has no security/vulnerability-exceptions.toml yet; scanning with no exceptions."
-            exceptions=".scan-empty-exceptions.toml"
-            : > "$exceptions"
-          fi
+          exceptions="security/vulnerability-exceptions.toml"
+          test -f "$exceptions"
           slug="$(tr -c 'A-Za-z0-9._-' '-' <<<"$BRANCH" | sed 's/-*$//')"
           {
             echo "hardened=$hardened"
+            echo "base_policy=$base_policy"
             echo "runtime_base=$base_ref"
             echo "exceptions=$exceptions"
             echo "slug=$slug"

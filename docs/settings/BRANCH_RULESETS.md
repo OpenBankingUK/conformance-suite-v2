@@ -103,9 +103,9 @@ The following rules are available but intentionally **not enabled**:
 | Restrict updates | Not needed — updates are governed by the pull request requirement |
 | Require linear history | Redundant — squash-only merge method already guarantees linear history |
 | Require merge queue | Not needed at current team size; can be reconsidered as contributor count grows |
-| Require deployments to succeed | No deployment environments configured yet |
+| Require deployments to succeed | GitHub Environments gate security risk acceptance and image publication; branch protection still uses the required status checks above |
 | Require signed commits | Not enforced at this stage; may revisit based on organisation security policy |
-| Require status checks to pass | **Pending** — enable with `Vulnerability Scan` after the `release/2.0.0` merge-back (see TODO below) |
+| Require status checks to pass | **Pending manual setup** — select the trusted `Vulnerability Scan` check after its first run (see [DHI image security approvals](../IMAGE_SECURITY_APPROVALS.md)) |
 | Require code scanning results | Deferred until CodeQL or equivalent is configured in CI |
 | Require code quality results | Not yet configured |
 | Restrict commit metadata | Not needed at this stage |
@@ -115,8 +115,8 @@ The following rules are available but intentionally **not enabled**:
 
 ## Post-setup TODOs
 
-- [ ] **Enable required status checks and Code Owners review (vulnerability gate)** — apply once `release/2.0.0` (hardened DHI image) has been merged back to `main` and `main` has merged into every `release/*` branch; before then the `Vulnerability Scan` check fails on `main`'s legacy Alpine image, or never reports on release branches without the gate, which would block every PR. Apply to both the `main & develop` ruleset (id `15781582`) and the `release branch checks` ruleset (id `24119519`), saving `gh api` output before and after:
-  - `required_status_checks`: `Check`, `Docker Build`, `Vulnerability Scan`, `code/snyk (Standards)` (strict).
+- [ ] **Enable required status checks and Code Owners review** — after the trusted `Vulnerability Scan` check first appears on a same-repository PR, apply it to both the `main & develop` ruleset (id `15781582`) and the `release branch checks` ruleset (id `24119519`), saving `gh api` output before and after. Configure the `security-exception` Environment using [DHI image security approvals](../IMAGE_SECURITY_APPROVALS.md):
+  - `required_status_checks`: `Check`, `Docker Build`, `Image (linux/amd64)`, `Image (linux/arm64)`, `Vulnerability Scan`, `code/snyk (Standards)` (strict), plus `code_scanning` for CodeQL at High or higher.
   - `pull_request`: `required_approving_review_count` ≥ 1 and `require_code_owner_review: true` (CODEOWNERS now protects `security/`, `.github/`, `scripts/`, `Dockerfile`, `pyproject.toml`, `uv.lock`).
   - `main & develop`: remove the **Always** bypass actors (use "pull request only" bypass at most), so exceptions and the gate cannot be merged around.
   - Example: `gh api repos/OpenBankingUK/conformance-suite-v2/rulesets/24119519 > before.json`, edit `rules`, then `gh api -X PUT repos/OpenBankingUK/conformance-suite-v2/rulesets/24119519 --input after.json`.

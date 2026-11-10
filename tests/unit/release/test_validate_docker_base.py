@@ -10,12 +10,47 @@ from scripts.validate_docker_base import (
     APPROVED_RUNTIME_BASES,
     EXPECTED_RUNTIME_BASE,
     DockerBaseError,
+    get_candidate_dhi_bases,
     get_runtime_base,
     main,
     validate_runtime_base,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_candidate_base_pair_is_validated_by_family_and_digest() -> None:
+    """New digest pins need provenance verification, not a preliminary allowlist update."""
+    dockerfile = (
+        "FROM dhi.io/python:3.14-debian13-dev@sha256:" + "1" * 64 + " AS builder\n"
+        "FROM dhi.io/python:3.14-debian13@sha256:" + "2" * 64 + " AS runtime\n"
+    )
+
+    bases = get_candidate_dhi_bases(dockerfile)
+
+    assert bases.builder.endswith("1" * 64)
+    assert bases.runtime.endswith("2" * 64)
+
+
+@pytest.mark.parametrize(
+    "dockerfile",
+    [
+        "FROM dhi.io/python:3.14-debian13-dev AS builder\n"
+        "FROM dhi.io/python:3.14-debian13@sha256:" + "2" * 64 + " AS runtime\n",
+        "FROM dhi.io/python:3.14-debian13@sha256:" + "1" * 64 + " AS builder\n"
+        "FROM dhi.io/python:3.14-debian13@sha256:" + "2" * 64 + " AS runtime\n",
+        "FROM dhi.io/python:3.14-debian13-dev@sha256:" + "1" * 64 + " AS builder\n"
+        "FROM dhi.io/python:3.14-debian13 AS runtime\n",
+        "FROM dhi.io/python:3.14-debian13-dev@sha256:" + "1" * 64 + " AS builder\n"
+        "FROM dhi.io/python:3.14-debian13@sha256:" + "2" * 64 + " AS runtime\n"
+        "FROM ubuntu:latest AS final\n",
+        "FROM dhi.io/python:3.14-debian13-dev@sha256:" + "1" * 64 + " AS builder\n",
+    ],
+)
+def test_candidate_base_pair_rejects_unexpected_references_or_stage_layout(dockerfile: str) -> None:
+    """Wrong variants, mutable tags, missing stages, and non-final runtime fail closed."""
+    with pytest.raises(DockerBaseError):
+        get_candidate_dhi_bases(dockerfile)
 
 
 @pytest.mark.parametrize(
