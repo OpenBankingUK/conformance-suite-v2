@@ -403,18 +403,30 @@ jobs:
         id: combine
         env:
           SCAN_RESULT: ${{ needs.scan.result }}
+          SOURCE_RUN_ID: ${{ needs.verify.outputs.source_run_id }}
           SOURCE_SHA: ${{ needs.verify.outputs.source_sha }}
           CHECK_SHA: ${{ needs.verify.outputs.check_sha }}
           WORKFLOW_SHA: ${{ needs.verify.outputs.source_sha }}
         run: |
           set -euo pipefail
           decision=blocked
-          if [[ "$SCAN_RESULT" == "success" ]] && compgen -G "$RUNNER_TEMP/decisions/decision-*.json" >/dev/null; then
-            decision="$(jq -s '
-              if any(.[]; .decision == "blocked") then "blocked"
+          files=("$RUNNER_TEMP"/decisions/decision-*.json)
+          if [[ "$SCAN_RESULT" == "success" && "${#files[@]}" -eq 2 ]]; then
+            if ! decision="$(jq -nr \
+              --slurpfile amd64 "$RUNNER_TEMP/decisions/decision-linux-amd64.json" \
+              --slurpfile arm64 "$RUNNER_TEMP/decisions/decision-linux-arm64.json" '
+              if ($amd64 | length) != 1 or ($arm64 | length) != 1 then "blocked"
+              else $amd64 + $arm64 |
+              if (all(.[]; type == "object"
+                    and (.decision == "pass" or .decision == "approval_required" or .decision == "blocked")) | not)
+              then "blocked"
+              elif (map(.platform) | sort) != ["linux-amd64", "linux-arm64"] then "blocked"
+              elif any(.[]; .decision == "blocked") then "blocked"
               elif any(.[]; .decision == "approval_required") then "approval_required"
-              elif length == 2 and all(.[]; .decision == "pass") then "pass"
-              else "blocked" end' "$RUNNER_TEMP"/decisions/decision-*.json)"
+              else "pass" end end')"; then
+              echo "::error::Platform decision evidence is malformed; assessment is blocked." >&2
+              decision=blocked
+            fi
           fi
           phrase="APPROVE $WORKFLOW_SHA"
           {
@@ -437,7 +449,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           jq -n \
             --arg decision "$decision" \
-            --arg source_run_id "${{ needs.verify.outputs.source_run_id }}" \
+            --arg source_run_id "$SOURCE_RUN_ID" \
             --arg source_sha "$SOURCE_SHA" \
             --arg checked_sha "$CHECK_SHA" \
             --arg approval_phrase "$phrase" \
@@ -450,6 +462,7 @@ jobs:
         with:
           name: security-assessment-receipt
           path: ${{ runner.temp }}/assessment-receipt.json
+          if-no-files-found: error
           retention-days: 30
 
   approve-exception:
@@ -495,13 +508,14 @@ jobs:
             --arg checked_sha "$CHECK_SHA" \
             --arg approval_phrase "$APPROVAL_PHRASE" \
             '{schema_version:1,decision:"approved",source_run_id:($run_id|tonumber),source_sha:$source_sha,checked_sha:$checked_sha,approval_phrase:$approval_phrase}' \
-            > "$RUNNER_TEMP/approval-receipt.json"
+            > "$RUNNER_TEMP/assessment-receipt.json"
 
       - name: Upload candidate-bound approval receipt
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: security-assessment-receipt
-          path: ${{ runner.temp }}/approval-receipt.json
+          path: ${{ runner.temp }}/assessment-receipt.json
+          if-no-files-found: error
           retention-days: 30
 
   complete:
@@ -540,3 +554,7 @@ jobs:
             > "$RUNNER_TEMP/check-update.json"
           gh api --method PATCH "repos/$GITHUB_REPOSITORY/check-runs/$CHECK_ID" \
             --input "$RUNNER_TEMP/check-update.json"
+          if [[ "$conclusion" != "success" ]]; then
+            echo "::error::$summary" >&2
+            exit 1
+          fi

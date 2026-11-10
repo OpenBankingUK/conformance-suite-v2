@@ -221,6 +221,18 @@ file as approval authority. CI's image-building jobs do not run the scanner
 or receive the Snyk token; the separate trusted workflow runs only after CI
 succeeds.
 
+Assessment and promotion re-scan decisions require exactly one valid result
+for each of `linux-amd64` and `linux-arm64` before either passing or requesting
+approval. Unknown, malformed, missing or duplicate platform results block the
+candidate; an eligible risk on the other platform cannot override them.
+Passing and explicitly approved assessments both upload
+`security-assessment-receipt` containing `assessment-receipt.json`, bound to
+the source CI run, candidate commit and checked commit. The final candidate
+check and assessment workflow must both succeed before automatic promotion
+can consume that receipt. A failed check also fails the assessment workflow;
+blocked promotion re-scans fail rather than reporting a skipped publication
+as success.
+
 **Trust model**: CI builds PR and push image archives, but no longer runs
 secret-bearing vulnerability scans. A separate workflow on the trusted
 default branch verifies the exact CI workflow ID/path, first attempt, run
