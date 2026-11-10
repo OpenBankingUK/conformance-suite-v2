@@ -59,3 +59,26 @@ def test_preview_remains_publication_only_and_auto_resolution_keeps_its_own_grou
     assert "    environment:" not in resolve
     assert "needs.resolve.outputs.should_promote == 'true'" in automatic
     assert "(needs.resolve.outputs.channel == 'ga' || needs.resolve.outputs.channel == 'beta')" in automatic
+
+
+def test_trusted_assessment_is_separate_and_candidate_bound() -> None:
+    assessment = (WORKFLOWS / "security-assessment.yml").read_text()
+    ci = (WORKFLOWS / "ci.yml").read_text()
+    automatic = (WORKFLOWS / "auto-promote.yml").read_text()
+    promotion = (WORKFLOWS / "_promote-image.yml").read_text()
+
+    assert 'workflows: ["CI"]' in assessment
+    assert 'EXPECTED_CI_WORKFLOW_ID: "268848247"' in assessment
+    assert "and .run_attempt == 1" in assessment
+    assert "and .workflow_sha_under_test == $sha" in assessment
+    assert "commits/$source_sha" in assessment
+    assert '--arg head_sha "$check_sha"' in assessment
+    assert "environment: security-exception" in assessment
+    assert "actions/runs/$GITHUB_RUN_ID/approvals" in assessment
+    assert 'allow-exceptions: "false"' in assessment
+    assert "uses: ./.github/actions/vulnerability-scan" not in ci
+    assert 'workflows: ["Trusted security assessment"]' in automatic
+    assert "security_assessment_run_id:" in automatic
+    assert "security_assessment_run_id:" in promotion
+    assert "security-assessment-receipt" in promotion
+    assert 'verify-dhi-provenance: "true"' in promotion

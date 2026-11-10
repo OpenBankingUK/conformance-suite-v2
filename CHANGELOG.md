@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Add daily grouped Dependabot refreshes for digest-pinned DHI builder/runtime
+  images and a trusted, candidate-bound security assessment workflow. The
+  assessment verifies signed DHI provenance, reports both supported platforms,
+  and uses a protected GitHub Environment for eligible risk acceptance; fixable
+  findings and invalid evidence remain blocking. Promotion requires the trusted
+  receipt and performs a fresh scan before its existing publication gate.
 - Migrate the digest-pinned DHI Python 3.14 builder and distroless runtime
   from Alpine 3.24 to Debian 13 for amd64 and arm64, removing musl and the
   temporary Expat/zlib APK overlay. Remove unused Debian system pip with
@@ -70,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Group daily Dependabot updates for the DHI Python builder and runtime into
+  one reviewed pull request on `main` and the active `release/2.0.0` branch,
+  keeping the pinned pair together during routine refreshes.
 - The shared vulnerability scan action retries transient Docker Scout CLI
   download failures within a bounded window, while retaining the pinned release
   and architecture-specific checksum verification.

@@ -90,6 +90,16 @@ def test_base_is_read_from_release_git_tag_and_validated(version: str) -> None:
     assert calls == [["tag", "--list", f"v{version}"], ["show", f"refs/tags/v{version}:Dockerfile"]]
 
 
+def test_current_candidate_base_family_does_not_require_digest_allowlist() -> None:
+    runtime = f"dhi.io/python:3.14-debian13@sha256:{'a' * 64}"
+    dockerfile = f"FROM dhi.io/python:3.14-debian13-dev@sha256:{'b' * 64} AS builder\nFROM {runtime} AS runtime\n"
+
+    def runner(args: Sequence[str]) -> str:
+        return "v2.0.0\n" if args[0] == "tag" else dockerfile
+
+    assert rescan.resolve_runtime_base("2.0.0", runner) == runtime
+
+
 @pytest.mark.parametrize(
     "dockerfile",
     ["FROM python:3.14 AS runtime", "FROM scratch", f"FROM {EXPECTED_RUNTIME_BASE} AS runtime\nFROM scratch"],
@@ -99,7 +109,7 @@ def test_unapproved_or_ambiguous_base_never_gets_vex(dockerfile: str, capsys: py
         return "v2.0.0\n" if args[0] == "tag" else dockerfile
 
     assert rescan.resolve_runtime_base("2.0.0", runner) == ""
-    assert "No approved runtime base" in capsys.readouterr().err
+    assert "No validated candidate or approved historical runtime base" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("version", ["", "2.0.0-beta.15"])

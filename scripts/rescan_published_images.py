@@ -19,7 +19,7 @@ from pathlib import Path
 import httpx
 
 from scripts.list_docker_hub_tags import DockerHubTag, list_tag_records
-from scripts.validate_docker_base import DockerBaseError, get_runtime_base
+from scripts.validate_docker_base import DockerBaseError, get_candidate_dhi_bases, get_runtime_base
 
 _VERSION = re.compile(
     r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(beta|rc)\.(0|[1-9]\d*))?",
@@ -119,10 +119,16 @@ def resolve_runtime_base(version: str, runner: Runner = _git) -> str:
         return ""
     dockerfile = runner(["show", f"{ref}:Dockerfile"])
     try:
-        return get_runtime_base(dockerfile)
+        return get_candidate_dhi_bases(dockerfile).runtime
     except DockerBaseError as error:
-        sys.stderr.write(f"No approved runtime base for {ref}; scanning without VEX: {error}\n")
-        return ""
+        try:
+            return get_runtime_base(dockerfile)
+        except DockerBaseError as historical_error:
+            sys.stderr.write(
+                f"No validated candidate or approved historical runtime base for {ref}; "
+                f"scanning without VEX: {error}; {historical_error}\n"
+            )
+            return ""
 
 
 def main(argv: list[str] | None = None) -> int:
