@@ -225,8 +225,12 @@ succeeds.
 secret-bearing vulnerability scans. A separate workflow on the trusted
 default branch verifies the exact CI workflow ID/path, first attempt, run
 result, PR association and merge parents before reading the image artifact.
+CI's `candidate-context` artifact preserves the repository-relative
+`artifacts/candidate-context.json` path alongside `Dockerfile`, `pyproject.toml`
+and `uv.lock`; both identity checks read that nested JSON after download.
 The source Dockerfile and dependency lock are fetched from the verified commit
-through GitHub's content API and treated only as data; trusted policy and
+through explicit GET requests to GitHub's content API with the verified SHA as
+`ref` (not from the uploaded copies) and treated only as data; trusted policy and
 scanner code are checked out from the default branch. Only an explicit
 absence of signed DHI provenance or eligible unfixed high-severity findings
 can pause for approval. The environment approval record and exact comment
