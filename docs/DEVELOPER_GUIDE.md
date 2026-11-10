@@ -701,15 +701,15 @@ canonical `make check` gate with the local OpenAPI exclusion cleared, so it
 runs ruff, mypy, the complete offline `unit`/`component` suite with coverage,
 and a full tracked-file secret scan. `Docker Build` builds the image, starts a
 container, and probes `/health/`. `Image (linux/amd64|arm64)` builds each
-platform image and scans it; the aggregate `Vulnerability Scan` check fails on
-any fixable vulnerability and on unfixed critical/high findings. Open the job
-summary for the full report.
+platform image. After successful CI, a trusted assessment scans both images
+and emits the `Vulnerability Scan` check. Fixable findings block; eligible
+unfixed high/critical findings require candidate-bound risk approval. Open
+the assessment summary and artifacts for the full report.
 
 To resolve a failing `Vulnerability Scan`, upgrade the affected package
-(`uv lock --upgrade-package <name>`) or base image. If no fix is possible and
-the risk is accepted, add a reviewed entry to
-`security/vulnerability-exceptions.toml` (maximum 90 days; see
-[CI/CD Strategy §3.2](CICD_STRATEGY.md#32-vulnerability-scanning-and-the-pr-gate)).
+(`uv lock --upgrade-package <name>`) or base image. If no fix is possible,
+follow the [DHI security approval runbook](IMAGE_SECURITY_APPROVALS.md);
+source-controlled exceptions cannot approve a candidate or promotion.
 You can run the policy locally against scanner output with
 `uv run python -m scripts.vulnerability_gate --help`.
 

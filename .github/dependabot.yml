@@ -1,11 +1,12 @@
-# Dependency and base-image updates feed the PR vulnerability gate
-# (docs/CICD_STRATEGY.md section 3.2). A PR that fixes a vulnerability covered
-# by security/vulnerability-exceptions.toml must also delete that exception;
-# the gate fails with "stale" or "fix now available" until it does.
+# Dependency and base-image updates feed the trusted post-CI vulnerability
+# assessment (docs/IMAGE_SECURITY_APPROVALS.md). A PR that fixes a
+# vulnerability covered by security/vulnerability-exceptions.toml must also
+# delete that exception; the gate fails with "stale" or "fix now available"
+# until it does.
 #
-# Dependabot PRs run CI with Dependabot secrets, so SNYK_TOKEN,
-# DOCKER_ORG_USERNAME and DOCKER_ORG_ACCESS_TOKEN must also be configured as
-# Dependabot secrets or the vulnerability scan fails closed.
+# Dependabot PR CI only receives Dependabot secrets, so the read-only
+# DOCKER_ORG_USERNAME and DOCKER_ORG_ACCESS_TOKEN must be configured there for
+# private DHI pulls. The trusted assessment uses repository Actions secrets.
 version: 2
 
 registries:
@@ -26,12 +27,29 @@ updates:
         update-types: [minor, patch]
 
   - package-ecosystem: docker
-    # Digest bumps for the DHI runtime base also require updating
-    # APPROVED_RUNTIME_BASES in scripts/validate_docker_base.py.
+    # Builder and runtime digests are refreshed together. New digests within
+    # the fixed Python 3.14 / Debian 13 DHI family need no allowlist update;
+    # the trusted assessment verifies provenance and scans the candidate.
     directory: /
     registries: [dhi]
     schedule:
       interval: daily
+    groups:
+      dhi-python-base-images:
+        patterns: ["dhi.io/python"]
+
+  # Dependabot reads this file only from the default branch, so the active
+  # release branch is targeted explicitly. Update target-branch when a new
+  # release/* branch is cut and remove this entry once it is merged to main.
+  - package-ecosystem: docker
+    directory: /
+    target-branch: release/2.0.0
+    registries: [dhi]
+    schedule:
+      interval: daily
+    groups:
+      dhi-python-base-images:
+        patterns: ["dhi.io/python"]
 
   - package-ecosystem: github-actions
     directory: /

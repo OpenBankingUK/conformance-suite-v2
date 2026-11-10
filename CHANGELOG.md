@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Add daily grouped DHI digest refreshes and a trusted candidate-bound security
+  assessment with signed provenance verification and protected risk approvals.
+  Promotion requires an assessment receipt and a fresh vulnerability scan.
+- Scan current published image digests using their validated runtime base for
+  VEX, and require complete scan coverage before closing vulnerability issues.
+
 ## [2.0.0-beta.16] - 2026-11-09
 
 ### Security

@@ -55,13 +55,31 @@ jobs:
               | jq -R -s -c --arg default "$DEFAULT_BRANCH" \
                 'split("\n") | map(select(. != "" and (. == $default or startswith("release/")))) | unique'
           )"
-          tags="$(uv run python -m scripts.list_docker_hub_tags | jq -R -s -c 'split("\n") | map(select(. != "")) | unique')"
+          uv run python -m scripts.rescan_published_images select \
+            --branches "$branches" --output rescan-targets.json
+          tags="$(jq -c '.images' rescan-targets.json)"
           echo "Branches: $branches"
-          echo "Published tags: $tags"
+          echo "Published digests: $tags"
+          {
+            echo "## Published-image rescan scope"
+            echo
+            echo "Newest beta, rc and GA versions plus unknown tags; aliases share one digest scan per platform."
+            jq -r '.images[] | "- Scanning `" + (.tags | join("`, `")) + "` at `" + .digest + "`"' rescan-targets.json
+            echo
+            echo "### Superseded tags (skipped, not deleted)"
+            jq -r 'if .superseded == [] then "None." else .superseded[] | "- `" + . + "`" end' rescan-targets.json
+          } >> "$GITHUB_STEP_SUMMARY"
           {
             echo "branches=$branches"
             echo "tags=$tags"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Save selected scope for issue closure checks
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rescan-targets
+          path: rescan-targets.json
+          if-no-files-found: error
 
   scan-branch:
     name: Branch ${{ matrix.branch }}
@@ -102,23 +120,29 @@ jobs:
           BRANCH: ${{ matrix.branch }}
         run: |
           set -euo pipefail
-          # The default branch's validator decides whether the branch uses the
-          # assessed DHI base, so only then is Docker's VEX applied.
-          if base_ref="$(uv run python -m scripts.validate_docker_base --stdin --print-runtime-base < target/Dockerfile 2>/dev/null)"; then
+          # Candidate DHI families admit daily digest refreshes without a
+          # source-controlled digest allowlist. Historical approved references
+          # remain readable for old branches and published images.
+          if base_ref="$(uv run python -m scripts.validate_docker_base \
+            --candidate-dhi --stdin --print-runtime-base < target/Dockerfile 2>/dev/null)"; then
             hardened=true
+            base_policy=candidate-dhi
+          elif base_ref="$(uv run python -m scripts.validate_docker_base \
+            --stdin --print-runtime-base < target/Dockerfile 2>/dev/null)"; then
+            hardened=true
+            base_policy=historical-approved
+            echo "::notice::$BRANCH uses a historical approved DHI base; candidate-family admission does not apply."
           else
             hardened=false
+            base_policy=unrecognised
             base_ref=""
           fi
-          exceptions="target/security/vulnerability-exceptions.toml"
-          if [[ ! -f "$exceptions" ]]; then
-            echo "::warning::$BRANCH has no security/vulnerability-exceptions.toml yet; scanning with no exceptions."
-            exceptions=".scan-empty-exceptions.toml"
-            : > "$exceptions"
-          fi
+          exceptions="security/vulnerability-exceptions.toml"
+          test -f "$exceptions"
           slug="$(tr -c 'A-Za-z0-9._-' '-' <<<"$BRANCH" | sed 's/-*$//')"
           {
             echo "hardened=$hardened"
+            echo "base_policy=$base_policy"
             echo "runtime_base=$base_ref"
             echo "exceptions=$exceptions"
             echo "slug=$slug"
@@ -176,13 +200,13 @@ jobs:
           docker-password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
 
   scan-image:
-    name: Published ${{ matrix.tag }} (${{ matrix.platform }})
+    name: Published ${{ matrix.image.tag }} (${{ matrix.platform }})
     needs: targets
     if: needs.targets.outputs.tags != '[]'
     strategy:
       fail-fast: false
       matrix:
-        tag: ${{ fromJSON(needs.targets.outputs.tags) }}
+        image: ${{ fromJSON(needs.targets.outputs.tags) }}
         platform: [linux/amd64, linux/arm64]
     runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     permissions:
@@ -192,26 +216,45 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install release-tooling dependencies
+        run: uv sync --frozen --no-install-project
+
+      - name: Resolve approved published runtime base
+        id: base
+        env:
+          VERSION: ${{ matrix.image.version }}
+        run: |
+          set -euo pipefail
+          base_ref="$(uv run python -m scripts.rescan_published_images base --version "$VERSION")"
+          echo "runtime_base=$base_ref" >> "$GITHUB_OUTPUT"
 
       - name: Name report
         id: name
         env:
-          TAG: ${{ matrix.tag }}
+          TAG: ${{ matrix.image.tag }}
           PLATFORM: ${{ matrix.platform }}
         run: |
           slug="$(tr -c 'A-Za-z0-9._-' '-' <<<"$TAG-$PLATFORM" | sed 's/-*$//')"
           echo "slug=$slug" >> "$GITHUB_OUTPUT"
 
       - name: Scan published image
-        # VEX comes from the published image itself (Docker resolves the DHI
-        # base assessment through its provenance); exceptions are main's.
+        # Derived images do not inherit DHI VEX attestations. Read the matching
+        # release tag as data, and apply only main's approved exact runtime base.
         uses: ./.github/actions/vulnerability-scan
         with:
-          image: docker.io/openbanking/conformance-suite-v2:${{ matrix.tag }}
+          image: docker.io/openbanking/conformance-suite-v2@${{ matrix.image.digest }}
           image-source: registry
           platform: ${{ matrix.platform }}
-          target: "published openbanking/conformance-suite-v2:${{ matrix.tag }} (${{ matrix.platform }})"
-          vex-image: docker.io/openbanking/conformance-suite-v2:${{ matrix.tag }}
+          target: "published openbanking/conformance-suite-v2:${{ join(matrix.image.tags, ', ') }} (${{ matrix.platform }})"
+          vex-image: ${{ steps.base.outputs.runtime_base }}
+          vex-requires-dhi-login: "true"
           gate-directory: .
           exceptions-file: security/vulnerability-exceptions.toml
           report-name: vulnerability-report-image-${{ steps.name.outputs.slug }}
@@ -243,6 +286,12 @@ jobs:
           pattern: vulnerability-report-*
           path: ${{ runner.temp }}/reports
 
+      - name: Download selected scope
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: rescan-targets
+          path: ${{ runner.temp }}/scope
+
       - name: Create, update and close issues
         env:
           GH_TOKEN: ${{ github.token }}
@@ -263,7 +312,8 @@ jobs:
             echo "::error::No vulnerability reports were produced." >&2
             exit 1
           fi
-          uv run --no-project --python 3.14 -- python -m scripts.vulnerability_issues "${args[@]}" "${reports[@]}"
+          uv run --no-project --python 3.14 -- python -m scripts.vulnerability_issues \
+            --scope "$RUNNER_TEMP/scope/rescan-targets.json" "${args[@]}" "${reports[@]}"
 
       - name: Fail when a scan could not run
         if: needs.scan-branch.result == 'failure' || needs.scan-image.result == 'failure'
