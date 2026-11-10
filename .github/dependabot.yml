@@ -33,6 +33,16 @@ updates:
     schedule:
       interval: daily
 
+  # Dependabot reads this file only from the default branch, so the active
+  # release branch is targeted explicitly. Update target-branch when a new
+  # release/* branch is cut and remove this entry once it is merged to main.
+  - package-ecosystem: docker
+    directory: /
+    target-branch: release/2.0.0
+    registries: [dhi]
+    schedule:
+      interval: daily
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

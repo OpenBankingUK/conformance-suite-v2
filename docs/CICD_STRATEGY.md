@@ -341,7 +341,10 @@ PR runs the `Vulnerability Scan`, also add `DOCKER_ORG_USERNAME`, the
 **read-only** `DOCKER_ORG_ACCESS_TOKEN` and `SNYK_TOKEN` as Dependabot secrets.
 Never store the write-capable token there. Without them, Dependabot PRs fail
 closed. `.github/dependabot.yml` updates `uv.lock`, Dockerfile base-image
-digests and GitHub Actions; a DHI runtime digest update requires reviewed
+digests and GitHub Actions. Because Dependabot reads its configuration only
+from `main`, a second Docker entry sets `target-branch` to the active
+`release/*` branch so base-image digest PRs also open there for manual review;
+update that entry when a new release branch is cut. A DHI runtime digest update requires reviewed
 approval of its exact reference in `APPROVED_RUNTIME_BASES` in
 `scripts/validate_docker_base.py`. Approval changes are policy-only: merge the
 approval to `main`, sync it to the release branch, and only then update the
