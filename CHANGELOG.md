@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Trusted security assessments read candidate identity from the preserved
+  `artifacts/candidate-context.json` archive path and explicitly use GET when
+  fetching source files from the exact verified commit, fixing the post-CI
+  identity/input handoff without changing trust or vulnerability gates.
+
 ### Security
 
 - Add daily grouped DHI digest refreshes and a trusted candidate-bound security

@@ -97,7 +97,7 @@ jobs:
           source_branch="$(jq -r '.head_branch' <<<"$run_json")"
           source_event="$(jq -r '.event' <<<"$run_json")"
           candidate_run_id="$(jq -r '.id' <<<"$run_json")"
-          context="$RUNNER_TEMP/candidate-context/candidate-context.json"
+          context="$RUNNER_TEMP/candidate-context/artifacts/candidate-context.json"
           source_sha=""
           check_sha="$run_head_sha"
           pr_number=""
@@ -202,7 +202,7 @@ jobs:
           CHECK_SHA: ${{ steps.identity.outputs.check_sha }}
         run: |
           set -euo pipefail
-          context="$RUNNER_TEMP/candidate-context/candidate-context.json"
+          context="$RUNNER_TEMP/candidate-context/artifacts/candidate-context.json"
           run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID")"
           pr_base_sha=""
           if [[ -n "$PR_NUMBER" ]]; then
@@ -253,7 +253,7 @@ jobs:
 
           mkdir -p "$RUNNER_TEMP/assessment-inputs"
           for file in Dockerfile pyproject.toml uv.lock; do
-            content="$(gh api "repos/$GITHUB_REPOSITORY/contents/$file" -f ref="$SOURCE_SHA" --jq '.content')"
+            content="$(gh api --method GET "repos/$GITHUB_REPOSITORY/contents/$file" -f ref="$SOURCE_SHA" --jq '.content')"
             [[ -n "$content" && "$content" != "null" ]] || {
               echo "::error::Could not retrieve $file at the candidate commit." >&2
               exit 1
