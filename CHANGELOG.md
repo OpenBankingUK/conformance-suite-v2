@@ -55,6 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Trusted security assessments read candidate identity from the preserved
+  `artifacts/candidate-context.json` archive path and explicitly use GET when
+  fetching source files from the exact verified commit, fixing the post-CI
+  identity/input handoff without changing trust or vulnerability gates.
 - Scheduled published-image rescans fetch signed OpenVEX from the approved
   runtime base in the matching release git tag, including digest-matched aliases,
   rather than from derived images. Scan the newest beta, rc and GA versions

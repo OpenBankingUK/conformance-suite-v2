@@ -1,0 +1,340 @@
+"""Execute the candidate archive/identity handoff without GitHub or registry access."""
+
+from __future__ import annotations
+
+import base64
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import textwrap
+from pathlib import Path
+from zipfile import ZipFile
+
+import pytest
+
+pytestmark = pytest.mark.component
+
+ROOT = Path(__file__).resolve().parents[3]
+REPOSITORY = "OpenBankingUK/conformance-suite-v2"
+SOURCE_SHA = "1" * 40
+HEAD_SHA = "2" * 40
+BASE_SHA = "3" * 40
+IDENTITY = "Validate the CI run and create its pending check"
+SOURCE = "Verify context and retrieve candidate files as data"
+WORKFLOW = ".github/workflows/security-assessment.yml"
+
+# Model gh's method inference and API responses, not the workflow's decisions.
+# All unrecognised requests fail, so these subprocesses cannot reach the network.
+BOUNDARIES = r"""
+gh() {
+  [[ "$1" == api ]] || return 90
+  shift
+  local endpoint="" method="" fields=false filter="" input="" arg
+  while (( $# )); do
+    arg="$1"; shift
+    case "$arg" in
+      --method) method="$1"; shift ;;
+      -f) fields=true; [[ "$1" == "ref=$TEST_SOURCE_SHA" ]] || return 91; shift ;;
+      --jq) filter="$1"; shift ;;
+      --input) input="$1"; shift ;;
+      repos/*) endpoint="$arg" ;;
+      *) return 92 ;;
+    esac
+  done
+  if [[ -z "$method" ]]; then
+    method=GET
+    if [[ "$fields" == true || -n "$input" ]]; then method=POST; fi
+  fi
+  printf '%s %s\n' "$method" "$endpoint" >> "$TEST_DATA/requests"
+  local response=""
+  case "$method $endpoint" in
+    "GET repos/$GITHUB_REPOSITORY/actions/runs/123")
+      response="$TEST_DATA/run.json" ;;
+    "GET repos/$GITHUB_REPOSITORY/actions/runs/123/artifacts?per_page=100")
+      response="$TEST_DATA/artifacts.json" ;;
+    "GET repos/$GITHUB_REPOSITORY/commits/$TEST_HEAD_SHA/pulls")
+      response="$TEST_DATA/prs.json" ;;
+    "GET repos/$GITHUB_REPOSITORY/pulls/42")
+      response="$TEST_DATA/pr.json" ;;
+    "GET repos/$GITHUB_REPOSITORY/commits/$TEST_SOURCE_SHA")
+      response="$TEST_DATA/commit.json" ;;
+    "POST repos/$GITHUB_REPOSITORY/check-runs")
+      cat "$input" > "$TEST_DATA/check.json"
+      response="$TEST_DATA/check-response.json" ;;
+    "GET repos/$GITHUB_REPOSITORY/contents/"*)
+      [[ "$fields" == true ]] || return 93
+      local file="${endpoint##*/}"
+      [[ "$file" != "${TEST_FAIL_FILE:-}" ]] || { echo "HTTP 404" >&2; return 1; }
+      response="$TEST_DATA/$file.json" ;;
+    *) echo "Unexpected API request: $method $endpoint" >&2; return 94 ;;
+  esac
+  if [[ -n "$filter" ]]; then jq -r "$filter" "$response"; else cat "$response"; fi
+}
+uv() {
+  [[ "$1 $2" == "run python" ]] || return 95
+  shift 2
+  "$TEST_PYTHON" "$@"
+}
+"""
+
+
+def _step(workflow: str, name: str) -> str:
+    return (ROOT / workflow).read_text().split(f"      - name: {name}\n", 1)[1].split("      - name:", 1)[0]
+
+
+def _shell(workflow: str, name: str) -> str:
+    block = _step(workflow, name).split("        run: |\n", 1)[1]
+    return textwrap.dedent("\n".join(line for line in block.splitlines() if line.startswith("          ") or not line))
+
+
+def _run(workflow: str, name: str, env: dict[str, str], cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
+    bash = shutil.which("bash")
+    assert bash is not None, "Workflow shell tests require bash."
+    return subprocess.run(  # noqa: S603 - repository-owned shell with GitHub/uv boundaries replaced offline
+        [bash, "--noprofile", "--norc", "-c", _shell(workflow, name)],
+        env=env,
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+
+
+def _json(path: Path, value: object) -> None:
+    path.write_text(json.dumps(value))
+
+
+@pytest.fixture(params=["push", "pull_request"])
+def handoff(tmp_path: Path, request: pytest.FixtureRequest) -> dict[str, str]:
+    event = str(request.param)
+    is_pr = event == "pull_request"
+    branch = "assessment-fix" if is_pr else "main"
+    data = tmp_path / "api"
+    data.mkdir()
+    runner = tmp_path / "runner"
+    runner.mkdir()
+    boundary = tmp_path / "boundaries.sh"
+    boundary.write_text(BOUNDARIES)
+    env = {
+        **os.environ,
+        "BASH_ENV": str(boundary),
+        "TEST_DATA": str(data),
+        "TEST_PYTHON": sys.executable,
+        "TEST_SOURCE_SHA": SOURCE_SHA,
+        "TEST_HEAD_SHA": HEAD_SHA,
+        "GH_TOKEN": "offline-test-placeholder",
+        "RUNNER_TEMP": str(runner),
+        "GITHUB_OUTPUT": str(tmp_path / "output"),
+        "GITHUB_REPOSITORY": REPOSITORY,
+        "GITHUB_SERVER_URL": "https://github.com",
+        "GITHUB_RUN_ID": "456",
+        "GITHUB_REF": "refs/heads/main",
+        "EVENT_NAME": event,
+        "REPOSITORY": REPOSITORY,
+        "RUN_ID": "123",
+        "RUN_ATTEMPT": "1",
+        "WORKFLOW_SHA": SOURCE_SHA,
+        "REF": "refs/pull/42/merge" if is_pr else "refs/heads/main",
+        "REF_NAME": "42/merge" if is_pr else branch,
+        "HEAD_REF": branch if is_pr else "",
+        "BASE_REF": "main" if is_pr else "",
+        "PR_NUMBER": "42" if is_pr else "",
+        "PR_HEAD_SHA": HEAD_SHA if is_pr else "",
+        "PR_BASE_SHA": BASE_SHA if is_pr else "",
+        "IS_HARDENED": "true",
+        "SOURCE_RUN_ID": "123",
+        "EXPECTED_CI_WORKFLOW_ID": "268848247",
+        "EXPECTED_CI_WORKFLOW_PATH": ".github/workflows/ci.yml",
+    }
+    workspace = tmp_path / "candidate"
+    workspace.mkdir()
+    result = _run(".github/workflows/ci.yml", "Record GitHub event identity as data", env, workspace)
+    assert result.returncode == 0, result.stderr
+    for file in ("Dockerfile", "pyproject.toml", "uv.lock"):
+        (workspace / file).write_text("Untrusted uploaded copy: never use this as an assessment input.\n")
+        _json(data / f"{file}.json", {"content": base64.b64encode((ROOT / file).read_bytes()).decode()})
+
+    # upload-artifact preserves paths relative to the least common ancestor.
+    # Derive the archive from the real producer's path list, then extract it at
+    # the real consumer's download destination rather than placing JSON by hand.
+    upload = _step(".github/workflows/ci.yml", "Upload candidate context")
+    paths = [
+        workspace / line.strip()
+        for line in upload.split("          path: |\n")[1].splitlines()
+        if line.startswith("            ")
+    ]
+    common = Path(os.path.commonpath([path.parent for path in paths]))
+    download = _step(WORKFLOW, "Download candidate context")
+    destination = re.search(r"          path: (.+)", download)
+    assert destination is not None
+    extracted = Path(destination[1].replace("${{ runner.temp }}", str(runner)))
+    with ZipFile(tmp_path / "candidate-context.zip", "w") as archive:
+        for path in paths:
+            archive.write(path, path.relative_to(common))
+    with ZipFile(tmp_path / "candidate-context.zip") as archive:
+        assert set(archive.namelist()) == {
+            "artifacts/candidate-context.json",
+            "Dockerfile",
+            "pyproject.toml",
+            "uv.lock",
+        }
+        archive.extractall(extracted)
+
+    _json(
+        data / "run.json",
+        {
+            "id": 123,
+            "workflow_id": 268848247,
+            "path": ".github/workflows/ci.yml",
+            "name": "CI",
+            "head_repository": {"full_name": REPOSITORY},
+            "run_attempt": 1,
+            "conclusion": "success",
+            "event": event,
+            "head_sha": HEAD_SHA if is_pr else SOURCE_SHA,
+            "head_branch": branch,
+        },
+    )
+    pr = {
+        "number": 42,
+        "state": "open",
+        "head": {"repo": {"full_name": REPOSITORY}, "ref": branch, "sha": HEAD_SHA},
+        "base": {"sha": BASE_SHA},
+    }
+    _json(data / "pr.json", pr)
+    _json(data / "prs.json", [pr])
+    _json(data / "commit.json", {"parents": [{"sha": BASE_SHA}, {"sha": HEAD_SHA}]})
+    _json(data / "artifacts.json", {"artifacts": [{"name": "candidate-context", "expired": False}]})
+    _json(data / "check-response.json", {"id": 789})
+    env["EVENT_NAME"] = "workflow_run"
+    return env
+
+
+def _identity(env: dict[str, str]) -> None:
+    result = _run(WORKFLOW, IDENTITY, env)
+    assert result.returncode == 0, result.stderr
+    outputs = dict(line.split("=", 1) for line in Path(env["GITHUB_OUTPUT"]).read_text().splitlines())
+    assert outputs == {
+        "source_run_id": "123",
+        "source_sha": SOURCE_SHA,
+        "source_branch": env["HEAD_REF"] or "main",
+        "check_sha": HEAD_SHA if env["PR_NUMBER"] else SOURCE_SHA,
+        "check_id": "789",
+        "pr_number": env["PR_NUMBER"],
+    }
+    check = json.loads((Path(env["TEST_DATA"]) / "check.json").read_text())
+    assert check["head_sha"] == outputs["check_sha"]
+    assert check["status"] == "in_progress"
+    env.update({key.upper(): value for key, value in outputs.items()})
+    Path(env["GITHUB_OUTPUT"]).write_text("")
+
+
+@pytest.mark.parametrize("trigger", ["workflow_run", "workflow_dispatch"])
+def test_archive_identity_and_commit_bound_inputs(handoff: dict[str, str], trigger: str) -> None:
+    handoff["EVENT_NAME"] = trigger
+    _identity(handoff)
+    result = _run(WORKFLOW, SOURCE, handoff)
+    assert result.returncode == 0, result.stderr
+    for file in ("Dockerfile", "pyproject.toml", "uv.lock"):
+        assert (Path(handoff["RUNNER_TEMP"]) / "assessment-inputs" / file).read_bytes() == (ROOT / file).read_bytes()
+    outputs = Path(handoff["GITHUB_OUTPUT"]).read_text()
+    assert outputs.startswith("hardened=true\nruntime_base=dhi.io/python:")
+    requests = (Path(handoff["TEST_DATA"]) / "requests").read_text().splitlines()
+    assert [line for line in requests if "/contents/" in line] == [
+        f"GET repos/{REPOSITORY}/contents/{file}" for file in ("Dockerfile", "pyproject.toml", "uv.lock")
+    ]
+
+
+def test_manual_assessment_rejects_non_main_ref(handoff: dict[str, str]) -> None:
+    handoff.update(EVENT_NAME="workflow_dispatch", GITHUB_REF="refs/heads/assessment-fix")
+    result = _run(WORKFLOW, IDENTITY, handoff)
+    assert result.returncode != 0
+    assert "Manual reassessments must be dispatched from main." in result.stderr
+    assert not (Path(handoff["TEST_DATA"]) / "requests").exists()
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "missing",
+        "malformed",
+        "run-id",
+        "repository",
+        "workflow-sha",
+        "head-sha",
+        "attempt",
+        "conclusion",
+        "workflow",
+        "expired-artifact",
+    ],
+)
+def test_identity_rejects_invalid_evidence_before_creating_check(handoff: dict[str, str], invalid: str) -> None:
+    data = Path(handoff["TEST_DATA"])
+    context = Path(handoff["RUNNER_TEMP"]) / "candidate-context/artifacts/candidate-context.json"
+    if invalid == "missing":
+        context.unlink()
+    elif invalid == "malformed":
+        context.write_text("{")
+    elif invalid in {"run-id", "repository", "workflow-sha"}:
+        value = json.loads(context.read_text())
+        value[{"run-id": "run_id", "repository": "repository", "workflow-sha": "workflow_sha"}[invalid]] = "wrong"
+        _json(context, value)
+    elif invalid == "expired-artifact":
+        _json(data / "artifacts.json", {"artifacts": [{"name": "candidate-context", "expired": True}]})
+    else:
+        value = json.loads((data / "run.json").read_text())
+        value[
+            {"head-sha": "head_sha", "attempt": "run_attempt", "conclusion": "conclusion", "workflow": "workflow_id"}[
+                invalid
+            ]
+        ] = "wrong"
+        _json(data / "run.json", value)
+    result = _run(WORKFLOW, IDENTITY, handoff)
+    assert result.returncode != 0
+    assert result.stderr
+    assert not (data / "check.json").exists()
+    assert not Path(handoff["GITHUB_OUTPUT"]).exists()
+
+
+@pytest.mark.parametrize("invalid", ["context", "pr-head", "merge-parents"])
+def test_source_rechecks_binding_before_fetching_files(handoff: dict[str, str], invalid: str) -> None:
+    if not handoff["PR_NUMBER"] and invalid != "context":
+        pytest.skip("Only pull requests have merge parents and a separate head.")
+    _identity(handoff)
+    data = Path(handoff["TEST_DATA"])
+    if invalid == "context":
+        context = Path(handoff["RUNNER_TEMP"]) / "candidate-context/artifacts/candidate-context.json"
+        value = json.loads(context.read_text())
+        value["run_id"] = 999
+        _json(context, value)
+    elif invalid == "pr-head":
+        value = json.loads((data / "pr.json").read_text())
+        value["head"]["sha"] = "4" * 40
+        _json(data / "pr.json", value)
+    else:
+        _json(data / "commit.json", {"parents": [{"sha": HEAD_SHA}, {"sha": BASE_SHA}]})
+    result = _run(WORKFLOW, SOURCE, handoff)
+    assert result.returncode != 0
+    assert "/contents/" not in (data / "requests").read_text()
+    assert Path(handoff["GITHUB_OUTPUT"]).read_text() == ""
+
+
+@pytest.mark.parametrize("file", ["Dockerfile", "pyproject.toml", "uv.lock"])
+@pytest.mark.parametrize("failure", ["http-error", "missing-content", "invalid-base64"])
+def test_input_retrieval_fails_closed(handoff: dict[str, str], file: str, failure: str) -> None:
+    _identity(handoff)
+    if failure == "http-error":
+        handoff["TEST_FAIL_FILE"] = file
+    else:
+        _json(
+            Path(handoff["TEST_DATA"]) / f"{file}.json",
+            {"content": None if failure == "missing-content" else "!!!not base64!!!"},
+        )
+    result = _run(WORKFLOW, SOURCE, handoff)
+    assert result.returncode != 0
+    assert result.stderr
+    assert Path(handoff["GITHUB_OUTPUT"]).read_text() == ""
