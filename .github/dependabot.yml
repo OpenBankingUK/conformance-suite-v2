@@ -34,12 +34,14 @@ updates:
     registries: [dhi]
     schedule:
       interval: daily
+    # Docker dependency names omit the registry host: dhi.io/python is python.
+    # Ignore tag major/minor jumps, not digest refreshes within the current tag.
     ignore:
-      - dependency-name: dhi.io/python
+      - dependency-name: python
         update-types: [version-update:semver-major, version-update:semver-minor]
     groups:
       dhi-python-base-images:
-        patterns: ["dhi.io/python"]
+        patterns: ["python"]
 
   # Dependabot reads this file only from the default branch, so the active
   # release branch is targeted explicitly. Update target-branch when a new
@@ -51,11 +53,11 @@ updates:
     schedule:
       interval: daily
     ignore:
-      - dependency-name: dhi.io/python
+      - dependency-name: python
         update-types: [version-update:semver-major, version-update:semver-minor]
     groups:
       dhi-python-base-images:
-        patterns: ["dhi.io/python"]
+        patterns: ["python"]
 
   - package-ecosystem: github-actions
     directory: /
