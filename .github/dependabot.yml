@@ -34,6 +34,9 @@ updates:
     registries: [dhi]
     schedule:
       interval: daily
+    ignore:
+      - dependency-name: dhi.io/python
+        update-types: [version-update:semver-major, version-update:semver-minor]
     groups:
       dhi-python-base-images:
         patterns: ["dhi.io/python"]
@@ -47,6 +50,9 @@ updates:
     registries: [dhi]
     schedule:
       interval: daily
+    ignore:
+      - dependency-name: dhi.io/python
+        update-types: [version-update:semver-major, version-update:semver-minor]
     groups:
       dhi-python-base-images:
         patterns: ["dhi.io/python"]
