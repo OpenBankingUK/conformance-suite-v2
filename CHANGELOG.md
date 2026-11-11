@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Docker Scout shows no High findings. Fixable findings and all other
   vulnerability gates are unchanged.
 
+- Preserve per-platform BuildKit max-mode provenance and SPDX SBOMs in the
+  candidate OCI archives through approved Docker Hub publication, while
+  continuing to scan and promote the exact runnable image manifest digests.
+  Keep trusted assessment and promotion compatible with legacy Docker and
+  unattested OCI candidate archives until release branches adopt the new build.
+  Include a Docker import view of the same OCI blobs so the existing trusted
+  assessor can load the new archive during rollout without a check bypass.
+  Pass the validated published version through the step environment instead of
+  expanding it inline in the publication shell.
+
 ## [2.0.0-beta.17] - 2026-11-10
 
 ### Fixed

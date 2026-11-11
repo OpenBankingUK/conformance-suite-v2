@@ -453,6 +453,34 @@ trusted assessment scans those exact archives before a candidate can pass
 the required `Vulnerability Scan` check or be promoted. Candidate jobs have
 read-only repository permissions and never push an image.
 
+Candidate archives use BuildKit's OCI exporter with max-mode SLSA provenance
+and an SPDX SBOM attached to each runnable platform manifest. The verifier
+checks the archive's content-addressed OCI blobs, platform, source revision,
+runtime Config, DHI base digest, provenance subject and SBOM before assessment.
+Publishing this BuildKit evidence lets Docker Hub/Scout trace each image back
+to its digest-pinned DHI base and apply that base's signed VEX assessments,
+instead of treating the base-image findings as unresolved. GitHub's existing
+publication attestations remain separate and unchanged.
+Before upload, CI adds a classic Docker `manifest.json` import view that points
+to the same config and compressed layer blobs with the candidate's local tag.
+It does not replace or rewrite any OCI member, provenance, SBOM, or descriptor.
+This lets the current trusted assessor on `main` load the combined archive
+during rollout without a bypass or a second, independently built scan image.
+The final combined archive is checksummed once and remains the artifact used
+by assessment, rescan, and approved publication.
+The promotion manifest and vulnerability scans continue to identify the
+runnable platform-manifest digests, not the surrounding attestation-index
+digests. Local image import is checked against the archive's platform,
+complete runtime Config and root-filesystem DiffIDs. After approval, promotion
+copies each complete OCI index with `skopeo --all --preserve-digests`, then
+checks that the final multi-architecture index contains every original
+platform and attestation descriptor and both scanned runnable digests. It
+does not rebuild, rewrite, or substitute the scanned image manifests. The
+trusted assessment and promoter continue to accept older Docker archives and
+unattested OCI archives produced by release branches that have not yet adopted
+the new exporter; those formats receive the same existing scans and policy,
+but do not gain BuildKit child-image evidence.
+
 This Docker-contract check is a bootstrap compatibility gate. The hardened
 Docker implementation on `release/2.0.0` produces candidates with versions
 such as `2.0.0-beta.N`, while `main` produces GA candidates.
@@ -487,9 +515,12 @@ release-script files must exactly match the trusted copies on `main`; pipeline
 changes therefore land on `main` before release branches consume them. Only
 then does the Environment-gated job receive Docker Hub credentials; it pushes
 each platform image by digest with `skopeo copy --preserve-digests` (so the
-registry digests equal the scanned digests; a plain `docker push` would
+registry runnable manifest digests equal the scanned digests; attested OCI
+indexes are copied with `--all` to retain their BuildKit evidence, while legacy
+archives keep the existing single-manifest path). A plain `docker push` would
 re-serialise the manifest, and pushing by digest leaves no internal staging
-tags) and assembles the already-tested images without rebuilding. Promotion is serialized to prevent
+tags. The workflow assembles the already-tested images without rebuilding.
+Promotion is serialized to prevent
 tag races, rejects an existing immutable version tag discovered through the
 Docker Hub tags API, and attests the published
 multi-architecture manifest with provenance and both platform SBOMs using
