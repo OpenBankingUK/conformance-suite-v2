@@ -82,3 +82,65 @@ def test_trusted_assessment_is_separate_and_candidate_bound() -> None:
     assert "security_assessment_run_id:" in promotion
     assert "security-assessment-receipt" in promotion
     assert 'verify-dhi-provenance: "true"' in promotion
+
+
+def test_build_keeps_max_mode_evidence_and_scanned_leaf_identity() -> None:
+    ci = (WORKFLOWS / "ci.yml").read_text()
+
+    assert "--provenance=mode=max,version=v0.2" in ci
+    assert "--sbom=true" in ci
+    assert "type=oci,oci-artifact=false,compression=gzip,force-compression=true" in ci
+    assert "scripts.verify_build_evidence" in ci
+    assert "--add-docker-load-manifest" in ci
+    assert "'.image_digest'" in ci
+
+
+def test_assessor_and_promoter_accept_legacy_archives_without_weakening_policy() -> None:
+    assessment = (WORKFLOWS / "security-assessment.yml").read_text()
+    promotion = (WORKFLOWS / "_promote-image.yml").read_text()
+
+    assert "--allow-legacy" in assessment
+    assert 'docker load --input "$RUNNER_TEMP/candidate/image-$SLUG.tar"' in assessment
+    assert "--allow-legacy" in promotion
+    assert 'docker load --input "$archive"' in promotion
+    assert "skopeo copy --all --preserve-digests" in promotion
+    assert "scripts.verify_build_evidence" in promotion
+    assert "scripts/verify_loaded_image.py" in promotion
+    assert 'allow-exceptions: "false"' in promotion
+    assert 'fail-on-findings: "false"' in promotion
+
+
+def test_published_version_is_passed_through_environment_not_shell_interpolation() -> None:
+    promotion = (WORKFLOWS / "_promote-image.yml").read_text()
+    publish = promotion.split("      - name: Assemble and publish the multi-arch manifest list\n", 1)[1].split(
+        "\n      - name:", 1
+    )[0]
+
+    assert "RAW_VERSION: ${{ steps.validate.outputs.raw_version }}" in publish
+    assert "AMD64_INDEX: ${{ steps.stage.outputs.amd64_index }}" in publish
+    assert "ARM64_INDEX: ${{ steps.stage.outputs.arm64_index }}" in publish
+    assert '"${IMAGE_NAME}:${RAW_VERSION}"' in publish
+    assert '"${IMAGE_NAME}@${AMD64_INDEX}"' in publish
+    assert '"${IMAGE_NAME}@${ARM64_INDEX}"' in publish
+    assert "${{ steps.validate.outputs.raw_version }}" not in publish.split("        run: |\n", 1)[1]
+
+
+def test_promotion_run_blocks_do_not_interpolate_dynamic_github_context() -> None:
+    workflow = (WORKFLOWS / "_promote-image.yml").read_text()
+    blocks = re.findall(
+        r"^        run: \|\n((?:^          .*\n|^\n)+)",
+        workflow,
+        re.MULTILINE,
+    )
+    assert blocks
+    for block in blocks:
+        assert not re.search(r"\$\{\{\s*(?:steps\.[\w-]+\.outputs\.|inputs\.|github\.event\.|needs\.)", block)
+
+
+def test_rescan_fetches_candidate_before_reading_its_dockerfile() -> None:
+    promotion = (WORKFLOWS / "_promote-image.yml").read_text()
+    rescan = promotion.split("\n  rescan:\n", 1)[1].split("\n  decision:", 1)[0]
+    load = rescan.split("      - name: Verify and load the candidate archive\n", 1)[1]
+    assert load.index('git fetch --no-tags origin "$INPUT_SOURCE_SHA"') < load.index(
+        'git show "$INPUT_SOURCE_SHA:Dockerfile"'
+    )
