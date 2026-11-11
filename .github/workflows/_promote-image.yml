@@ -798,6 +798,8 @@ jobs:
         id: publish
         env:
           RAW_VERSION: ${{ steps.validate.outputs.raw_version }}
+          AMD64_INDEX: ${{ steps.stage.outputs.amd64_index }}
+          ARM64_INDEX: ${{ steps.stage.outputs.arm64_index }}
         run: |
           set -euo pipefail
           tag_args=()
@@ -806,8 +808,8 @@ jobs:
           done < <(jq -r '.[]' expected-tags.json)
 
           docker buildx imagetools create "${tag_args[@]}" \
-            "${IMAGE_NAME}@${{ steps.stage.outputs.amd64_index }}" \
-            "${IMAGE_NAME}@${{ steps.stage.outputs.arm64_index }}"
+            "${IMAGE_NAME}@${AMD64_INDEX}" \
+            "${IMAGE_NAME}@${ARM64_INDEX}"
           docker buildx imagetools inspect \
             "${IMAGE_NAME}:${RAW_VERSION}" --raw > artifacts/published-index.json
           uv run python -m scripts.verify_build_evidence \

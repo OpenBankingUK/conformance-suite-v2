@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -111,8 +113,44 @@ def test_assessor_and_promoter_accept_legacy_archives_without_weakening_policy()
 
 def test_published_version_is_passed_through_environment_not_shell_interpolation() -> None:
     promotion = (WORKFLOWS / "_promote-image.yml").read_text()
-    publish = promotion.split("      - name: Assemble and publish the multi-arch manifest list\n", 1)[1]
+    publish = promotion.split("      - name: Assemble and publish the multi-arch manifest list\n", 1)[1].split(
+        "\n      - name:", 1
+    )[0]
 
     assert "RAW_VERSION: ${{ steps.validate.outputs.raw_version }}" in publish
+    assert "AMD64_INDEX: ${{ steps.stage.outputs.amd64_index }}" in publish
+    assert "ARM64_INDEX: ${{ steps.stage.outputs.arm64_index }}" in publish
     assert '"${IMAGE_NAME}:${RAW_VERSION}"' in publish
-    assert '"${IMAGE_NAME}:${{ steps.validate.outputs.raw_version }}"' not in publish
+    assert '"${IMAGE_NAME}@${AMD64_INDEX}"' in publish
+    assert '"${IMAGE_NAME}@${ARM64_INDEX}"' in publish
+    assert "${{ steps.validate.outputs.raw_version }}" not in publish.split("        run: |\n", 1)[1]
+
+
+def test_promotion_run_blocks_do_not_interpolate_dynamic_github_context() -> None:
+    ruby = shutil.which("ruby")
+    assert ruby is not None, "Workflow YAML regression checks require Ruby."
+    workflow = WORKFLOWS / "_promote-image.yml"
+    script = r"""
+require "yaml"
+workflow = YAML.load_file(ARGV.fetch(0))
+violations = []
+workflow.fetch("jobs", {}).each do |job_name, job|
+  Array(job["steps"]).each_with_index do |step, index|
+    run = step["run"]
+    next unless run.is_a?(String)
+    if run.match?(/\$\{\{\s*(?:steps\.[\w-]+\.outputs\.|inputs\.|github\.event\.|needs\.)/)
+      violations << "#{job_name}[#{index}]"
+    end
+  end
+end
+puts violations
+exit(violations.empty? ? 0 : 1)
+"""
+    result = subprocess.run(  # noqa: S603 - fixed workflow path, no shell is used.
+        [ruby, "-e", script, str(workflow)],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stdout

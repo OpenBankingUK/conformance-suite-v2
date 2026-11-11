@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   continuing to scan and promote the exact runnable image manifest digests.
   Keep trusted assessment and promotion compatible with legacy Docker and
   unattested OCI candidate archives until release branches adopt the new build.
+  Pass the validated published version through the step environment instead of
+  expanding it inline in the publication shell.
 
 - Add daily grouped Dependabot refreshes for digest-pinned DHI builder/runtime
   images and a trusted, candidate-bound security assessment workflow. The
