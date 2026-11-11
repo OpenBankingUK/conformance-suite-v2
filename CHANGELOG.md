@@ -11,16 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Known issues
 
-- Docker Hub and Docker Scout can list two High findings in Debian's `libexpat1`
-  package (CVE-2026-117610 and CVE-2026-118370). Debian has not published a
-  fixed package; Docker's signed VEX for the Docker Hardened Images (DHI)
-  Python runtime base marks both `not_affected` because DHI backported the
-  upstream expat fixes. The release security assessment and promotion scans
-  apply this verified VEX, so these findings do not block publication. For
-  this published image, Docker Scout's summary still lists them: its scan does
-  not show the DHI base image's image-specific VEX statements on this image,
-  even with max-mode provenance and an SBOM. Scanning the DHI base image on its
-  own in Docker Scout shows no High findings. Fixable findings and all other
+- Docker Hub displayed two High findings in Debian's `libexpat1` package
+  (CVE-2026-117610 and CVE-2026-118370) on 2.0.0-beta.17 and the 2.0.0-dev.1
+  preview on 2026-11-11. The assessed package had no scanner-reported fixed
+  version. Docker's signed VEX for the Docker Hardened Images (DHI) Python
+  runtime base marks both `not_affected` because DHI backported the upstream
+  expat fixes. The release security assessment and promotion scans apply this
+  verified VEX, so these findings do not block publication. The findings
+  remained in Docker Hub's summary for the preview despite its preserved
+  max-mode provenance and SBOM; scanning the DHI base image on its own in
+  Docker Scout shows no High findings. Fixable findings and all other
   vulnerability gates are unchanged.
 
 ## [2.0.0-beta.17] - 2026-11-10
