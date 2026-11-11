@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import re
-import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -93,6 +91,7 @@ def test_build_keeps_max_mode_evidence_and_scanned_leaf_identity() -> None:
     assert "--sbom=true" in ci
     assert "type=oci,oci-artifact=false,compression=gzip,force-compression=true" in ci
     assert "scripts.verify_build_evidence" in ci
+    assert "--add-docker-load-manifest" in ci
     assert "'.image_digest'" in ci
 
 
@@ -127,30 +126,21 @@ def test_published_version_is_passed_through_environment_not_shell_interpolation
 
 
 def test_promotion_run_blocks_do_not_interpolate_dynamic_github_context() -> None:
-    ruby = shutil.which("ruby")
-    assert ruby is not None, "Workflow YAML regression checks require Ruby."
-    workflow = WORKFLOWS / "_promote-image.yml"
-    script = r"""
-require "yaml"
-workflow = YAML.load_file(ARGV.fetch(0))
-violations = []
-workflow.fetch("jobs", {}).each do |job_name, job|
-  Array(job["steps"]).each_with_index do |step, index|
-    run = step["run"]
-    next unless run.is_a?(String)
-    if run.match?(/\$\{\{\s*(?:steps\.[\w-]+\.outputs\.|inputs\.|github\.event\.|needs\.)/)
-      violations << "#{job_name}[#{index}]"
-    end
-  end
-end
-puts violations
-exit(violations.empty? ? 0 : 1)
-"""
-    result = subprocess.run(  # noqa: S603 - fixed workflow path, no shell is used.
-        [ruby, "-e", script, str(workflow)],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=10,
+    workflow = (WORKFLOWS / "_promote-image.yml").read_text()
+    blocks = re.findall(
+        r"^        run: \|\n((?:^          .*\n|^\n)+)",
+        workflow,
+        re.MULTILINE,
     )
-    assert result.returncode == 0, result.stdout
+    assert blocks
+    for block in blocks:
+        assert not re.search(r"\$\{\{\s*(?:steps\.[\w-]+\.outputs\.|inputs\.|github\.event\.|needs\.)", block)
+
+
+def test_rescan_fetches_candidate_before_reading_its_dockerfile() -> None:
+    promotion = (WORKFLOWS / "_promote-image.yml").read_text()
+    rescan = promotion.split("\n  rescan:\n", 1)[1].split("\n  decision:", 1)[0]
+    load = rescan.split("      - name: Verify and load the candidate archive\n", 1)[1]
+    assert load.index('git fetch --no-tags origin "$INPUT_SOURCE_SHA"') < load.index(
+        'git show "$INPUT_SOURCE_SHA:Dockerfile"'
+    )

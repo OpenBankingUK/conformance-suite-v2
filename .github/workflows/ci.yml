@@ -374,6 +374,7 @@ jobs:
           uv run python -m scripts.verify_build_evidence \
             --archive artifacts/image-${{ matrix.slug }}.tar \
             --platform "${{ matrix.platform }}" --source-sha "${{ github.sha }}" \
+            --add-docker-load-manifest \
             "${args[@]}" > artifacts/evidence-${{ matrix.slug }}.json
           # Only this local verification copy loses attestations. Promotion
           # consumes the original OCI archive, never the daemon's copy.

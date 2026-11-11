@@ -735,6 +735,10 @@ uv() {
   fi
 }
 git() {
+  if [[ "$1" == fetch ]]; then
+    [[ "$2 $3 $4" == "--no-tags origin $INPUT_SOURCE_SHA" ]] || return 96
+    return 0
+  fi
   [[ "$1" == show && "$2" == "$INPUT_SOURCE_SHA:Dockerfile" ]] || return 96
   cat "$TEST_DOCKERFILE"
 }

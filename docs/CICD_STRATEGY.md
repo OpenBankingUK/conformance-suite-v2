@@ -454,6 +454,13 @@ Publishing this BuildKit evidence lets Docker Hub/Scout trace each image back
 to its digest-pinned DHI base and apply that base's signed VEX assessments,
 instead of treating the base-image findings as unresolved. GitHub's existing
 publication attestations remain separate and unchanged.
+Before upload, CI adds a classic Docker `manifest.json` import view that points
+to the same config and compressed layer blobs with the candidate's local tag.
+It does not replace or rewrite any OCI member, provenance, SBOM, or descriptor.
+This lets the current trusted assessor on `main` load the combined archive
+during rollout without a bypass or a second, independently built scan image.
+The final combined archive is checksummed once and remains the artifact used
+by assessment, rescan, and approved publication.
 The promotion manifest and vulnerability scans continue to identify the
 runnable platform-manifest digests, not the surrounding attestation-index
 digests. Local image import is checked against the archive's platform,

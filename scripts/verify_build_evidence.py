@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import re
 import sys
@@ -17,6 +18,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 INDEX = "application/vnd.oci.image.index.v1+json"
+DOCKER_INDEX = "application/vnd.docker.distribution.manifest.list.v2+json"
 MANIFEST = "application/vnd.oci.image.manifest.v1+json"
 PROVENANCE = "https://slsa.dev/provenance/v0.2"
 SPDX = "https://spdx.dev/Document"
@@ -38,6 +40,11 @@ def _objects(value: object) -> list[dict[str, object]]:
     if not isinstance(value, list):
         raise BuildEvidenceError("Expected a JSON array.")
     return [_object(item) for item in value]
+
+
+def _labels(config: dict[str, object]) -> dict[str, object]:
+    labels = config.get("Labels")
+    return {} if labels is None else _object(labels)
 
 
 def _digest(descriptor: dict[str, object]) -> str:
@@ -120,7 +127,7 @@ def _verify_docker_archive(
     os_name, architecture = platform.split("/")
     if config.get("os") != os_name or config.get("architecture") != architecture:
         raise BuildEvidenceError("Legacy Docker archive platform does not match the candidate.")
-    labels = _object(_object(config.get("config")).get("Labels"))
+    labels = _labels(_object(config.get("config")))
     if labels.get("org.opencontainers.image.revision") not in (None, source_sha):
         raise BuildEvidenceError("Legacy Docker archive revision differs from the candidate commit.")
     for layer in layers:
@@ -143,6 +150,41 @@ def _verify_docker_archive(
         "index_digest": None,
         "descriptors": [],
     }
+
+
+def _docker_load_manifest(
+    image_manifest: dict[str, object], *, platform: str, source_sha: str
+) -> list[dict[str, object]]:
+    return [
+        {
+            "Config": "blobs/sha256/" + _digest(_object(image_manifest.get("config")))[7:],
+            "Layers": ["blobs/sha256/" + _digest(layer)[7:] for layer in _objects(image_manifest.get("layers"))],
+            "RepoTags": [f"ob-conformance-candidate:linux-{platform.split('/')[1]}-{source_sha}"],
+        }
+    ]
+
+
+def add_docker_load_manifest(path: Path, *, platform: str, source_sha: str) -> None:
+    """Add a classic Docker import view without changing any OCI blob or index.
+
+    The compatibility manifest references the original compressed layer blobs
+    and config verbatim. Final artifact checksums are computed after this step;
+    assessment and publication still consume the same combined archive.
+    """
+    evidence = verify_archive(path, platform=platform, source_sha=source_sha)
+    with tarfile.open(path, "r:") as tar:
+        archive = _Archive(tar)
+        manifest = archive.blob(
+            next(item for item in _objects(evidence["descriptors"]) if item["digest"] == evidence["image_digest"])
+        )
+        expected = _docker_load_manifest(manifest, platform=platform, source_sha=source_sha)
+        if "manifest.json" in tar.getnames():
+            return
+    content = json.dumps(expected, sort_keys=True).encode()
+    with tarfile.open(path, "a") as tar:
+        member = tarfile.TarInfo("manifest.json")
+        member.size = len(content)
+        tar.addfile(member, io.BytesIO(content))
 
 
 def verify_archive(
@@ -195,12 +237,16 @@ def verify_archive(
         image_manifest = archive.blob(image)
         if image.get("mediaType") != MANIFEST or image_manifest.get("mediaType") != MANIFEST:
             raise BuildEvidenceError("Expected an OCI platform manifest.")
+        if "manifest.json" in tar.getnames() and root.get("mediaType") == INDEX:
+            compatibility = _objects(json.loads(archive.read("manifest.json")))
+            if compatibility != _docker_load_manifest(image_manifest, platform=platform, source_sha=source_sha):
+                raise BuildEvidenceError("Docker import manifest differs from the verified OCI image or candidate tag.")
         config = archive.blob(_object(image_manifest.get("config")))
         requested_os, requested_arch = platform.split("/")
         if config.get("os") != requested_os or config.get("architecture") != requested_arch:
             raise BuildEvidenceError("OCI image config platform differs from its manifest descriptor.")
         image_config = _object(config.get("config"))
-        labels = _object(image_config.get("Labels"))
+        labels = _labels(image_config)
         if labels.get("org.opencontainers.image.revision") not in (
             (source_sha,) if require_revision_label else (None, source_sha)
         ):
@@ -296,7 +342,8 @@ def verify_publication(index: dict[str, object], evidence: list[dict[str, object
     legacy = [item for item in evidence if item.get("format") in ("docker", "oci-legacy")]
     expected = [descriptor for item in oci for descriptor in _objects(item.get("descriptors"))]
     actual = _objects(index.get("manifests"))
-    if index.get("mediaType") != INDEX or len(actual) != len(expected) + len(legacy):
+    supported_types = {INDEX} if oci else {INDEX, DOCKER_INDEX}
+    if index.get("mediaType") not in supported_types or len(actual) != len(expected) + len(legacy):
         raise BuildEvidenceError("Published index contains missing or unexpected descriptors.")
     if any(actual.count(descriptor) != 1 for descriptor in expected):
         raise BuildEvidenceError("Published index does not preserve the original image and attestation descriptors.")
@@ -325,6 +372,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runtime-base")
     parser.add_argument("--allow-legacy", action="store_true")
     parser.add_argument("--require-revision-label", action="store_true")
+    parser.add_argument("--add-docker-load-manifest", action="store_true")
     parser.add_argument("--evidence", type=Path, action="append", default=[])
     args = parser.parse_args(argv)
     try:
@@ -340,8 +388,12 @@ def main(argv: list[str] | None = None) -> int:
                 allow_legacy=args.allow_legacy,
                 require_revision_label=args.require_revision_label,
             )
+            if args.add_docker_load_manifest:
+                add_docker_load_manifest(args.archive, platform=args.platform, source_sha=args.source_sha)
             sys.stdout.write(json.dumps(result, sort_keys=True) + "\n")
         else:
+            if args.add_docker_load_manifest:
+                raise BuildEvidenceError("--add-docker-load-manifest requires --archive.")
             if len(args.evidence) != 2:
                 raise BuildEvidenceError("Publication requires both platform evidence files.")
             verify_publication(

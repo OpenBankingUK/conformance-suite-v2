@@ -12,6 +12,8 @@ import pytest
 
 from scripts.verify_build_evidence import (
     BuildEvidenceError,
+    add_docker_load_manifest,
+    main,
     verify_archive,
     verify_publication,
 )
@@ -89,13 +91,21 @@ def _oci_archive(
     arch: str = "arm64",
     config_arch: str | None = None,
     revision: str = SOURCE_SHA,
+    labels_mode: str = "present",
 ) -> list[dict[str, object]]:
     source = "sha256:" + "2" * 64
+    runtime_config: dict[str, object] = {"Labels": {"org.opencontainers.image.revision": revision}}
+    if labels_mode == "missing":
+        runtime_config = {}
+    elif labels_mode == "null":
+        runtime_config = {"Labels": None}
+    elif labels_mode == "invalid":
+        runtime_config = {"Labels": []}
     config = _json(
         {
             "os": "linux",
             "architecture": config_arch or arch,
-            "config": {"Labels": {"org.opencontainers.image.revision": revision}},
+            "config": runtime_config,
             "rootfs": {"diff_ids": [_digest(b"fixture layer")]},
         }
     )
@@ -210,6 +220,87 @@ def test_verifies_buildkit_provenance_sbom_and_dhi_base(tmp_path: Path) -> None:
     assert result["descriptors"] == descriptors
 
 
+def test_docker_import_view_preserves_every_original_oci_member_and_evidence(tmp_path: Path) -> None:
+    path = tmp_path / "combined.tar"
+    descriptors = _oci_archive(path)
+    original_members = _read_archive(path)
+    original_evidence = verify_archive(path, platform="linux/arm64", source_sha=SOURCE_SHA)
+
+    add_docker_load_manifest(path, platform="linux/arm64", source_sha=SOURCE_SHA)
+
+    combined = _read_archive(path)
+    assert set(combined) == {*original_members, "manifest.json"}
+    assert {name: combined[name] for name in original_members} == original_members
+    assert verify_archive(path, platform="linux/arm64", source_sha=SOURCE_SHA) == original_evidence
+    manifest = json.loads(combined["manifest.json"])[0]
+    assert manifest["RepoTags"] == [f"ob-conformance-candidate:linux-arm64-{SOURCE_SHA}"]
+    assert _digest(combined[manifest["Config"]]) == original_evidence["config_digest"]
+    image = json.loads(combined[_blob_name(descriptors[0])])
+    assert manifest["Layers"] == [_blob_name(layer) for layer in image["layers"]]
+    first_archive_bytes = path.read_bytes()
+    add_docker_load_manifest(path, platform="linux/arm64", source_sha=SOURCE_SHA)
+    assert path.read_bytes() == first_archive_bytes
+
+
+@pytest.mark.parametrize("field", ["Config", "Layers", "RepoTags"])
+def test_rejects_docker_import_view_bound_to_different_image_or_tag(tmp_path: Path, field: str) -> None:
+    path = tmp_path / "combined.tar"
+    _oci_archive(path)
+    add_docker_load_manifest(path, platform="linux/arm64", source_sha=SOURCE_SHA)
+    combined = _read_archive(path)
+    manifest = json.loads(combined["manifest.json"])
+    manifest[0][field] = "wrong" if field == "Config" else ["wrong"]
+    combined["manifest.json"] = _json(manifest)
+    _write_archive(path, combined)
+
+    with pytest.raises(BuildEvidenceError, match="Docker import manifest differs"):
+        verify_archive(path, platform="linux/arm64", source_sha=SOURCE_SHA)
+
+
+def test_cli_adds_import_view_only_after_evidence_verification(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "combined.tar"
+    _oci_archive(path)
+    assert (
+        main(
+            [
+                "--archive",
+                str(path),
+                "--platform",
+                "linux/arm64",
+                "--source-sha",
+                SOURCE_SHA,
+                "--runtime-base",
+                RUNTIME_BASE,
+                "--add-docker-load-manifest",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["format"] == "oci"
+    assert "manifest.json" in _read_archive(path)
+
+    wrong = tmp_path / "wrong.tar"
+    _oci_archive(wrong)
+    before = wrong.read_bytes()
+    assert (
+        main(
+            [
+                "--archive",
+                str(wrong),
+                "--platform",
+                "linux/arm64",
+                "--source-sha",
+                "f" * 40,
+                "--add-docker-load-manifest",
+            ]
+        )
+        == 1
+    )
+    assert wrong.read_bytes() == before
+
+
 def test_accepts_legacy_docker_exporter_oci_archive(tmp_path: Path) -> None:
     archive = tmp_path / "legacy-oci.tar"
     _oci_archive(archive, attest=False)
@@ -244,6 +335,54 @@ def test_accepts_legacy_docker_archive_for_compatibility(tmp_path: Path) -> None
         allow_legacy=True,
     )
     assert result["format"] == "docker"
+
+
+@pytest.mark.parametrize("labels_mode", ["missing", "null", "invalid"])
+@pytest.mark.parametrize("archive_format", ["docker", "oci-legacy"])
+def test_legacy_revision_labels_are_optional_but_malformed_labels_fail(
+    tmp_path: Path, labels_mode: str, archive_format: str
+) -> None:
+    path = tmp_path / "legacy.tar"
+    if archive_format == "oci-legacy":
+        _oci_archive(path, attest=False, labels_mode=labels_mode)
+    else:
+        runtime_config: dict[str, object] = {}
+        if labels_mode == "null":
+            runtime_config["Labels"] = None
+        elif labels_mode == "invalid":
+            runtime_config["Labels"] = []
+        _write_archive(
+            path,
+            {
+                "manifest.json": _json([{"Config": "config.json", "Layers": ["layer.tar"]}]),
+                "config.json": _json(
+                    {
+                        "os": "linux",
+                        "architecture": "arm64",
+                        "config": runtime_config,
+                        "rootfs": {"diff_ids": [_digest(b"layer")]},
+                    }
+                ),
+                "layer.tar": b"layer",
+            },
+        )
+
+    if labels_mode == "invalid":
+        with pytest.raises(BuildEvidenceError, match="JSON object"):
+            verify_archive(path, platform="linux/arm64", source_sha=SOURCE_SHA, allow_legacy=True)
+    else:
+        assert (
+            verify_archive(path, platform="linux/arm64", source_sha=SOURCE_SHA, allow_legacy=True)["format"]
+            == archive_format
+        )
+
+
+@pytest.mark.parametrize("labels_mode", ["missing", "null"])
+def test_required_revision_label_remains_required(tmp_path: Path, labels_mode: str) -> None:
+    path = tmp_path / "attested.tar"
+    _oci_archive(path, labels_mode=labels_mode)
+    with pytest.raises(BuildEvidenceError, match="revision"):
+        verify_archive(path, platform="linux/arm64", source_sha=SOURCE_SHA, require_revision_label=True)
 
 
 def test_rejects_mismatched_attestation_and_legacy_revision(tmp_path: Path) -> None:
@@ -317,6 +456,41 @@ def test_publication_requires_exact_original_attestation_descriptors() -> None:
 
     with pytest.raises(BuildEvidenceError, match="missing or unexpected"):
         verify_publication({**published, "manifests": descriptors + [descriptors[0]]}, evidence)
+
+
+@pytest.mark.parametrize(
+    "media_type",
+    [
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.oci.image.index.v1+json",
+    ],
+)
+def test_accepts_legacy_publication_index_types_and_still_checks_scanned_digests(media_type: str) -> None:
+    descriptors: list[dict[str, object]] = [
+        {"digest": "sha256:" + str(index) * 64, "platform": {"os": "linux", "architecture": arch}}
+        for index, arch in ((1, "amd64"), (2, "arm64"))
+    ]
+    evidence: list[dict[str, object]] = [
+        {"format": "docker", "image_digest": item["digest"], "platform": f"linux/{arch}"}
+        for item, arch in zip(descriptors, ("amd64", "arm64"), strict=True)
+    ]
+    verify_publication({"mediaType": media_type, "manifests": descriptors}, evidence)
+    wrong = [{**descriptors[0], "digest": "sha256:" + "f" * 64}, descriptors[1]]
+    with pytest.raises(BuildEvidenceError, match="scanned legacy image"):
+        verify_publication({"mediaType": media_type, "manifests": wrong}, evidence)
+
+
+def test_attested_publication_still_requires_oci_index() -> None:
+    descriptor: dict[str, object] = {"digest": "sha256:" + "1" * 64}
+    evidence: list[dict[str, object]] = [{"format": "oci", "descriptors": [descriptor]}]
+    with pytest.raises(BuildEvidenceError, match="missing or unexpected"):
+        verify_publication(
+            {
+                "mediaType": "application/vnd.docker.distribution.manifest.list.v2+json",
+                "manifests": [descriptor],
+            },
+            evidence,
+        )
 
 
 @pytest.mark.parametrize("removed", [PROVENANCE, SPDX])

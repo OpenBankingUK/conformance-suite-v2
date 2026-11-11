@@ -291,6 +291,7 @@ jobs:
           SLUG: ${{ matrix.slug }}
         run: |
           set -euo pipefail
+          git fetch --no-tags origin "$INPUT_SOURCE_SHA"
           archive="$RUNNER_TEMP/candidate/image-$SLUG.tar"
           actual="$(sha256sum "$archive" | awk '{print $1}')"
           if ! awk '{print $1}' "$RUNNER_TEMP/manifest/checksums.sha256" | grep -qx "$actual"; then
@@ -326,7 +327,6 @@ jobs:
         id: source
         run: |
           set -euo pipefail
-          git fetch --no-tags origin "$INPUT_SOURCE_SHA"
           src="$RUNNER_TEMP/candidate-source"
           mkdir -p "$src"
           for file in Dockerfile pyproject.toml uv.lock; do
