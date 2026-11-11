@@ -104,5 +104,6 @@ def test_assessor_and_promoter_accept_legacy_archives_without_weakening_policy()
     assert 'docker load --input "$archive"' in promotion
     assert "skopeo copy --all --preserve-digests" in promotion
     assert "scripts.verify_build_evidence" in promotion
+    assert "scripts/verify_loaded_image.py" in promotion
     assert 'allow-exceptions: "false"' in promotion
     assert 'fail-on-findings: "false"' in promotion

@@ -632,6 +632,7 @@ jobs:
             scripts/vulnerability_gate.py \
             scripts/verify_dhi_provenance.py \
             scripts/verify_build_evidence.py \
+            scripts/verify_loaded_image.py \
             .github/actions/vulnerability-scan/action.yml \
             .github/actions/vulnerability-scan/dhi-signing-key.pub \
             .github/workflows/security-assessment.yml \
