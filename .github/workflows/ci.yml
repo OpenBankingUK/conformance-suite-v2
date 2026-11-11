@@ -379,17 +379,11 @@ jobs:
           # consumes the original OCI archive, never the daemon's copy.
           skopeo copy --override-os linux --override-arch "${SLUG#linux-}" \
             "oci-archive:artifacts/image-${{ matrix.slug }}.tar" "docker-daemon:$LOCAL_TAG"
-          expected_layers="$(jq -c '.rootfs_layers' artifacts/evidence-${{ matrix.slug }}.json)"
-          expected_platform="$(jq -r '.platform' artifacts/evidence-${{ matrix.slug }}.json)"
-          actual_platform="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$LOCAL_TAG")"
-          [[ "$actual_platform" == "$expected_platform" ]]
-          expected_config="$(jq -S -c '.image_config' artifacts/evidence-${{ matrix.slug }}.json)"
-          actual_config="$(docker image inspect --format '{{json .Config}}' "$LOCAL_TAG" | jq -S -c .)"
-          [[ "$actual_config" == "$expected_config" ]]
-          if [[ "$expected_layers" != "[]" ]]; then
-            actual_layers="$(docker image inspect --format '{{json .RootFS.Layers}}' "$LOCAL_TAG" | jq -c .)"
-            [[ "$actual_layers" == "$expected_layers" ]]
-          fi
+          docker image inspect --format '{{json .}}' "$LOCAL_TAG" \
+            > artifacts/loaded-image-${{ matrix.slug }}.json
+          uv run python -m scripts.verify_loaded_image \
+            --evidence artifacts/evidence-${{ matrix.slug }}.json \
+            --inspect artifacts/loaded-image-${{ matrix.slug }}.json
           echo "local_tag=$LOCAL_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Verify image OCI identity labels

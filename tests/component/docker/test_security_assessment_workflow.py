@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -101,11 +102,11 @@ def _shell(workflow: str, name: str) -> str:
     return textwrap.dedent("\n".join(line for line in block.splitlines() if line.startswith("          ") or not line))
 
 
-def _run(workflow: str, name: str, env: dict[str, str], cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
+def _run_script(script: str, env: dict[str, str], cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
     bash = shutil.which("bash")
     assert bash is not None, "Workflow shell tests require bash."
     return subprocess.run(  # noqa: S603 - repository-owned shell with GitHub/uv boundaries replaced offline
-        [bash, "--noprofile", "--norc", "-c", _shell(workflow, name)],
+        [bash, "--noprofile", "--norc", "-c", script],
         env=env,
         cwd=cwd,
         text=True,
@@ -113,6 +114,10 @@ def _run(workflow: str, name: str, env: dict[str, str], cwd: Path = ROOT) -> sub
         check=False,
         timeout=30,
     )
+
+
+def _run(workflow: str, name: str, env: dict[str, str], cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
+    return _run_script(_shell(workflow, name), env, cwd)
 
 
 def _json(path: Path, value: object) -> None:
@@ -647,6 +652,174 @@ def test_approval_is_fresh_and_candidate_bound(decisions: dict[str, str], invali
     assert result.returncode != 0
     assert result.stderr
     assert not (Path(decisions["RUNNER_TEMP"]) / "assessment-receipt.json").exists()
+
+
+def _image_load_case(
+    tmp_path: Path,
+    workflow: str,
+    archive_format: str,
+    *,
+    mismatch: str | None = None,
+) -> tuple[str, dict[str, str], Path]:
+    steps = {
+        ".github/workflows/ci.yml": ("Load image for local verification", "ci"),
+        WORKFLOW: ("Load candidate image", "assessment"),
+        ".github/workflows/_promote-image.yml": ("Verify and load the candidate archive", "promotion"),
+    }
+    step, kind = steps[workflow]
+    runner = tmp_path / "runner"
+    archive_dir = runner / "candidate"
+    archive_dir.mkdir(parents=True)
+    evidence_path = tmp_path / "evidence.json"
+    output_path = tmp_path / "output"
+    layer = "sha256:" + "2" * 64
+    config = {"User": "app", "Labels": {"org.opencontainers.image.revision": SOURCE_SHA}}
+    evidence = {
+        "format": archive_format,
+        "platform": "linux/amd64",
+        "image_config": config,
+        "rootfs_layers": [layer],
+        "image_digest": "sha256:" + "a" * 64,
+    }
+    _json(evidence_path, evidence)
+    inspected = {
+        "Os": "linux",
+        "Architecture": "amd64",
+        "Config": {
+            **config,
+            "Hostname": "",
+            "Domainname": "",
+            "AttachStdin": False,
+            "Env": None,
+        },
+        "RootFS": {"Layers": [layer]},
+    }
+    if mismatch == "config":
+        inspected["Config"] = {**config, "User": "untrusted-config-value"}
+    elif mismatch == "platform":
+        inspected["Architecture"] = "arm64"
+    elif mismatch == "layers":
+        inspected["RootFS"] = {"Layers": ["sha256:" + "3" * 64]}
+    inspect_path = tmp_path / "inspect.json"
+    _json(inspect_path, inspected)
+
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    docker = tools / "docker"
+    docker.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, os, sys\n"
+        "if sys.argv[1:3] == ['image', 'inspect']:\n"
+        "    print(open(os.environ['TEST_INSPECT']).read())\n"
+        "elif sys.argv[1] != 'load':\n"
+        "    raise SystemExit(90)\n"
+    )
+    docker.chmod(0o755)
+    skopeo = tools / "skopeo"
+    skopeo.write_text("#!/bin/sh\nexit 0\n")
+    skopeo.chmod(0o755)
+
+    boundary = tmp_path / "boundary.sh"
+    boundary.write_text(
+        r"""
+uv() {
+  [[ "$1 $2" == "run python" ]] || return 95
+  shift 2
+  if [[ "$1 $2" == "-m scripts.verify_build_evidence" ]]; then
+    cat "$TEST_EVIDENCE"
+  elif [[ "$1 $2" == "-m scripts.validate_docker_base" ]]; then
+    cat >/dev/null
+    printf '%s\n' "$TEST_RUNTIME_BASE"
+  else
+    "$TEST_PYTHON" "$@"
+  fi
+}
+git() {
+  [[ "$1" == show && "$2" == "$INPUT_SOURCE_SHA:Dockerfile" ]] || return 96
+  cat "$TEST_DOCKERFILE"
+}
+"""
+    )
+    env = {
+        **os.environ,
+        "PATH": f"{tools}{os.pathsep}{os.environ['PATH']}",
+        "BASH_ENV": str(boundary),
+        "TEST_PYTHON": sys.executable,
+        "TEST_EVIDENCE": str(evidence_path),
+        "TEST_INSPECT": str(inspect_path),
+        "TEST_DOCKERFILE": str(ROOT / "Dockerfile"),
+        "TEST_RUNTIME_BASE": "dhi.io/python:3.14-debian13@sha256:" + "4" * 64,
+        "RUNNER_TEMP": str(runner),
+        "GITHUB_OUTPUT": str(output_path),
+        "SLUG": "linux-amd64",
+        "LOCAL_TAG": "ob-conformance-candidate:fixture",
+        "IS_HARDENED": "true",
+        "RUNTIME_BASE": "dhi.io/python:3.14-debian13@sha256:" + "4" * 64,
+        "SOURCE_SHA": SOURCE_SHA,
+        "INPUT_SOURCE_SHA": SOURCE_SHA,
+        "PYTHONPATH": str(ROOT),
+    }
+    cwd = tmp_path
+    if kind == "ci":
+        (cwd / "artifacts").mkdir()
+        (cwd / "artifacts/image-linux-amd64.tar").write_bytes(b"fixture archive")
+        shutil.copyfile(ROOT / "Dockerfile", cwd / "Dockerfile")
+    else:
+        archive = archive_dir / "image-linux-amd64.tar"
+        archive.write_bytes(b"fixture archive")
+        if kind == "promotion":
+            manifest_dir = runner / "manifest"
+            manifest_dir.mkdir()
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            (manifest_dir / "checksums.sha256").write_text(f"{digest}  image-linux-amd64.tar\n")
+            _json(
+                manifest_dir / "promotion-manifest.json",
+                {"platform_digests": {"linux/amd64": evidence["image_digest"]}},
+            )
+    script = _shell(workflow, step)
+    script = (
+        script.replace("${{ matrix.platform }}", "linux/amd64")
+        .replace("${{ matrix.slug }}", "linux-amd64")
+        .replace("${{ github.sha }}", SOURCE_SHA)
+    )
+    return script, env, cwd
+
+
+@pytest.mark.parametrize(
+    ("workflow", "formats"),
+    [
+        (".github/workflows/ci.yml", ("oci",)),
+        (WORKFLOW, ("oci", "oci-legacy", "docker")),
+        (".github/workflows/_promote-image.yml", ("oci", "oci-legacy", "docker")),
+    ],
+)
+def test_image_import_shell_accepts_supported_archive_formats(
+    tmp_path: Path, workflow: str, formats: tuple[str, ...]
+) -> None:
+    for archive_format in formats:
+        script, env, cwd = _image_load_case(
+            tmp_path / f"{workflow.replace('/', '-')}-{archive_format}", workflow, archive_format
+        )
+        result = _run_script(script, env, cwd)
+        assert result.returncode == 0, result.stderr
+        assert (Path(env["GITHUB_OUTPUT"])).exists()
+
+
+@pytest.mark.parametrize(
+    "workflow",
+    [".github/workflows/ci.yml", WORKFLOW, ".github/workflows/_promote-image.yml"],
+)
+@pytest.mark.parametrize("mismatch", ["config", "platform", "layers"])
+def test_image_import_shell_rejects_daemon_identity_mismatches(tmp_path: Path, workflow: str, mismatch: str) -> None:
+    case = tmp_path / f"{workflow.replace('/', '-')}-{mismatch}"
+    script, env, cwd = _image_load_case(case, workflow, "oci", mismatch=mismatch)
+    result = _run_script(script, env, cwd)
+
+    assert result.returncode != 0
+    assert "Loaded image" in result.stderr
+    if mismatch == "config":
+        assert "User" in result.stderr
+        assert "untrusted-config-value" not in result.stderr
 
 
 @pytest.mark.parametrize("workflow", [AUTOMATIC, PROMOTION])

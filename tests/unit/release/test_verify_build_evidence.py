@@ -41,8 +41,45 @@ def _json(value: object) -> bytes:
     return json.dumps(value, separators=(",", ":")).encode()
 
 
+def _read_archive(path: Path) -> dict[str, bytes]:
+    members: dict[str, bytes] = {}
+    with tarfile.open(path, "r:*") as archive:
+        for member in archive.getmembers():
+            if member.isfile():
+                stream = archive.extractfile(member)
+                if stream is not None:
+                    members[member.name] = stream.read()
+    return members
+
+
 def _descriptor(media_type: str, content: bytes) -> dict[str, object]:
     return {"mediaType": media_type, "digest": _digest(content), "size": len(content)}
+
+
+def _blob_name(descriptor: dict[str, object]) -> str:
+    return "blobs/sha256/" + str(descriptor["digest"])[7:]
+
+
+def _rewrite_graph_without_predicate(path: Path, predicate: str) -> None:
+    members = _read_archive(path)
+    outer = json.loads(members["index.json"])
+    root = outer["manifests"][0]
+    inner = json.loads(members[_blob_name(root)])
+    attestation = next(item for item in inner["manifests"] if item.get("annotations"))
+    manifest = json.loads(members[_blob_name(attestation)])
+    manifest["layers"] = [
+        layer for layer in manifest["layers"] if layer["annotations"]["in-toto.io/predicate-type"] != predicate
+    ]
+    manifest_bytes = _json(manifest)
+    replacement_attestation = {**attestation, "digest": _digest(manifest_bytes), "size": len(manifest_bytes)}
+    members[_blob_name(replacement_attestation)] = manifest_bytes
+    inner["manifests"][inner["manifests"].index(attestation)] = replacement_attestation
+    inner_bytes = _json(inner)
+    replacement_root = {**root, "digest": _digest(inner_bytes), "size": len(inner_bytes)}
+    members[_blob_name(replacement_root)] = inner_bytes
+    outer["manifests"][0] = replacement_root
+    members["index.json"] = _json(outer)
+    _write_archive(path, members)
 
 
 def _oci_archive(
@@ -280,3 +317,69 @@ def test_publication_requires_exact_original_attestation_descriptors() -> None:
 
     with pytest.raises(BuildEvidenceError, match="missing or unexpected"):
         verify_publication({**published, "manifests": descriptors + [descriptors[0]]}, evidence)
+
+
+@pytest.mark.parametrize("removed", [PROVENANCE, SPDX])
+def test_archive_rejects_missing_provenance_or_sbom_descriptors(tmp_path: Path, removed: str) -> None:
+    archive = tmp_path / "missing-attestation.tar"
+    _oci_archive(archive)
+    _rewrite_graph_without_predicate(archive, removed)
+
+    with pytest.raises(BuildEvidenceError, match="provenance and SBOM are both required"):
+        verify_archive(
+            archive,
+            platform="linux/arm64",
+            source_sha=SOURCE_SHA,
+            runtime_base=RUNTIME_BASE,
+        )
+
+
+@pytest.mark.parametrize("corrupted", [PROVENANCE, SPDX])
+def test_archive_rejects_corrupted_attestation_blobs(tmp_path: Path, corrupted: str) -> None:
+    archive = tmp_path / "corrupted-attestation.tar"
+    descriptors = _oci_archive(archive)
+    members = _read_archive(archive)
+    attestation = json.loads(members[_blob_name(descriptors[1])])
+    layer = next(
+        item for item in attestation["layers"] if item["annotations"]["in-toto.io/predicate-type"] == corrupted
+    )
+    blob = _blob_name(layer)
+    original = members[blob]
+    members[blob] = bytes([original[0] ^ 1]) + original[1:]
+    _write_archive(archive, members)
+
+    with pytest.raises(BuildEvidenceError, match="Blob checksum mismatch"):
+        verify_archive(
+            archive,
+            platform="linux/arm64",
+            source_sha=SOURCE_SHA,
+            runtime_base=RUNTIME_BASE,
+        )
+
+
+@pytest.mark.parametrize("altered_index", [0, 1])
+def test_publication_rejects_missing_or_altered_image_and_attestation_descriptors(altered_index: int) -> None:
+    descriptors: list[dict[str, object]] = [
+        {"digest": "sha256:" + str(index) * 64, "platform": {"os": "linux", "architecture": arch}}
+        for index, arch in ((1, "amd64"), (2, "arm64"))
+    ]
+    attestation_descriptors: list[dict[str, object]] = [
+        {**descriptor, "annotations": {"vnd.docker.reference.type": "attestation-manifest"}}
+        for descriptor in descriptors
+    ]
+    evidence: list[dict[str, object]] = [
+        {"format": "oci", "descriptors": [descriptors[0], attestation_descriptors[0]]},
+        {"format": "oci", "descriptors": [descriptors[1], attestation_descriptors[1]]},
+    ]
+    expected = [descriptors[0], attestation_descriptors[0], descriptors[1], attestation_descriptors[1]]
+
+    for mode in ("missing", "altered"):
+        published = expected.copy()
+        if mode == "missing":
+            published.pop(altered_index)
+        else:
+            published[altered_index] = {**published[altered_index], "digest": "sha256:" + "f" * 64}
+        with pytest.raises(BuildEvidenceError, match="missing or unexpected|does not preserve"):
+            verify_publication(
+                {"mediaType": "application/vnd.oci.image.index.v1+json", "manifests": published}, evidence
+            )

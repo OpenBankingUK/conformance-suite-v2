@@ -352,17 +352,9 @@ jobs:
           else
             docker load --input "$RUNNER_TEMP/candidate/image-$SLUG.tar"
           fi
-          expected_layers="$(jq -c '.rootfs_layers' "$RUNNER_TEMP/evidence.json")"
-          expected_platform="$(jq -r '.platform' "$RUNNER_TEMP/evidence.json")"
-          actual_platform="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$reference")"
-          [[ "$actual_platform" == "$expected_platform" ]]
-          expected_config="$(jq -S -c '.image_config' "$RUNNER_TEMP/evidence.json")"
-          actual_config="$(docker image inspect --format '{{json .Config}}' "$reference" | jq -S -c .)"
-          [[ "$actual_config" == "$expected_config" ]]
-          if [[ "$expected_layers" != "[]" ]]; then
-            actual_layers="$(docker image inspect --format '{{json .RootFS.Layers}}' "$reference" | jq -c .)"
-            [[ "$actual_layers" == "$expected_layers" ]]
-          fi
+          docker image inspect --format '{{json .}}' "$reference" > "$RUNNER_TEMP/loaded-image.json"
+          uv run python -m scripts.verify_loaded_image \
+            --evidence "$RUNNER_TEMP/evidence.json" --inspect "$RUNNER_TEMP/loaded-image.json"
           echo "reference=$reference" >> "$GITHUB_OUTPUT"
 
       - name: Scan and assess
