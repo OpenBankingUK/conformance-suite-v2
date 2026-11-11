@@ -297,7 +297,36 @@ jobs:
             echo "::error::Candidate archive checksum is not recorded in the promotion manifest." >&2
             exit 1
           fi
-          docker load --input "$archive"
+          uv run python -m scripts.verify_build_evidence \
+            --archive "$archive" --platform "${{ matrix.platform }}" \
+            --source-sha "$INPUT_SOURCE_SHA" --allow-legacy > "$RUNNER_TEMP/evidence.json"
+          reference="ob-conformance-candidate:$SLUG-$INPUT_SOURCE_SHA"
+          format="$(jq -r '.format' "$RUNNER_TEMP/evidence.json")"
+          if [[ "$format" == "oci" ]]; then
+            runtime_base="$(git show "$INPUT_SOURCE_SHA:Dockerfile" | uv run python -m scripts.validate_docker_base --candidate-dhi --stdin --print-runtime-base)"
+            expected="$(jq -r --arg platform "${{ matrix.platform }}" '.platform_digests[$platform]' "$RUNNER_TEMP/manifest/promotion-manifest.json")"
+            uv run python -m scripts.verify_build_evidence \
+              --archive "$archive" --platform "${{ matrix.platform }}" \
+              --source-sha "$INPUT_SOURCE_SHA" --expected-digest "$expected" \
+              --runtime-base "$runtime_base" --require-revision-label > "$RUNNER_TEMP/evidence.json"
+          fi
+          if [[ "$format" == "oci" ]]; then
+            skopeo copy --override-os linux --override-arch "${SLUG#linux-}" \
+              "oci-archive:$archive" "docker-daemon:$reference"
+          else
+            docker load --input "$archive"
+          fi
+          expected_layers="$(jq -c '.rootfs_layers' "$RUNNER_TEMP/evidence.json")"
+          expected_platform="$(jq -r '.platform' "$RUNNER_TEMP/evidence.json")"
+          actual_platform="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$reference")"
+          [[ "$actual_platform" == "$expected_platform" ]]
+          expected_config="$(jq -S -c '.image_config' "$RUNNER_TEMP/evidence.json")"
+          actual_config="$(docker image inspect --format '{{json .Config}}' "$reference" | jq -S -c .)"
+          [[ "$actual_config" == "$expected_config" ]]
+          if [[ "$expected_layers" != "[]" ]]; then
+            actual_layers="$(docker image inspect --format '{{json .RootFS.Layers}}' "$reference" | jq -c .)"
+            [[ "$actual_layers" == "$expected_layers" ]]
+          fi
           echo "local_tag=ob-conformance-candidate:$SLUG-$INPUT_SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Extract candidate dependency manifests (read-only)
@@ -610,6 +639,7 @@ jobs:
             scripts/validate_docker_base.py \
             scripts/vulnerability_gate.py \
             scripts/verify_dhi_provenance.py \
+            scripts/verify_build_evidence.py \
             .github/actions/vulnerability-scan/action.yml \
             .github/actions/vulnerability-scan/dhi-signing-key.pub \
             .github/workflows/security-assessment.yml \
@@ -688,16 +718,44 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
+      - name: Verify build evidence before publication
+        run: |
+          set -euo pipefail
+          for slug in linux-amd64 linux-arm64; do
+            platform="linux/${slug#linux-}"
+            uv run python -m scripts.verify_build_evidence \
+              --archive "artifacts/candidate-$slug/image-$slug.tar" \
+              --platform "$platform" --source-sha "$INPUT_SOURCE_SHA" \
+              --allow-legacy \
+              > "artifacts/publication-evidence-$slug.json"
+            if [[ "$(jq -r '.format' "artifacts/publication-evidence-$slug.json")" == "oci" ]]; then
+              runtime_base="$(git show "$INPUT_SOURCE_SHA:Dockerfile" | uv run python -m scripts.validate_docker_base --candidate-dhi --stdin --print-runtime-base)"
+              expected="$(jq -r --arg platform "$platform" '.platform_digests[$platform]' artifacts/manifest/promotion-manifest.json)"
+              uv run python -m scripts.verify_build_evidence \
+                --archive "artifacts/candidate-$slug/image-$slug.tar" \
+                --platform "$platform" --source-sha "$INPUT_SOURCE_SHA" \
+                --expected-digest "$expected" --runtime-base "$runtime_base" --require-revision-label \
+                > "artifacts/publication-evidence-$slug.json"
+            else
+              expected="$(jq -r --arg platform "$platform" '.platform_digests[$platform]' artifacts/manifest/promotion-manifest.json)"
+              format="$(jq -r '.format' "artifacts/publication-evidence-$slug.json")"
+              if [[ "$format" == "oci-legacy" ]]; then
+                [[ "$(jq -r '.image_digest' "artifacts/publication-evidence-$slug.json")" == "$expected" ]] || {
+                  echo "::error::Legacy OCI image differs from the scanned platform digest." >&2
+                  exit 1
+                }
+              else
+                jq --arg digest "$expected" '.image_digest = $digest' \
+                  "artifacts/publication-evidence-$slug.json" > "$RUNNER_TEMP/evidence.json"
+                mv "$RUNNER_TEMP/evidence.json" "artifacts/publication-evidence-$slug.json"
+              fi
+            fi
+          done
+
       - name: Push each already-scanned platform image by digest
-        # The candidate archives are OCI layouts holding the exact manifest,
-        # config, and compressed layers CI built and scanned. `docker push`
-        # would re-serialise the manifest and change its digest, so skopeo
-        # copies the layout unchanged to a digest reference. skopeo refuses the
-        # copy if the source manifest digest differs from the destination
-        # digest, and the registry manifest is re-hashed below as a second
-        # check. Pushing by digest creates no tags, so promotion leaves no
-        # internal staging tags behind on Docker Hub. This never rebuilds the
-        # image.
+        # --all preserves the runnable manifest AND its BuildKit attestations.
+        # Digest-only publication leaves no staging tags and never rebuilds.
+        id: stage
         env:
           AMD64_DIGEST: ${{ steps.validate.outputs.amd64_digest }}
           ARM64_DIGEST: ${{ steps.validate.outputs.arm64_digest }}
@@ -707,16 +765,36 @@ jobs:
 
           stage() {
             local slug="$1" arch="$2" expected="$3"
-            local dest="${IMAGE_NAME}@${expected}"
-            skopeo copy --preserve-digests \
-              --dest-authfile "$HOME/.docker/config.json" \
-              "oci-archive:artifacts/candidate-${slug}/image-${slug}.tar" \
-              "docker://${dest}"
-            actual="$(skopeo inspect --authfile "$HOME/.docker/config.json" --raw "docker://${dest}" | sha256sum | awk '{print "sha256:" $1}')"
+            local index_digest dest
+            if [[ "$(jq -r '.format' "artifacts/publication-evidence-$slug.json")" == "oci" ]]; then
+              index_digest="$(jq -r '.index_digest' "artifacts/publication-evidence-$slug.json")"
+              dest="${IMAGE_NAME}@${index_digest}"
+              skopeo copy --all --preserve-digests \
+                --dest-authfile "$HOME/.docker/config.json" \
+                "oci-archive:artifacts/candidate-${slug}/image-${slug}.tar" \
+                "docker://${dest}"
+              actual="$(skopeo inspect --authfile "$HOME/.docker/config.json" --raw "docker://${dest}" | sha256sum | awk '{print "sha256:" $1}')"
+              if [[ "$actual" != "$index_digest" ]]; then
+                echo "::error::Pushed ${arch} index $actual does not match build evidence $index_digest." >&2
+                exit 1
+              fi
+            else
+              index_digest="$expected"
+              transport=docker-archive
+              if [[ "$(jq -r '.format' "artifacts/publication-evidence-$slug.json")" == "oci-legacy" ]]; then
+                transport=oci-archive
+              fi
+              skopeo copy --preserve-digests \
+                --dest-authfile "$HOME/.docker/config.json" \
+                "${transport}:artifacts/candidate-${slug}/image-${slug}.tar" \
+                "docker://${IMAGE_NAME}@${expected}"
+            fi
+            actual="$(skopeo inspect --authfile "$HOME/.docker/config.json" --raw "docker://${IMAGE_NAME}@${expected}" | sha256sum | awk '{print "sha256:" $1}')"
             if [[ "$actual" != "$expected" ]]; then
-              echo "::error::Pushed ${arch} digest $actual does not match scanned digest $expected." >&2
+              echo "::error::Pushed ${arch} image $actual does not match scanned digest $expected." >&2
               exit 1
             fi
+            echo "${arch}_index=$index_digest" >> "$GITHUB_OUTPUT"
             echo "Pushed ${arch} at scanned digest $expected."
           }
 
@@ -733,13 +811,15 @@ jobs:
           done < <(jq -r '.[]' expected-tags.json)
 
           docker buildx imagetools create "${tag_args[@]}" \
-            "${IMAGE_NAME}@${{ steps.validate.outputs.amd64_digest }}" \
-            "${IMAGE_NAME}@${{ steps.validate.outputs.arm64_digest }}"
-          published_digest="sha256:$(
-            docker buildx imagetools inspect \
-              "${IMAGE_NAME}:${{ steps.validate.outputs.raw_version }}" --raw \
-              | sha256sum | awk '{print $1}'
-          )"
+            "${IMAGE_NAME}@${{ steps.stage.outputs.amd64_index }}" \
+            "${IMAGE_NAME}@${{ steps.stage.outputs.arm64_index }}"
+          docker buildx imagetools inspect \
+            "${IMAGE_NAME}:${{ steps.validate.outputs.raw_version }}" --raw > artifacts/published-index.json
+          uv run python -m scripts.verify_build_evidence \
+            --published-index artifacts/published-index.json \
+            --evidence artifacts/publication-evidence-linux-amd64.json \
+            --evidence artifacts/publication-evidence-linux-arm64.json
+          published_digest="sha256:$(sha256sum artifacts/published-index.json | awk '{print $1}')"
           echo "published_digest=$published_digest" >> "$GITHUB_OUTPUT"
 
       # actions/attest replaces the deprecated attest-build-provenance and

@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Preserve per-platform BuildKit max-mode provenance and SPDX SBOMs in the
+  candidate OCI archives through approved Docker Hub publication, while
+  continuing to scan and promote the exact runnable image manifest digests.
+  Keep trusted assessment and promotion compatible with legacy Docker and
+  unattested OCI candidate archives until release branches adopt the new build.
+
 - Add daily grouped Dependabot refreshes for digest-pinned DHI builder/runtime
   images and a trusted, candidate-bound security assessment workflow. The
   assessment verifies signed DHI provenance, reports both supported platforms,

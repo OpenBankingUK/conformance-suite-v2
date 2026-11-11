@@ -333,12 +333,8 @@ jobs:
           password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
 
       - name: Build image archive
-        # Exported as a docker archive rather than pushed anywhere. Candidate
-        # images are never published before the matching approval gate; the
-        # promotion workflow downloads this exact artifact and pushes it
-        # byte-for-byte, it never rebuilds. Tagging during export gives docker
-        # load a stable local name; the buildx digest is not guaranteed to be
-        # a Docker image ID.
+        # OCI retains BuildKit's platform-bound attestations; the Docker
+        # exporter drops them. Nothing is pushed before approval.
         env:
           LOCAL_TAG: ob-conformance-candidate:${{ matrix.slug }}-${{ github.sha }}
           RAW_VERSION: ${{ steps.metadata.outputs.raw_version }}
@@ -349,8 +345,9 @@ jobs:
             --build-arg CONFORMANCE_TOOL_VERSION="$RAW_VERSION" \
             --build-arg SOURCE_REVISION="${{ github.sha }}" \
             --tag "$LOCAL_TAG" \
-            --output type=docker,dest=artifacts/image-${{ matrix.slug }}.tar \
-            --metadata-file artifacts/metadata-${{ matrix.slug }}.json \
+            --provenance=mode=max,version=v0.2 \
+            --sbom=true \
+            --output type=oci,oci-artifact=false,compression=gzip,force-compression=true,dest=artifacts/image-${{ matrix.slug }}.tar \
             --cache-from type=gha,scope=candidate-${{ matrix.slug }} \
             --cache-to type=gha,mode=max,scope=candidate-${{ matrix.slug }} \
             .
@@ -365,9 +362,34 @@ jobs:
         id: load
         env:
           LOCAL_TAG: ob-conformance-candidate:${{ matrix.slug }}-${{ github.sha }}
+          IS_HARDENED: ${{ needs.plan.outputs.is_hardened }}
+          SLUG: ${{ matrix.slug }}
         run: |
           set -euo pipefail
-          docker load --input artifacts/image-${{ matrix.slug }}.tar
+          args=()
+          if [[ "$IS_HARDENED" == "true" ]]; then
+            runtime_base="$(uv run python -m scripts.validate_docker_base --candidate-dhi --print-runtime-base --dockerfile Dockerfile)"
+            args+=(--runtime-base "$runtime_base" --require-revision-label)
+          fi
+          uv run python -m scripts.verify_build_evidence \
+            --archive artifacts/image-${{ matrix.slug }}.tar \
+            --platform "${{ matrix.platform }}" --source-sha "${{ github.sha }}" \
+            "${args[@]}" > artifacts/evidence-${{ matrix.slug }}.json
+          # Only this local verification copy loses attestations. Promotion
+          # consumes the original OCI archive, never the daemon's copy.
+          skopeo copy --override-os linux --override-arch "${SLUG#linux-}" \
+            "oci-archive:artifacts/image-${{ matrix.slug }}.tar" "docker-daemon:$LOCAL_TAG"
+          expected_layers="$(jq -c '.rootfs_layers' artifacts/evidence-${{ matrix.slug }}.json)"
+          expected_platform="$(jq -r '.platform' artifacts/evidence-${{ matrix.slug }}.json)"
+          actual_platform="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$LOCAL_TAG")"
+          [[ "$actual_platform" == "$expected_platform" ]]
+          expected_config="$(jq -S -c '.image_config' artifacts/evidence-${{ matrix.slug }}.json)"
+          actual_config="$(docker image inspect --format '{{json .Config}}' "$LOCAL_TAG" | jq -S -c .)"
+          [[ "$actual_config" == "$expected_config" ]]
+          if [[ "$expected_layers" != "[]" ]]; then
+            actual_layers="$(docker image inspect --format '{{json .RootFS.Layers}}' "$LOCAL_TAG" | jq -c .)"
+            [[ "$actual_layers" == "$expected_layers" ]]
+          fi
           echo "local_tag=$LOCAL_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Verify image OCI identity labels
@@ -403,7 +425,7 @@ jobs:
           name: candidate-${{ matrix.slug }}
           path: |
             artifacts/image-${{ matrix.slug }}.tar
-            artifacts/metadata-${{ matrix.slug }}.json
+            artifacts/evidence-${{ matrix.slug }}.json
           retention-days: 14
 
       - name: Upload candidate artifacts
@@ -413,7 +435,7 @@ jobs:
           name: candidate-${{ matrix.slug }}
           path: |
             artifacts/image-${{ matrix.slug }}.tar
-            artifacts/metadata-${{ matrix.slug }}.json
+            artifacts/evidence-${{ matrix.slug }}.json
             artifacts/sbom-${{ matrix.slug }}.spdx.json
           retention-days: 14
 
@@ -460,8 +482,10 @@ jobs:
           TARGET_BRANCH: ${{ needs.plan.outputs.target_branch }}
         run: |
           set -euo pipefail
-          amd64_digest="$(jq -r '."containerimage.digest"' artifacts/linux-amd64/metadata-linux-amd64.json)"
-          arm64_digest="$(jq -r '."containerimage.digest"' artifacts/linux-arm64/metadata-linux-arm64.json)"
+          # Buildx's containerimage.digest is now the attested index, not the
+          # runnable manifest. The promotion contract binds the scanned leaf.
+          amd64_digest="$(jq -r '.image_digest' artifacts/linux-amd64/evidence-linux-amd64.json)"
+          arm64_digest="$(jq -r '.image_digest' artifacts/linux-arm64/evidence-linux-arm64.json)"
           raw_version="$(
             uv run python -c \
               'from pathlib import Path; from scripts.release_metadata import read_pyproject_raw_version; print(read_pyproject_raw_version(Path("pyproject.toml")))'

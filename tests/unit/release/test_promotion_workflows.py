@@ -82,3 +82,27 @@ def test_trusted_assessment_is_separate_and_candidate_bound() -> None:
     assert "security_assessment_run_id:" in promotion
     assert "security-assessment-receipt" in promotion
     assert 'verify-dhi-provenance: "true"' in promotion
+
+
+def test_build_keeps_max_mode_evidence_and_scanned_leaf_identity() -> None:
+    ci = (WORKFLOWS / "ci.yml").read_text()
+
+    assert "--provenance=mode=max,version=v0.2" in ci
+    assert "--sbom=true" in ci
+    assert "type=oci,oci-artifact=false,compression=gzip,force-compression=true" in ci
+    assert "scripts.verify_build_evidence" in ci
+    assert "'.image_digest'" in ci
+
+
+def test_assessor_and_promoter_accept_legacy_archives_without_weakening_policy() -> None:
+    assessment = (WORKFLOWS / "security-assessment.yml").read_text()
+    promotion = (WORKFLOWS / "_promote-image.yml").read_text()
+
+    assert "--allow-legacy" in assessment
+    assert 'docker load --input "$RUNNER_TEMP/candidate/image-$SLUG.tar"' in assessment
+    assert "--allow-legacy" in promotion
+    assert 'docker load --input "$archive"' in promotion
+    assert "skopeo copy --all --preserve-digests" in promotion
+    assert "scripts.verify_build_evidence" in promotion
+    assert 'allow-exceptions: "false"' in promotion
+    assert 'fail-on-findings: "false"' in promotion
