@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Docker Scout shows no High findings. Fixable findings and all other
   vulnerability gates are unchanged.
 
+### Security
+
 - Preserve per-platform BuildKit max-mode provenance and SPDX SBOMs in the
   candidate OCI archives through approved Docker Hub publication, while
   continuing to scan and promote the exact runnable image manifest digests.
