@@ -107,3 +107,12 @@ def test_assessor_and_promoter_accept_legacy_archives_without_weakening_policy()
     assert "scripts/verify_loaded_image.py" in promotion
     assert 'allow-exceptions: "false"' in promotion
     assert 'fail-on-findings: "false"' in promotion
+
+
+def test_published_version_is_passed_through_environment_not_shell_interpolation() -> None:
+    promotion = (WORKFLOWS / "_promote-image.yml").read_text()
+    publish = promotion.split("      - name: Assemble and publish the multi-arch manifest list\n", 1)[1]
+
+    assert "RAW_VERSION: ${{ steps.validate.outputs.raw_version }}" in publish
+    assert '"${IMAGE_NAME}:${RAW_VERSION}"' in publish
+    assert '"${IMAGE_NAME}:${{ steps.validate.outputs.raw_version }}"' not in publish

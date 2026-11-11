@@ -796,6 +796,8 @@ jobs:
 
       - name: Assemble and publish the multi-arch manifest list
         id: publish
+        env:
+          RAW_VERSION: ${{ steps.validate.outputs.raw_version }}
         run: |
           set -euo pipefail
           tag_args=()
@@ -807,7 +809,7 @@ jobs:
             "${IMAGE_NAME}@${{ steps.stage.outputs.amd64_index }}" \
             "${IMAGE_NAME}@${{ steps.stage.outputs.arm64_index }}"
           docker buildx imagetools inspect \
-            "${IMAGE_NAME}:${{ steps.validate.outputs.raw_version }}" --raw > artifacts/published-index.json
+            "${IMAGE_NAME}:${RAW_VERSION}" --raw > artifacts/published-index.json
           uv run python -m scripts.verify_build_evidence \
             --published-index artifacts/published-index.json \
             --evidence artifacts/publication-evidence-linux-amd64.json \
