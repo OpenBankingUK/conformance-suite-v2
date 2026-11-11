@@ -9,8 +9,131 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Add daily grouped Dependabot refreshes for digest-pinned DHI builder/runtime
+  images and a trusted, candidate-bound security assessment workflow. The
+  assessment verifies signed DHI provenance, reports both supported platforms,
+  and uses a protected GitHub Environment for eligible risk acceptance; fixable
+  findings and invalid evidence remain blocking. Promotion requires the trusted
+  receipt and performs a fresh scan before its existing publication gate.
+- Migrate the digest-pinned DHI Python 3.14 builder and distroless runtime
+  from Alpine 3.24 to Debian 13 for amd64 and arm64, removing musl and the
+  temporary Expat/zlib APK overlay. Remove unused Debian system pip with
+  fail-closed layout checks, require locked binary wheels, and verify
+  pip absence, glibc/manylinux and OpenSSL package inventory in per-platform
+  CI smoke tests. Preserve the non-root runtime and existing vulnerability
+  gates without adding exceptions or suppressions. Remove the stale Alpine
+  `sqlite` acceptance for CVE-2026-119586 after both Debian platform scans
+  report no matching finding; this is not evidence that the SQLite flaw is fixed.
+- Approve the exact DHI Python 3.14 / Debian 13 multi-architecture index
+  (`4491196f...`) for staged runtime migration, retaining all Alpine approvals
+  and rejecting standalone platform manifests. This is policy-only: the
+  Dockerfile pin, baseline default, vulnerability gates and exceptions remain
+  unchanged; runtime migration follows after approval reaches main and release.
+- Forward-port the temporary Expat/zlib overlay and approved DHI Python 3.14 /
+  Alpine 3.24 base pair to main. Install signed, pinned Alpine v3.24/main
+  `expat`/`libexpat` `2.10.0-r0` and `zlib` `1.4-r0`, replacing only their
+  runtime files and APK inventory records. This addresses CVE-2026-4738,
+  CVE-2026-113351, CVE-2026-115506, CVE-2026-117610, and CVE-2026-118370
+  while retaining the distroless non-root runtime and existing scan gates.
+- Record a self-approved, 90-day risk acceptance for CVE-2026-119586 in
+  `sqlite`, expiring 2027-02-07. The assessment concerns SQLite CLI `.recover`
+  command injection and the inspected runtime's absence of the CLI, not a
+  vendor-confirmed not-affected determination; fix-available and stale-entry
+  rejection remain enforced.
+- Refresh the digest-pinned DHI Python 3.14 / Alpine 3.24 builder and runtime
+  for amd64 and arm64 to the reviewed beta.13 pair, including Expat/libexpat
+  `2.9.0-r1`, zlib `1.3.2-r1`, and refreshed musl packages, addressing
+  CVE-2026-102633, CVE-2026-77214, and CVE-2026-85091 while preserving the
+  distroless non-root runtime and existing vulnerability gates.
+- Upgrade locked certifi from `2026.5.20` to `2026.10.23` to remove compromised
+  emSign trust roots identified by GHSA-6q48-6c7w-9gw2.
+- Raise the joserfc minimum requirement to `1.7.6` and upgrade its lock from
+  `1.7.1` to `1.7.7`, addressing CVE-2026-119283 (GHSA-jpxq-7h8p-2q76) and
+  CVE-2026-119284 (GHSA-9pg5-8c7x-5hfx).
+
+### Fixed
+
+- Trusted assessment and promotion re-scans emit unquoted decisions only
+  after validating exactly one result per supported platform. Missing,
+  malformed or unknown results remain blocking, including alongside eligible
+  risks. Approved assessments publish the same candidate-bound receipt filename
+  as passing assessments, and a failed final candidate check now fails the
+  assessment workflow so automatic promotion cannot consume a failed assessment.
+- Trusted security assessments read candidate identity from the preserved
+  `artifacts/candidate-context.json` archive path and explicitly use GET when
+  fetching source files from the exact verified commit, fixing the post-CI
+  identity/input handoff without changing trust or vulnerability gates.
+- Scheduled published-image rescans fetch signed OpenVEX from the approved
+  runtime base in the matching release git tag, including digest-matched aliases,
+  rather than from derived images. Scan the newest beta, rc and GA versions
+  plus unknown tags, deduplicated by immutable digest; list superseded versions
+  as skipped and close old-only vulnerability issues only after exact current
+  target report coverage. Historical tags and Releases remain unchanged.
+- Accept HTTPS IP-literal OAuth callbacks, such as
+  `https://127.0.0.1:8443/conformancesuite/callback`, by validating browser
+  redirect URIs separately from outbound HTTPS targets. The FCS v1 `0.0.0.0`
+  callback keeps working, and outbound HTTPS target validation still requires
+  DNS hostnames. The Docker smoke test checks both local callback hosts.
+- Trusted runtime-base validation permits the reviewed DHI Python 3.14 Alpine
+  3.24 multi-architecture index (`3d7fbfac...`) alongside the existing approved
+  indexes, returning the selected reference for digest-bound VEX retrieval.
+  Dockerfile defaults, scanner policy and runtime dependencies are unchanged.
+- Automatic and manual preview, beta, and GA promotions share a caller-level
+  concurrency lock through publication and Git tag/GitHub Release finalization,
+  preventing overlapping release boundaries without nested reusable-workflow locks.
+
+### Changed
+
+- Group daily Dependabot updates for the DHI Python builder and runtime into
+  one reviewed pull request on `main` and the active `release/2.0.0` branch,
+  keeping the pinned pair together during routine refreshes.
+- The shared vulnerability scan action retries transient Docker Scout CLI
+  download failures within a bounded window, while retaining the pinned release
+  and architecture-specific checksum verification.
+- Apply one OAuth redirect URI policy, aligned with Open Banking DCR 3.4,
+  RFC 6749 and FAPI 1, across configuration, manifests, DCR, the DCR builder
+  and PSU execution. HTTPS DNS hostnames and unicast IPv4/IPv6 literals are
+  accepted, together with the FCS v1
+  `https://0.0.0.0:8443/conformancesuite/callback`. Reject `localhost`
+  (previously accepted), `.localhost` names, fragments, backslashes,
+  non-canonical IPv4 spellings and non-unicast addresses. Preserve registered
+  redirect values, ports and paths exactly. Include `[::1]` in the container's
+  default `DJANGO_ALLOWED_HOSTS` for IPv6 loopback callbacks.
+- Allow the same named GitHub user to own and approve a documented,
+  time-limited vulnerability exception. Both identity fields and the reason
+  remain required; scans, expiry, fix-available rejection, trusted-main
+  promotion, and GitHub PR/review restrictions are unchanged.
+- `.github/workflows/_finalize-ga-release.yml` is replaced by
+  `.github/workflows/_finalize-release.yml`, which handles both beta and GA
+  publications. The manual **Promote beta image** recovery workflow now also
+  creates the tag and GitHub prerelease.
+- Renamed the temporary MVP beta pointer from `beta-latest` to
+  `2.0.0-beta-latest`, selecting only the highest published 2.0.0 beta and
+  freezing updates once formal `2.0.0` is published. The old registry tag is
+  no longer maintained and is not deleted automatically.
+
 ### Added
 
+- Every approved beta and GA image publication now ends with a Git tag
+  (`vX.Y.Z-beta.N` or `vX.Y.Z`) at the published commit and an immutable
+  GitHub Release (a prerelease for betas). The release notes contain the
+  version's `CHANGELOG.md` section, the `docker pull` command and image digest,
+  and GitHub-generated pull-request notes since the previous release on the
+  same channel. Re-running the finalize step is safe and never republishes the
+  image.
+- CI now fails pull requests to `main` or `release/**` that change
+  `[project].version` to a GA version without a `CHANGELOG.md` section, and
+  warns when a changed beta version has none. Pull requests that leave the
+  version unchanged are not checked.
+- Automatic and manual image promotion run summaries now show the exact release
+  version, proposed Docker tags and source commit before approval, including
+  conditional `2.0.0-beta-latest` eligibility.
+- Automatic Docker Hub `2.0.0-beta-latest` pointer updates after approved beta
+  publication and provenance/SBOM attestations, with manifest-digest
+  verification. Only the highest published 2.0.0 beta is eligible; older
+  backfills, other release series, and GA releases leave it unchanged.
 - Automatic, Environment-gated preview, beta, and GA image promotions after
   successful candidate CI runs, with manual promotion dispatch retained for
   recovery and backfill.
@@ -50,6 +173,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Main's Docker image now uses the assessed, digest-pinned DHI Alpine 3.24
+  builder and distroless runtime instead of the vulnerable Alpine 3.22 base.
+  The non-root HTTPS entrypoint, persistent local identity, exec-form
+  healthcheck, and hardened Compose/local-run profile are carried over from
+  the approved release implementation without changing release trust gates.
+- Docker build contexts exclude local participant configuration, development
+  certificates, and generated output so these files cannot be copied into
+  distributed images.
 - Pull request CI now invokes the canonical `make check` gate with a full
   tracked-file secret scan while Docker image build, startup, and `/health/`
   validation run independently in parallel. The duplicated lint/test command
@@ -79,6 +210,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The trusted image-promotion vulnerability re-scan on `main` now accepts the
+  pinned DHI Python 3.14 Alpine 3.24 runtime base used by release candidates,
+  and continues without VEX suppressions only when Docker Scout explicitly
+  reports that no OpenVEX attestations exist for that image.
 - Image promotion now pushes each scanned platform image to Docker Hub by
   digest, so it no longer leaves `promote-*` staging tags on the repository.
 - Image attestations now use `actions/attest` instead of the deprecated

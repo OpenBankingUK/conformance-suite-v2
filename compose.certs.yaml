@@ -1,0 +1,12 @@
+# Optional override that mounts a read-only certificate directory at /certs.
+#
+# Usage:
+#   CERTS_DIR=/path/to/your/certs docker compose -f compose.yaml -f compose.certs.yaml up
+#
+# CERTS_DIR defaults to ./local-config/certs (the local-development certs
+# directory) when unset.
+
+services:
+  conformance-suite:
+    volumes:
+      - ${CERTS_DIR:-./local-config/certs}:/certs:ro

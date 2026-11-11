@@ -2,30 +2,31 @@ name: Auto-promote image
 
 on:
   workflow_run:
-    workflows: ["CI"]
+    workflows: ["Trusted security assessment"]
     types: [completed]
-    branches:
-      - main
-      - "release/**"
-      - "preview/**"
 
 permissions:
   contents: read
+
+# Share the manual callers' lock through publication AND release finalization.
+# Never cancel a running publication, including while awaiting approval.
+concurrency:
+  group: image-promotion
+  cancel-in-progress: false
 
 jobs:
   resolve:
     name: Resolve candidate promotion
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+      github.event.workflow_run.event == 'workflow_run'
     runs-on: ubuntu-latest
     # Only cancel redundant *resolution* attempts for the same branch: once a
     # run has decided should_promote=true and handed off to `promote`, a GA
     # image publish can already be underway/complete, so the workflow must
-    # not be cancellable past this point or a published GA image could be
-    # left without its vX.Y.Z tag and merge-back PR (see _finalize-ga-release
-    # for the idempotent recovery this relies on).
+    # not be cancellable past this point or a published image could be left
+    # without its Git tag, GitHub Release, or (GA) merge-back PR (see
+    # _finalize-release for the idempotent recovery this relies on).
     concurrency:
       group: auto-promote-resolve-${{ github.event.workflow_run.head_branch }}
       cancel-in-progress: true
@@ -34,13 +35,14 @@ jobs:
       channel: ${{ steps.resolve.outputs.channel }}
       environment_name: ${{ steps.resolve.outputs.environment_name }}
       tag: ${{ steps.resolve.outputs.tag }}
+      source_sha: ${{ steps.receipt.outputs.source_sha }}
+      source_branch: ${{ steps.receipt.outputs.source_branch }}
+      ci_run_id: ${{ steps.receipt.outputs.ci_run_id }}
     permissions:
       contents: read
       actions: read
     env:
-      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
-      SOURCE_BRANCH: ${{ github.event.workflow_run.head_branch }}
-      CI_RUN_ID: ${{ github.event.workflow_run.id }}
+      ASSESSMENT_RUN_ID: ${{ github.event.workflow_run.id }}
 
     steps:
       - name: Checkout trusted default branch
@@ -51,24 +53,78 @@ jobs:
       - name: Verify the triggering workflow identity
         env:
           GH_TOKEN: ${{ github.token }}
-          TRUSTED_CI_WORKFLOW_ID: "268848247"
-          TRUSTED_CI_WORKFLOW_PATH: ".github/workflows/ci.yml"
+          TRUSTED_ASSESSMENT_WORKFLOW_PATH: ".github/workflows/security-assessment.yml"
         run: |
           set -euo pipefail
-          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID")"
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ASSESSMENT_RUN_ID")"
+          workflow_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/security-assessment.yml" --jq '.id')"
           if ! jq -e \
-            --arg path "$TRUSTED_CI_WORKFLOW_PATH" \
-            --argjson workflow_id "$TRUSTED_CI_WORKFLOW_ID" \
-            '.workflow_id == $workflow_id and .path == $path' \
+            --arg path "$TRUSTED_ASSESSMENT_WORKFLOW_PATH" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --argjson workflow_id "$workflow_id" \
+            '.workflow_id == $workflow_id
+             and .name == "Trusted security assessment"
+             and .path == $path
+             and .head_repository.full_name == $repository
+             and .conclusion == "success"
+             and .run_attempt == 1' \
             <<<"$run_json" >/dev/null; then
-            echo "::error::Workflow run $CI_RUN_ID is not the trusted CI workflow." >&2
+            echo "::error::Workflow run $ASSESSMENT_RUN_ID is not a successful first-attempt trusted security assessment." >&2
             exit 1
           fi
+
+      - name: Download candidate-bound assessment receipt
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+          name: security-assessment-receipt
+          path: ${{ runner.temp }}/security-assessment
+
+      - name: Validate assessment receipt and source CI run
+        id: receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSESSMENT_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          receipt="$RUNNER_TEMP/security-assessment/assessment-receipt.json"
+          jq -e '.schema_version == 1 and (.decision == "pass" or .decision == "approved")' "$receipt" >/dev/null
+          ci_run_id="$(jq -r '.source_run_id' "$receipt")"
+          source_sha="$(jq -r '.source_sha' "$receipt")"
+          jq -e --arg sha "$source_sha" '.checked_sha == $sha' "$receipt" >/dev/null
+          if ! [[ "$ci_run_id" =~ ^[0-9]+$ && "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Assessment receipt has invalid source run or commit identity." >&2
+            exit 1
+          fi
+          ci_run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ci_run_id")"
+          jq -e \
+            --arg sha "$source_sha" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --argjson workflow_id 268848247 \
+            '.workflow_id == $workflow_id
+             and .path == ".github/workflows/ci.yml"
+             and .head_sha == $sha
+             and .event == "push"
+             and .conclusion == "success"
+             and .run_attempt == 1
+             and .head_repository.full_name == $repository' \
+            <<<"$ci_run" >/dev/null || {
+              echo "::error::Assessment receipt does not identify a successful first-attempt candidate push from the trusted CI workflow." >&2
+              exit 1
+            }
+          branch="$(jq -r '.head_branch' <<<"$ci_run")"
+          {
+            echo "ci_run_id=$ci_run_id"
+            echo "source_sha=$source_sha"
+            echo "source_branch=$branch"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check for the CI promotion manifest
         id: artifact
         env:
           GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ steps.receipt.outputs.ci_run_id }}
         run: |
           set -euo pipefail
           gh api --paginate \
@@ -84,6 +140,8 @@ jobs:
 
       - name: Read candidate pyproject.toml without executing candidate code
         if: steps.artifact.outputs.available == 'true'
+        env:
+          SOURCE_SHA: ${{ steps.receipt.outputs.source_sha }}
         run: |
           set -euo pipefail
           git fetch --no-tags --depth=1 origin "$SOURCE_SHA"
@@ -108,6 +166,9 @@ jobs:
       - name: Resolve promotion policy
         id: resolve
         if: steps.artifact.outputs.available == 'true'
+        env:
+          SOURCE_SHA: ${{ steps.receipt.outputs.source_sha }}
+          SOURCE_BRANCH: ${{ steps.receipt.outputs.source_branch }}
         run: |
           set -euo pipefail
           args=(
@@ -161,11 +222,12 @@ jobs:
     uses: ./.github/workflows/_promote-image.yml
     with:
       channel: ${{ needs.resolve.outputs.channel }}
-      source_sha: ${{ github.event.workflow_run.head_sha }}
-      branch: ${{ github.event.workflow_run.head_branch }}
+      source_sha: ${{ needs.resolve.outputs.source_sha }}
+      branch: ${{ needs.resolve.outputs.source_branch }}
       tag: ${{ needs.resolve.outputs.tag }}
       environment_name: ${{ needs.resolve.outputs.environment_name }}
-      ci_run_id: ${{ github.event.workflow_run.id }}
+      ci_run_id: ${{ needs.resolve.outputs.ci_run_id }}
+      security_assessment_run_id: ${{ github.event.workflow_run.id }}
     permissions:
       contents: read
       actions: read
@@ -178,14 +240,19 @@ jobs:
       DOCKER_ORG_ACCESS_TOKEN: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-  finalize-ga:
-    name: Tag release and open develop merge-back
+  finalize:
+    name: Tag and create GitHub Release
     needs: [resolve, promote]
-    if: needs.resolve.outputs.should_promote == 'true' && needs.resolve.outputs.channel == 'ga'
-    uses: ./.github/workflows/_finalize-ga-release.yml
+    if: >-
+      needs.resolve.outputs.should_promote == 'true' &&
+      (needs.resolve.outputs.channel == 'ga' || needs.resolve.outputs.channel == 'beta')
+    uses: ./.github/workflows/_finalize-release.yml
     with:
-      source_sha: ${{ github.event.workflow_run.head_sha }}
-      tag: ${{ needs.resolve.outputs.tag }}
+      channel: ${{ needs.resolve.outputs.channel }}
+      source_sha: ${{ needs.resolve.outputs.source_sha }}
+      raw_version: ${{ needs.promote.outputs.raw_version }}
+      published_digest: ${{ needs.promote.outputs.published_digest }}
+      beta_latest_updated: ${{ needs.promote.outputs.beta_latest_updated }}
     permissions:
       contents: write
       pull-requests: write

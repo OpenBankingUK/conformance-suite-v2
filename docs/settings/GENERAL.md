@@ -2,7 +2,7 @@
 
 > **Repository**: `OpenBankingUK/conformance-suite-v2`
 > **Page**: Settings → General
-> **Last reviewed**: 30 April 2026
+> **Last reviewed**: 5 October 2026
 
 ---
 
@@ -30,9 +30,12 @@
 
 | Setting | Value |
 |---------|-------|
-| Release immutability | Off |
+| Release immutability | On |
 
-**Rationale**: Disabled to allow deleting and re-tagging releases during hotfix scenarios. Our release process involves manual tagging (`v*`) and publishing to Docker Hub on tag push — immutability would block the ability to correct a bad tag without involving GitHub Support.
+**Rationale**: Enabled for the release lifecycle so newly published Releases and
+their tags cannot be edited or deleted. The finalizer creates each Release in
+one call and leaves an existing Release unchanged during recovery. This setting
+does not retroactively make previously published Releases immutable.
 
 ---
 

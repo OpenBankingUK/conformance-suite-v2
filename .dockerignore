@@ -38,6 +38,12 @@ db.sqlite3
 .secrets.baseline
 docs/
 CHANGELOG.md
+scripts/
+
+# Local-only configuration, generated output, and agent workspace
+local-config/
+out/
+ai/
 
 # ─── CI-only scan inputs and policy ────────────────────────────────────────
 trusted/

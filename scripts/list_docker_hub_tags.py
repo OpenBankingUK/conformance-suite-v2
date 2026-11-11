@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 import httpx
@@ -12,11 +13,19 @@ _TAGS_URL = "https://hub.docker.com/v2/namespaces/openbanking/repositories/confo
 _TAGS_PATH = "/v2/namespaces/openbanking/repositories/conformance-suite-v2/tags"
 
 
-def list_tags() -> list[str]:
-    """Return every tag name from the public Docker Hub tags endpoint.
+@dataclass(frozen=True)
+class DockerHubTag:
+    """A published tag and its index digest, when supplied by Docker Hub."""
+
+    name: str
+    digest: str | None
+
+
+def list_tag_records() -> list[DockerHubTag]:
+    """Return every tag record from the public Docker Hub tags endpoint.
 
     Returns:
-        All tag names across the endpoint's pagination pages. A 404 on the
+        All tag records across the endpoint's pagination pages. A 404 on the
         endpoint is treated as an error because Docker Hub also uses 404 for
         repositories that are private or inaccessible.
 
@@ -24,7 +33,7 @@ def list_tags() -> list[str]:
         httpx.HTTPError: If Docker Hub cannot be reached or returns an HTTP error.
         ValueError: If Docker Hub returns an unexpected response or pagination URL.
     """
-    tags: list[str] = []
+    tags: list[DockerHubTag] = []
     next_url: str | None = _TAGS_URL
 
     while next_url is not None:
@@ -43,7 +52,10 @@ def list_tags() -> list[str]:
             name: object = result.get("name")
             if not isinstance(name, str):
                 raise ValueError("Docker Hub returned a tag record without a name.")
-            tags.append(name)
+            digest: object = result.get("digest")
+            if digest is not None and not isinstance(digest, str):
+                raise ValueError("Docker Hub returned an invalid tag digest.")
+            tags.append(DockerHubTag(name, digest))
 
         candidate_next: object = payload.get("next")
         if candidate_next is not None and not isinstance(candidate_next, str):
@@ -57,6 +69,11 @@ def list_tags() -> list[str]:
             next_url = None
 
     return tags
+
+
+def list_tags() -> list[str]:
+    """Return all published names, preserving release-tooling behaviour."""
+    return [tag.name for tag in list_tag_records()]
 
 
 def main() -> int:

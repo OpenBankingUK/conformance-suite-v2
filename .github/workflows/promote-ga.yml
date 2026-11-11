@@ -9,9 +9,17 @@ on:
       tag:
         required: true
         description: "The exact vX.Y.Z Git tag identifying the release commit on main."
+      security_assessment_run_id:
+        required: true
+        description: "Successful Trusted security assessment Actions run ID for this commit."
 
 permissions:
   contents: read
+
+# Hold the shared caller lock through approval, publication, and finalization.
+concurrency:
+  group: image-promotion
+  cancel-in-progress: false
 
 jobs:
   promote:
@@ -23,6 +31,7 @@ jobs:
       branch: main
       tag: ${{ inputs.tag }}
       environment_name: ga-release
+      security_assessment_run_id: ${{ inputs.security_assessment_run_id }}
     permissions:
       contents: read
       actions: read
@@ -35,13 +44,15 @@ jobs:
       DOCKER_ORG_ACCESS_TOKEN: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-  finalize-ga:
-    name: Tag release and open develop merge-back
+  finalize:
+    name: Tag, create GitHub Release, and open develop merge-back
     needs: promote
-    uses: ./.github/workflows/_finalize-ga-release.yml
+    uses: ./.github/workflows/_finalize-release.yml
     with:
+      channel: ga
       source_sha: ${{ inputs.source_sha }}
-      tag: ${{ inputs.tag }}
+      raw_version: ${{ needs.promote.outputs.raw_version }}
+      published_digest: ${{ needs.promote.outputs.published_digest }}
     permissions:
       contents: write
       pull-requests: write

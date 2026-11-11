@@ -32,7 +32,7 @@ def test_resolves_supported_branch_and_version(
         raw_version=raw_version,
         source_sha=_SOURCE_SHA,
         manifest_available=True,
-        published_versions=set(),
+        published_versions={"beta-latest", "latest"},
     )
 
     assert result.should_promote is True
@@ -87,7 +87,7 @@ def test_skips_version_already_published() -> None:
         raw_version="2.0.0-beta.1",
         source_sha=_SOURCE_SHA,
         manifest_available=True,
-        published_versions={"2.0.0-beta.1"},
+        published_versions={"2.0.0-beta.1", "beta-latest"},
     )
 
     assert result.should_promote is False

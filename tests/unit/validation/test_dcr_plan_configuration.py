@@ -76,6 +76,24 @@ def test_typed_dcr_config_reuses_shared_security_and_metadata(tmp_path: Path) ->
     assert parsed.dynamic_client_registration.use_numeric_oid_subject_dn is True
 
 
+def test_dcr_loopback_override_preserves_registered_port_and_path(tmp_path: Path) -> None:
+    dcr = _dcr_config(tmp_path)
+    uri = "https://127.0.0.1:9443/conformancesuite/callback"
+    dcr["redirectUrisOverride"] = [uri]
+    config = parse_dcr_plan_configuration(_shared_security(tmp_path), dcr, {})
+    assert config.dynamic_client_registration.redirect_uris_override == (uri,)
+
+
+@pytest.mark.parametrize(
+    "uri", ["https://localhost/callback", "https://127.0.0.1/callback#fragment", "https://*.example.com/callback"]
+)
+def test_dcr_overrides_follow_redirect_policy(tmp_path: Path, uri: str) -> None:
+    dcr = _dcr_config(tmp_path)
+    dcr["redirectUrisOverride"] = [uri]
+    with pytest.raises(ConfigError, match="redirectUrisOverride"):
+        parse_dcr_plan_configuration(_shared_security(tmp_path), dcr, {})
+
+
 @pytest.mark.parametrize(
     ("section", "key", "message"),
     [

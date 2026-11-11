@@ -26,6 +26,12 @@ from packaging.version import InvalidVersion, Version
 IMAGE_NAME = "docker.io/openbanking/conformance-suite-v2"
 """Fully qualified Docker Hub image name (without tag) images are published under."""
 
+MVP_RELEASE = "2.0.0"
+"""Release series served by the temporary MVP beta pointer."""
+
+MVP_BETA_TAG = f"{MVP_RELEASE}-beta-latest"
+"""Mutable MVP beta tag, frozen once the formal release is published."""
+
 
 class ReleaseChannel(str, Enum):
     """Publication channel implied by a raw version string's suffix."""
@@ -224,6 +230,23 @@ def require_not_already_published(raw_version: str, published_versions: Iterable
         raise ReleaseMetadataError(f"Version {raw_version!r} has already been published and is immutable.")
 
 
+def publication_tags(metadata: ReleaseMetadata) -> tuple[str, ...]:
+    """Return initial publication tags; the MVP beta pointer moves after attestations."""
+    return (metadata.raw_version, "latest") if metadata.channel is ReleaseChannel.GA else (metadata.raw_version,)
+
+
+def should_update_beta_latest(metadata: ReleaseMetadata, published_tags: Iterable[str]) -> bool:
+    """Select the highest MVP beta until Docker Hub contains the formal release."""
+    tags = set(published_tags)
+    if metadata.channel is not ReleaseChannel.BETA or metadata.base_release != MVP_RELEASE or MVP_RELEASE in tags:
+        return False
+    return all(
+        metadata.comparison_version >= classify_raw_version(tag).comparison_version
+        for tag in tags
+        if _BETA_PATTERN.fullmatch(tag) and classify_raw_version(tag).base_release == MVP_RELEASE
+    )
+
+
 def read_pyproject_raw_version(pyproject_path: Path) -> str:
     """Read the exact ``[project].version`` string from ``pyproject.toml``.
 
@@ -317,9 +340,7 @@ def build_promotion_manifest(
     if not platform_digests:
         raise ReleaseMetadataError("At least one platform digest is required to promote a candidate.")
 
-    expected_tags: tuple[str, ...] = (
-        (metadata.raw_version, "latest") if metadata.channel is ReleaseChannel.GA else (metadata.raw_version,)
-    )
+    expected_tags = publication_tags(metadata)
 
     return PromotionManifest(
         raw_version=metadata.raw_version,

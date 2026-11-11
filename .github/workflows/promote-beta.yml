@@ -9,9 +9,17 @@ on:
       branch:
         required: true
         description: "The exact release/X.Y.Z branch the commit is on."
+      security_assessment_run_id:
+        required: true
+        description: "Successful Trusted security assessment Actions run ID for this commit."
 
 permissions:
   contents: read
+
+# Hold the shared caller lock through approval, publication, and finalization.
+concurrency:
+  group: image-promotion
+  cancel-in-progress: false
 
 jobs:
   validate-branch:
@@ -39,6 +47,7 @@ jobs:
       source_sha: ${{ inputs.source_sha }}
       branch: ${{ inputs.branch }}
       environment_name: beta-release
+      security_assessment_run_id: ${{ inputs.security_assessment_run_id }}
     permissions:
       contents: read
       actions: read
@@ -50,3 +59,17 @@ jobs:
       DOCKER_ORG_USERNAME: ${{ secrets.DOCKER_ORG_USERNAME }}
       DOCKER_ORG_ACCESS_TOKEN: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  finalize:
+    name: Tag and create GitHub prerelease
+    needs: promote
+    uses: ./.github/workflows/_finalize-release.yml
+    with:
+      channel: beta
+      source_sha: ${{ inputs.source_sha }}
+      raw_version: ${{ needs.promote.outputs.raw_version }}
+      published_digest: ${{ needs.promote.outputs.published_digest }}
+      beta_latest_updated: ${{ needs.promote.outputs.beta_latest_updated }}
+    permissions:
+      contents: write
+      pull-requests: write

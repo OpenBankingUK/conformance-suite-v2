@@ -9,9 +9,17 @@ on:
       branch:
         required: true
         description: "The exact preview/<feature> branch the commit is on."
+      security_assessment_run_id:
+        required: true
+        description: "Successful Trusted security assessment Actions run ID for this commit."
 
 permissions:
   contents: read
+
+# Preview publication shares the beta/GA callers' full-lifecycle lock.
+concurrency:
+  group: image-promotion
+  cancel-in-progress: false
 
 jobs:
   validate-branch:
@@ -39,6 +47,7 @@ jobs:
       source_sha: ${{ inputs.source_sha }}
       branch: ${{ inputs.branch }}
       environment_name: preview-release
+      security_assessment_run_id: ${{ inputs.security_assessment_run_id }}
     permissions:
       contents: read
       actions: read
