@@ -8,16 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from scripts.validate_docker_base import validate_runtime_base
+from scripts.validate_docker_base import get_candidate_dhi_bases
 
 pytestmark = pytest.mark.unit
 
 
 def test_release_image_uses_assessed_hardened_contract() -> None:
-    """Release must preserve static assets and use the assessed hardened base."""
+    """Preserve static assets and pinned DHI families; trusted CI assesses provenance."""
     root = Path(__file__).resolve().parents[3]
     dockerfile = (root / "Dockerfile").read_text()
-    validate_runtime_base(dockerfile)
+    get_candidate_dhi_bases(dockerfile)
     assert "\nUSER 65532:65532\n" in dockerfile
     assert 'ENTRYPOINT ["python3", "/app/docker/entrypoint.py"]' in dockerfile
     assert 'CMD ["python3", "/app/docker/healthcheck.py"]' in dockerfile
@@ -29,12 +29,11 @@ def test_image_uses_debian_binary_wheels_and_removes_unused_pip() -> None:
     """Keep glibc stages aligned without the obsolete Alpine package overlay."""
     root = Path(__file__).resolve().parents[3]
     dockerfile = (root / "Dockerfile").read_text()
+    bases = get_candidate_dhi_bases(dockerfile)
     stages = [line for line in dockerfile.splitlines() if line.startswith("FROM ")]
     assert stages == [
-        "FROM dhi.io/python:3.14-debian13-dev@sha256:"
-        "290766784d2488991d638bc8c52a53a3c5012513075da9b7bc67705510d7cb2d AS builder",
-        "FROM dhi.io/python:3.14-debian13@sha256:"
-        "4491196f15b7afb538ea121eed173cdd136297f616b15b34f66c25610bf80241 AS runtime",
+        f"FROM {bases.builder} AS builder",
+        f"FROM {bases.runtime} AS runtime",
     ]
     assert "uv sync --frozen --no-dev --no-install-project --no-build\n" in dockerfile
     assert "apk" not in dockerfile
