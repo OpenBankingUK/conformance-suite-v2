@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.17] - 2026-11-10
+
 ### Fixed
 
 - Trusted assessment and promotion re-scans emit unquoted decisions only
@@ -735,7 +737,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.16...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.17...HEAD
+[2.0.0-beta.17]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.16...v2.0.0-beta.17
 [2.0.0-beta.16]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.15...v2.0.0-beta.16
 [2.0.0-beta.15]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.14...v2.0.0-beta.15
 [2.0.0-beta.9]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.8...v2.0.0-beta.9
