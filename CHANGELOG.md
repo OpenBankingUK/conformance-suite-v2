@@ -16,11 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixed package; Docker's signed VEX for the Docker Hardened Images (DHI)
   Python runtime base marks both `not_affected` because DHI backported the
   upstream expat fixes. The release security assessment and promotion scans
-  apply this verified VEX, so these findings do not block publication. Docker
-  Scout does not currently carry the base image's image-specific VEX statements
-  over to images built from it, even with max-mode provenance and an SBOM, so
-  Docker Hub's summary still lists them; scanning the DHI base image on its own
-  in Docker Scout shows no High findings. Fixable findings and all other
+  apply this verified VEX, so these findings do not block publication. For
+  this published image, Docker Scout's summary still lists them: its scan does
+  not show the DHI base image's image-specific VEX statements on this image,
+  even with max-mode provenance and an SBOM. Scanning the DHI base image on its
+  own in Docker Scout shows no High findings. Fixable findings and all other
   vulnerability gates are unchanged.
 
 ## [2.0.0-beta.17] - 2026-11-10
