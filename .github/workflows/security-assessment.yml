@@ -38,13 +38,13 @@ jobs:
 
     steps:
       - name: Checkout trusted default branch
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch || 'main' }}
           persist-credentials: false
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
 
@@ -52,7 +52,7 @@ jobs:
         run: uv sync --frozen --no-install-project
 
       - name: Download candidate context
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           github-token: ${{ github.token }}
           run-id: ${{ github.event_name == 'workflow_dispatch' && inputs.source_run_id || github.event.workflow_run.id }}
@@ -272,7 +272,7 @@ jobs:
           echo "runtime_base=$runtime_base" >> "$GITHUB_OUTPUT"
 
       - name: Upload verified assessment inputs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: verified-assessment-inputs
           path: ${{ runner.temp }}/assessment-inputs
@@ -299,13 +299,13 @@ jobs:
 
     steps:
       - name: Checkout trusted default branch
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch || 'main' }}
           persist-credentials: false
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
 
@@ -313,13 +313,13 @@ jobs:
         run: uv sync --frozen --no-install-project
 
       - name: Download verified inputs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: verified-assessment-inputs
           path: ${{ runner.temp }}/assessment-inputs
 
       - name: Download candidate image archive
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           github-token: ${{ github.token }}
           run-id: ${{ needs.verify.outputs.source_run_id }}
@@ -393,7 +393,7 @@ jobs:
           cp "$(dirname "$REPORT_JSON")/brief.md" "$RUNNER_TEMP/brief-$SLUG.md"
 
       - name: Upload platform decision
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: assessment-${{ matrix.slug }}
           path: |
@@ -420,7 +420,7 @@ jobs:
       - name: Download platform decisions
         id: decisions
         continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: assessment-*
           path: ${{ runner.temp }}/decisions
@@ -522,7 +522,7 @@ jobs:
 
       - name: Upload candidate-bound assessment receipt
         if: steps.combine.outputs.decision == 'pass'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: security-assessment-receipt
           path: ${{ runner.temp }}/assessment-receipt.json
@@ -575,7 +575,7 @@ jobs:
             > "$RUNNER_TEMP/assessment-receipt.json"
 
       - name: Upload candidate-bound approval receipt
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: security-assessment-receipt
           path: ${{ runner.temp }}/assessment-receipt.json
