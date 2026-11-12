@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Refresh the pinned Debian 13 DHI builder and runtime indexes for amd64 and
+  arm64, updating gcc-14, libgcc-s1 and libstdc++6. The two existing Expat
+  High findings remain unchanged.
 - Preserve per-platform BuildKit max-mode provenance and SPDX SBOMs in the
   candidate OCI archives through approved Docker Hub publication, while
   continuing to scan and promote the exact runnable image manifest digests.
