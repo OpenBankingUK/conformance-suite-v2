@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Refresh the digest-pinned DHI Python 3.14 / Debian 13 builder and runtime
+  multi-architecture indexes. The runtime updates gcc-14, libgcc-s1 and
+  libstdc++6; the Expat High findings remain unchanged and are not resolved by
+  this refresh.
+
+- Require fresh candidate-bound risk approval for unfixed Docker Scout
+  high/critical findings even when signed DHI VEX assesses them as fixed or
+  not affected; reported fixes remain hard blockers. Show per-platform blockers,
+  raw Scout severity counts and VEX context on the PR check and promotion
+  summaries, including after approval. Include missing DHI provenance roles
+  and platform in those summaries and keep all report decisions consistent.
+
+- Preserve per-platform BuildKit max-mode provenance and SPDX SBOMs in the
+  candidate OCI archives through approved Docker Hub publication, while
+  continuing to scan and promote the exact runnable image manifest digests.
+  Keep trusted assessment and promotion compatible with legacy Docker and
+  unattested OCI candidate archives until release branches adopt the new build.
+  Include a Docker import view of the same OCI blobs so the existing trusted
+  assessor can load the new archive during rollout without a check bypass.
+  Pass the validated published version through the step environment instead of
+  expanding it inline in the publication shell.
+
 - Add daily grouped Dependabot refreshes for digest-pinned DHI builder/runtime
   images and a trusted, candidate-bound security assessment workflow. The
   assessment verifies signed DHI provenance, reports both supported platforms,

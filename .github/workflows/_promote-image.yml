@@ -291,13 +291,35 @@ jobs:
           SLUG: ${{ matrix.slug }}
         run: |
           set -euo pipefail
+          git fetch --no-tags origin "$INPUT_SOURCE_SHA"
           archive="$RUNNER_TEMP/candidate/image-$SLUG.tar"
           actual="$(sha256sum "$archive" | awk '{print $1}')"
           if ! awk '{print $1}' "$RUNNER_TEMP/manifest/checksums.sha256" | grep -qx "$actual"; then
             echo "::error::Candidate archive checksum is not recorded in the promotion manifest." >&2
             exit 1
           fi
-          docker load --input "$archive"
+          uv run python -m scripts.verify_build_evidence \
+            --archive "$archive" --platform "${{ matrix.platform }}" \
+            --source-sha "$INPUT_SOURCE_SHA" --allow-legacy > "$RUNNER_TEMP/evidence.json"
+          reference="ob-conformance-candidate:$SLUG-$INPUT_SOURCE_SHA"
+          format="$(jq -r '.format' "$RUNNER_TEMP/evidence.json")"
+          if [[ "$format" == "oci" ]]; then
+            runtime_base="$(git show "$INPUT_SOURCE_SHA:Dockerfile" | uv run python -m scripts.validate_docker_base --candidate-dhi --stdin --print-runtime-base)"
+            expected="$(jq -r --arg platform "${{ matrix.platform }}" '.platform_digests[$platform]' "$RUNNER_TEMP/manifest/promotion-manifest.json")"
+            uv run python -m scripts.verify_build_evidence \
+              --archive "$archive" --platform "${{ matrix.platform }}" \
+              --source-sha "$INPUT_SOURCE_SHA" --expected-digest "$expected" \
+              --runtime-base "$runtime_base" --require-revision-label > "$RUNNER_TEMP/evidence.json"
+          fi
+          if [[ "$format" == "oci" ]]; then
+            skopeo copy --override-os linux --override-arch "${SLUG#linux-}" \
+              "oci-archive:$archive" "docker-daemon:$reference"
+          else
+            docker load --input "$archive"
+          fi
+          docker image inspect --format '{{json .}}' "$reference" > "$RUNNER_TEMP/loaded-image.json"
+          uv run python -m scripts.verify_loaded_image \
+            --evidence "$RUNNER_TEMP/evidence.json" --inspect "$RUNNER_TEMP/loaded-image.json"
           echo "local_tag=ob-conformance-candidate:$SLUG-$INPUT_SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Extract candidate dependency manifests (read-only)
@@ -305,7 +327,6 @@ jobs:
         id: source
         run: |
           set -euo pipefail
-          git fetch --no-tags origin "$INPUT_SOURCE_SHA"
           src="$RUNNER_TEMP/candidate-source"
           mkdir -p "$src"
           for file in Dockerfile pyproject.toml uv.lock; do
@@ -342,17 +363,22 @@ jobs:
       - name: Save promotion scan decision
         env:
           DECISION: ${{ steps.scan.outputs.decision }}
+          REPORT_JSON: ${{ steps.scan.outputs.report-json }}
           SLUG: ${{ matrix.slug }}
         run: |
           set -euo pipefail
           jq -n --arg platform "$SLUG" --arg decision "$DECISION" \
             '{platform:$platform,decision:$decision}' > "$RUNNER_TEMP/decision-$SLUG.json"
+          cp "$(dirname "$REPORT_JSON")/brief.md" "$RUNNER_TEMP/brief-$SLUG.md"
 
       - name: Upload promotion scan decision
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: promotion-decision-${{ matrix.slug }}
-          path: ${{ runner.temp }}/decision-${{ matrix.slug }}.json
+          path: |
+            ${{ runner.temp }}/decision-${{ matrix.slug }}.json
+            ${{ runner.temp }}/brief-${{ matrix.slug }}.md
+          if-no-files-found: error
           retention-days: 7
 
   risk-decision:
@@ -383,7 +409,9 @@ jobs:
           set -euo pipefail
           decision=blocked
           files=("$RUNNER_TEMP"/decisions/decision-*.json)
-          if [[ "$RESCAN_RESULT" == "success" && "${#files[@]}" -eq 2 ]]; then
+          if [[ "$RESCAN_RESULT" == "success" && "${#files[@]}" -eq 2 \
+                && -s "$RUNNER_TEMP/decisions/brief-linux-amd64.md" \
+                && -s "$RUNNER_TEMP/decisions/brief-linux-arm64.md" ]]; then
             if ! decision="$(jq -nr \
               --slurpfile amd64 "$RUNNER_TEMP/decisions/decision-linux-amd64.json" \
               --slurpfile arm64 "$RUNNER_TEMP/decisions/decision-linux-arm64.json" '
@@ -407,12 +435,19 @@ jobs:
             echo "- Candidate: \`$INPUT_SOURCE_SHA\`"
             echo "- Decision: \`$decision\`"
             if [[ "$decision" == "approval_required" ]]; then
-              echo "- To accept this candidate's unfixed high-severity findings or missing DHI provenance, approve the \`security-exception\` environment with the exact comment: \`APPROVE $INPUT_SOURCE_SHA\`."
+              echo "- To accept eligible unfixed findings (including Scout high/critical findings with VEX) or missing DHI provenance, approve the \`security-exception\` environment with the exact comment: \`APPROVE $INPUT_SOURCE_SHA\`."
             elif [[ "$decision" == "blocked" ]]; then
               echo "- Fixable findings, invalid evidence, or scanner errors block promotion; these cannot be overridden."
             fi
             echo
-            echo "Review the per-platform vulnerability report artifacts before proceeding."
+            for platform in linux-amd64 linux-arm64; do
+              if [[ -s "$RUNNER_TEMP/decisions/brief-$platform.md" ]]; then
+                cat "$RUNNER_TEMP/decisions/brief-$platform.md"
+              else
+                echo "Missing $platform findings summary; review scanner reports."
+              fi
+            done
+            echo "Review the full per-platform vulnerability report artifacts before proceeding."
           } >> "$GITHUB_STEP_SUMMARY"
           if [[ "$decision" == "blocked" ]]; then
             echo "::error::Promotion is blocked. Review the re-scan evidence." >&2
@@ -610,6 +645,8 @@ jobs:
             scripts/validate_docker_base.py \
             scripts/vulnerability_gate.py \
             scripts/verify_dhi_provenance.py \
+            scripts/verify_build_evidence.py \
+            scripts/verify_loaded_image.py \
             .github/actions/vulnerability-scan/action.yml \
             .github/actions/vulnerability-scan/dhi-signing-key.pub \
             .github/workflows/security-assessment.yml \
@@ -688,16 +725,44 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
+      - name: Verify build evidence before publication
+        run: |
+          set -euo pipefail
+          for slug in linux-amd64 linux-arm64; do
+            platform="linux/${slug#linux-}"
+            uv run python -m scripts.verify_build_evidence \
+              --archive "artifacts/candidate-$slug/image-$slug.tar" \
+              --platform "$platform" --source-sha "$INPUT_SOURCE_SHA" \
+              --allow-legacy \
+              > "artifacts/publication-evidence-$slug.json"
+            if [[ "$(jq -r '.format' "artifacts/publication-evidence-$slug.json")" == "oci" ]]; then
+              runtime_base="$(git show "$INPUT_SOURCE_SHA:Dockerfile" | uv run python -m scripts.validate_docker_base --candidate-dhi --stdin --print-runtime-base)"
+              expected="$(jq -r --arg platform "$platform" '.platform_digests[$platform]' artifacts/manifest/promotion-manifest.json)"
+              uv run python -m scripts.verify_build_evidence \
+                --archive "artifacts/candidate-$slug/image-$slug.tar" \
+                --platform "$platform" --source-sha "$INPUT_SOURCE_SHA" \
+                --expected-digest "$expected" --runtime-base "$runtime_base" --require-revision-label \
+                > "artifacts/publication-evidence-$slug.json"
+            else
+              expected="$(jq -r --arg platform "$platform" '.platform_digests[$platform]' artifacts/manifest/promotion-manifest.json)"
+              format="$(jq -r '.format' "artifacts/publication-evidence-$slug.json")"
+              if [[ "$format" == "oci-legacy" ]]; then
+                [[ "$(jq -r '.image_digest' "artifacts/publication-evidence-$slug.json")" == "$expected" ]] || {
+                  echo "::error::Legacy OCI image differs from the scanned platform digest." >&2
+                  exit 1
+                }
+              else
+                jq --arg digest "$expected" '.image_digest = $digest' \
+                  "artifacts/publication-evidence-$slug.json" > "$RUNNER_TEMP/evidence.json"
+                mv "$RUNNER_TEMP/evidence.json" "artifacts/publication-evidence-$slug.json"
+              fi
+            fi
+          done
+
       - name: Push each already-scanned platform image by digest
-        # The candidate archives are OCI layouts holding the exact manifest,
-        # config, and compressed layers CI built and scanned. `docker push`
-        # would re-serialise the manifest and change its digest, so skopeo
-        # copies the layout unchanged to a digest reference. skopeo refuses the
-        # copy if the source manifest digest differs from the destination
-        # digest, and the registry manifest is re-hashed below as a second
-        # check. Pushing by digest creates no tags, so promotion leaves no
-        # internal staging tags behind on Docker Hub. This never rebuilds the
-        # image.
+        # --all preserves the runnable manifest AND its BuildKit attestations.
+        # Digest-only publication leaves no staging tags and never rebuilds.
+        id: stage
         env:
           AMD64_DIGEST: ${{ steps.validate.outputs.amd64_digest }}
           ARM64_DIGEST: ${{ steps.validate.outputs.arm64_digest }}
@@ -707,16 +772,36 @@ jobs:
 
           stage() {
             local slug="$1" arch="$2" expected="$3"
-            local dest="${IMAGE_NAME}@${expected}"
-            skopeo copy --preserve-digests \
-              --dest-authfile "$HOME/.docker/config.json" \
-              "oci-archive:artifacts/candidate-${slug}/image-${slug}.tar" \
-              "docker://${dest}"
-            actual="$(skopeo inspect --authfile "$HOME/.docker/config.json" --raw "docker://${dest}" | sha256sum | awk '{print "sha256:" $1}')"
+            local index_digest dest
+            if [[ "$(jq -r '.format' "artifacts/publication-evidence-$slug.json")" == "oci" ]]; then
+              index_digest="$(jq -r '.index_digest' "artifacts/publication-evidence-$slug.json")"
+              dest="${IMAGE_NAME}@${index_digest}"
+              skopeo copy --all --preserve-digests \
+                --dest-authfile "$HOME/.docker/config.json" \
+                "oci-archive:artifacts/candidate-${slug}/image-${slug}.tar" \
+                "docker://${dest}"
+              actual="$(skopeo inspect --authfile "$HOME/.docker/config.json" --raw "docker://${dest}" | sha256sum | awk '{print "sha256:" $1}')"
+              if [[ "$actual" != "$index_digest" ]]; then
+                echo "::error::Pushed ${arch} index $actual does not match build evidence $index_digest." >&2
+                exit 1
+              fi
+            else
+              index_digest="$expected"
+              transport=docker-archive
+              if [[ "$(jq -r '.format' "artifacts/publication-evidence-$slug.json")" == "oci-legacy" ]]; then
+                transport=oci-archive
+              fi
+              skopeo copy --preserve-digests \
+                --dest-authfile "$HOME/.docker/config.json" \
+                "${transport}:artifacts/candidate-${slug}/image-${slug}.tar" \
+                "docker://${IMAGE_NAME}@${expected}"
+            fi
+            actual="$(skopeo inspect --authfile "$HOME/.docker/config.json" --raw "docker://${IMAGE_NAME}@${expected}" | sha256sum | awk '{print "sha256:" $1}')"
             if [[ "$actual" != "$expected" ]]; then
-              echo "::error::Pushed ${arch} digest $actual does not match scanned digest $expected." >&2
+              echo "::error::Pushed ${arch} image $actual does not match scanned digest $expected." >&2
               exit 1
             fi
+            echo "${arch}_index=$index_digest" >> "$GITHUB_OUTPUT"
             echo "Pushed ${arch} at scanned digest $expected."
           }
 
@@ -725,6 +810,10 @@ jobs:
 
       - name: Assemble and publish the multi-arch manifest list
         id: publish
+        env:
+          RAW_VERSION: ${{ steps.validate.outputs.raw_version }}
+          AMD64_INDEX: ${{ steps.stage.outputs.amd64_index }}
+          ARM64_INDEX: ${{ steps.stage.outputs.arm64_index }}
         run: |
           set -euo pipefail
           tag_args=()
@@ -733,13 +822,15 @@ jobs:
           done < <(jq -r '.[]' expected-tags.json)
 
           docker buildx imagetools create "${tag_args[@]}" \
-            "${IMAGE_NAME}@${{ steps.validate.outputs.amd64_digest }}" \
-            "${IMAGE_NAME}@${{ steps.validate.outputs.arm64_digest }}"
-          published_digest="sha256:$(
-            docker buildx imagetools inspect \
-              "${IMAGE_NAME}:${{ steps.validate.outputs.raw_version }}" --raw \
-              | sha256sum | awk '{print $1}'
-          )"
+            "${IMAGE_NAME}@${AMD64_INDEX}" \
+            "${IMAGE_NAME}@${ARM64_INDEX}"
+          docker buildx imagetools inspect \
+            "${IMAGE_NAME}:${RAW_VERSION}" --raw > artifacts/published-index.json
+          uv run python -m scripts.verify_build_evidence \
+            --published-index artifacts/published-index.json \
+            --evidence artifacts/publication-evidence-linux-amd64.json \
+            --evidence artifacts/publication-evidence-linux-arm64.json
+          published_digest="sha256:$(sha256sum artifacts/published-index.json | awk '{print $1}')"
           echo "published_digest=$published_digest" >> "$GITHUB_OUTPUT"
 
       # actions/attest replaces the deprecated attest-build-provenance and

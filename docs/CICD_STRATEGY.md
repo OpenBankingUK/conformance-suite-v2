@@ -191,19 +191,27 @@ consolidated container vulnerability gate on **every pull request and push**:
 
 **Policy** (`scripts/vulnerability_gate.py`):
 
-- Any finding with a fixed version available fails, **whatever its severity**.
+- Any open finding with a fixed version available fails, **whatever its severity**.
+  A Scout `high`/`critical` finding with a reported fix also fails even when
+  covered by VEX or an exception; it cannot be risk-approved.
 - Unfixed `critical`/`high` findings, and findings with no severity (treated as
   `high`), require an explicit candidate-bound approval in the protected
   `security-exception` GitHub Environment. Approval is risk acceptance, not a
   claim that the finding is fixed.
 - Unfixed `medium`/`low` findings are reported but do not fail.
+- Docker Scout's own `high`/`critical` rating requires a fresh candidate-bound
+  approval even if an exact-version Docker VEX says `fixed` or `not_affected`.
+  A persistent exception cannot bypass this approval. Other scanners' severity
+  ratings do not turn a lower-severity Scout observation into a Scout high.
 - A successfully retrieved DHI attestation listing that explicitly lacks SLSA
   v1 provenance also requires that approval. Digest, subject, signature,
   parsing, registry, authentication and scanner errors are hard failures and
   cannot be overridden.
 - When published, Docker's signed OpenVEX for the exact DHI runtime base
   (author must be `@docker.com`; see `scripts/validate_docker_base.py`)
-  suppresses only base-image OS findings with the exact package version. It
+  assesses only base-image OS findings with the exact package version. It
+  suppresses other eligible findings, but is explanatory evidence rather than
+  an automatic pass for Scout `high`/`critical` findings. It
   never applies to application packages under `/app/`. If Docker Scout
   explicitly reports that the image has no VEX attestations, scanning
   continues without VEX suppressions.
@@ -211,8 +219,13 @@ consolidated container vulnerability gate on **every pull request and push**:
   from an empty directory, so a `.snyk` file cannot silently ignore findings.
 
 The job summary, GitHub annotations and SARIF all report **every** finding:
-blocking findings as errors, informational open findings as warnings, and
-VEX-assessed or accepted findings as notices/suppressed SARIF results. The
+blocking findings as errors without SARIF suppression, informational open findings
+as warnings, and non-blocking VEX-assessed or accepted findings as
+notices/suppressed SARIF results. Platform summaries show raw Scout high/critical
+counts, VEX context and actionable blockers on the pending check and before
+promotion approval. They also name missing DHI provenance base roles and their
+platform, and use the same final decision as the JSON report and action output.
+Full reports retain every finding after approval. The
 trusted `security-assessment.yml` workflow creates the stable `Vulnerability
 Scan` check on the PR head SHA (after validating the CI synthetic merge
 commit's base/head parents) or the push SHA. It retrieves scanner inputs from
@@ -446,13 +459,41 @@ trusted assessment scans those exact archives before a candidate can pass
 the required `Vulnerability Scan` check or be promoted. Candidate jobs have
 read-only repository permissions and never push an image.
 
+Candidate archives use BuildKit's OCI exporter with max-mode SLSA provenance
+and an SPDX SBOM attached to each runnable platform manifest. The verifier
+checks the archive's content-addressed OCI blobs, platform, source revision,
+runtime Config, DHI base digest, provenance subject and SBOM before assessment.
+Publishing this BuildKit evidence lets Docker Hub/Scout trace each image back
+to its digest-pinned DHI base and apply that base's signed VEX assessments,
+instead of treating the base-image findings as unresolved. GitHub's existing
+publication attestations remain separate and unchanged.
+Before upload, CI adds a classic Docker `manifest.json` import view that points
+to the same config and compressed layer blobs with the candidate's local tag.
+It does not replace or rewrite any OCI member, provenance, SBOM, or descriptor.
+This lets the current trusted assessor on `main` load the combined archive
+during rollout without a bypass or a second, independently built scan image.
+The final combined archive is checksummed once and remains the artifact used
+by assessment, rescan, and approved publication.
+The promotion manifest and vulnerability scans continue to identify the
+runnable platform-manifest digests, not the surrounding attestation-index
+digests. Local image import is checked against the archive's platform,
+complete runtime Config and root-filesystem DiffIDs. After approval, promotion
+copies each complete OCI index with `skopeo --all --preserve-digests`, then
+checks that the final multi-architecture index contains every original
+platform and attestation descriptor and both scanned runnable digests. It
+does not rebuild, rewrite, or substitute the scanned image manifests. The
+trusted assessment and promoter continue to accept older Docker archives and
+unattested OCI archives produced by release branches that have not yet adopted
+the new exporter; those formats receive the same existing scans and policy,
+but do not gain BuildKit child-image evidence.
+
 This Docker-contract check is a deliberate bootstrap compatibility gate:
-today's `main` Docker build and smoke test remain unchanged, so installing the
-trusted promotion code does not require importing the MVP Docker/application
-implementation. A `release/2.0.0` branch containing that hardened Docker
-implementation automatically produces candidates with versions such as
-`2.0.0-beta.N`; once the same implementation reaches `main`, GA candidates
-are produced there too.
+the application Dockerfile and runtime smoke test remain unchanged, so
+installing the trusted promotion code does not require importing the MVP
+Docker/application implementation. A `release/2.0.0` branch containing that
+hardened Docker implementation automatically produces candidates with
+versions such as `2.0.0-beta.N`; once the same implementation reaches `main`,
+GA candidates are produced there too.
 
 ### 4.2 Workflow Files
 
@@ -484,9 +525,12 @@ release-script files must exactly match the trusted copies on `main`; pipeline
 changes therefore land on `main` before release branches consume them. Only
 then does the Environment-gated job receive Docker Hub credentials; it pushes
 each platform image by digest with `skopeo copy --preserve-digests` (so the
-registry digests equal the scanned digests; a plain `docker push` would
+registry runnable manifest digests equal the scanned digests; attested OCI
+indexes are copied with `--all` to retain their BuildKit evidence, while legacy
+archives keep the existing single-manifest path). A plain `docker push` would
 re-serialise the manifest, and pushing by digest leaves no internal staging
-tags) and assembles the already-tested images without rebuilding. Promotion is serialized to prevent
+tags. The workflow assembles the already-tested images without rebuilding.
+Promotion is serialized to prevent
 tag races, rejects an existing immutable version tag discovered through the
 Docker Hub tags API, and attests the published
 multi-architecture manifest with provenance and both platform SBOMs using

@@ -331,10 +331,31 @@ jobs:
         env:
           SLUG: ${{ matrix.slug }}
           SOURCE_SHA: ${{ needs.verify.outputs.source_sha }}
+          RUNTIME_BASE: ${{ needs.verify.outputs.runtime_base }}
         run: |
           set -euo pipefail
-          docker load --input "$RUNNER_TEMP/candidate/image-$SLUG.tar"
-          echo "reference=ob-conformance-candidate:$SLUG-$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          uv run python -m scripts.verify_build_evidence \
+            --archive "$RUNNER_TEMP/candidate/image-$SLUG.tar" \
+            --platform "${{ matrix.platform }}" --source-sha "$SOURCE_SHA" \
+            --allow-legacy > "$RUNNER_TEMP/evidence.json"
+          reference="ob-conformance-candidate:$SLUG-$SOURCE_SHA"
+          format="$(jq -r '.format' "$RUNNER_TEMP/evidence.json")"
+          if [[ "$format" == "oci" ]]; then
+            args=()
+            if [[ -n "$RUNTIME_BASE" ]]; then args+=(--runtime-base "$RUNTIME_BASE" --require-revision-label); fi
+            uv run python -m scripts.verify_build_evidence \
+              --archive "$RUNNER_TEMP/candidate/image-$SLUG.tar" \
+              --platform "${{ matrix.platform }}" --source-sha "$SOURCE_SHA" \
+              "${args[@]}" > "$RUNNER_TEMP/evidence.json"
+            skopeo copy --override-os linux --override-arch "${SLUG#linux-}" \
+              "oci-archive:$RUNNER_TEMP/candidate/image-$SLUG.tar" "docker-daemon:$reference"
+          else
+            docker load --input "$RUNNER_TEMP/candidate/image-$SLUG.tar"
+          fi
+          docker image inspect --format '{{json .}}' "$reference" > "$RUNNER_TEMP/loaded-image.json"
+          uv run python -m scripts.verify_loaded_image \
+            --evidence "$RUNNER_TEMP/evidence.json" --inspect "$RUNNER_TEMP/loaded-image.json"
+          echo "reference=$reference" >> "$GITHUB_OUTPUT"
 
       - name: Scan and assess
         id: assessment
@@ -363,17 +384,22 @@ jobs:
         env:
           DECISION: ${{ steps.assessment.outputs.decision }}
           PROVENANCE: ${{ steps.assessment.outputs.provenance }}
+          REPORT_JSON: ${{ steps.assessment.outputs.report-json }}
           SLUG: ${{ matrix.slug }}
         run: |
           set -euo pipefail
           jq -n --arg platform "$SLUG" --arg decision "$DECISION" --arg provenance "$PROVENANCE" \
             '{platform:$platform, decision:$decision, provenance:$provenance}' > "$RUNNER_TEMP/decision-$SLUG.json"
+          cp "$(dirname "$REPORT_JSON")/brief.md" "$RUNNER_TEMP/brief-$SLUG.md"
 
       - name: Upload platform decision
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: assessment-${{ matrix.slug }}
-          path: ${{ runner.temp }}/decision-${{ matrix.slug }}.json
+          path: |
+            ${{ runner.temp }}/decision-${{ matrix.slug }}.json
+            ${{ runner.temp }}/brief-${{ matrix.slug }}.md
+          if-no-files-found: error
           retention-days: 30
 
   decide:
@@ -388,6 +414,7 @@ jobs:
     outputs:
       decision: ${{ steps.combine.outputs.decision }}
       approval_phrase: ${{ steps.combine.outputs.approval_phrase }}
+      summary: ${{ steps.summary.outputs.summary }}
 
     steps:
       - name: Download platform decisions
@@ -411,7 +438,9 @@ jobs:
           set -euo pipefail
           decision=blocked
           files=("$RUNNER_TEMP"/decisions/decision-*.json)
-          if [[ "$SCAN_RESULT" == "success" && "${#files[@]}" -eq 2 ]]; then
+          if [[ "$SCAN_RESULT" == "success" && "${#files[@]}" -eq 2 \
+                && -s "$RUNNER_TEMP/decisions/brief-linux-amd64.md" \
+                && -s "$RUNNER_TEMP/decisions/brief-linux-arm64.md" ]]; then
             if ! decision="$(jq -nr \
               --slurpfile amd64 "$RUNNER_TEMP/decisions/decision-linux-amd64.json" \
               --slurpfile arm64 "$RUNNER_TEMP/decisions/decision-linux-arm64.json" '
@@ -440,13 +469,21 @@ jobs:
             echo "- Pull-request check commit: \`$CHECK_SHA\`"
             echo "- Decision: \`$decision\`"
             if [[ "$decision" == "approval_required" ]]; then
-              echo "- To accept only an unfixed high/critical/unknown finding or explicitly missing DHI provenance, approve the \`security-exception\` environment with this exact comment: \`$phrase\`."
+              echo "- To accept eligible unfixed findings (including Scout high/critical findings with VEX) or explicitly missing DHI provenance, approve the \`security-exception\` environment with this exact comment: \`$phrase\`."
             elif [[ "$decision" == "blocked" ]]; then
               echo "- Fixable findings, invalid evidence, malformed policy data, and scanner errors cannot be overridden."
             fi
             echo
-            echo "Review both platform vulnerability report artifacts before approving."
-          } >> "$GITHUB_STEP_SUMMARY"
+            for platform in linux-amd64 linux-arm64; do
+              if [[ -s "$RUNNER_TEMP/decisions/brief-$platform.md" ]]; then
+                cat "$RUNNER_TEMP/decisions/brief-$platform.md"
+              else
+                echo "Missing $platform findings summary; review scanner reports."
+              fi
+            done
+            echo "Review both full platform vulnerability report artifacts before approving."
+          } > "$RUNNER_TEMP/assessment-summary.md"
+          cat "$RUNNER_TEMP/assessment-summary.md" >> "$GITHUB_STEP_SUMMARY"
           jq -n \
             --arg decision "$decision" \
             --arg source_run_id "$SOURCE_RUN_ID" \
@@ -455,6 +492,33 @@ jobs:
             --arg approval_phrase "$phrase" \
             '{schema_version:1,decision:$decision,source_run_id:($source_run_id|tonumber),source_sha:$source_sha,checked_sha:$checked_sha,approval_phrase:$approval_phrase}' \
             > "$RUNNER_TEMP/assessment-receipt.json"
+
+      - name: Show findings on pending candidate check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECK_ID: ${{ needs.verify.outputs.check_id }}
+        run: |
+          set -euo pipefail
+          jq -n --rawfile summary "$RUNNER_TEMP/assessment-summary.md" \
+            '{status:"in_progress",output:{title:"Trusted vulnerability assessment",summary:$summary}}' \
+            > "$RUNNER_TEMP/check-update.json"
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/check-runs/$CHECK_ID" \
+            --input "$RUNNER_TEMP/check-update.json"
+
+      - name: Preserve candidate check summary
+        id: summary
+        run: |
+          set -euo pipefail
+          delimiter="summary_$(openssl rand -hex 16)"
+          if grep -Fxq "$delimiter" "$RUNNER_TEMP/assessment-summary.md"; then
+            echo "::error::Summary output delimiter collision." >&2
+            exit 1
+          fi
+          {
+            echo "summary<<$delimiter"
+            cat "$RUNNER_TEMP/assessment-summary.md"
+            printf '\n%s\n' "$delimiter"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload candidate-bound assessment receipt
         if: steps.combine.outputs.decision == 'pass'
@@ -536,18 +600,24 @@ jobs:
           APPROVAL_RESULT: ${{ needs['approve-exception'].result }}
           VERIFY_RESULT: ${{ needs.verify.result }}
           SOURCE_SHA: ${{ needs.verify.outputs.source_sha }}
+          ASSESSMENT_SUMMARY: ${{ needs.decide.outputs.summary }}
         run: |
           set -euo pipefail
           conclusion=failure
           summary="Assessment failed closed. Review the trusted assessment run and its scanner reports."
           if [[ "$VERIFY_RESULT" == "success" && "$DECIDE_RESULT" == "success" && "$DECISION" == "pass" ]]; then
             conclusion=success
-            summary="Both platform scans passed; candidate $SOURCE_SHA is eligible for downstream promotion."
+            summary="Both platform scans passed policy; reported non-blocking findings remain in the reports. Candidate $SOURCE_SHA is eligible for downstream promotion."
           elif [[ "$VERIFY_RESULT" == "success" && "$DECIDE_RESULT" == "success" && "$DECISION" == "approval_required" && "$APPROVAL_RESULT" == "success" ]]; then
             conclusion=success
             summary="Candidate $SOURCE_SHA has an explicit, candidate-bound security-exception environment approval."
           elif [[ "$VERIFY_RESULT" == "success" && "$DECIDE_RESULT" == "success" && "$DECISION" == "blocked" ]]; then
             summary="Fixable vulnerabilities, invalid policy inputs, or scanner errors block candidate $SOURCE_SHA."
+          fi
+          if [[ -n "$ASSESSMENT_SUMMARY" ]]; then
+            summary="$summary"$'\n\n'"$ASSESSMENT_SUMMARY"
+          else
+            summary="$summary"$'\n\n'"Platform summary unavailable; review the trusted assessment run and reports."
           fi
           jq -n --arg conclusion "$conclusion" --arg summary "$summary" \
             '{status:"completed",conclusion:$conclusion,completed_at:(now|todate),output:{title:"Trusted vulnerability assessment",summary:$summary}}' \
