@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Refresh the digest-pinned DHI Python 3.14 / Debian 13 builder and runtime
+  multi-architecture indexes. The runtime updates gcc-14, libgcc-s1 and
+  libstdc++6; the Expat High findings remain unchanged and are not resolved by
+  this refresh.
+
 - Require fresh candidate-bound risk approval for unfixed Docker Scout
   high/critical findings even when signed DHI VEX assesses them as fixed or
   not affected; reported fixes remain hard blockers. Show per-platform blockers,
