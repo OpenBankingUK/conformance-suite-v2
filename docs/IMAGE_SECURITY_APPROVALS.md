@@ -14,9 +14,11 @@ code does not create or modify environments, reviewers, secrets, or rulesets.
   uploaded amd64 and arm64 images with trusted policy code from the default
   branch. The check is `Vulnerability Scan`, attached to the PR head commit
   (or push commit).
-- Findings with fixes available at any severity are blocked. Unfixed
+- Open findings with fixes available at any severity are blocked. Unfixed
   high/critical/unknown findings and explicitly missing signed SLSA v1 DHI
   provenance may be accepted only by a fresh GitHub Environment approval.
+  Scout high/critical findings require that approval even when signed VEX
+  says `fixed` or `not_affected`; a reported package fix is still a hard block.
   Signature, digest, subject, registry, scanner, authentication, and parsing
   errors always block. Medium/low unfixed findings are reported.
 - Promotion requires a receipt bound to the exact successful CI run and
@@ -51,17 +53,19 @@ In **Repository Settings → Environments**, create an environment named
    `preview-release`, `beta-release`, and `ga-release` environments remain the
    independent publication approval and credential boundary.
 
-When an approval is requested, inspect both platform report artifacts in the
-assessment run. The reviewer must enter the exact comment shown in that run's
+When an approval is requested, inspect the per-platform findings on the pending
+check or promotion summary and both full platform report artifacts in the
+corresponding run. The reviewer must enter the exact comment shown in that run's
 summary: `APPROVE <full candidate image commit SHA>`. The workflow checks the
 actual Actions run approval record, environment name, and comment. A new
 assessment or promotion run requires a new approval; approvals are not reused.
 
 ## Require status checks
 
-In **Settings → Rules → Rulesets**, update each applicable ruleset for `main`,
-`develop`, and `release/*`. GitHub only offers check names it has already
-seen, so search for each name and add it explicitly:
+In **Settings → Rules → Rulesets**, verify each applicable ruleset for `main`,
+`develop`, `release/*`, and `preview/*`. GitHub only offers check names it has already
+seen, so search for each name and add it explicitly. The `preview/*` ruleset
+currently requires only `Vulnerability Scan` from this list:
 
 | Check | Source |
 |---|---|
@@ -73,6 +77,10 @@ seen, so search for each name and add it explicitly:
 | `code/snyk (Standards)` | Snyk integration |
 
 - Require branches to be up to date before merging.
+- The `preview vulnerability check` ruleset (27127788) requires `Vulnerability
+  Scan` from GitHub Actions on `preview/*`, with strict checks and no bypass
+  actors. The existing main/develop and release rulesets also require it and
+  retain their existing bypasses.
 - Separately, **Require code scanning results → CodeQL** with security alerts
   at **High or higher** once CodeQL default setup is enabled. CodeQL source
   analysis complements, and does not replace, the image vulnerability gate.
