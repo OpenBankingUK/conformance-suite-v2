@@ -204,8 +204,6 @@ def test_platform_decisions_show_findings_and_fail_closed_when_summary_missing(
 def test_check_retains_findings_after_approval(tmp_path: Path) -> None:
     workflow = (WORKFLOWS / "security-assessment.yml").read_text()
     assert workflow.index("Show findings on pending candidate check") < workflow.index("  approve-exception:")
-    (tmp_path / "check-summary").mkdir()
-    (tmp_path / "check-summary" / "assessment-summary.md").write_text("CVE-2026-117610 OpenVEX\n")
     (tmp_path / "assessment-summary.md").write_text("CVE-2026-117610 OpenVEX\n")
     gh = tmp_path / "gh"
     gh.write_text('#!/bin/bash\ncp "$6" "$CAPTURE"\n')
@@ -223,6 +221,7 @@ def test_check_retains_findings_after_approval(tmp_path: Path) -> None:
         "APPROVAL_RESULT": "success",
         "VERIFY_RESULT": "success",
         "SOURCE_SHA": "source-sha",
+        "ASSESSMENT_SUMMARY": "CVE-2026-117610 OpenVEX\n",
     }
     pending = workflow.split("      - name: Show findings on pending candidate check\n", 1)[1]
     pending = pending.split("\n      - name:", 1)[0]
