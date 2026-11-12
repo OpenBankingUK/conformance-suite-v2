@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import subprocess
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -144,3 +148,97 @@ def test_rescan_fetches_candidate_before_reading_its_dockerfile() -> None:
     assert load.index('git fetch --no-tags origin "$INPUT_SOURCE_SHA"') < load.index(
         'git show "$INPUT_SOURCE_SHA:Dockerfile"'
     )
+
+
+@pytest.mark.parametrize(
+    ("filename", "step", "result_variable"),
+    [
+        ("security-assessment.yml", "Combine decisions and bind any approval to the candidate", "SCAN_RESULT"),
+        ("_promote-image.yml", "Combine decisions", "RESCAN_RESULT"),
+    ],
+)
+@pytest.mark.parametrize("missing_summary", [False, True])
+def test_platform_decisions_show_findings_and_fail_closed_when_summary_missing(
+    tmp_path: Path, filename: str, step: str, result_variable: str, missing_summary: bool
+) -> None:
+    workflow = (WORKFLOWS / filename).read_text()
+    step_text = workflow.split(f"      - name: {step}\n", 1)[1].split("\n      - name:", 1)[0]
+    step_text = step_text.split("\n  approve-risk:", 1)[0]
+    script = textwrap.dedent(step_text.split("        run: |\n", 1)[1])
+    decisions = tmp_path / "decisions"
+    decisions.mkdir()
+    for platform in ("linux-amd64", "linux-arm64"):
+        (decisions / f"decision-{platform}.json").write_text(
+            json.dumps({"platform": platform, "decision": "approval_required"})
+        )
+        if not (missing_summary and platform == "linux-arm64"):
+            (decisions / f"brief-{platform}.md").write_text(f"{platform}: CVE-2026-117610 OpenVEX\n")
+    output = tmp_path / "output"
+    summary = tmp_path / "summary"
+    env = {
+        **os.environ,
+        "RUNNER_TEMP": str(tmp_path),
+        "GITHUB_OUTPUT": str(output),
+        "GITHUB_STEP_SUMMARY": str(summary),
+        result_variable: "success",
+        "SOURCE_RUN_ID": "42",
+        "SOURCE_SHA": "source-sha",
+        "WORKFLOW_SHA": "source-sha",
+        "CHECK_SHA": "check-sha",
+        "INPUT_SOURCE_SHA": "source-sha",
+    }
+
+    completed = subprocess.run(  # noqa: S603  # Exercise the checked-in workflow step.
+        ["/bin/bash", "-c", script], env=env, capture_output=True, text=True, check=False
+    )
+
+    expected = "blocked" if missing_summary else "approval_required"
+    assert f"decision={expected}" in output.read_text()
+    assert "linux-amd64: CVE-2026-117610 OpenVEX" in summary.read_text()
+    if not missing_summary:
+        assert "linux-arm64: CVE-2026-117610 OpenVEX" in summary.read_text()
+        assert "APPROVE source-sha" in summary.read_text()
+    assert completed.returncode == (1 if missing_summary and filename == "_promote-image.yml" else 0)
+
+
+def test_check_retains_findings_after_approval(tmp_path: Path) -> None:
+    workflow = (WORKFLOWS / "security-assessment.yml").read_text()
+    assert workflow.index("Show findings on pending candidate check") < workflow.index("  approve-exception:")
+    (tmp_path / "assessment-summary.md").write_text("CVE-2026-117610 OpenVEX\n")
+    gh = tmp_path / "gh"
+    gh.write_text('#!/bin/bash\ncp "$6" "$CAPTURE"\n')
+    gh.chmod(0o755)
+    capture = tmp_path / "captured.json"
+    env = {
+        **os.environ,
+        "PATH": f"{tmp_path}:{os.environ['PATH']}",
+        "RUNNER_TEMP": str(tmp_path),
+        "CAPTURE": str(capture),
+        "GITHUB_REPOSITORY": "example/repo",
+        "CHECK_ID": "1",
+        "DECISION": "approval_required",
+        "DECIDE_RESULT": "success",
+        "APPROVAL_RESULT": "success",
+        "VERIFY_RESULT": "success",
+        "SOURCE_SHA": "source-sha",
+        "ASSESSMENT_SUMMARY": "CVE-2026-117610 OpenVEX\n",
+    }
+    pending = workflow.split("      - name: Show findings on pending candidate check\n", 1)[1]
+    pending = pending.split("\n      - name:", 1)[0]
+    pending_script = textwrap.dedent(pending.split("        run: |\n", 1)[1])
+    subprocess.run(  # noqa: S603  # Exercise the checked-in workflow step with a stub GitHub CLI.
+        ["/bin/bash", "-c", pending_script], env=env, capture_output=True, text=True, check=True
+    )
+    pending_payload = json.loads(capture.read_text())
+    assert pending_payload["status"] == "in_progress"
+    assert "CVE-2026-117610 OpenVEX" in pending_payload["output"]["summary"]
+
+    step = workflow.split("      - name: Complete the candidate check\n", 1)[1]
+    script = textwrap.dedent(step.split("        run: |\n", 1)[1])
+    subprocess.run(  # noqa: S603  # Exercise the checked-in workflow step with a stub GitHub CLI.
+        ["/bin/bash", "-c", script], env=env, capture_output=True, text=True, check=True
+    )
+    payload = json.loads(capture.read_text())
+    assert payload["conclusion"] == "success"
+    assert "candidate-bound" in payload["output"]["summary"]
+    assert "CVE-2026-117610 OpenVEX" in payload["output"]["summary"]

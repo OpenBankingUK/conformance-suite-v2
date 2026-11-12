@@ -399,6 +399,7 @@ def decisions(tmp_path: Path) -> dict[str, str]:
         "VERIFY_RESULT": "success",
         "DECIDE_RESULT": "success",
         "APPROVAL_RESULT": "skipped",
+        "ASSESSMENT_SUMMARY": "",
         "EXPECTED_PHRASE": f"APPROVE {SOURCE_SHA}",
         "EXPECTED_COMMENT": f"APPROVE {SOURCE_SHA}",
         "APPROVAL_PHRASE": f"APPROVE {SOURCE_SHA}",
@@ -437,15 +438,25 @@ def decisions(tmp_path: Path) -> dict[str, str]:
 
 def _platform(env: dict[str, str], platform: str, decision: str, *, promotion: bool = False) -> None:
     """Run the real producer, then model the decision artifact's download."""
-    env = {**env, "SLUG": platform, "DECISION": decision, "PROVENANCE": "verified"}
+    runner = Path(env["RUNNER_TEMP"])
+    report_dir = runner / "reports" / platform
+    report_dir.mkdir(parents=True, exist_ok=True)
+    (report_dir / "brief.md").write_text(f"{platform}: CVE-2026-117610 OpenVEX\n")
+    env = {
+        **env,
+        "SLUG": platform,
+        "DECISION": decision,
+        "PROVENANCE": "verified",
+        "REPORT_JSON": str(report_dir / "report.json"),
+    }
     result = _run(
         PROMOTION if promotion else WORKFLOW,
         "Save promotion scan decision" if promotion else "Save platform decision",
         env,
     )
     assert result.returncode == 0, result.stderr
-    runner = Path(env["RUNNER_TEMP"])
     shutil.move(runner / f"decision-{platform}.json", runner / "decisions" / f"decision-{platform}.json")
+    shutil.move(runner / f"brief-{platform}.md", runner / "decisions" / f"brief-{platform}.md")
 
 
 def _outputs(env: dict[str, str]) -> dict[str, str]:
@@ -902,6 +913,39 @@ def test_receipt_publication_and_finalization_are_gated_by_job_success() -> None
     assert "needs: [verify, decide, approve-exception]\n" in complete
     assert "if: always() && needs.verify.outputs.check_id != ''\n" in complete
     assert "continue-on-error:" not in complete
+
+
+def test_platform_summary_is_carried_to_final_check_after_approval(decisions: dict[str, str]) -> None:
+    _platform(decisions, PLATFORMS[0], "approval_required")
+    assert _combine(decisions).returncode == 0
+    Path(decisions["GITHUB_OUTPUT"]).write_text("")
+    result = _run(WORKFLOW, "Preserve candidate check summary", decisions)
+    assert result.returncode == 0, result.stderr
+    contents = Path(decisions["GITHUB_OUTPUT"]).read_text()
+    header, body = contents.split("\n", 1)
+    assert header.startswith("summary<<summary_")
+    delimiter = header.removeprefix("summary<<")
+    assert body.endswith(f"\n{delimiter}\n")
+    summary = body.removesuffix(f"\n{delimiter}\n")
+    assert all(f"{platform}: CVE-2026-117610 OpenVEX" in summary for platform in PLATFORMS)
+    workflow = (ROOT / WORKFLOW).read_text()
+    assert "summary: ${{ steps.summary.outputs.summary }}" in workflow
+    assert "ASSESSMENT_SUMMARY: ${{ needs.decide.outputs.summary }}" in _step(WORKFLOW, FINALIZE)
+    decisions.update(DECISION="approval_required", APPROVAL_RESULT="success", ASSESSMENT_SUMMARY=summary)
+    result = _run(WORKFLOW, FINALIZE, decisions)
+    assert result.returncode == 0, result.stderr
+    check = json.loads((Path(decisions["TEST_DATA"]) / "check-update.json").read_text())
+    assert check["conclusion"] == "success"
+    assert all(f"{platform}: CVE-2026-117610 OpenVEX" in check["output"]["summary"] for platform in PLATFORMS)
+
+
+def test_failed_decision_final_check_reports_unavailable_summary(decisions: dict[str, str]) -> None:
+    decisions.update(DECISION="", DECIDE_RESULT="failure", ASSESSMENT_SUMMARY="")
+    result = _run(WORKFLOW, FINALIZE, decisions)
+    assert result.returncode != 0
+    check = json.loads((Path(decisions["TEST_DATA"]) / "check-update.json").read_text())
+    assert check["conclusion"] == "failure"
+    assert "Platform summary unavailable" in check["output"]["summary"]
 
 
 @pytest.mark.parametrize(
