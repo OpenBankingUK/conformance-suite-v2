@@ -223,7 +223,9 @@ blocking findings as errors without SARIF suppression, informational open findin
 as warnings, and non-blocking VEX-assessed or accepted findings as
 notices/suppressed SARIF results. Platform summaries show raw Scout high/critical
 counts, VEX context and actionable blockers on the pending check and before
-promotion approval; full reports retain every finding after approval. The
+promotion approval. They also name missing DHI provenance base roles and their
+platform, and use the same final decision as the JSON report and action output.
+Full reports retain every finding after approval. The
 trusted `security-assessment.yml` workflow creates the stable `Vulnerability
 Scan` check on the PR head SHA (after validating the CI synthetic merge
 commit's base/head parents) or the push SHA. It retrieves scanner inputs from

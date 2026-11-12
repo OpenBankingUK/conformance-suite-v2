@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   high/critical findings even when signed DHI VEX assesses them as fixed or
   not affected; reported fixes remain hard blockers. Show per-platform blockers,
   raw Scout severity counts and VEX context on the PR check and promotion
-  summaries, including after approval.
+  summaries, including after approval. Include missing DHI provenance roles
+  and platform in those summaries and keep all report decisions consistent.
 
 - Preserve per-platform BuildKit max-mode provenance and SPDX SBOMs in the
   candidate OCI archives through approved Docker Hub publication, while

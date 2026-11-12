@@ -59,6 +59,8 @@ corresponding run. The reviewer must enter the exact comment shown in that run's
 summary: `APPROVE <full candidate image commit SHA>`. The workflow checks the
 actual Actions run approval record, environment name, and comment. A new
 assessment or promotion run requires a new approval; approvals are not reused.
+Missing DHI provenance is listed by platform and base role alongside the final
+policy decision, even when no vulnerabilities block.
 
 ## Require status checks
 
