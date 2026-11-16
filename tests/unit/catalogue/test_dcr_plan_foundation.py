@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
+from typing import cast
+
 import pytest
 
 from conformance.catalogue import (
