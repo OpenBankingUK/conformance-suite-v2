@@ -70,6 +70,12 @@ assessment or promotion run requires a new approval; approvals are not reused.
 Missing DHI provenance is listed by platform and base role alongside the final
 policy decision, even when no vulnerabilities block.
 
+When scanning completes and risk approval is required, the `Vulnerability Scan`
+check summary shows **Scanning complete - waiting for security-exception
+review.** The check stays in progress until approval finishes; this waiting
+message is not carried into the final result. It refers to the risk approval,
+not pull-request code review.
+
 ## Require status checks
 
 In **Settings → Rules → Rulesets**, verify each applicable ruleset for `main`,

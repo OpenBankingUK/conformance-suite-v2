@@ -691,6 +691,17 @@ def test_combiner_emits_exact_unquoted_decision(
     if not promotion:
         value = json.loads((Path(decisions["RUNNER_TEMP"]) / "assessment-receipt.json").read_text())
         assert value["decision"] == expected
+        decisions["DECISION"] = expected
+        result = _run(WORKFLOW, "Show findings on pending candidate check", decisions)
+        assert result.returncode == 0, result.stderr
+        check = json.loads((Path(decisions["TEST_DATA"]) / "check-update.json").read_text())
+        assert check["status"] == "in_progress"
+        assert "conclusion" not in check
+        waiting = "**Scanning complete - waiting for security-exception review.**"
+        assert check["output"]["summary"].startswith(waiting) == (expected == "approval_required")
+        summary = (Path(decisions["RUNNER_TEMP"]) / "assessment-summary.md").read_text()
+        assert waiting not in summary
+        assert check["output"]["summary"] == (f"{waiting}\n\n{summary}" if expected == "approval_required" else summary)
 
 
 @pytest.mark.parametrize("promotion", [False, True])
@@ -1097,6 +1108,7 @@ def test_platform_summary_is_carried_to_final_check_after_approval(decisions: di
     assert result.returncode == 0, result.stderr
     check = json.loads((Path(decisions["TEST_DATA"]) / "check-update.json").read_text())
     assert check["conclusion"] == "success"
+    assert "waiting for security-exception review" not in check["output"]["summary"]
     assert all(f"{platform}: CVE-2026-117610 OpenVEX" in check["output"]["summary"] for platform in PLATFORMS)
 
 

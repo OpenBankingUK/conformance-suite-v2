@@ -559,10 +559,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHECK_ID: ${{ needs.verify.outputs.check_id }}
+          DECISION: ${{ steps.combine.outputs.decision }}
         run: |
           set -euo pipefail
-          jq -n --rawfile summary "$RUNNER_TEMP/assessment-summary.md" \
-            '{status:"in_progress",output:{title:"Trusted vulnerability assessment",summary:$summary}}' \
+          jq -n --rawfile summary "$RUNNER_TEMP/assessment-summary.md" --arg decision "$DECISION" \
+            '{status:"in_progress",output:{title:"Trusted vulnerability assessment",
+              summary:(if $decision == "approval_required" then
+                "**Scanning complete - waiting for security-exception review.**\n\n" + $summary
+              else $summary end)}}' \
             > "$RUNNER_TEMP/check-update.json"
           gh api --method PATCH "repos/$GITHUB_REPOSITORY/check-runs/$CHECK_ID" \
             --input "$RUNNER_TEMP/check-update.json"

@@ -77,6 +77,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Show an explicit waiting-for-security-exception-review message on the pending
+  `Vulnerability Scan` check after scanning completes and risk approval is
+  required, without changing its in-progress status or approval gates.
 - Allow trusted vulnerability assessment of same-repository PR CI after GitHub
   workflow approval, including Copilot changes, only when every prior attempt
   was `action_required` with a confirmed empty job history and matching candidate
