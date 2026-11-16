@@ -1,12 +1,9 @@
-# Dependency and base-image updates feed the trusted post-CI vulnerability
-# assessment (docs/IMAGE_SECURITY_APPROVALS.md). A PR that fixes a
-# vulnerability covered by security/vulnerability-exceptions.toml must also
-# delete that exception; the gate fails with "stale" or "fix now available"
-# until it does.
+# Dependency and base-image updates use normal CI and the external Snyk/CodeQL
+# PR checks (docs/IMAGE_SECURITY_APPROVALS.md).
 #
 # Dependabot PR CI only receives Dependabot secrets, so the read-only
 # DOCKER_ORG_USERNAME and DOCKER_ORG_ACCESS_TOKEN must be configured there for
-# private DHI pulls. The trusted assessment uses repository Actions secrets.
+# private DHI pulls. Publishing credentials must remain environment-scoped.
 version: 2
 
 registries:
@@ -29,7 +26,7 @@ updates:
   - package-ecosystem: docker
     # Builder and runtime digests are refreshed together. New digests within
     # the fixed Python 3.14 / Debian 13 DHI family need no allowlist update;
-    # the trusted assessment verifies provenance and scans the candidate.
+    # CI validates the image contract and smoke-tests both platforms.
     directory: /
     registries: [dhi]
     schedule:
