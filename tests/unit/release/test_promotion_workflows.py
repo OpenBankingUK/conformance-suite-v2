@@ -55,7 +55,8 @@ def test_automatic_promotion_uses_only_successful_eligible_push_ci() -> None:
     assert "github.event.workflow_run.conclusion == 'success'" in resolve
     assert "github.event.workflow_run.event == 'push'" in resolve
     assert "github.event.workflow_run.head_repository.full_name == github.repository" in resolve
-    assert "github.event.workflow_run.head_branch == 'main'" in resolve
+    assert "head_branch == 'main'" not in resolve
+    assert "            release/*|preview/*) ;;\n" in resolve
     assert "startsWith(github.event.workflow_run.head_branch, 'release/')" in resolve
     assert "startsWith(github.event.workflow_run.head_branch, 'preview/')" in resolve
     assert "CI_RUN_ID: ${{ github.event.workflow_run.id }}" in resolve
