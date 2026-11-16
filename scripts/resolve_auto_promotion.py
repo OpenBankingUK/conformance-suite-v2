@@ -3,7 +3,7 @@
 This module is called only by the trusted ``workflow_run`` workflow after it
 has checked the CI run and its promotion-manifest artifact. It decides which
 channel and GitHub Environment apply, and turns ineligible or already-published
-candidates into a successful skip rather than an approval request.
+candidates into a successful skip rather than a publication attempt.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def resolve_auto_promotion(
     published_versions: set[str],
     tag_target_sha: str | None = None,
 ) -> AutoPromotionResolution:
-    """Decide whether an eligible CI candidate should enter its approval gate.
+    """Decide whether an eligible CI candidate should proceed to publication.
 
     Args:
         branch: Branch on which the successful CI run completed.

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Remove custom image/dependency security scans, scheduled rescans, and
+  security-risk and release-publishing approvals. Promote eligible candidates
+  directly after successful CI while preserving artifact integrity and release
+  validation. Keep the external Snyk PR check, CodeQL, secret scanning, Ruff
+  security lint, and normal CI/review requirements. Custom multi-platform
+  vulnerability surveillance and automatic vulnerability-issue updates stop.
+
 ### Security
 
 - Refresh the digest-pinned DHI Python 3.14 / Debian 13 builder and runtime

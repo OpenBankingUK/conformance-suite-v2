@@ -353,19 +353,17 @@ canonical `make check` gate with the local OpenAPI exclusion cleared, so it
 runs ruff, mypy, the complete offline `unit`/`component` suite with coverage,
 and a full tracked-file secret scan. `Docker Build` builds the image, starts a
 container, and probes `/health/`. `Image (linux/amd64|arm64)` builds each
-platform image; a separate trusted assessment scans both. The `Vulnerability
-Scan` check blocks fixable findings and requires candidate-bound approval for
-eligible unfixed high/critical findings, including Scout findings covered by
-signed VEX. Open the check and job summaries for findings and the full reports.
+platform image and verifies its identity and smoke-test behavior. The existing
+Snyk integration reports `code/snyk (Standards)` independently on PRs; GitHub
+CodeQL also remains required. Neither is called from the promotion workflow.
 
-To resolve a failing `Vulnerability Scan`, upgrade the affected package
-(`uv lock --upgrade-package <name>`) or base image. If no fix is possible and
-the risk is accepted, use the protected `security-exception` approval in each
-assessment and fresh promotion rescan. Persistent entries in
-`security/vulnerability-exceptions.toml` do not approve a candidate (see
-[CI/CD Strategy §3.2](CICD_STRATEGY.md#32-vulnerability-scanning-and-the-pr-gate)).
-You can run the policy locally against scanner output with
-`uv run python -m scripts.vulnerability_gate --help`.
+Custom container/dependency scans, daily rescans, and security/publishing
+approvals are removed. Successful eligible push CI starts automatic publication
+of the exact tested artifacts after release validation. Normal PR review,
+secret scanning, Ruff security lint, and image-integrity checks remain.
+Snyk/CodeQL PR analysis does not replace multi-platform OS/container scanning.
+See [CI/CD Strategy §3.2](CICD_STRATEGY.md#32-vulnerability-scanning-and-the-pr-gate)
+and the [configuration guide](IMAGE_SECURITY_APPROVALS.md).
 
 There is no live-network or end-to-end workflow. Container startup and health
 checking validate packaging only; they are not an Ozone or conformance-system

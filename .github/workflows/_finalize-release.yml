@@ -1,6 +1,6 @@
 name: Finalize release
 
-# Runs only after an Environment-approved promotion has published the exact
+# Runs only after a successful promotion has published the exact
 # candidate image. It records that publication on GitHub: an annotated Git tag
 # at the promoted source commit and an immutable GitHub Release whose notes
 # combine the curated CHANGELOG.md section, the published image digest, and
