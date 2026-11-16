@@ -342,17 +342,18 @@ installing the trusted promotion code does not require importing the MVP
 Docker/application implementation. A `release/2.0.0` branch containing that
 hardened Docker implementation automatically produces candidates with
 versions such as `2.0.0-beta.N`; once the same implementation reaches `main`,
-GA candidates are produced there too.
+GA candidates are produced there too, but they are not published while GA
+publication is paused (Section 5.2).
 
 ### 4.2 Workflow Files
 
 | File | Triggers | Purpose |
 |---|---|---|
 | `.github/workflows/ci.yml` | PR + push to protected branches | Canonical checks, unchanged baseline Docker smoke test, and gated multi-architecture candidate artifacts |
-| `.github/workflows/auto-promote.yml` | Successful CI completion for an eligible same-repository push | Verify the exact CI candidate and automatically start publication |
+| `.github/workflows/auto-promote.yml` | Successful CI completion for an eligible same-repository `release/*` or `preview/*` push | Verify the exact CI candidate and automatically start publication (GA from `main` paused, Section 5.2) |
 | `.github/workflows/promote-preview.yml` | Manual dispatch from `main` | Recovery/backfill path for a `preview/*` candidate |
 | `.github/workflows/promote-beta.yml` | Manual dispatch from `main` | Recovery/backfill path for a `release/X.Y.Z` beta candidate |
-| `.github/workflows/promote-ga.yml` | Manual dispatch from `main` | Recovery/backfill path for a tagged `main` candidate |
+| `.github/workflows/promote-ga.yml` | Manual dispatch from `main` (workflow disabled while GA is paused) | Recovery/backfill path for a tagged `main` candidate |
 | `.github/workflows/_promote-image.yml` | Called by automatic and manual promotion workflows | Validate the successful CI candidate and publish its exact artifacts |
 | `.github/workflows/_finalize-release.yml` | Called after successful beta or GA publication | Create the `vX.Y.Z-beta.N`/`vX.Y.Z` Git tag at the source SHA, create the immutable GitHub Release, and (GA only) open the develop merge-back PR |
 
@@ -532,6 +533,13 @@ since moved. `v2.0.0-beta.1` and `v2.0.0-beta.2` already have Releases.
 ---
 
 ### 5.2 Standard Release (Git Flow)
+
+> **GA publication is paused while the 2.0.0 MVP is in beta.** `main` has no
+> publication approval and its placeholder version is a valid GA version, so
+> `auto-promote.yml` ignores `main` pushes and the **Promote GA image** workflow
+> is disabled in repository Actions settings. To resume GA, restore `main` to
+> the `auto-promote.yml` branch guards and their tests, merge that change, then
+> re-enable **Promote GA image**. The steps below describe the resumed process.
 
 ```
 1. Create release branch from develop:

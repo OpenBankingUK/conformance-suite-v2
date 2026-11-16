@@ -84,3 +84,9 @@ recovery/backfill paths from `main`; they no longer take an assessment run ID.
 They still require a successful matching push CI run and immutable artifacts.
 After successful publication, beta/GA release finalization remains unchanged.
 Do not manufacture a version or publish an old candidate just to test rollout.
+
+GA publication is paused while 2.0.0 is in beta: automatic promotion ignores
+`main` pushes and **Promote GA image** is disabled in Actions settings. Without
+this, every `main` push would publish its placeholder version as GA with no
+approval. See [CI/CD Strategy §5.2](CICD_STRATEGY.md#52-standard-release-git-flow)
+to resume GA.

@@ -17,16 +17,18 @@ concurrency:
 jobs:
   resolve:
     name: Resolve candidate promotion
+    # GA publication from main is paused while the 2.0.0 MVP is in beta: main
+    # carries no approval gate, so its placeholder version would otherwise be
+    # published as GA on every push. Only beta and preview branches qualify.
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
-      (github.event.workflow_run.head_branch == 'main' ||
-       startsWith(github.event.workflow_run.head_branch, 'release/') ||
+      (startsWith(github.event.workflow_run.head_branch, 'release/') ||
        startsWith(github.event.workflow_run.head_branch, 'preview/'))
     runs-on: ubuntu-latest
     # Only cancel redundant *resolution* attempts for the same branch: once a
-    # run has decided should_promote=true and handed off to `promote`, a GA
+    # run has decided should_promote=true and handed off to `promote`, an
     # image publish can already be underway/complete, so the workflow must
     # not be cancellable past this point or a published image could be left
     # without its Git tag, GitHub Release, or (GA) merge-back PR (see
@@ -70,7 +72,7 @@ jobs:
           fi
           git check-ref-format --branch "$SOURCE_BRANCH" >/dev/null
           case "$SOURCE_BRANCH" in
-            main|release/*|preview/*) ;;
+            release/*|preview/*) ;;
             *) echo "::error::Branch is not eligible for automatic publication." >&2; exit 1 ;;
           esac
           run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID")"

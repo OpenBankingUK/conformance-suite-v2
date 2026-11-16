@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   security lint, and normal CI/review requirements. Custom multi-platform
   vulnerability surveillance and automatic vulnerability-issue updates stop.
 
+- Pause GA image publication while 2.0.0 is in beta. Automatic promotion no
+  longer publishes from `main`, whose placeholder version would otherwise be
+  released as GA on every push now that publication approvals are removed.
+
 ### Security
 
 - Refresh the digest-pinned DHI Python 3.14 / Debian 13 builder and runtime

@@ -174,7 +174,12 @@ def test_untrusted_or_failed_ci_cannot_handoff(
 
 @pytest.mark.parametrize(
     ("key", "value"),
-    [("CI_RUN_ID", "not-an-id"), ("SOURCE_SHA", "invalid"), ("SOURCE_BRANCH", "feature/not-a-release")],
+    [
+        ("CI_RUN_ID", "not-an-id"),
+        ("SOURCE_SHA", "invalid"),
+        ("SOURCE_BRANCH", "feature/not-a-release"),
+        ("SOURCE_BRANCH", "main"),
+    ],
 )
 def test_automatic_handoff_rejects_invalid_event_identity(handoff: dict[str, str], key: str, value: str) -> None:
     handoff[key] = value
