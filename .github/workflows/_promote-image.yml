@@ -363,17 +363,22 @@ jobs:
       - name: Save promotion scan decision
         env:
           DECISION: ${{ steps.scan.outputs.decision }}
+          REPORT_JSON: ${{ steps.scan.outputs.report-json }}
           SLUG: ${{ matrix.slug }}
         run: |
           set -euo pipefail
           jq -n --arg platform "$SLUG" --arg decision "$DECISION" \
             '{platform:$platform,decision:$decision}' > "$RUNNER_TEMP/decision-$SLUG.json"
+          cp "$(dirname "$REPORT_JSON")/brief.md" "$RUNNER_TEMP/brief-$SLUG.md"
 
       - name: Upload promotion scan decision
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: promotion-decision-${{ matrix.slug }}
-          path: ${{ runner.temp }}/decision-${{ matrix.slug }}.json
+          path: |
+            ${{ runner.temp }}/decision-${{ matrix.slug }}.json
+            ${{ runner.temp }}/brief-${{ matrix.slug }}.md
+          if-no-files-found: error
           retention-days: 7
 
   risk-decision:
@@ -404,7 +409,9 @@ jobs:
           set -euo pipefail
           decision=blocked
           files=("$RUNNER_TEMP"/decisions/decision-*.json)
-          if [[ "$RESCAN_RESULT" == "success" && "${#files[@]}" -eq 2 ]]; then
+          if [[ "$RESCAN_RESULT" == "success" && "${#files[@]}" -eq 2 \
+                && -s "$RUNNER_TEMP/decisions/brief-linux-amd64.md" \
+                && -s "$RUNNER_TEMP/decisions/brief-linux-arm64.md" ]]; then
             if ! decision="$(jq -nr \
               --slurpfile amd64 "$RUNNER_TEMP/decisions/decision-linux-amd64.json" \
               --slurpfile arm64 "$RUNNER_TEMP/decisions/decision-linux-arm64.json" '
@@ -428,12 +435,19 @@ jobs:
             echo "- Candidate: \`$INPUT_SOURCE_SHA\`"
             echo "- Decision: \`$decision\`"
             if [[ "$decision" == "approval_required" ]]; then
-              echo "- To accept this candidate's unfixed high-severity findings or missing DHI provenance, approve the \`security-exception\` environment with the exact comment: \`APPROVE $INPUT_SOURCE_SHA\`."
+              echo "- To accept eligible unfixed findings (including Scout high/critical findings with VEX) or missing DHI provenance, approve the \`security-exception\` environment with the exact comment: \`APPROVE $INPUT_SOURCE_SHA\`."
             elif [[ "$decision" == "blocked" ]]; then
               echo "- Fixable findings, invalid evidence, or scanner errors block promotion; these cannot be overridden."
             fi
             echo
-            echo "Review the per-platform vulnerability report artifacts before proceeding."
+            for platform in linux-amd64 linux-arm64; do
+              if [[ -s "$RUNNER_TEMP/decisions/brief-$platform.md" ]]; then
+                cat "$RUNNER_TEMP/decisions/brief-$platform.md"
+              else
+                echo "Missing $platform findings summary; review scanner reports."
+              fi
+            done
+            echo "Review the full per-platform vulnerability report artifacts before proceeding."
           } >> "$GITHUB_STEP_SUMMARY"
           if [[ "$decision" == "blocked" ]]; then
             echo "::error::Promotion is blocked. Review the re-scan evidence." >&2
