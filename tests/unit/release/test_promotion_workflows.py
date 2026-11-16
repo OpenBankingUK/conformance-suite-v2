@@ -197,7 +197,8 @@ def test_platform_decisions_show_findings_and_fail_closed_when_summary_missing(
     assert "linux-amd64: CVE-2026-117610 OpenVEX" in summary.read_text()
     if not missing_summary:
         assert "linux-arm64: CVE-2026-117610 OpenVEX" in summary.read_text()
-        assert "APPROVE source-sha" in summary.read_text()
+        assert "**Review deployments**" in summary.read_text()
+        assert "No comment is required." in summary.read_text()
     assert completed.returncode == (1 if missing_summary and filename == "_promote-image.yml" else 0)
 
 

@@ -561,9 +561,6 @@ def decisions(tmp_path: Path) -> dict[str, str]:
         "DECIDE_RESULT": "success",
         "APPROVAL_RESULT": "skipped",
         "ASSESSMENT_SUMMARY": "",
-        "EXPECTED_PHRASE": f"APPROVE {SOURCE_SHA}",
-        "EXPECTED_COMMENT": f"APPROVE {SOURCE_SHA}",
-        "APPROVAL_PHRASE": f"APPROVE {SOURCE_SHA}",
         "TRUSTED_ASSESSMENT_WORKFLOW_PATH": WORKFLOW,
     }
     _json(data / "check-response.json", {"id": 789})
@@ -654,7 +651,6 @@ def _receipt(env: dict[str, str], decision: str) -> None:
         "source_run_id": 123,
         "source_sha": SOURCE_SHA,
         "checked_sha": env["CHECK_SHA"],
-        "approval_phrase": f"APPROVE {SOURCE_SHA}",
     }
     for workflow, step in (
         (AUTOMATIC, "Download candidate-bound assessment receipt"),
@@ -685,9 +681,10 @@ def test_combiner_emits_exact_unquoted_decision(
         _platform(decisions, platform, decision, promotion=promotion)
     result = _combine(decisions, promotion=promotion)
     assert result.returncode == (1 if promotion and expected == "blocked" else 0), result.stderr
-    assert _outputs(decisions) == (
-        {"decision": expected} if promotion else {"decision": expected, "approval_phrase": f"APPROVE {SOURCE_SHA}"}
-    )
+    assert _outputs(decisions) == {"decision": expected}
+    summary = Path(decisions["GITHUB_STEP_SUMMARY"]).read_text()
+    assert ("No comment is required." in summary) == (expected == "approval_required")
+    assert ("**Review deployments**" in summary) == (expected == "approval_required")
     if not promotion:
         value = json.loads((Path(decisions["RUNNER_TEMP"]) / "assessment-receipt.json").read_text())
         assert value["decision"] == expected
@@ -780,7 +777,7 @@ def test_receipt_round_trip_through_both_promotion_consumers(decisions: dict[str
             [
                 {
                     "state": "approved",
-                    "comment": f"APPROVE {SOURCE_SHA}",
+                    "comment": "",
                     "environments": [{"name": "security-exception"}],
                 }
             ],
@@ -819,22 +816,47 @@ def test_approved_receipt_has_shared_archive_layout(decisions: dict[str, str]) -
 
 
 @pytest.mark.parametrize("workflow", [WORKFLOW, PROMOTION])
-@pytest.mark.parametrize("invalid", ["none", "wrong-sha", "wrong-state", "wrong-environment", "malformed"])
+@pytest.mark.parametrize("invalid", ["none", "wrong-state", "wrong-environment", "malformed", "unavailable"])
 def test_approval_is_fresh_and_candidate_bound(decisions: dict[str, str], invalid: str, workflow: str) -> None:
     approval = {
         "state": "rejected" if invalid == "wrong-state" else "approved",
-        "comment": f"APPROVE {HEAD_SHA if invalid == 'wrong-sha' else SOURCE_SHA}",
+        "comment": "",
         "environments": [{"name": "ga-release" if invalid == "wrong-environment" else "security-exception"}],
     }
     evidence = Path(decisions["TEST_DATA"]) / "approvals.json"
     _json(evidence, [] if invalid == "none" else [approval])
     if invalid == "malformed":
         evidence.write_text("{")
+    elif invalid == "unavailable":
+        evidence.unlink()
     step = APPROVE if workflow == WORKFLOW else "Require fresh candidate-bound environment approval"
     result = _run(workflow, step, decisions)
     assert result.returncode != 0
     assert result.stderr
     assert not (Path(decisions["RUNNER_TEMP"]) / "assessment-receipt.json").exists()
+    assert (Path(decisions["TEST_DATA"]) / "requests").read_text().splitlines() == [
+        f"GET repos/{REPOSITORY}/actions/runs/456/approvals?per_page=100"
+    ]
+
+
+@pytest.mark.parametrize("workflow", [WORKFLOW, PROMOTION])
+@pytest.mark.parametrize("comment", ["", "Reviewed the findings", None])
+def test_environment_approval_does_not_require_a_comment(
+    decisions: dict[str, str], workflow: str, comment: str | None
+) -> None:
+    approval: dict[str, object] = {
+        "state": "approved",
+        "environments": [{"name": "security-exception"}],
+    }
+    if comment is not None:
+        approval["comment"] = comment
+    _json(Path(decisions["TEST_DATA"]) / "approvals.json", [approval])
+    step = APPROVE if workflow == WORKFLOW else "Require fresh candidate-bound environment approval"
+    result = _run(workflow, step, decisions)
+    assert result.returncode == 0, result.stderr
+    assert (Path(decisions["TEST_DATA"]) / "requests").read_text().splitlines() == [
+        f"GET repos/{REPOSITORY}/actions/runs/456/approvals?per_page=100"
+    ]
 
 
 def _image_load_case(

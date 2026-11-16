@@ -267,8 +267,12 @@ through explicit GET requests to GitHub's content API with the verified SHA as
 `ref` (not from the uploaded copies) and treated only as data; trusted policy and
 scanner code are checked out from the default branch. Only an explicit
 absence of signed DHI provenance or eligible unfixed high-severity findings
-can pause for approval. The environment approval record and exact comment
-must be present in that assessment run; source-controlled candidate files
+can pause for approval. The protected `security-exception` environment approval
+must be recorded in that assessment run; pressing the approval button is
+sufficient and no comment is required. Promotion likewise requires its own
+run's environment approval when eligible risk remains. Verified run/commit
+identity and the assessment receipt bind approval to the candidate, rather
+than typed comment text; source-controlled candidate files
 cannot approve themselves. Fork PRs are not scanned with repository secrets
 and must be assessed from a same-repository branch. When available, Docker's
 VEX is fetched with

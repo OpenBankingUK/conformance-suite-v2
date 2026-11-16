@@ -475,7 +475,6 @@ jobs:
       contents: read
     outputs:
       decision: ${{ steps.combine.outputs.decision }}
-      approval_phrase: ${{ steps.combine.outputs.approval_phrase }}
       summary: ${{ steps.summary.outputs.summary }}
 
     steps:
@@ -519,11 +518,7 @@ jobs:
               decision=blocked
             fi
           fi
-          phrase="APPROVE $WORKFLOW_SHA"
-          {
-            echo "decision=$decision"
-            echo "approval_phrase=$phrase"
-          } >> "$GITHUB_OUTPUT"
+          echo "decision=$decision" >> "$GITHUB_OUTPUT"
           {
             echo "## Trusted vulnerability assessment"
             echo
@@ -531,7 +526,7 @@ jobs:
             echo "- Pull-request check commit: \`$CHECK_SHA\`"
             echo "- Decision: \`$decision\`"
             if [[ "$decision" == "approval_required" ]]; then
-              echo "- To accept eligible unfixed findings (including Scout high/critical findings with VEX) or explicitly missing DHI provenance, approve the \`security-exception\` environment with this exact comment: \`$phrase\`."
+              echo "- Review the findings, then use **Review deployments** in this workflow run to approve the \`security-exception\` environment for this candidate. No comment is required."
             elif [[ "$decision" == "blocked" ]]; then
               echo "- Fixable findings, invalid evidence, malformed policy data, and scanner errors cannot be overridden."
             fi
@@ -551,8 +546,7 @@ jobs:
             --arg source_run_id "$SOURCE_RUN_ID" \
             --arg source_sha "$SOURCE_SHA" \
             --arg checked_sha "$CHECK_SHA" \
-            --arg approval_phrase "$phrase" \
-            '{schema_version:1,decision:$decision,source_run_id:($source_run_id|tonumber),source_sha:$source_sha,checked_sha:$checked_sha,approval_phrase:$approval_phrase}' \
+            '{schema_version:1,decision:$decision,source_run_id:($source_run_id|tonumber),source_sha:$source_sha,checked_sha:$checked_sha}' \
             > "$RUNNER_TEMP/assessment-receipt.json"
 
       - name: Show findings on pending candidate check
@@ -610,17 +604,15 @@ jobs:
       - name: Require a fresh, candidate-bound environment approval
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_PHRASE: ${{ needs.decide.outputs.approval_phrase }}
         run: |
           set -euo pipefail
           approvals="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals?per_page=100")"
-          jq -e --arg phrase "$EXPECTED_PHRASE" '
+          jq -e '
             any(.[];
               .state == "approved"
-              and .comment == $phrase
               and any(.environments[]?; .name == "security-exception")
             )' <<<"$approvals" >/dev/null || {
-              echo "::error::The security-exception environment approval is missing or is not bound to the exact candidate SHA." >&2
+              echo "::error::The security-exception environment approval is missing from this candidate's assessment run." >&2
               exit 1
             }
 
@@ -629,15 +621,13 @@ jobs:
           SOURCE_RUN_ID: ${{ needs.verify.outputs.source_run_id }}
           SOURCE_SHA: ${{ needs.verify.outputs.source_sha }}
           CHECK_SHA: ${{ needs.verify.outputs.check_sha }}
-          APPROVAL_PHRASE: ${{ needs.decide.outputs.approval_phrase }}
         run: |
           set -euo pipefail
           jq -n \
             --arg run_id "$SOURCE_RUN_ID" \
             --arg source_sha "$SOURCE_SHA" \
             --arg checked_sha "$CHECK_SHA" \
-            --arg approval_phrase "$APPROVAL_PHRASE" \
-            '{schema_version:1,decision:"approved",source_run_id:($run_id|tonumber),source_sha:$source_sha,checked_sha:$checked_sha,approval_phrase:$approval_phrase}' \
+            '{schema_version:1,decision:"approved",source_run_id:($run_id|tonumber),source_sha:$source_sha,checked_sha:$checked_sha}' \
             > "$RUNNER_TEMP/assessment-receipt.json"
 
       - name: Upload candidate-bound approval receipt

@@ -77,6 +77,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Accept the protected `security-exception` approval button without a typed
+  comment in assessment and promotion. Keep approval scoped to the current
+  workflow run and verified candidate, retain fresh approvals and all hard
+  blockers, and show the required button action in the findings summary.
 - Show an explicit waiting-for-security-exception-review message on the pending
   `Vulnerability Scan` check after scanning completes and risk approval is
   required, without changing its in-progress status or approval gates.

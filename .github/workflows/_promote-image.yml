@@ -435,7 +435,7 @@ jobs:
             echo "- Candidate: \`$INPUT_SOURCE_SHA\`"
             echo "- Decision: \`$decision\`"
             if [[ "$decision" == "approval_required" ]]; then
-              echo "- To accept eligible unfixed findings (including Scout high/critical findings with VEX) or missing DHI provenance, approve the \`security-exception\` environment with the exact comment: \`APPROVE $INPUT_SOURCE_SHA\`."
+              echo "- Review the findings, then use **Review deployments** in this workflow run to approve the \`security-exception\` environment for this candidate. No comment is required."
             elif [[ "$decision" == "blocked" ]]; then
               echo "- Fixable findings, invalid evidence, or scanner errors block promotion; these cannot be overridden."
             fi
@@ -468,17 +468,15 @@ jobs:
       - name: Require fresh candidate-bound environment approval
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_COMMENT: APPROVE ${{ inputs.source_sha }}
         run: |
           set -euo pipefail
           approvals="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals?per_page=100")"
-          jq -e --arg comment "$EXPECTED_COMMENT" '
+          jq -e '
             any(.[];
               .state == "approved"
-              and .comment == $comment
               and any(.environments[]?; .name == "security-exception")
             )' <<<"$approvals" >/dev/null || {
-              echo "::error::Approval must be recorded for security-exception with the exact candidate SHA." >&2
+              echo "::error::The security-exception environment approval is missing from this candidate's promotion run." >&2
               exit 1
             }
 

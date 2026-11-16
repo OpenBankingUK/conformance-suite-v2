@@ -63,10 +63,13 @@ In **Repository Settings → Environments**, create an environment named
 
 When an approval is requested, inspect the per-platform findings on the pending
 check or promotion summary and both full platform report artifacts in the
-corresponding run. The reviewer must enter the exact comment shown in that run's
-summary: `APPROVE <full candidate image commit SHA>`. The workflow checks the
-actual Actions run approval record, environment name, and comment. A new
-assessment or promotion run requires a new approval; approvals are not reused.
+corresponding run. Use **Review deployments** in that workflow run and approve
+the `security-exception` environment. Pressing the approval button is sufficient;
+the comment is optional and may be empty. The workflow checks the actual
+Actions run approval record and environment name. Candidate identity stays
+bound through the verified CI run, commit and assessment receipt, not typed
+comment text. A new assessment or promotion run requires a new approval;
+approvals from another run are not reused.
 Missing DHI provenance is listed by platform and base role alongside the final
 policy decision, even when no vulnerabilities block.
 
