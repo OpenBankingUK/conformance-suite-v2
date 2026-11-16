@@ -81,18 +81,49 @@ jobs:
           jq -e \
             --arg path "$EXPECTED_CI_WORKFLOW_PATH" \
             --arg repository "$GITHUB_REPOSITORY" \
+            --arg run_id "$SOURCE_RUN_ID" \
             --argjson workflow_id "$EXPECTED_CI_WORKFLOW_ID" \
-            '.workflow_id == $workflow_id
+            '(.id | tostring) == $run_id
+             and .workflow_id == $workflow_id
              and .path == $path
              and .name == "CI"
+             and .repository.full_name == $repository
              and .head_repository.full_name == $repository
-             and .run_attempt == 1
+             and (.run_attempt | type == "number" and . >= 1 and . == floor)
+             and .status == "completed"
              and .conclusion == "success"
-             and (.event == "push" or .event == "pull_request")' \
+             and ((.event == "push" and .run_attempt == 1) or .event == "pull_request")' \
             <<<"$run_json" >/dev/null || {
-              echo "::error::CI run is not an eligible, successful first-attempt run from this repository." >&2
+              echo "::error::CI run is not an eligible, completed successful run from this repository." >&2
               exit 1
             }
+          run_attempt="$(jq -r '.run_attempt' <<<"$run_json")"
+          for (( prior_attempt=1; prior_attempt<run_attempt; prior_attempt++ )); do
+            prior_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/attempts/$prior_attempt")"
+            jq -e --argjson current "$run_json" --argjson attempt "$prior_attempt" \
+              '.id == $current.id
+               and .workflow_id == $current.workflow_id
+               and .path == $current.path
+               and .name == $current.name
+               and .repository.full_name == $current.repository.full_name
+               and .head_repository.full_name == $current.head_repository.full_name
+               and .head_sha == $current.head_sha
+               and .head_branch == $current.head_branch
+               and .event == $current.event
+               and .run_attempt == $attempt
+               and .status == "completed"
+               and .conclusion == "action_required"' \
+              <<<"$prior_json" >/dev/null || {
+                echo "::error::Prior CI attempt $prior_attempt is not an approval-only attempt of this candidate." >&2
+                exit 1
+              }
+            prior_jobs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/attempts/$prior_attempt/jobs?per_page=1")"
+            jq -e '.total_count == 0 and (.jobs | type == "array" and length == 0)' \
+              <<<"$prior_jobs" >/dev/null || {
+                echo "::error::Prior CI attempt $prior_attempt must have a confirmed empty job history." >&2
+                exit 1
+              }
+          done
           run_head_sha="$(jq -r '.head_sha' <<<"$run_json")"
           source_branch="$(jq -r '.head_branch' <<<"$run_json")"
           source_event="$(jq -r '.event' <<<"$run_json")"
@@ -136,6 +167,7 @@ jobs:
           jq -e \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg run_id "$candidate_run_id" \
+            --argjson run_attempt "$run_attempt" \
             --arg event "$source_event" \
             --arg branch "$source_branch" \
             --arg sha "$source_sha" \
@@ -145,7 +177,7 @@ jobs:
             '.schema_version == 1
              and .repository == $repository
              and (.run_id | tostring) == $run_id
-             and .run_attempt == 1
+             and .run_attempt == $run_attempt
              and .event == $event
              and .workflow_sha == $sha
              and .workflow_sha_under_test == $sha
@@ -184,6 +216,7 @@ jobs:
           check_id="$(gh api --method POST "repos/$GITHUB_REPOSITORY/check-runs" --input <(printf '%s' "$check_json") --jq '.id')"
           {
             echo "source_run_id=$candidate_run_id"
+            echo "source_run_attempt=$run_attempt"
             echo "source_sha=$source_sha"
             echo "source_branch=$source_branch"
             echo "check_sha=$check_sha"
@@ -197,13 +230,41 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ steps.identity.outputs.source_sha }}
           SOURCE_RUN_ID: ${{ steps.identity.outputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ steps.identity.outputs.source_run_attempt }}
           SOURCE_BRANCH: ${{ steps.identity.outputs.source_branch }}
           PR_NUMBER: ${{ steps.identity.outputs.pr_number }}
           CHECK_SHA: ${{ steps.identity.outputs.check_sha }}
+          EXPECTED_CI_WORKFLOW_ID: "268848247"
+          EXPECTED_CI_WORKFLOW_PATH: ".github/workflows/ci.yml"
         run: |
           set -euo pipefail
           context="$RUNNER_TEMP/candidate-context/artifacts/candidate-context.json"
           run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID")"
+          jq -e \
+            --arg run_id "$SOURCE_RUN_ID" \
+            --argjson run_attempt "$SOURCE_RUN_ATTEMPT" \
+            --argjson workflow_id "$EXPECTED_CI_WORKFLOW_ID" \
+            --arg path "$EXPECTED_CI_WORKFLOW_PATH" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg head "$CHECK_SHA" \
+            --arg branch "$SOURCE_BRANCH" \
+            --arg pr_number "$PR_NUMBER" \
+            '(.id | tostring) == $run_id
+             and .run_attempt == $run_attempt
+             and .status == "completed"
+             and .conclusion == "success"
+             and .workflow_id == $workflow_id
+             and .path == $path
+             and .name == "CI"
+             and .repository.full_name == $repository
+             and .head_repository.full_name == $repository
+             and .head_sha == $head
+             and .head_branch == $branch
+             and .event == (if $pr_number != "" then "pull_request" else "push" end)' \
+            <<<"$run_json" >/dev/null || {
+              echo "::error::The CI run identity, attempt or successful completion changed before source retrieval." >&2
+              exit 1
+            }
           pr_base_sha=""
           if [[ -n "$PR_NUMBER" ]]; then
             pr_json="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
@@ -224,6 +285,7 @@ jobs:
           jq -e \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg run_id "$SOURCE_RUN_ID" \
+            --argjson run_attempt "$SOURCE_RUN_ATTEMPT" \
             --arg source_sha "$SOURCE_SHA" \
             --arg source_branch "$SOURCE_BRANCH" \
             --arg event "$(jq -r '.event' <<<"$run_json")" \
@@ -234,7 +296,7 @@ jobs:
             '.schema_version == 1
              and .repository == $repository
              and (.run_id | tostring) == $run_id
-             and .run_attempt == 1
+             and .run_attempt == $run_attempt
              and .event == $event
              and .workflow_sha == $workflow_sha
              and .workflow_sha_under_test == $workflow_sha

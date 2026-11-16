@@ -77,6 +77,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Allow trusted vulnerability assessment of same-repository PR CI after GitHub
+  workflow approval, including Copilot changes, only when every prior attempt
+  was `action_required` with a confirmed empty job history and matching candidate
+  identity. Keep push candidates restricted to attempt 1, bind candidate context
+  to the accepted attempt, and recheck run identity and completion before
+  retrieving source inputs.
 - Trusted assessment and promotion re-scans emit unquoted decisions only
   after validating exactly one result per supported platform. Missing,
   malformed or unknown results remain blocking, including alongside eligible

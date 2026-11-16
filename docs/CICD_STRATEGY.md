@@ -248,11 +248,20 @@ as success.
 
 **Trust model**: CI builds PR and push image archives, but no longer runs
 secret-bearing vulnerability scans. A separate workflow on the trusted
-default branch verifies the exact CI workflow ID/path, first attempt, run
-result, PR association and merge parents before reading the image artifact.
+default branch verifies the exact CI workflow ID/path, completed successful
+run, PR association and merge parents before reading the image artifact.
+Push candidates must use attempt 1. Same-repository PR candidates may use a
+later attempt after GitHub's explicit **Approve and run workflows**, but every
+earlier attempt must match the same run, workflow, repository, head SHA, head
+branch and event, have completed with `action_required`, and have zero jobs
+confirmed by GitHub's attempt-specific jobs API. Missing metadata or job history,
+any executed job, or any other prior conclusion blocks assessment. This permits
+approval-only Copilot workflow retries, not reruns of previously executed CI.
 CI's `candidate-context` artifact preserves the repository-relative
 `artifacts/candidate-context.json` path alongside `Dockerfile`, `pyproject.toml`
-and `uv.lock`; both identity checks read that nested JSON after download.
+and `uv.lock`; both identity checks bind that nested JSON to the accepted current
+attempt after download. Before source retrieval, the assessor rechecks that
+the run still has the same identity and attempt and remains completed successfully.
 The source Dockerfile and dependency lock are fetched from the verified commit
 through explicit GET requests to GitHub's content API with the verified SHA as
 `ref` (not from the uploaded copies) and treated only as data; trusted policy and

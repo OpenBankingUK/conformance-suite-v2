@@ -14,6 +14,14 @@ code does not create or modify environments, reviewers, secrets, or rulesets.
   uploaded amd64 and arm64 images with trusted policy code from the default
   branch. The check is `Vulnerability Scan`, attached to the PR head commit
   (or push commit).
+- Push CI must be attempt 1. Same-repository PR CI may follow GitHub's
+  **Approve and run workflows** only when every earlier attempt has matching
+  candidate/run/workflow identity, concluded `action_required`, and has zero jobs
+  confirmed by the attempt-specific jobs API. Missing history or any executed
+  prior job blocks assessment. Candidate context must match the accepted attempt;
+  run identity, attempt and successful completion are rechecked before source
+  retrieval. This does not bypass GitHub workflow approval or vulnerability
+  risk approval.
 - Open findings with fixes available at any severity are blocked. Unfixed
   high/critical/unknown findings and explicitly missing signed SLSA v1 DHI
   provenance may be accepted only by a fresh GitHub Environment approval.
