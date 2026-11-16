@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.18] - 2026-11-16
+
 ### Changed
 
 - Remove custom image vulnerability assessments, rescans and publication
@@ -28,7 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verified VEX; the findings remained in Docker Hub's summary for the preview
   despite its preserved max-mode provenance and SBOM. Custom image
   vulnerability scans have since been retired, so these findings are no
-  longer re-assessed or used as a publication gate.
+  longer re-assessed or used as a publication gate. The 2.0.0-beta.18 runtime
+  keeps the same DHI Expat package, so Docker Hub may report the same findings.
 
 ### Security
 
@@ -36,14 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arm64, updating gcc-14, libgcc-s1 and libstdc++6. The two existing Expat
   High findings remain unchanged.
 - Preserve per-platform BuildKit max-mode provenance and SPDX SBOMs in the
-  candidate OCI archives through approved Docker Hub publication, while
-  continuing to scan and promote the exact runnable image manifest digests.
-  Keep trusted assessment and promotion compatible with legacy Docker and
-  unattested OCI candidate archives until release branches adopt the new build.
-  Include a Docker import view of the same OCI blobs so the existing trusted
-  assessor can load the new archive during rollout without a check bypass.
-  Pass the validated published version through the step environment instead of
-  expanding it inline in the publication shell.
+  candidate OCI archives through Docker Hub publication, while continuing to
+  promote the exact runnable image manifest digests. Keep promotion compatible
+  with legacy Docker and unattested OCI candidate archives. Pass the validated
+  published version through the step environment instead of expanding it
+  inline in the publication shell.
 
 ## [2.0.0-beta.17] - 2026-11-10
 
@@ -773,7 +773,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.17...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.18...HEAD
+[2.0.0-beta.18]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.17...v2.0.0-beta.18
 [2.0.0-beta.17]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.16...v2.0.0-beta.17
 [2.0.0-beta.16]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.15...v2.0.0-beta.16
 [2.0.0-beta.15]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.14...v2.0.0-beta.15
