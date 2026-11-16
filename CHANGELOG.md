@@ -9,19 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Remove custom image vulnerability assessments, rescans and publication
+  approval gates. Automatically publish eligible beta and preview candidates
+  after CI; pause GA publication while 2.0.0 remains in beta. Retain the
+  external Snyk PR check, CodeQL, artifact integrity checks and release
+  validation.
+
 ### Known issues
 
 - Docker Hub displayed two High findings in Debian's `libexpat1` package
   (CVE-2026-117610 and CVE-2026-118370) on 2.0.0-beta.17 and the 2.0.0-dev.1
-  preview on 2026-11-11. The assessed package had no scanner-reported fixed
-  version. Docker's signed VEX for the Docker Hardened Images (DHI) Python
-  runtime base marks both `not_affected` because DHI backported the upstream
-  expat fixes. The release security assessment and promotion scans apply this
-  verified VEX, so these findings do not block publication. The findings
-  remained in Docker Hub's summary for the preview despite its preserved
-  max-mode provenance and SBOM; scanning the DHI base image on its own in
-  Docker Scout shows no High findings. Fixable findings and all other
-  vulnerability gates are unchanged.
+  preview on 2026-11-11. At the time, the assessed package had no
+  scanner-reported fixed version. Docker's signed VEX for the Docker Hardened
+  Images (DHI) Python runtime base marks both `not_affected` because DHI
+  backported the upstream expat fixes. The historical assessment applied this
+  verified VEX; the findings remained in Docker Hub's summary for the preview
+  despite its preserved max-mode provenance and SBOM. Custom image
+  vulnerability scans have since been retired, so these findings are no
+  longer re-assessed or used as a publication gate.
 
 ### Security
 

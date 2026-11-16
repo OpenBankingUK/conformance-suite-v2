@@ -241,7 +241,7 @@ def _summary_args(tmp_path: Path, *, version: str = "2.0.0-dev.1", channel: str 
         ),
     ],
 )
-def test_writes_exact_preapproval_summary(
+def test_writes_exact_publication_summary(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     version: str,
@@ -257,7 +257,7 @@ def test_writes_exact_preapproval_summary(
     result_with_summary = json.loads(capsys.readouterr().out)
     branch = args[args.index("--branch") + 1]
     assert (tmp_path / "summary.md").read_text() == (
-        "## Release proposed for approval\n\n"
+        "## Release candidate\n\n"
         "Proposed publication only; this summary does not mean the image has been published.\n\n"
         "| Release detail | Value |\n"
         "| --- | --- |\n"
@@ -266,10 +266,10 @@ def test_writes_exact_preapproval_summary(
         f"| Publication tags | {publication_tags} |\n"
         f"| Moving tag | {moving_tag} |\n"
         f"| Channel | <code>{channel}</code> |\n"
-        f"| Approval environment | <code>{channel}-release</code> |\n"
+        f"| Publication environment | <code>{channel}-release</code> |\n"
         f"| Source branch | <code>{branch}</code> |\n"
         f"| Source commit | <code>{'a' * 40}</code> |\n\n"
-        "Tag eligibility reflects the current registry inventory. Publication is revalidated after approval.\n"
+        "Tag eligibility reflects the current registry inventory and is revalidated before publication.\n"
     )
     assert result_with_summary["update_beta_latest"] is eligible
     summary_index = args.index("--summary-file")
@@ -284,8 +284,8 @@ def test_summary_appends_and_escapes_environment_context(tmp_path: Path) -> None
     summary_path.write_text("Existing summary\n\n")
     assert main(args) == 0
     summary = summary_path.read_text()
-    assert summary.startswith("Existing summary\n\n## Release proposed for approval")
-    assert "| Approval environment | <code>preview&#124;&lt;script&gt;  review &amp; approve</code> |" in summary
+    assert summary.startswith("Existing summary\n\n## Release candidate")
+    assert "| Publication environment | <code>preview&#124;&lt;script&gt;  review &amp; approve</code> |" in summary
 
 
 @pytest.mark.parametrize(
@@ -320,27 +320,24 @@ def test_summary_write_failure_is_explicit(tmp_path: Path, capsys: pytest.Captur
     assert "summary.md" in captured.err
 
 
-def test_summary_is_in_ungated_job_for_verified_candidate() -> None:
+def test_summary_is_in_read_only_job_for_verified_candidate() -> None:
     workflow = (Path(__file__).resolve().parents[3] / ".github/workflows/_promote-image.yml").read_text()
-    locate = workflow.split("  locate:\n", 1)[1].split("  rescan:\n", 1)[0]
+    locate = workflow.split("  locate:\n", 1)[1].split("  promote:\n", 1)[0]
     assert "    environment:" not in locate
     assert locate.index("- name: Locate and verify") < locate.index("- name: Download the promotion manifest")
     assert locate.index("- name: Download the promotion manifest") < locate.index("- name: Summarize the release")
     assert "run-id: ${{ steps.locate.outputs.run_id }}" in locate
     assert "uv run python -m scripts.list_docker_hub_tags > published-versions.txt" in locate
-    assert '--manifest "$RUNNER_TEMP/approval-manifest/promotion-manifest.json"' in locate
+    assert '--manifest "$RUNNER_TEMP/publication-manifest/promotion-manifest.json"' in locate
     assert '--source-sha "$INPUT_SOURCE_SHA"' in locate
     assert '--branch "$INPUT_BRANCH"' in locate
     assert '--channel "$INPUT_CHANNEL"' in locate
     assert '--summary-file "$GITHUB_STEP_SUMMARY"' in locate
-    assert '--environment-name "$APPROVAL_ENVIRONMENT"' in locate
+    assert '--environment-name "$PUBLICATION_ENVIRONMENT"' in locate
     assert 'args+=(--tag "$INPUT_TAG")' in locate
     assert 'uv run python -m scripts.validate_promotion "${args[@]}"' in locate
-    assert "    needs: locate\n" in workflow.split("  rescan:\n", 1)[1]
     protected_job = workflow.split("  promote:\n", 1)[1]
-    assert "    needs: [locate, rescan, risk-decision, approve-risk]\n" in protected_job
-    assert "needs['risk-decision'].outputs.decision == 'approval_required'" in workflow.split("  approve-risk:\n", 1)[1]
-    assert "environment: security-exception" in workflow.split("  approve-risk:\n", 1)[1]
+    assert "    needs: locate\n" in protected_job
     assert "    environment: ${{ inputs.environment_name }}\n" in protected_job
 
 
