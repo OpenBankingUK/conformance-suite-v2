@@ -81,18 +81,49 @@ jobs:
           jq -e \
             --arg path "$EXPECTED_CI_WORKFLOW_PATH" \
             --arg repository "$GITHUB_REPOSITORY" \
+            --arg run_id "$SOURCE_RUN_ID" \
             --argjson workflow_id "$EXPECTED_CI_WORKFLOW_ID" \
-            '.workflow_id == $workflow_id
+            '(.id | tostring) == $run_id
+             and .workflow_id == $workflow_id
              and .path == $path
              and .name == "CI"
+             and .repository.full_name == $repository
              and .head_repository.full_name == $repository
-             and .run_attempt == 1
+             and (.run_attempt | type == "number" and . >= 1 and . == floor)
+             and .status == "completed"
              and .conclusion == "success"
-             and (.event == "push" or .event == "pull_request")' \
+             and ((.event == "push" and .run_attempt == 1) or .event == "pull_request")' \
             <<<"$run_json" >/dev/null || {
-              echo "::error::CI run is not an eligible, successful first-attempt run from this repository." >&2
+              echo "::error::CI run is not an eligible, completed successful run from this repository." >&2
               exit 1
             }
+          run_attempt="$(jq -r '.run_attempt' <<<"$run_json")"
+          for (( prior_attempt=1; prior_attempt<run_attempt; prior_attempt++ )); do
+            prior_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/attempts/$prior_attempt")"
+            jq -e --argjson current "$run_json" --argjson attempt "$prior_attempt" \
+              '.id == $current.id
+               and .workflow_id == $current.workflow_id
+               and .path == $current.path
+               and .name == $current.name
+               and .repository.full_name == $current.repository.full_name
+               and .head_repository.full_name == $current.head_repository.full_name
+               and .head_sha == $current.head_sha
+               and .head_branch == $current.head_branch
+               and .event == $current.event
+               and .run_attempt == $attempt
+               and .status == "completed"
+               and .conclusion == "action_required"' \
+              <<<"$prior_json" >/dev/null || {
+                echo "::error::Prior CI attempt $prior_attempt is not an approval-only attempt of this candidate." >&2
+                exit 1
+              }
+            prior_jobs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/attempts/$prior_attempt/jobs?per_page=1")"
+            jq -e '.total_count == 0 and (.jobs | type == "array" and length == 0)' \
+              <<<"$prior_jobs" >/dev/null || {
+                echo "::error::Prior CI attempt $prior_attempt must have a confirmed empty job history." >&2
+                exit 1
+              }
+          done
           run_head_sha="$(jq -r '.head_sha' <<<"$run_json")"
           source_branch="$(jq -r '.head_branch' <<<"$run_json")"
           source_event="$(jq -r '.event' <<<"$run_json")"
@@ -136,6 +167,7 @@ jobs:
           jq -e \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg run_id "$candidate_run_id" \
+            --argjson run_attempt "$run_attempt" \
             --arg event "$source_event" \
             --arg branch "$source_branch" \
             --arg sha "$source_sha" \
@@ -145,7 +177,7 @@ jobs:
             '.schema_version == 1
              and .repository == $repository
              and (.run_id | tostring) == $run_id
-             and .run_attempt == 1
+             and .run_attempt == $run_attempt
              and .event == $event
              and .workflow_sha == $sha
              and .workflow_sha_under_test == $sha
@@ -184,6 +216,7 @@ jobs:
           check_id="$(gh api --method POST "repos/$GITHUB_REPOSITORY/check-runs" --input <(printf '%s' "$check_json") --jq '.id')"
           {
             echo "source_run_id=$candidate_run_id"
+            echo "source_run_attempt=$run_attempt"
             echo "source_sha=$source_sha"
             echo "source_branch=$source_branch"
             echo "check_sha=$check_sha"
@@ -197,13 +230,41 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ steps.identity.outputs.source_sha }}
           SOURCE_RUN_ID: ${{ steps.identity.outputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ steps.identity.outputs.source_run_attempt }}
           SOURCE_BRANCH: ${{ steps.identity.outputs.source_branch }}
           PR_NUMBER: ${{ steps.identity.outputs.pr_number }}
           CHECK_SHA: ${{ steps.identity.outputs.check_sha }}
+          EXPECTED_CI_WORKFLOW_ID: "268848247"
+          EXPECTED_CI_WORKFLOW_PATH: ".github/workflows/ci.yml"
         run: |
           set -euo pipefail
           context="$RUNNER_TEMP/candidate-context/artifacts/candidate-context.json"
           run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID")"
+          jq -e \
+            --arg run_id "$SOURCE_RUN_ID" \
+            --argjson run_attempt "$SOURCE_RUN_ATTEMPT" \
+            --argjson workflow_id "$EXPECTED_CI_WORKFLOW_ID" \
+            --arg path "$EXPECTED_CI_WORKFLOW_PATH" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg head "$CHECK_SHA" \
+            --arg branch "$SOURCE_BRANCH" \
+            --arg pr_number "$PR_NUMBER" \
+            '(.id | tostring) == $run_id
+             and .run_attempt == $run_attempt
+             and .status == "completed"
+             and .conclusion == "success"
+             and .workflow_id == $workflow_id
+             and .path == $path
+             and .name == "CI"
+             and .repository.full_name == $repository
+             and .head_repository.full_name == $repository
+             and .head_sha == $head
+             and .head_branch == $branch
+             and .event == (if $pr_number != "" then "pull_request" else "push" end)' \
+            <<<"$run_json" >/dev/null || {
+              echo "::error::The CI run identity, attempt or successful completion changed before source retrieval." >&2
+              exit 1
+            }
           pr_base_sha=""
           if [[ -n "$PR_NUMBER" ]]; then
             pr_json="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
@@ -224,6 +285,7 @@ jobs:
           jq -e \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg run_id "$SOURCE_RUN_ID" \
+            --argjson run_attempt "$SOURCE_RUN_ATTEMPT" \
             --arg source_sha "$SOURCE_SHA" \
             --arg source_branch "$SOURCE_BRANCH" \
             --arg event "$(jq -r '.event' <<<"$run_json")" \
@@ -234,7 +296,7 @@ jobs:
             '.schema_version == 1
              and .repository == $repository
              and (.run_id | tostring) == $run_id
-             and .run_attempt == 1
+             and .run_attempt == $run_attempt
              and .event == $event
              and .workflow_sha == $workflow_sha
              and .workflow_sha_under_test == $workflow_sha
@@ -413,7 +475,6 @@ jobs:
       contents: read
     outputs:
       decision: ${{ steps.combine.outputs.decision }}
-      approval_phrase: ${{ steps.combine.outputs.approval_phrase }}
       summary: ${{ steps.summary.outputs.summary }}
 
     steps:
@@ -457,11 +518,7 @@ jobs:
               decision=blocked
             fi
           fi
-          phrase="APPROVE $WORKFLOW_SHA"
-          {
-            echo "decision=$decision"
-            echo "approval_phrase=$phrase"
-          } >> "$GITHUB_OUTPUT"
+          echo "decision=$decision" >> "$GITHUB_OUTPUT"
           {
             echo "## Trusted vulnerability assessment"
             echo
@@ -469,7 +526,7 @@ jobs:
             echo "- Pull-request check commit: \`$CHECK_SHA\`"
             echo "- Decision: \`$decision\`"
             if [[ "$decision" == "approval_required" ]]; then
-              echo "- To accept eligible unfixed findings (including Scout high/critical findings with VEX) or explicitly missing DHI provenance, approve the \`security-exception\` environment with this exact comment: \`$phrase\`."
+              echo "- Review the findings, then use **Review deployments** in this workflow run to approve the \`security-exception\` environment for this candidate. No comment is required."
             elif [[ "$decision" == "blocked" ]]; then
               echo "- Fixable findings, invalid evidence, malformed policy data, and scanner errors cannot be overridden."
             fi
@@ -489,18 +546,21 @@ jobs:
             --arg source_run_id "$SOURCE_RUN_ID" \
             --arg source_sha "$SOURCE_SHA" \
             --arg checked_sha "$CHECK_SHA" \
-            --arg approval_phrase "$phrase" \
-            '{schema_version:1,decision:$decision,source_run_id:($source_run_id|tonumber),source_sha:$source_sha,checked_sha:$checked_sha,approval_phrase:$approval_phrase}' \
+            '{schema_version:1,decision:$decision,source_run_id:($source_run_id|tonumber),source_sha:$source_sha,checked_sha:$checked_sha}' \
             > "$RUNNER_TEMP/assessment-receipt.json"
 
       - name: Show findings on pending candidate check
         env:
           GH_TOKEN: ${{ github.token }}
           CHECK_ID: ${{ needs.verify.outputs.check_id }}
+          DECISION: ${{ steps.combine.outputs.decision }}
         run: |
           set -euo pipefail
-          jq -n --rawfile summary "$RUNNER_TEMP/assessment-summary.md" \
-            '{status:"in_progress",output:{title:"Trusted vulnerability assessment",summary:$summary}}' \
+          jq -n --rawfile summary "$RUNNER_TEMP/assessment-summary.md" --arg decision "$DECISION" \
+            '{status:"in_progress",output:{title:"Trusted vulnerability assessment",
+              summary:(if $decision == "approval_required" then
+                "**Scanning complete - waiting for security-exception review.**\n\n" + $summary
+              else $summary end)}}' \
             > "$RUNNER_TEMP/check-update.json"
           gh api --method PATCH "repos/$GITHUB_REPOSITORY/check-runs/$CHECK_ID" \
             --input "$RUNNER_TEMP/check-update.json"
@@ -544,17 +604,15 @@ jobs:
       - name: Require a fresh, candidate-bound environment approval
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_PHRASE: ${{ needs.decide.outputs.approval_phrase }}
         run: |
           set -euo pipefail
           approvals="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals?per_page=100")"
-          jq -e --arg phrase "$EXPECTED_PHRASE" '
+          jq -e '
             any(.[];
               .state == "approved"
-              and .comment == $phrase
               and any(.environments[]?; .name == "security-exception")
             )' <<<"$approvals" >/dev/null || {
-              echo "::error::The security-exception environment approval is missing or is not bound to the exact candidate SHA." >&2
+              echo "::error::The security-exception environment approval is missing from this candidate's assessment run." >&2
               exit 1
             }
 
@@ -563,15 +621,13 @@ jobs:
           SOURCE_RUN_ID: ${{ needs.verify.outputs.source_run_id }}
           SOURCE_SHA: ${{ needs.verify.outputs.source_sha }}
           CHECK_SHA: ${{ needs.verify.outputs.check_sha }}
-          APPROVAL_PHRASE: ${{ needs.decide.outputs.approval_phrase }}
         run: |
           set -euo pipefail
           jq -n \
             --arg run_id "$SOURCE_RUN_ID" \
             --arg source_sha "$SOURCE_SHA" \
             --arg checked_sha "$CHECK_SHA" \
-            --arg approval_phrase "$APPROVAL_PHRASE" \
-            '{schema_version:1,decision:"approved",source_run_id:($run_id|tonumber),source_sha:$source_sha,checked_sha:$checked_sha,approval_phrase:$approval_phrase}' \
+            '{schema_version:1,decision:"approved",source_run_id:($run_id|tonumber),source_sha:$source_sha,checked_sha:$checked_sha}' \
             > "$RUNNER_TEMP/assessment-receipt.json"
 
       - name: Upload candidate-bound approval receipt

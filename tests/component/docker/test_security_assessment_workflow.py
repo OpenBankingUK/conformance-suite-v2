@@ -55,6 +55,11 @@ gh() {
   case "$method $endpoint" in
     "GET repos/$GITHUB_REPOSITORY/actions/runs/123")
       response="$TEST_DATA/run.json" ;;
+    "GET repos/$GITHUB_REPOSITORY/actions/runs/123/attempts/"*"/jobs?per_page=1")
+      local attempt="${endpoint%/jobs*}"
+      response="$TEST_DATA/attempt-${attempt##*/}-jobs.json" ;;
+    "GET repos/$GITHUB_REPOSITORY/actions/runs/123/attempts/"*)
+      response="$TEST_DATA/attempt-${endpoint##*/}.json" ;;
     "GET repos/$GITHUB_REPOSITORY/actions/runs/123/artifacts?per_page=100")
       response="$TEST_DATA/artifacts.json" ;;
     "GET repos/$GITHUB_REPOSITORY/commits/$TEST_HEAD_SHA/pulls")
@@ -207,8 +212,10 @@ def handoff(tmp_path: Path, request: pytest.FixtureRequest) -> dict[str, str]:
             "workflow_id": 268848247,
             "path": ".github/workflows/ci.yml",
             "name": "CI",
+            "repository": {"full_name": REPOSITORY},
             "head_repository": {"full_name": REPOSITORY},
             "run_attempt": 1,
+            "status": "completed",
             "conclusion": "success",
             "event": event,
             "head_sha": HEAD_SHA if is_pr else SOURCE_SHA,
@@ -236,6 +243,7 @@ def _identity(env: dict[str, str]) -> None:
     outputs = dict(line.split("=", 1) for line in Path(env["GITHUB_OUTPUT"]).read_text().splitlines())
     assert outputs == {
         "source_run_id": "123",
+        "source_run_attempt": env["RUN_ATTEMPT"],
         "source_sha": SOURCE_SHA,
         "source_branch": env["HEAD_REF"] or "main",
         "check_sha": HEAD_SHA if env["PR_NUMBER"] else SOURCE_SHA,
@@ -273,6 +281,133 @@ def test_manual_assessment_rejects_non_main_ref(handoff: dict[str, str]) -> None
     assert not (Path(handoff["TEST_DATA"]) / "requests").exists()
 
 
+def _approval_retry(env: dict[str, str], attempt: int) -> None:
+    data = Path(env["TEST_DATA"])
+    run = json.loads((data / "run.json").read_text())
+    run["run_attempt"] = attempt
+    _json(data / "run.json", run)
+    for prior in range(1, attempt):
+        _json(data / f"attempt-{prior}.json", {**run, "run_attempt": prior, "conclusion": "action_required"})
+        _json(data / f"attempt-{prior}-jobs.json", {"total_count": 0, "jobs": []})
+    env["RUN_ATTEMPT"] = str(attempt)
+    context = Path(env["RUNNER_TEMP"]) / "candidate-context/artifacts/candidate-context.json"
+    value = json.loads(context.read_text())
+    value["run_attempt"] = attempt
+    _json(context, value)
+
+
+@pytest.mark.parametrize("attempt", [2, 3])
+@pytest.mark.parametrize("trigger", ["workflow_run", "workflow_dispatch"])
+def test_approval_only_retries_are_eligible_only_for_same_repository_prs(
+    handoff: dict[str, str], attempt: int, trigger: str
+) -> None:
+    _approval_retry(handoff, attempt)
+    handoff["EVENT_NAME"] = trigger
+    data = Path(handoff["TEST_DATA"])
+    if not handoff["PR_NUMBER"]:
+        result = _run(WORKFLOW, IDENTITY, handoff)
+        assert result.returncode != 0
+        assert not (data / "check.json").exists()
+        return
+    _identity(handoff)
+    result = _run(WORKFLOW, SOURCE, handoff)
+    assert result.returncode == 0, result.stderr
+    for file in ("Dockerfile", "pyproject.toml", "uv.lock"):
+        assert (Path(handoff["RUNNER_TEMP"]) / "assessment-inputs" / file).read_bytes() == (ROOT / file).read_bytes()
+    requests = (data / "requests").read_text()
+    for prior in range(1, attempt):
+        assert f"/attempts/{prior}\n" in requests
+        assert f"/attempts/{prior}/jobs?per_page=1\n" in requests
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("id", 999),
+        ("workflow_id", 999),
+        ("path", ".github/workflows/other.yml"),
+        ("name", "Other"),
+        ("repository", {"full_name": "other/repository"}),
+        ("head_repository", {"full_name": "other/repository"}),
+        ("head_sha", "4" * 40),
+        ("head_branch", "other"),
+        ("event", "push"),
+        ("run_attempt", 2),
+        ("status", "in_progress"),
+        ("conclusion", "success"),
+        ("conclusion", "failure"),
+        ("conclusion", "cancelled"),
+        ("conclusion", None),
+    ],
+)
+def test_retry_rejects_any_non_approval_only_prior_attempt(handoff: dict[str, str], field: str, value: object) -> None:
+    if not handoff["PR_NUMBER"]:
+        pytest.skip("Only pull requests may use approval-only retries.")
+    _approval_retry(handoff, 3)
+    data = Path(handoff["TEST_DATA"])
+    # Mutate attempt 1, not just the immediately preceding attempt.
+    path = data / "attempt-1.json"
+    prior = json.loads(path.read_text())
+    prior[field] = value
+    _json(path, prior)
+    result = _run(WORKFLOW, IDENTITY, handoff)
+    assert result.returncode != 0
+    assert not (data / "check.json").exists()
+    assert not Path(handoff["GITHUB_OUTPUT"]).exists()
+
+
+@pytest.mark.parametrize(
+    ("evidence", "value"),
+    [
+        ("metadata", None),
+        ("metadata", ""),
+        ("metadata", "{"),
+        ("metadata", "{}"),
+        ("jobs", None),
+        ("jobs", ""),
+        ("jobs", "{"),
+        ("jobs", "{}"),
+        ("jobs", '{"total_count": 0}'),
+        ("jobs", '{"jobs": []}'),
+        ("jobs", '{"total_count": 0, "jobs": null}'),
+        ("jobs", '{"total_count": 0, "jobs": {}}'),
+        ("jobs", '{"total_count": 1, "jobs": [{"id": 789}]}'),
+        ("jobs", '{"total_count": 1, "jobs": []}'),
+        ("jobs", '{"total_count": 0, "jobs": [{"id": 789}]}'),
+    ],
+)
+def test_retry_fails_closed_on_missing_history_or_executed_jobs(
+    handoff: dict[str, str], evidence: str, value: str | None
+) -> None:
+    if not handoff["PR_NUMBER"]:
+        pytest.skip("Only pull requests may use approval-only retries.")
+    _approval_retry(handoff, 3)
+    data = Path(handoff["TEST_DATA"])
+    path = data / ("attempt-1.json" if evidence == "metadata" else "attempt-1-jobs.json")
+    if value is None:
+        path.unlink()
+    else:
+        path.write_text(value)
+    result = _run(WORKFLOW, IDENTITY, handoff)
+    assert result.returncode != 0
+    assert not (data / "check.json").exists()
+    assert not Path(handoff["GITHUB_OUTPUT"]).exists()
+
+
+@pytest.mark.parametrize("context_attempt", [1, 3])
+def test_retry_requires_context_from_the_accepted_attempt(handoff: dict[str, str], context_attempt: int) -> None:
+    if not handoff["PR_NUMBER"]:
+        pytest.skip("Only pull requests may use approval-only retries.")
+    _approval_retry(handoff, 2)
+    context = Path(handoff["RUNNER_TEMP"]) / "candidate-context/artifacts/candidate-context.json"
+    value = json.loads(context.read_text())
+    value["run_attempt"] = context_attempt
+    _json(context, value)
+    result = _run(WORKFLOW, IDENTITY, handoff)
+    assert result.returncode != 0
+    assert not (Path(handoff["TEST_DATA"]) / "check.json").exists()
+
+
 @pytest.mark.parametrize(
     "invalid",
     [
@@ -280,9 +415,12 @@ def test_manual_assessment_rejects_non_main_ref(handoff: dict[str, str]) -> None
         "malformed",
         "run-id",
         "repository",
+        "run-repository",
+        "fork",
         "workflow-sha",
         "head-sha",
         "attempt",
+        "status",
         "conclusion",
         "workflow",
         "expired-artifact",
@@ -301,12 +439,20 @@ def test_identity_rejects_invalid_evidence_before_creating_check(handoff: dict[s
         _json(context, value)
     elif invalid == "expired-artifact":
         _json(data / "artifacts.json", {"artifacts": [{"name": "candidate-context", "expired": True}]})
+    elif invalid in {"run-repository", "fork"}:
+        value = json.loads((data / "run.json").read_text())
+        value["repository" if invalid == "run-repository" else "head_repository"] = {"full_name": "other/repository"}
+        _json(data / "run.json", value)
     else:
         value = json.loads((data / "run.json").read_text())
         value[
-            {"head-sha": "head_sha", "attempt": "run_attempt", "conclusion": "conclusion", "workflow": "workflow_id"}[
-                invalid
-            ]
+            {
+                "head-sha": "head_sha",
+                "attempt": "run_attempt",
+                "status": "status",
+                "conclusion": "conclusion",
+                "workflow": "workflow_id",
+            }[invalid]
         ] = "wrong"
         _json(data / "run.json", value)
     result = _run(WORKFLOW, IDENTITY, handoff)
@@ -316,17 +462,32 @@ def test_identity_rejects_invalid_evidence_before_creating_check(handoff: dict[s
     assert not Path(handoff["GITHUB_OUTPUT"]).exists()
 
 
-@pytest.mark.parametrize("invalid", ["context", "pr-head", "merge-parents"])
-def test_source_rechecks_binding_before_fetching_files(handoff: dict[str, str], invalid: str) -> None:
-    if not handoff["PR_NUMBER"] and invalid != "context":
+@pytest.mark.parametrize("attempt", [1, 2])
+@pytest.mark.parametrize(
+    "invalid", ["context", "context-attempt", "attempt", "status", "conclusion", "event", "pr-head", "merge-parents"]
+)
+def test_source_rechecks_binding_before_fetching_files(handoff: dict[str, str], invalid: str, attempt: int) -> None:
+    if not handoff["PR_NUMBER"] and (invalid in {"pr-head", "merge-parents"} or attempt > 1):
         pytest.skip("Only pull requests have merge parents and a separate head.")
+    if attempt > 1:
+        _approval_retry(handoff, attempt)
     _identity(handoff)
     data = Path(handoff["TEST_DATA"])
-    if invalid == "context":
+    if invalid in {"context", "context-attempt"}:
         context = Path(handoff["RUNNER_TEMP"]) / "candidate-context/artifacts/candidate-context.json"
         value = json.loads(context.read_text())
-        value["run_id"] = 999
+        value["run_id" if invalid == "context" else "run_attempt"] = 999
         _json(context, value)
+    elif invalid in {"attempt", "status", "conclusion", "event"}:
+        value = json.loads((data / "run.json").read_text())
+        field, replacement = {
+            "attempt": ("run_attempt", attempt + 1),
+            "status": ("status", "in_progress"),
+            "conclusion": ("conclusion", "failure"),
+            "event": ("event", "workflow_dispatch"),
+        }[invalid]
+        value[field] = replacement
+        _json(data / "run.json", value)
     elif invalid == "pr-head":
         value = json.loads((data / "pr.json").read_text())
         value["head"]["sha"] = "4" * 40
@@ -400,9 +561,6 @@ def decisions(tmp_path: Path) -> dict[str, str]:
         "DECIDE_RESULT": "success",
         "APPROVAL_RESULT": "skipped",
         "ASSESSMENT_SUMMARY": "",
-        "EXPECTED_PHRASE": f"APPROVE {SOURCE_SHA}",
-        "EXPECTED_COMMENT": f"APPROVE {SOURCE_SHA}",
-        "APPROVAL_PHRASE": f"APPROVE {SOURCE_SHA}",
         "TRUSTED_ASSESSMENT_WORKFLOW_PATH": WORKFLOW,
     }
     _json(data / "check-response.json", {"id": 789})
@@ -493,7 +651,6 @@ def _receipt(env: dict[str, str], decision: str) -> None:
         "source_run_id": 123,
         "source_sha": SOURCE_SHA,
         "checked_sha": env["CHECK_SHA"],
-        "approval_phrase": f"APPROVE {SOURCE_SHA}",
     }
     for workflow, step in (
         (AUTOMATIC, "Download candidate-bound assessment receipt"),
@@ -524,12 +681,24 @@ def test_combiner_emits_exact_unquoted_decision(
         _platform(decisions, platform, decision, promotion=promotion)
     result = _combine(decisions, promotion=promotion)
     assert result.returncode == (1 if promotion and expected == "blocked" else 0), result.stderr
-    assert _outputs(decisions) == (
-        {"decision": expected} if promotion else {"decision": expected, "approval_phrase": f"APPROVE {SOURCE_SHA}"}
-    )
+    assert _outputs(decisions) == {"decision": expected}
+    summary = Path(decisions["GITHUB_STEP_SUMMARY"]).read_text()
+    assert ("No comment is required." in summary) == (expected == "approval_required")
+    assert ("**Review deployments**" in summary) == (expected == "approval_required")
     if not promotion:
         value = json.loads((Path(decisions["RUNNER_TEMP"]) / "assessment-receipt.json").read_text())
         assert value["decision"] == expected
+        decisions["DECISION"] = expected
+        result = _run(WORKFLOW, "Show findings on pending candidate check", decisions)
+        assert result.returncode == 0, result.stderr
+        check = json.loads((Path(decisions["TEST_DATA"]) / "check-update.json").read_text())
+        assert check["status"] == "in_progress"
+        assert "conclusion" not in check
+        waiting = "**Scanning complete - waiting for security-exception review.**"
+        assert check["output"]["summary"].startswith(waiting) == (expected == "approval_required")
+        summary = (Path(decisions["RUNNER_TEMP"]) / "assessment-summary.md").read_text()
+        assert waiting not in summary
+        assert check["output"]["summary"] == (f"{waiting}\n\n{summary}" if expected == "approval_required" else summary)
 
 
 @pytest.mark.parametrize("promotion", [False, True])
@@ -608,7 +777,7 @@ def test_receipt_round_trip_through_both_promotion_consumers(decisions: dict[str
             [
                 {
                     "state": "approved",
-                    "comment": f"APPROVE {SOURCE_SHA}",
+                    "comment": "",
                     "environments": [{"name": "security-exception"}],
                 }
             ],
@@ -647,22 +816,47 @@ def test_approved_receipt_has_shared_archive_layout(decisions: dict[str, str]) -
 
 
 @pytest.mark.parametrize("workflow", [WORKFLOW, PROMOTION])
-@pytest.mark.parametrize("invalid", ["none", "wrong-sha", "wrong-state", "wrong-environment", "malformed"])
+@pytest.mark.parametrize("invalid", ["none", "wrong-state", "wrong-environment", "malformed", "unavailable"])
 def test_approval_is_fresh_and_candidate_bound(decisions: dict[str, str], invalid: str, workflow: str) -> None:
     approval = {
         "state": "rejected" if invalid == "wrong-state" else "approved",
-        "comment": f"APPROVE {HEAD_SHA if invalid == 'wrong-sha' else SOURCE_SHA}",
+        "comment": "",
         "environments": [{"name": "ga-release" if invalid == "wrong-environment" else "security-exception"}],
     }
     evidence = Path(decisions["TEST_DATA"]) / "approvals.json"
     _json(evidence, [] if invalid == "none" else [approval])
     if invalid == "malformed":
         evidence.write_text("{")
+    elif invalid == "unavailable":
+        evidence.unlink()
     step = APPROVE if workflow == WORKFLOW else "Require fresh candidate-bound environment approval"
     result = _run(workflow, step, decisions)
     assert result.returncode != 0
     assert result.stderr
     assert not (Path(decisions["RUNNER_TEMP"]) / "assessment-receipt.json").exists()
+    assert (Path(decisions["TEST_DATA"]) / "requests").read_text().splitlines() == [
+        f"GET repos/{REPOSITORY}/actions/runs/456/approvals?per_page=100"
+    ]
+
+
+@pytest.mark.parametrize("workflow", [WORKFLOW, PROMOTION])
+@pytest.mark.parametrize("comment", ["", "Reviewed the findings", None])
+def test_environment_approval_does_not_require_a_comment(
+    decisions: dict[str, str], workflow: str, comment: str | None
+) -> None:
+    approval: dict[str, object] = {
+        "state": "approved",
+        "environments": [{"name": "security-exception"}],
+    }
+    if comment is not None:
+        approval["comment"] = comment
+    _json(Path(decisions["TEST_DATA"]) / "approvals.json", [approval])
+    step = APPROVE if workflow == WORKFLOW else "Require fresh candidate-bound environment approval"
+    result = _run(workflow, step, decisions)
+    assert result.returncode == 0, result.stderr
+    assert (Path(decisions["TEST_DATA"]) / "requests").read_text().splitlines() == [
+        f"GET repos/{REPOSITORY}/actions/runs/456/approvals?per_page=100"
+    ]
 
 
 def _image_load_case(
@@ -936,6 +1130,7 @@ def test_platform_summary_is_carried_to_final_check_after_approval(decisions: di
     assert result.returncode == 0, result.stderr
     check = json.loads((Path(decisions["TEST_DATA"]) / "check-update.json").read_text())
     assert check["conclusion"] == "success"
+    assert "waiting for security-exception review" not in check["output"]["summary"]
     assert all(f"{platform}: CVE-2026-117610 OpenVEX" in check["output"]["summary"] for platform in PLATFORMS)
 
 

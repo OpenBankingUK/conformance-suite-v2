@@ -77,6 +77,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Accept the protected `security-exception` approval button without a typed
+  comment in assessment and promotion. Keep approval scoped to the current
+  workflow run and verified candidate, retain fresh approvals and all hard
+  blockers, and show the required button action in the findings summary.
+- Show an explicit waiting-for-security-exception-review message on the pending
+  `Vulnerability Scan` check after scanning completes and risk approval is
+  required, without changing its in-progress status or approval gates.
+- Allow trusted vulnerability assessment of same-repository PR CI after GitHub
+  workflow approval, including Copilot changes, only when every prior attempt
+  was `action_required` with a confirmed empty job history and matching candidate
+  identity. Keep push candidates restricted to attempt 1, bind candidate context
+  to the accepted attempt, and recheck run identity and completion before
+  retrieving source inputs.
 - Trusted assessment and promotion re-scans emit unquoted decisions only
   after validating exactly one result per supported platform. Missing,
   malformed or unknown results remain blocking, including alongside eligible
