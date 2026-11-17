@@ -680,7 +680,9 @@ def _canonical_schema_issues(raw_plan: object) -> tuple[TestPlanValidationIssue,
     if not isinstance(raw_plan, dict) or raw_plan.get("schemaVersion") != "1.0":
         return ()
     return tuple(
-        TestPlanValidationIssue("schema", "error", f"{_json_schema_error_path(error)}: {error.message}")
+        TestPlanValidationIssue(
+            "schema", "error", f"{_json_schema_error_path(error)}: {_json_schema_error_detail(error)}"
+        )
         for error in sorted(
             _CANONICAL_TEST_PLAN_SCHEMA_VALIDATOR.iter_errors(raw_plan),
             key=_json_schema_error_sort_key,
@@ -745,12 +747,67 @@ def _json_schema_error_sort_key(error: object) -> tuple[str, str, str]:
         error: Validation error object from ``jsonschema``.
 
     Returns:
-        Tuple built from rendered instance path, schema path, and message.
+        Tuple built from rendered instance path, schema path, and safe detail.
     """
     path = ".".join(str(segment) for segment in getattr(error, "absolute_path", ()))
     schema_path = ".".join(str(segment) for segment in getattr(error, "absolute_schema_path", ()))
-    message = getattr(error, "message", "")
-    return (path, schema_path, message if isinstance(message, str) else "")
+    return (path, schema_path, _json_schema_error_detail(error))
+
+
+def _json_schema_error_detail(error: object) -> str:
+    """Describe a JSON Schema error without echoing submitted values.
+
+    Args:
+        error: Validation error produced by ``jsonschema``.
+
+    Returns:
+        Safe, actionable detail derived from the schema constraint.
+    """
+    validator = getattr(error, "validator", None)
+    validator_value = getattr(error, "validator_value", None)
+
+    if validator == "type":
+        expected = validator_value if isinstance(validator_value, list) else [validator_value]
+        return f"must be of type {', '.join(str(item) for item in expected)}"
+    if validator == "enum" and isinstance(validator_value, list):
+        return f"must be one of: {', '.join(repr(item) for item in validator_value)}"
+    if validator == "const":
+        return f"must equal {validator_value!r}"
+    if validator == "required" and isinstance(validator_value, list):
+        instance = getattr(error, "instance", None)
+        if isinstance(instance, dict):
+            missing = [key for key in validator_value if key not in instance]
+            if missing:
+                return f"missing required field(s): {', '.join(str(key) for key in missing)}"
+        return "is missing one or more required fields"
+    if validator == "additionalProperties":
+        instance = getattr(error, "instance", None)
+        schema = getattr(error, "schema", None)
+        properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+        if isinstance(instance, dict) and isinstance(properties, dict):
+            unexpected = [key for key in instance if key not in properties]
+            if unexpected:
+                return f"contains unsupported field(s): {', '.join(repr(key) for key in unexpected)}"
+        return "contains unsupported field(s)"
+    if validator == "minLength" and isinstance(validator_value, int):
+        return f"must contain at least {validator_value} characters"
+    if validator == "maxLength" and isinstance(validator_value, int):
+        return f"must contain at most {validator_value} characters"
+    if validator == "minItems" and isinstance(validator_value, int):
+        return f"must contain at least {validator_value} items"
+    if validator == "maxItems" and isinstance(validator_value, int):
+        return f"must contain at most {validator_value} items"
+    if validator == "pattern":
+        return "does not match the required format"
+    if validator == "format":
+        return f"must use the {validator_value!r} format"
+    if validator == "uniqueItems":
+        return "must not contain duplicate items"
+    if validator in {"minimum", "exclusiveMinimum", "maximum", "exclusiveMaximum", "multipleOf"}:
+        return f"does not satisfy the {validator} constraint ({validator_value})"
+    if validator in {"oneOf", "anyOf", "allOf", "not"}:
+        return "does not satisfy the required schema constraints"
+    return "does not satisfy the required schema constraint"
 
 
 def _execution_mode_issues(document: PlanDocumentV2) -> tuple[TestPlanValidationIssue, ...]:

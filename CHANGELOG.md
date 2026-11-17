@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Prevent canonical test-plan schema errors from echoing submitted values,
+  including credentials, while preserving field paths and safe validation guidance.
+
 - Make DCR `tls_client_auth_subject_dn` syntax validation linear-time so a
   crafted subject DN, including one returned in an ASPSP registration response,
   can no longer stall a run through exponential regular-expression
