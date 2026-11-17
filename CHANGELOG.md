@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Refresh the digest-pinned DHI Debian 13 builder and upgrade uv from 0.10.4
+  to 0.13.8 for frozen-lockfile Docker builds. The runtime base and locked
+  application dependencies are unchanged; this does not remediate the
+  published runtime CVEs.
+
 ## [2.0.0-beta.18] - 2026-11-16
 
 ### Changed
