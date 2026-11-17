@@ -32,7 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Make DCR `tls_client_auth_subject_dn` syntax validation linear-time so a
   crafted subject DN, including one returned in an ASPSP registration response,
   can no longer stall a run through exponential regular-expression
-  backtracking. Valid and invalid DNs are judged as before.
+  backtracking, while preserving escape-aware RFC 2253 delimiter handling for
+  valid DNs.
 
 - Refresh the digest-pinned DHI Python 3.14 / Debian 13 builder and runtime
   multi-architecture indexes. The runtime updates gcc-14, libgcc-s1 and

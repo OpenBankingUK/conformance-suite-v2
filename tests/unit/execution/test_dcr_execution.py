@@ -827,6 +827,11 @@ def test_subject_dn_validation_rejects_ambiguous_rdns_without_backtracking() -> 
         validate_dcr_subject_dn("CN=+" + ",!==+" * 100 + ",")
 
 
+def test_subject_dn_validation_accepts_escaped_comma_and_equals_in_value() -> None:
+    """Escaped RFC 2253 commas remain part of a value, including before equals."""
+    validate_dcr_subject_dn(r"CN=fixture\,=a=b")
+
+
 def test_runtime_input_round_trip_and_client_secret_post_rejection(
     dcr_protocol_service: DcrProtocolService,
     tmp_path: Path,

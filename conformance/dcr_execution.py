@@ -39,15 +39,6 @@ _JWT_LIFETIME = timedelta(minutes=5)
 _DCR_AUTH_METHODS = frozenset({"tls_client_auth", "private_key_jwt", "client_secret_jwt", "client_secret_basic"})
 """Token endpoint authentication methods implemented by this adapter."""
 
-_DCR_DN_PATTERN = re.compile(r"^(?:(?i:CN)|2\.5\.4\.3)=[^,]+(?:,[^,=\s]+=[^,]+)*$")
-"""Conservative DCR 3.4 subject-DN syntax boundary.
-
-RFC 2253 attribute types never contain ``=``, so excluding it from the type
-class gives each RDN a single type/value split. This keeps matching linear on
-untrusted registration-response DNs instead of backtracking exponentially.
-"""
-
-
 class DcrExecutionError(ValueError):
     """Raised when DCR runtime configuration or protocol data is invalid."""
 
@@ -1610,11 +1601,32 @@ def validate_dcr_subject_dn(value: str) -> None:
     """
     if not value or len(value) > 512 or any(ord(character) < 32 or ord(character) == 127 for character in value):
         raise DcrExecutionError("DCR tls_client_auth_subject_dn must contain 1 to 512 printable characters")
-    if _DCR_DN_PATTERN.fullmatch(value) is None:
-        raise DcrExecutionError("DCR tls_client_auth_subject_dn does not match the required DN pattern")
-    for component in re.split(r"(?<!\\),", value):
+    components: list[str] = []
+    component_start = 0
+    escaped = False
+    for index, character in enumerate(value):
+        if character == "\\":
+            escaped = not escaped
+            continue
+        if character == "," and not escaped:
+            components.append(value[component_start:index])
+            component_start = index + 1
+        escaped = False
+    components.append(value[component_start:])
+
+    for index, component in enumerate(components):
         attribute_name, separator, attribute_value = component.partition("=")
-        if not separator or not attribute_name.strip() or not attribute_value or attribute_value.endswith("\\"):
+        if not separator:
+            raise DcrExecutionError("DCR tls_client_auth_subject_dn does not match the required DN pattern")
+        if index == 0:
+            valid_attribute_name = attribute_name.lower() == "cn" or attribute_name == "2.5.4.3"
+        else:
+            valid_attribute_name = bool(attribute_name) and all(
+                character not in "=," and not character.isspace() for character in attribute_name
+            )
+        if not valid_attribute_name:
+            raise DcrExecutionError("DCR tls_client_auth_subject_dn does not match the required DN pattern")
+        if not attribute_value or attribute_value.endswith("\\"):
             raise DcrExecutionError("DCR tls_client_auth_subject_dn is not valid RFC 2253 syntax")
 
 
