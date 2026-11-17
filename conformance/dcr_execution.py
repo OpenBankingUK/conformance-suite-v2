@@ -39,8 +39,13 @@ _JWT_LIFETIME = timedelta(minutes=5)
 _DCR_AUTH_METHODS = frozenset({"tls_client_auth", "private_key_jwt", "client_secret_jwt", "client_secret_basic"})
 """Token endpoint authentication methods implemented by this adapter."""
 
-_DCR_DN_PATTERN = re.compile(r"^(?:(?i:CN)|2\.5\.4\.3)=[^,]+(?:,[^,\s]+=[^,]+)*$")
-"""Conservative DCR 3.4 subject-DN syntax boundary."""
+_DCR_DN_PATTERN = re.compile(r"^(?:(?i:CN)|2\.5\.4\.3)=[^,]+(?:,[^,=\s]+=[^,]+)*$")
+"""Conservative DCR 3.4 subject-DN syntax boundary.
+
+RFC 2253 attribute types never contain ``=``, so excluding it from the type
+class gives each RDN a single type/value split. This keeps matching linear on
+untrusted registration-response DNs instead of backtracking exponentially.
+"""
 
 
 class DcrExecutionError(ValueError):
