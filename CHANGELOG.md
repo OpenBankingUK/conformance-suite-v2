@@ -9,7 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Build candidate images with BuildKit's default SLSA provenance version
+  instead of pinning v0.2. Limit publication evidence verification to artifact
+  integrity, image identity and attached SLSA provenance (v0.2 or v1) and SPDX
+  SBOMs bound to the exact image. Stop enforcing BuildKit's internal build
+  graph, provenance build arguments and base materials, and SBOM contents;
+  retain source-revision labels and separate Dockerfile base validation.
+
+- Refresh the digest-pinned DHI Debian 13 builder and upgrade uv from 0.10.4
+  to 0.13.8 for frozen-lockfile Docker builds. The runtime base and locked
+  application dependencies are unchanged; this does not remediate the
+  published runtime CVEs.
+
+- Remove custom image/dependency security scans, scheduled rescans, and
+  security-risk and release-publishing approvals. Promote eligible candidates
+  directly after successful CI while preserving artifact integrity and release
+  validation. Keep the external Snyk PR check, CodeQL, secret scanning, Ruff
+  security lint, and normal CI/review requirements. Custom multi-platform
+  vulnerability surveillance and automatic vulnerability-issue updates stop.
+
+- Pause GA image publication while 2.0.0 is in beta. Automatic promotion no
+  longer publishes from `main`, whose placeholder version would otherwise be
+  released as GA on every push now that publication approvals are removed.
+
 ### Security
+
+- Make DCR `tls_client_auth_subject_dn` syntax validation linear-time so a
+  crafted subject DN, including one returned in an ASPSP registration response,
+  can no longer stall a run through exponential regular-expression
+  backtracking, while preserving escape-aware RFC 2253 delimiter handling and
+  valid trailing escaped-backslash pairs.
+
+- Refresh the digest-pinned DHI Python 3.14 / Debian 13 builder and runtime
+  multi-architecture indexes. The runtime updates gcc-14, libgcc-s1 and
+  libstdc++6; the Expat High findings remain unchanged and are not resolved by
+  this refresh.
+
+- Require fresh candidate-bound risk approval for unfixed Docker Scout
+  high/critical findings even when signed DHI VEX assesses them as fixed or
+  not affected; reported fixes remain hard blockers. Show per-platform blockers,
+  raw Scout severity counts and VEX context on the PR check and promotion
+  summaries, including after approval. Include missing DHI provenance roles
+  and platform in those summaries and keep all report decisions consistent.
 
 - Preserve per-platform BuildKit max-mode provenance and SPDX SBOMs in the
   candidate OCI archives through approved Docker Hub publication, while

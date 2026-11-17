@@ -30,10 +30,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
 
@@ -76,7 +76,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Classify this run
         id: classify
@@ -107,82 +107,6 @@ jobs:
             echo "is_candidate=$is_candidate"
           } >> "$GITHUB_OUTPUT"
 
-  candidate-context:
-    name: Capture candidate identity
-    needs: plan
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout the exact source under test
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-
-      - name: Record GitHub event identity as data
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          REPOSITORY: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          WORKFLOW_SHA: ${{ github.sha }}
-          REF: ${{ github.ref }}
-          REF_NAME: ${{ github.ref_name }}
-          HEAD_REF: ${{ github.head_ref || '' }}
-          BASE_REF: ${{ github.base_ref || '' }}
-          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
-          IS_HARDENED: ${{ needs.plan.outputs.is_hardened }}
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts
-          jq -n \
-            --arg event "$EVENT_NAME" \
-            --arg repository "$REPOSITORY" \
-            --arg run_id "$RUN_ID" \
-            --arg run_attempt "$RUN_ATTEMPT" \
-            --arg workflow_sha "$WORKFLOW_SHA" \
-            --arg ref "$REF" \
-            --arg ref_name "$REF_NAME" \
-            --arg head_ref "$HEAD_REF" \
-            --arg base_ref "$BASE_REF" \
-            --arg pr_number "$PR_NUMBER" \
-            --arg pr_head_sha "$PR_HEAD_SHA" \
-            --arg pr_base_sha "$PR_BASE_SHA" \
-            --arg is_hardened "$IS_HARDENED" \
-            '{
-              schema_version: 1,
-              event: $event,
-              repository: $repository,
-              run_id: ($run_id | tonumber),
-              run_attempt: ($run_attempt | tonumber),
-              workflow_sha: $workflow_sha,
-              ref: $ref,
-              ref_name: $ref_name,
-              head_ref: $head_ref,
-              base_ref: $base_ref,
-              workflow_sha_under_test: $workflow_sha,
-              hardened: ($is_hardened == "true"),
-              pull_request: (if $pr_number == "" then null else {
-                number: ($pr_number | tonumber),
-                head_sha: $pr_head_sha,
-                base_sha: $pr_base_sha
-              } end)
-            }' > artifacts/candidate-context.json
-
-      - name: Upload candidate context
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: candidate-context
-          path: |
-            artifacts/candidate-context.json
-            Dockerfile
-            pyproject.toml
-            uv.lock
-          retention-days: 14
-
   docker-build:
     name: Docker Build
     needs: plan
@@ -193,23 +117,23 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to dhi.io
         # Docker Hardened Images require registry authentication even to pull;
         # uses the repository-level read-only organisation token.
         if: needs.plan.outputs.is_hardened == 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: dhi.io
           username: ${{ secrets.DOCKER_ORG_USERNAME }}
           password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
 
       - name: Build Docker image (no push)
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           push: false
@@ -267,9 +191,8 @@ jobs:
         run: docker rm -f smoke || true
 
   image:
-    # Builds the exact image for each platform on every PR and push. This job
-    # intentionally runs the PR head checkout and therefore never receives the
-    # Snyk token or executes the vulnerability gate.
+    # Builds and smoke-tests each platform on every PR and push. Publishing
+    # credentials remain isolated in the trusted promotion workflow.
     name: Image (${{ matrix.platform }})
     needs: plan
     strategy:
@@ -289,21 +212,27 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
 
       - name: Install release-tooling dependencies
         run: uv sync --frozen --no-install-project
 
-      - name: Verify the assessed DHI runtime base
-        # Must pass before promotion can consume Docker's signed VEX
-        # assessment, which is bound to this exact base digest.
+      - name: Verify the pinned DHI image families
         if: needs.plan.outputs.is_hardened == 'true'
         run: uv run python -m scripts.validate_docker_base --candidate-dhi --dockerfile Dockerfile
+
+      - name: Resolve runtime base for the Scout impact report
+        id: runtime_base
+        if: matrix.slug == 'linux-amd64' && needs.plan.outputs.is_hardened == 'true'
+        run: |
+          set -euo pipefail
+          runtime_base="$(uv run python -m scripts.validate_docker_base --candidate-dhi --print-runtime-base --dockerfile Dockerfile)"
+          echo "ref=$runtime_base" >> "$GITHUB_OUTPUT"
 
       - name: Resolve image version
         id: metadata
@@ -322,11 +251,11 @@ jobs:
           echo "raw_version=$raw_version" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to dhi.io
         if: needs.plan.outputs.is_hardened == 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: dhi.io
           username: ${{ secrets.DOCKER_ORG_USERNAME }}
@@ -334,7 +263,8 @@ jobs:
 
       - name: Build image archive
         # OCI retains BuildKit's platform-bound attestations; the Docker
-        # exporter drops them. Nothing is pushed before approval.
+        # exporter drops them. Only the trusted promotion workflow can publish.
+        # Provenance uses BuildKit's default SLSA version (v0.2 or v1).
         env:
           LOCAL_TAG: ob-conformance-candidate:${{ matrix.slug }}-${{ github.sha }}
           RAW_VERSION: ${{ steps.metadata.outputs.raw_version }}
@@ -345,12 +275,135 @@ jobs:
             --build-arg CONFORMANCE_TOOL_VERSION="$RAW_VERSION" \
             --build-arg SOURCE_REVISION="${{ github.sha }}" \
             --tag "$LOCAL_TAG" \
-            --provenance=mode=max,version=v0.2 \
+            --provenance=mode=max \
             --sbom=true \
             --output type=oci,oci-artifact=false,compression=gzip,force-compression=true,dest=artifacts/image-${{ matrix.slug }}.tar \
             --cache-from type=gha,scope=candidate-${{ matrix.slug }} \
             --cache-to type=gha,mode=max,scope=candidate-${{ matrix.slug }} \
             .
+
+      - name: Report Docker Scout impact against the published beta
+        # Informational, never blocking: shows reviewers how this candidate
+        # differs from what Docker Hub's Scout reports for the published beta.
+        # Scout only sees shipped runtime contents, so builder-stage, tooling,
+        # CI and dev-dependency changes are expected to show no difference.
+        # Runs before any further repository scripts; Scout's Docker Hub
+        # credentials exist only in this step's environment.
+        if: matrix.slug == 'linux-amd64' && needs.plan.outputs.is_hardened == 'true'
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          SCOUT_CLI_VERSION: "1.29.0"
+          SCOUT_CLI_SHA256_AMD64: 9157cdc9372b478a8cd51dd53f5e9c74a7e34056ea291c65520bf76016fa72f4 # pragma: allowlist secret
+          PUBLISHED_IMAGE: openbanking/conformance-suite-v2:2.0.0-beta-latest
+          RUNTIME_BASE: ${{ steps.runtime_base.outputs.ref }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCHIVE: artifacts/image-${{ matrix.slug }}.tar
+          DOCKER_SCOUT_HUB_USER: ${{ secrets.DOCKER_ORG_USERNAME }}
+          DOCKER_SCOUT_HUB_PASSWORD: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/scout-impact"
+          # Remove all Scout state, which may include Docker Hub tokens,
+          # before later steps run branch-controlled code.
+          export DOCKER_SCOUT_CACHE_DIR="$work/cache"
+          trap 'rm -rf "$work" "$HOME/.docker/scout"' EXIT
+          trap 'echo "::warning title=Scout impact report incomplete::This informational report failed; see the step log. CI is not blocked."' ERR
+          if [[ -z "$DOCKER_SCOUT_HUB_USER" || -z "$DOCKER_SCOUT_HUB_PASSWORD" ]]; then
+            echo "::notice title=Scout impact report skipped::Docker Hub credentials are unavailable to this run."
+            exit 0
+          fi
+          [[ "$RUNNER_ARCH" == "X64" ]]
+
+          rm -rf "$work"
+          mkdir -p "$work/oci" ~/.docker/cli-plugins
+          cli="docker-scout_${SCOUT_CLI_VERSION}_linux_amd64.tar.gz"
+          curl --retry 5 --retry-delay 2 --retry-max-time 60 -fsSL -o "$work/$cli" \
+            "https://github.com/docker/scout-cli/releases/download/v${SCOUT_CLI_VERSION}/${cli}"
+          echo "${SCOUT_CLI_SHA256_AMD64}  $work/$cli" | sha256sum --check --status
+          tar -xzf "$work/$cli" -C ~/.docker/cli-plugins docker-scout
+          chmod +x ~/.docker/cli-plugins/docker-scout
+
+          # The archive is an OCI layout. oci-dir:// keeps BuildKit's
+          # provenance and SBOM visible to Scout, as on Docker Hub.
+          tar -xf "$ARCHIVE" -C "$work/oci"
+
+          # Resolve the mutable beta tag once, then use the immutable manifest
+          # reference for both provenance and Scout comparison.
+          published_manifest_digest="$(
+            docker buildx imagetools inspect "$PUBLISHED_IMAGE" --format '{{.Manifest.Digest}}'
+          )" || published_manifest_digest=""
+          if [[ ! "$published_manifest_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::warning title=Scout impact report incomplete::Could not resolve the published beta to an immutable manifest digest."
+            exit 0
+          fi
+          immutable_image="${PUBLISHED_IMAGE%:*}@${published_manifest_digest}"
+
+          # Published provenance records the exact runtime base digest. Base
+          # equality is reported separately from the candidate's findings.
+          base_digest="${RUNTIME_BASE##*@}"
+          published_base_digest="$(
+            docker buildx imagetools inspect "$immutable_image" --format '{{json .Provenance}}' \
+              | python3 -c '
+          import json
+          import re
+          import sys
+          from urllib.parse import parse_qs, unquote, urlsplit
+
+          provenance = json.load(sys.stdin)
+          platform, runtime_base = sys.argv[1:]
+          base_name, _, _ = runtime_base.rpartition("@")
+          repository, _, version = base_name.rpartition(":")
+          purl_prefix = f"pkg:docker/{repository}@{version}"
+          slsa = provenance.get(platform, {}).get("SLSA", {})
+          materials = slsa.get("materials") or slsa.get("buildDefinition", {}).get("resolvedDependencies", [])
+          for material in materials:
+              uri = unquote(str(material.get("uri", "")))
+              if uri.split("?", 1)[0].split("#", 1)[0] != purl_prefix:
+                  continue
+              digest_object = material.get("digest", {})
+              digest = digest_object.get("sha256", "") if isinstance(digest_object, dict) else ""
+              if not re.fullmatch(r"(?:sha256:)?[0-9a-fA-F]{64}", digest):
+                  digest = parse_qs(urlsplit(uri).query).get("digest", [""])[0]
+              match = re.fullmatch(r"(?:sha256:)?([0-9a-fA-F]{64})", digest)
+              if match:
+                  print("sha256:" + match.group(1).lower())
+                  break
+          ' "$PLATFORM" "$RUNTIME_BASE"
+          )" || published_base_digest=""
+          if [[ -z "$published_base_digest" ]]; then
+            base_status="not found in the published image's provenance"
+          elif [[ "$published_base_digest" == "$base_digest" ]]; then
+            base_status="**unchanged** from the published image"
+          else
+            base_status="**changed** from the published \`${published_base_digest}\`"
+          fi
+
+          docker scout compare "oci-dir://$work/oci" --to "registry://$immutable_image" \
+            --platform "$PLATFORM" --ignore-unchanged --format markdown --output "$work/compare.md"
+          docker scout cves "oci-dir://$work/oci" --platform "$PLATFORM" \
+            --format only-packages --only-vuln-packages > "$work/cves.txt"
+
+          {
+            echo "## Docker Scout impact (${PLATFORM})"
+            echo
+            echo "Informational only. Compares this candidate with the published manifest \`${immutable_image}\`, as reported by Docker Hub's Scout view. Builder-stage, tooling, CI and dev-dependency changes do not ship, so they cannot change these results."
+            echo
+            echo "**Runtime base:** \`${RUNTIME_BASE}\` is ${base_status}. Base equality alone does not determine the candidate's vulnerability findings."
+            echo
+            # Render Scout's severity badges as text instead of third-party
+            # images; the backticks are literal Markdown, not substitutions.
+            # shellcheck disable=SC2016
+            sed -E 's#<img alt="([^"]*)" src="[^"]*"/>#`\1`#g' "$work/compare.md"
+            echo
+            echo "<details><summary>Vulnerable packages in this candidate</summary>"
+            echo
+            echo '```text'
+            cat "$work/cves.txt"
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Log out of dhi.io before running repository scripts
         # login-action leaves the credential in ~/.docker/config.json until
@@ -368,8 +421,8 @@ jobs:
           set -euo pipefail
           args=()
           if [[ "$IS_HARDENED" == "true" ]]; then
-            runtime_base="$(uv run python -m scripts.validate_docker_base --candidate-dhi --print-runtime-base --dockerfile Dockerfile)"
-            args+=(--runtime-base "$runtime_base" --require-revision-label)
+            uv run python -m scripts.validate_docker_base --candidate-dhi --dockerfile Dockerfile
+            args+=(--require-revision-label)
           fi
           uv run python -m scripts.verify_build_evidence \
             --archive artifacts/image-${{ matrix.slug }}.tar \
@@ -407,25 +460,15 @@ jobs:
 
       - name: Generate SBOM
         if: needs.plan.outputs.is_candidate == 'true'
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ steps.load.outputs.local_tag }}
           format: spdx-json
           output-file: artifacts/sbom-${{ matrix.slug }}.spdx.json
 
-      - name: Upload image artifacts
-        if: needs.plan.outputs.is_candidate != 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: candidate-${{ matrix.slug }}
-          path: |
-            artifacts/image-${{ matrix.slug }}.tar
-            artifacts/evidence-${{ matrix.slug }}.json
-          retention-days: 14
-
       - name: Upload candidate artifacts
         if: needs.plan.outputs.is_candidate == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: candidate-${{ matrix.slug }}
           path: |
@@ -445,10 +488,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
 
@@ -456,13 +499,13 @@ jobs:
         run: uv sync --frozen --no-install-project
 
       - name: Download amd64 candidate metadata
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: candidate-linux-amd64
           path: artifacts/linux-amd64
 
       - name: Download arm64 candidate metadata
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: candidate-linux-arm64
           path: artifacts/linux-arm64
@@ -478,7 +521,7 @@ jobs:
         run: |
           set -euo pipefail
           # Buildx's containerimage.digest is now the attested index, not the
-          # runnable manifest. The promotion contract binds the scanned leaf.
+          # runnable manifest. The promotion contract binds the tested leaf.
           amd64_digest="$(jq -r '.image_digest' artifacts/linux-amd64/evidence-linux-amd64.json)"
           arm64_digest="$(jq -r '.image_digest' artifacts/linux-arm64/evidence-linux-arm64.json)"
           raw_version="$(
@@ -496,7 +539,7 @@ jobs:
             --output artifacts/promotion-manifest.json
 
       - name: Upload promotion manifest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: promotion-manifest
           path: |

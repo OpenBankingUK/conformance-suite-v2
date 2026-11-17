@@ -90,7 +90,7 @@ The new platform will:
 
 ### OBL Engineering Team Stories
 
-1. As an OBL engineer, I want vulnerability scanning embedded in the CI/CD pipeline, scoped to OBL-owned repositories, so that every build is checked before release.
+1. As an OBL engineer, I want automated security checks on pull requests, scoped to OBL-owned repositories, without additional security or publication approval steps. The current policy retains external Snyk, GitHub CodeQL, secret scanning, and security lint; custom container scanning is deferred (see [CI/CD Strategy](CICD_STRATEGY.md#32-vulnerability-scanning-and-the-pr-gate)).
 2. As an OBL engineer, I want the Docker base image to be actively maintained and minimal.
 3. As an OBL engineer, I want the CI/CD pipeline to follow best practices and be set up from scratch, using the existing pipeline as a reference only.
 4. As an OBL engineer, I want a developer mode toggle for unmasked logs, so that I can debug complex failures without production-safe masking interfering. _(Never enabled in release builds.)_
@@ -110,7 +110,7 @@ The following decisions have been confirmed. All other technology choices — in
 | **Backend framework** | **Confirmed:** Django. Selected for its security track record, built-in auth/admin/session management needed for Phase 2, and regulatory defensibility. |
 | **Frontend (Phase 1)** | **Confirmed:** Django templates + HTMX. Server-side rendering, no JavaScript build pipeline, minimal attack surface. |
 | **Frontend (Phase 2)** | **TBD:** Continue HTMX for most features. If complex dashboards or live data exploration are required, introducing React or similar is an option without rearchitecting the backend. |
-| **CI/CD** | **Requirement:** Automated pipeline with vulnerability scanning on every build, gated on Critical/High severity findings. Specific tooling TBD (current expectation: GitHub Actions + Snyk). |
+| **CI/CD** | **Current policy:** GitHub Actions for quality checks, builds, and automatic publication after eligible successful CI. External Snyk PR checks and GitHub CodeQL remain merge requirements alongside secret scanning/security lint. No custom container/dependency scan workflow or manual security/publication approvals; published-image surveillance is not provided by these PR checks. |
 | **Config format** | **Under discussion.** Further decision required. |
 | **Report output format** | **Under discussion.** JSON as the primary machine-readable certification artefact is expected. Further format decisions TBD. |
 

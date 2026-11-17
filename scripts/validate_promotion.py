@@ -6,9 +6,9 @@ publish. Re-derives release metadata from the manifest's own raw version
 source SHA, branch, tag (for GA), platform set, and previously published
 versions supplied by the workflow, then prints the manifest's expected tags
 as JSON so the workflow does not have to duplicate that tag-construction
-logic. The ungated candidate-location job also uses this entrypoint with
+logic. The candidate-location job also uses this entrypoint with
 ``--summary-file`` and ``--environment-name`` to show proposed release details
-before approval, without changing the JSON output contract.
+before publication, without changing the JSON output contract.
 
 Usage::
 
@@ -71,7 +71,7 @@ def _render_summary(
     else:
         moving_tag = "None"
     return (
-        "## Release proposed for approval\n\n"
+        "## Release candidate\n\n"
         "Proposed publication only; this summary does not mean the image has been published.\n\n"
         "| Release detail | Value |\n"
         "| --- | --- |\n"
@@ -80,10 +80,10 @@ def _render_summary(
         f"| Publication tags | {tags} |\n"
         f"| Moving tag | {moving_tag} |\n"
         f"| Channel | {_summary_code(metadata.channel.value)} |\n"
-        f"| Approval environment | {_summary_code(environment_name)} |\n"
+        f"| Publication environment | {_summary_code(environment_name)} |\n"
         f"| Source branch | {_summary_code(branch)} |\n"
         f"| Source commit | {_summary_code(source_sha)} |\n\n"
-        "Tag eligibility reflects the current registry inventory. Publication is revalidated after approval.\n"
+        "Tag eligibility reflects the current registry inventory and is revalidated before publication.\n"
     )
 
 
@@ -109,9 +109,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Path to a newline-delimited file of already-published raw versions, if any.",
     )
     parser.add_argument(
-        "--summary-file", type=Path, help="Append a validated pre-approval Markdown summary to this file."
+        "--summary-file", type=Path, help="Append a validated publication-candidate Markdown summary to this file."
     )
-    parser.add_argument("--environment-name", help="Approval environment to show; required with --summary-file.")
+    parser.add_argument("--environment-name", help="Publication environment to show; required with --summary-file.")
     return parser.parse_args(argv)
 
 

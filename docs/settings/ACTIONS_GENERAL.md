@@ -97,8 +97,9 @@ Once CI workflows are committed, verify:
 
 - [ ] Workflows can resolve and use `actions/checkout`, `actions/setup-python`, and other GitHub-authored actions
 - [ ] `docker/*` actions resolve correctly in the container build job
-- [ ] `snyk/actions/*` actions resolve correctly in the security scan job
+- [ ] The external Snyk integration reports `code/snyk (Standards)` on PRs without an Actions scanner job
 - [ ] Actions pinned by SHA execute without permission errors
 - [ ] Fork PRs from external contributors are held for approval before workflows run
 - [ ] Workflow GITHUB_TOKEN has read-only access unless explicitly escalated in YAML
-- [ ] Trusted `workflow_run` security assessment can create the `Vulnerability Scan` check on the verified pull-request head SHA
+- [ ] Trusted `workflow_run` promotion accepts only successful same-repository eligible push CI
+- [ ] Publishing environments permit only `main`, retain their write credentials, and have no required reviewers or wait timers
