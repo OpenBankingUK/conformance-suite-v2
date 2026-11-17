@@ -9,12 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.19] - 2026-11-17
+
 ### Changed
 
 - Refresh the digest-pinned DHI Debian 13 builder and upgrade uv from 0.10.4
   to 0.13.8 for frozen-lockfile Docker builds. The runtime base and locked
   application dependencies are unchanged; this does not remediate the
   published runtime CVEs.
+
+### Known issues
+
+- The runtime base is unchanged from 2.0.0-beta.18, so Docker Hub and Docker
+  Scout may continue to report Debian OS-package findings from the Docker
+  Hardened Images (DHI) Python runtime, including two High findings in
+  `libexpat1` (CVE-2026-117610 and CVE-2026-118370). Docker's signed VEX for the
+  DHI Python runtime base marks both `not_affected` because DHI backported the
+  upstream expat fixes, but Docker Scout still lists them on derived images.
+  Docker Scout reported no fixed package version for either finding when
+  2.0.0-beta.18 was scanned on 2026-11-17.
 
 ## [2.0.0-beta.18] - 2026-11-16
 
@@ -780,7 +793,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.18...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.19...HEAD
+[2.0.0-beta.19]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.18...v2.0.0-beta.19
 [2.0.0-beta.18]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.17...v2.0.0-beta.18
 [2.0.0-beta.17]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.16...v2.0.0-beta.17
 [2.0.0-beta.16]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.15...v2.0.0-beta.16
