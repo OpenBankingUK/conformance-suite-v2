@@ -115,11 +115,11 @@ docker pull docker.io/openbanking/conformance-suite-v2:<version>
 Replace `<version>` with an exact published preview, beta, or GA version.
 Exact version tags are immutable and remain preferable for reproducible runs.
 See [`CICD_STRATEGY.md`](CICD_STRATEGY.md) for the full versioning and
-Environment-approved promotion model.
+automatic CI-to-publication model.
 
 `latest` refers only to the current GA release. For convenient MVP beta
 evaluation, `2.0.0-beta-latest` tracks the highest published `2.0.0-beta.N`
-version, updated automatically after approved publication and
+version, updated automatically after successful publication and
 provenance/SBOM attestations succeed. It stops updating once the formal
 `2.0.0` image is published and remains a superseded beta, never a GA image.
 Other release series do not move it. Beta images are for evaluation, not

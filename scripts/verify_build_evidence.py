@@ -1,8 +1,8 @@
 """Validate BuildKit OCI archives and their unchanged publication descriptors.
 
 SLSA max-mode provenance and SPDX attestations must remain attached to the
-scanned platform manifest. This checks build evidence, not Docker's signed VEX
-or vulnerability policy; those remain the separate trusted assessment's job.
+tested platform manifest. These integrity checks bind publication to the exact
+CI artifact; they do not assess vulnerabilities or require risk approval.
 """
 
 from __future__ import annotations
