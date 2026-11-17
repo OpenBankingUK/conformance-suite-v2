@@ -105,6 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Raise the joserfc minimum requirement to `1.7.6` and upgrade its lock from
   `1.7.1` to `1.7.7`, addressing CVE-2026-119283 (GHSA-jpxq-7h8p-2q76) and
   CVE-2026-119284 (GHSA-9pg5-8c7x-5hfx).
+- Stop echoing OAuth state values in duplicate auth-session API errors while
+  preserving the HTTP 409 conflict response.
 
 ### Fixed
 
