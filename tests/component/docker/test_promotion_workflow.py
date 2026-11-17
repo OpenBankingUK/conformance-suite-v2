@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -296,3 +297,151 @@ skopeo() { [[ "$1" == copy ]]; }
         assert _outputs(env) == {}
         assert "Loaded image" in result.stderr
         assert "untrusted-config-value" not in result.stderr
+
+
+def _scout_environment(tmp_path: Path, provenance: Mapping[str, object], failure: str = "") -> dict[str, str]:
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    commands = {
+        "curl": r"""#!/bin/bash
+while (( $# )); do
+  if [[ "$1" == -o ]]; then
+    mkdir -p "$(dirname "$2")"
+    : > "$2"
+    exit 0
+  fi
+  shift
+done
+exit 1
+""",
+        "sha256sum": "#!/bin/bash\nexit 0\n",
+        "tar": r"""#!/bin/bash
+target=""
+last=""
+while (( $# )); do
+  if [[ "$1" == -C ]]; then
+    target="$2"
+    shift 2
+  else
+    last="$1"
+    shift
+  fi
+done
+if [[ "$last" == docker-scout ]]; then
+  : > "$target/docker-scout"
+fi
+""",
+        "docker": r"""#!/bin/bash
+case "$*" in
+  "buildx imagetools inspect "*)
+    if [[ "$*" == *"{{.Manifest.Digest}}"* ]]; then
+      printf 'sha256:%064d\n' 1
+    else
+      cat "$TEST_PROVENANCE"
+    fi
+    ;;
+  "scout compare "*)
+    [[ "${TEST_SCOUT_FAIL:-}" != compare ]] || exit 42
+    while (( $# )); do
+      if [[ "$1" == --output ]]; then
+        printf '<img alt="No changes" src="https://example.invalid/badge"/>\n' > "$2"
+        exit 0
+      fi
+      shift
+    done
+    exit 1
+    ;;
+  "scout cves "*)
+    [[ "${TEST_SCOUT_FAIL:-}" != cves ]] || exit 43
+    printf 'fixture-package 1.0.0\n'
+    ;;
+  *)
+    echo "Unexpected docker invocation: $*" >&2
+    exit 44
+    ;;
+esac
+""",
+    }
+    for name, content in commands.items():
+        path = stubs / name
+        path.write_text(content)
+        path.chmod(0o755)
+
+    provenance_path = tmp_path / "provenance.json"
+    provenance_path.write_text(json.dumps(provenance))
+    home = tmp_path / "home"
+    runner_temp = tmp_path / "runner-temp"
+    home.mkdir()
+    runner_temp.mkdir()
+    work = runner_temp / "scout-impact"
+    (work / "cache").mkdir(parents=True)
+    docker_scout = home / ".docker" / "scout"
+    docker_scout.mkdir(parents=True)
+    (work / "cache" / "sentinel").write_text("private cache state")
+    (docker_scout / "sentinel").write_text("private Scout state")
+    archive = tmp_path / "candidate.tar"
+    archive.touch()
+
+    return {
+        "PATH": f"{stubs}{os.pathsep}{os.environ['PATH']}",
+        "HOME": str(home),
+        "RUNNER_TEMP": str(runner_temp),
+        "RUNNER_ARCH": "X64",
+        "SCOUT_CLI_VERSION": "1.29.0",
+        "SCOUT_CLI_SHA256_AMD64": "0" * 64,
+        "PUBLISHED_IMAGE": "openbanking/conformance-suite-v2:2.0.0-beta-latest",
+        "RUNTIME_BASE": "dhi.io/python:3.14@sha256:" + "a" * 64,
+        "PLATFORM": "linux/amd64",
+        "ARCHIVE": str(archive),
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"),
+        "DOCKER_SCOUT_HUB_USER": "stub",
+        "DOCKER_SCOUT_HUB_PASSWORD": "stub",  # pragma: allowlist secret -- fake test stub
+        "TEST_PROVENANCE": str(provenance_path),
+        "TEST_SCOUT_FAIL": failure,
+    }
+
+
+@pytest.mark.parametrize(
+    ("published_base_digest", "expected_status"),
+    [
+        ("sha256:" + "a" * 64, "**unchanged** from the published image"),
+        ("sha256:" + "b" * 64, "**changed** from the published `sha256:" + "b" * 64 + "`"),
+        ("", "not found in the published image's provenance"),
+    ],
+)
+def test_scout_report_summarizes_published_base_provenance_and_cleans_state(
+    tmp_path: Path, published_base_digest: str, expected_status: str
+) -> None:
+    materials = (
+        [{"uri": "pkg:docker/dhi.io/python@3.14", "digest": {"sha256": published_base_digest.removeprefix("sha256:")}}]
+        if published_base_digest
+        else []
+    )
+    env = _scout_environment(tmp_path, {"linux/amd64": {"SLSA": {"materials": materials}}})
+    result = _run_script(_shell("ci.yml", "Report Docker Scout impact against the published beta"), env)
+
+    assert result.returncode == 0, result.stderr
+    summary = Path(env["GITHUB_STEP_SUMMARY"]).read_text()
+    assert "## Docker Scout impact (linux/amd64)" in summary
+    assert f"**Runtime base:** `{env['RUNTIME_BASE']}` is {expected_status}." in summary
+    assert "`No changes`" in summary
+    assert "fixture-package 1.0.0" in summary
+    assert not (Path(env["RUNNER_TEMP"]) / "scout-impact").exists()
+    assert not (Path(env["HOME"]) / ".docker" / "scout").exists()
+
+
+def test_failed_scout_command_warns_and_cleans_both_state_directories(tmp_path: Path) -> None:
+    provenance = {
+        "linux/amd64": {
+            "SLSA": {
+                "materials": [{"uri": "pkg:docker/dhi.io/python@3.14", "digest": {"sha256": "a" * 64}}],
+            }
+        }
+    }
+    env = _scout_environment(tmp_path, provenance, failure="compare")
+    result = _run_script(_shell("ci.yml", "Report Docker Scout impact against the published beta"), env)
+
+    assert result.returncode == 42
+    assert "::warning title=Scout impact report incomplete::" in result.stdout
+    assert not (Path(env["RUNNER_TEMP"]) / "scout-impact").exists()
+    assert not (Path(env["HOME"]) / ".docker" / "scout").exists()

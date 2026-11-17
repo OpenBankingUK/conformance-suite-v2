@@ -19,12 +19,74 @@ Snyk reports its own PR status. No Actions or promotion workflow invokes Snyk or
 requires `SNYK_TOKEN`. GitHub secret scanning/push protection, Dependabot updates,
 normal PR reviews, Code Owners, and fork workflow approval policy remain.
 
-Custom Scout, Snyk Container and pip-audit scans, DHI provenance/VEX risk
+Custom blocking Scout, Snyk Container and pip-audit scans, DHI provenance/VEX risk
 assessment, exception receipts, promotion rescans, and daily vulnerability-issue
 sync are removed. PR source/dependency checks are **not equivalent** to the
 removed multi-platform OS/container scans or surveillance of published images.
 Existing vulnerability issues and historical reports are not marked fixed or
 deleted; automatic updates stop.
+
+`Image (linux/amd64)` also writes an informational **Docker Scout impact**
+job summary. It compares the candidate with the published `2.0.0-beta-latest`
+and states whether the runtime base digest changed. It is not a required check
+and never blocks. See
+[CI/CD Strategy §3.2](CICD_STRATEGY.md#docker-scout-results-on-published-images)
+for why published Scout results often stay the same between betas.
+
+## Docker Scout VEX statements
+
+Docker signs a VEX document for each DHI image that marks many base-package
+CVEs as not affecting it. Docker Hub's Scout view of our derived image applies
+little of it, so it reports findings that Docker has already assessed for the
+base. Measured on 2026-11-17 for `2.0.0-beta.21` (`linux/amd64`, runtime base
+`dhi.io/python:3.14-debian13@sha256:d20d953b…`):
+
+| Scout view | Vulnerabilities |
+|---|---|
+| Published image, as shown on Docker Hub | 25 in 15 packages: 0 critical, 2 high, 6 medium, 12 low, 5 unspecified |
+| Same image with the DHI base VEX (`--vex-location`) | 7 in 7 packages: 0 critical, 0 high, 2 medium, 0 low, 5 unspecified |
+
+The base VEX for `linux/amd64` has 191 statements. Scout attaches only 47 to
+our image, all justified as `vulnerable_code_cannot_be_controlled_by_adversary`.
+It omits the `inline_mitigations_already_exist` statements, including those
+covering the `libexpat1` High findings. Scout also ignores a VEX document
+embedded in the image filesystem when the image has attestations, as ours do,
+so a Dockerfile change cannot fix this.
+
+The pipeline does **not** attach VEX or create Scout exceptions. Either is a
+public security claim about our image, and Docker documents that an attached
+VEX document cannot be removed. Do not attach one without security owner
+approval. To evaluate it, use a published preview image:
+
+1. Fetch Docker's signed VEX for the exact runtime base. It is
+   platform-specific, so repeat for `linux/arm64`. This needs a `dhi.io` login:
+
+   ```bash
+   docker scout vex get --verify --platform linux/amd64 \
+     --output base-amd64.vex.json \
+     registry://dhi.io/python:3.14-debian13@sha256:<runtime-base-digest>
+   ```
+
+2. Confirm the effect locally, without changing the registry:
+
+   ```bash
+   docker scout cves --platform linux/amd64 --vex-location base-amd64.vex.json \
+     registry://openbanking/conformance-suite-v2:<preview-version>
+   ```
+
+3. Only after approval, attach it to that preview image with credentials that
+   can write to the repository, then check Docker Hub's view of the image:
+
+   ```bash
+   docker scout attestation add --referrer \
+     --predicate-type https://openvex.dev/ns/v0.2.0 \
+     --file base-amd64.vex.json \
+     openbanking/conformance-suite-v2:<preview-version>
+   ```
+
+Scout exceptions created in the Docker Scout Dashboard are an alternative that
+needs the same approval. Ask Docker support whether derived images should
+inherit the full DHI VEX before choosing either route.
 
 ## Required PR checks
 
