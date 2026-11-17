@@ -226,6 +226,14 @@ jobs:
         if: needs.plan.outputs.is_hardened == 'true'
         run: uv run python -m scripts.validate_docker_base --candidate-dhi --dockerfile Dockerfile
 
+      - name: Resolve runtime base for the Scout impact report
+        id: runtime_base
+        if: matrix.slug == 'linux-amd64' && needs.plan.outputs.is_hardened == 'true'
+        run: |
+          set -euo pipefail
+          runtime_base="$(uv run python -m scripts.validate_docker_base --candidate-dhi --print-runtime-base --dockerfile Dockerfile)"
+          echo "ref=$runtime_base" >> "$GITHUB_OUTPUT"
+
       - name: Resolve image version
         id: metadata
         env:
@@ -272,6 +280,98 @@ jobs:
             --cache-from type=gha,scope=candidate-${{ matrix.slug }} \
             --cache-to type=gha,mode=max,scope=candidate-${{ matrix.slug }} \
             .
+
+      - name: Report Docker Scout impact against the published beta
+        # Informational, never blocking: shows reviewers how this candidate
+        # differs from what Docker Hub's Scout reports for the published beta.
+        # Scout only sees shipped runtime contents, so builder-stage, tooling,
+        # CI and dev-dependency changes are expected to show no difference.
+        # Runs before any further repository scripts; Scout's Docker Hub
+        # credentials exist only in this step's environment.
+        if: matrix.slug == 'linux-amd64' && needs.plan.outputs.is_hardened == 'true'
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          SCOUT_CLI_VERSION: "1.29.0"
+          SCOUT_CLI_SHA256_AMD64: 9157cdc9372b478a8cd51dd53f5e9c74a7e34056ea291c65520bf76016fa72f4 # pragma: allowlist secret
+          PUBLISHED_IMAGE: openbanking/conformance-suite-v2:2.0.0-beta-latest
+          RUNTIME_BASE: ${{ steps.runtime_base.outputs.ref }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCHIVE: artifacts/image-${{ matrix.slug }}.tar
+          DOCKER_SCOUT_HUB_USER: ${{ secrets.DOCKER_ORG_USERNAME }}
+          DOCKER_SCOUT_HUB_PASSWORD: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/scout-impact"
+          # Remove all Scout state, which may include Docker Hub tokens,
+          # before later steps run branch-controlled code.
+          export DOCKER_SCOUT_CACHE_DIR="$work/cache"
+          trap 'rm -rf "$work" "$HOME/.docker/scout"' EXIT
+          trap 'echo "::warning title=Scout impact report incomplete::This informational report failed; see the step log. CI is not blocked."' ERR
+          if [[ -z "$DOCKER_SCOUT_HUB_USER" || -z "$DOCKER_SCOUT_HUB_PASSWORD" ]]; then
+            echo "::notice title=Scout impact report skipped::Docker Hub credentials are unavailable to this run."
+            exit 0
+          fi
+          [[ "$RUNNER_ARCH" == "X64" ]]
+
+          rm -rf "$work"
+          mkdir -p "$work/oci" ~/.docker/cli-plugins
+          cli="docker-scout_${SCOUT_CLI_VERSION}_linux_amd64.tar.gz"
+          curl --retry 5 --retry-delay 2 --retry-max-time 60 -fsSL -o "$work/$cli" \
+            "https://github.com/docker/scout-cli/releases/download/v${SCOUT_CLI_VERSION}/${cli}"
+          echo "${SCOUT_CLI_SHA256_AMD64}  $work/$cli" | sha256sum --check --status
+          tar -xzf "$work/$cli" -C ~/.docker/cli-plugins docker-scout
+          chmod +x ~/.docker/cli-plugins/docker-scout
+
+          # The archive is an OCI layout. oci-dir:// keeps BuildKit's
+          # provenance and SBOM visible to Scout, as on Docker Hub.
+          tar -xf "$ARCHIVE" -C "$work/oci"
+
+          # Published provenance records the exact runtime base digest. An
+          # unchanged runtime base means unchanged OS-package findings.
+          base_name="${RUNTIME_BASE%@*}"
+          base_digest="${RUNTIME_BASE##*@}"
+          purl_prefix="pkg:docker/${base_name%:*}@${base_name##*:}?"
+          published_digest="$(
+            docker buildx imagetools inspect "$PUBLISHED_IMAGE" --format '{{json .Provenance}}' \
+              | jq -r --arg platform "$PLATFORM" \
+                  '.[$platform].SLSA | (.materials // .buildDefinition.resolvedDependencies // [])[] | .uri' \
+              | grep -F "$purl_prefix" \
+              | sed -n 's/.*[?&]digest=\(sha256:[0-9a-f]\{64\}\).*/\1/p' | head -n 1
+          )" || published_digest=""
+          if [[ -z "$published_digest" ]]; then
+            base_status="not found in the published image's provenance"
+          elif [[ "$published_digest" == "$base_digest" ]]; then
+            base_status="**unchanged** from the published image, so this change cannot alter its OS-package findings"
+          else
+            base_status="**changed** from the published \`${published_digest}\`"
+          fi
+
+          docker scout compare "oci-dir://$work/oci" --to "registry://$PUBLISHED_IMAGE" \
+            --platform "$PLATFORM" --ignore-unchanged --format markdown --output "$work/compare.md"
+          docker scout cves "oci-dir://$work/oci" --platform "$PLATFORM" \
+            --format only-packages --only-vuln-packages > "$work/cves.txt"
+
+          {
+            echo "## Docker Scout impact (${PLATFORM})"
+            echo
+            echo "Informational only. Compares this candidate with the published \`${PUBLISHED_IMAGE}\`, as reported by Docker Hub's Scout view. Builder-stage, tooling, CI and dev-dependency changes do not ship, so they cannot change these results."
+            echo
+            echo "**Runtime base:** \`${RUNTIME_BASE}\` is ${base_status}."
+            echo
+            # Render Scout's severity badges as text instead of third-party
+            # images; the backticks are literal Markdown, not substitutions.
+            # shellcheck disable=SC2016
+            sed -E 's#<img alt="([^"]*)" src="[^"]*"/>#`\1`#g' "$work/compare.md"
+            echo
+            echo "<details><summary>Vulnerable packages in this candidate</summary>"
+            echo
+            echo '```text'
+            cat "$work/cves.txt"
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Log out of dhi.io before running repository scripts
         # login-action leaves the credential in ~/.docker/config.json until
