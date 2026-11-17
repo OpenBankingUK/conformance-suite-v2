@@ -1627,7 +1627,8 @@ def validate_dcr_subject_dn(value: str) -> None:
             )
         if not valid_attribute_name:
             raise DcrExecutionError("DCR tls_client_auth_subject_dn does not match the required DN pattern")
-        if not attribute_value or attribute_value.endswith("\\"):
+        trailing_backslashes = len(attribute_value) - len(attribute_value.rstrip("\\"))
+        if not attribute_value or trailing_backslashes % 2:
             raise DcrExecutionError("DCR tls_client_auth_subject_dn is not valid RFC 2253 syntax")
 
 
