@@ -39,6 +39,7 @@ _JWT_LIFETIME = timedelta(minutes=5)
 _DCR_AUTH_METHODS = frozenset({"tls_client_auth", "private_key_jwt", "client_secret_jwt", "client_secret_basic"})
 """Token endpoint authentication methods implemented by this adapter."""
 
+
 class DcrExecutionError(ValueError):
     """Raised when DCR runtime configuration or protocol data is invalid."""
 
