@@ -110,6 +110,23 @@ DCR plans instead use family `OBL_DCR`, specification
 complete canonical example, configuration migration, supported auth methods, and
 operator workflow. Legacy `conformance-dcr` JSON is not directly importable.
 
+### PSU authorisation URL in the terminal
+
+For manual PSU authorisation steps, the CLI prints the complete ASPSP
+authorisation URL so you can click it or copy it into a browser, including one
+on another machine. The URL is not masked. It contains the signed request
+object, `state` and `nonce` for the consent being authorised, so treat it as
+sensitive until the step completes:
+
+- Don't record, stream or screen-share the terminal while the URL is shown.
+- Don't paste it into chat, tickets or shared documents. Move it to another
+  machine only over a channel you trust.
+- Clear terminal scrollback and any terminal session logs after the run.
+
+The URL is printed only when stdout and stderr are both interactive terminals,
+so CI jobs and redirected output don't receive it. Persisted execution logs mask
+its sensitive query parameters unless `CONFORMANCE_DEVELOPER_MODE=true`.
+
 ## Browser and REST launch
 
 The browser wizard imports, exports, reviews, and launches the same canonical
