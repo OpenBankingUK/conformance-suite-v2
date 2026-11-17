@@ -595,8 +595,8 @@ def register_auth_session(request: HttpRequest, run_id: str) -> JsonResponse:
         session = auth_session_store.register(run_id, state=raw_state)
     except InvalidAuthSessionStateError as error:
         return JsonResponse({"error": str(error)}, status=400)
-    except DuplicateAuthSessionError as error:
-        return JsonResponse({"error": str(error)}, status=409)
+    except DuplicateAuthSessionError:
+        return JsonResponse({"error": "Auth-session state already registered"}, status=409)
     except AuthSessionLimitError as error:
         return JsonResponse({"error": str(error)}, status=400)
 

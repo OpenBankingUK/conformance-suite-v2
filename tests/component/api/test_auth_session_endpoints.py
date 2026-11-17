@@ -176,7 +176,7 @@ class TestRegisterAuthSessionEndpoint:
         assert response.status_code == 409
 
     def test_returns_409_for_duplicate_state(self) -> None:
-        """Re-registering the same caller-supplied state yields 409."""
+        """Duplicate registration returns 409 without echoing the OAuth state."""
         client = Client()
         record = run_store.create_run()
         state = "y" * 40
@@ -192,6 +192,7 @@ class TestRegisterAuthSessionEndpoint:
             content_type="application/json",
         )
         assert second.status_code == 409
+        assert second.json() == {"error": "Auth-session state already registered"}
 
     def test_returns_400_when_per_run_cap_exceeded(self) -> None:
         """Registering past the per-run cap yields 400."""
