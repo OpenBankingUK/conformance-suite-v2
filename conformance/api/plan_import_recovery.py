@@ -160,7 +160,7 @@ class PlanImportForm(forms.Form):
         return errors[0] if errors else "Plan JSON could not be imported."
 
 
-def _uploaded_plan_text(upload: UploadedFile) -> str:
+def _uploaded_plan_text(upload: UploadedFile[bytes]) -> str:
     """Read an uploaded plan file as UTF-8 text within the size limit.
 
     Args:
