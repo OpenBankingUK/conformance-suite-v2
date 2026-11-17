@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Build candidate images with BuildKit's default SLSA provenance version
+  instead of pinning v0.2. Limit publication evidence verification to artifact
+  integrity, image identity and attached SLSA provenance (v0.2 or v1) and SPDX
+  SBOMs bound to the exact image. Stop enforcing BuildKit's internal build
+  graph, provenance build arguments and base materials, and SBOM contents;
+  retain source-revision labels and separate Dockerfile base validation.
+
 - Refresh the digest-pinned DHI Debian 13 builder and upgrade uv from 0.10.4
   to 0.13.8 for frozen-lockfile Docker builds. The runtime base and locked
   application dependencies are unchanged; this does not remediate the

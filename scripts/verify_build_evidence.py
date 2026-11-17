@@ -1,8 +1,9 @@
 """Validate BuildKit OCI archives and their unchanged publication descriptors.
 
-SLSA max-mode provenance and SPDX attestations must remain attached to the
-tested platform manifest. These integrity checks bind publication to the exact
-CI artifact; they do not assess vulnerabilities or require risk approval.
+SLSA provenance and SPDX attestations must remain attached to the tested
+platform manifest. These integrity checks bind publication to the exact CI
+artifact without enforcing the contents of the provenance or SBOM predicates.
+They do not assess vulnerabilities or require risk approval.
 """
 
 from __future__ import annotations
@@ -15,14 +16,13 @@ import re
 import sys
 import tarfile
 from pathlib import Path
-from urllib.parse import unquote
 
 INDEX = "application/vnd.oci.image.index.v1+json"
 DOCKER_INDEX = "application/vnd.docker.distribution.manifest.list.v2+json"
 MANIFEST = "application/vnd.oci.image.manifest.v1+json"
-PROVENANCE = "https://slsa.dev/provenance/v0.2"
+PROVENANCE_V02 = "https://slsa.dev/provenance/v0.2"
+PROVENANCE_V1 = "https://slsa.dev/provenance/v1"
 SPDX = "https://spdx.dev/Document"
-BUILD_TYPE = "https://mobyproject.org/buildkit@v1"
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 
 
@@ -193,17 +193,16 @@ def verify_archive(
     platform: str,
     source_sha: str,
     expected_digest: str | None = None,
-    runtime_base: str | None = None,
     allow_legacy: bool = False,
     require_revision_label: bool = False,
 ) -> dict[str, object]:
-    """Verify the full OCI graph and platform-bound, build-generated evidence."""
+    """Verify OCI integrity, image identity and platform-bound attestations."""
     with tarfile.open(path, "r:*") as tar:
         archive = _Archive(tar)
         if "oci-layout" not in tar.getnames():
             if not allow_legacy:
                 raise BuildEvidenceError("Expected a BuildKit OCI archive.")
-            if expected_digest is not None or runtime_base is not None:
+            if expected_digest is not None:
                 raise BuildEvidenceError("Legacy archives cannot be used where OCI evidence is required.")
             return _verify_docker_archive(archive, platform=platform, source_sha=source_sha)
         if _object(json.loads(archive.read("oci-layout"))).get("imageLayoutVersion") != "1.0.0":
@@ -260,7 +259,7 @@ def verify_archive(
         if len(diff_ids) != len(_objects(image_manifest.get("layers"))):
             raise BuildEvidenceError("OCI image layers do not match its rootfs metadata.")
         attestations = [item for item in descriptors if item not in images]
-        if allow_legacy and not attestations and runtime_base is None:
+        if allow_legacy and not attestations:
             return {
                 "format": "oci-legacy",
                 "image_digest": image_digest,
@@ -283,13 +282,13 @@ def verify_archive(
         if attestation.get("mediaType") != MANIFEST or attestation_manifest.get("mediaType") != MANIFEST:
             raise BuildEvidenceError("Invalid attestation manifest type.")
         archive.blob(_object(attestation_manifest.get("config")))
-        predicates: dict[str, dict[str, object]] = {}
+        predicates: set[str] = set()
         for layer in _objects(attestation_manifest.get("layers")):
             if layer.get("mediaType") != "application/vnd.in-toto+json":
                 raise BuildEvidenceError("Invalid attestation layer type.")
             statement = archive.blob(layer)
             kind = statement.get("predicateType")
-            if kind not in (PROVENANCE, SPDX) or not isinstance(kind, str) or kind in predicates:
+            if kind not in (PROVENANCE_V02, PROVENANCE_V1, SPDX) or not isinstance(kind, str) or kind in predicates:
                 raise BuildEvidenceError("Missing, duplicate or unexpected attestation predicate.")
             if statement.get("_type") not in ("https://in-toto.io/Statement/v0.1", "https://in-toto.io/Statement/v1"):
                 raise BuildEvidenceError("Invalid in-toto statement type.")
@@ -298,32 +297,10 @@ def verify_archive(
                 _object(subject.get("digest")).get("sha256") != image_digest[7:] for subject in subjects
             ):
                 raise BuildEvidenceError("Attestation subject differs from the scanned image.")
-            predicates[kind] = _object(statement.get("predicate"))
-        if set(predicates) != {PROVENANCE, SPDX}:
+            _object(statement.get("predicate"))
+            predicates.add(kind)
+        if SPDX not in predicates or len(predicates - {SPDX}) != 1:
             raise BuildEvidenceError("BuildKit provenance and SBOM are both required.")
-        provenance = predicates[PROVENANCE]
-        if provenance.get("buildType") != BUILD_TYPE or not _objects(
-            _object(provenance.get("buildConfig")).get("llbDefinition")
-        ):
-            raise BuildEvidenceError("BuildKit max-mode LLB evidence is required.")
-        parameters = _object(_object(provenance.get("invocation")).get("parameters"))
-        if _object(parameters.get("args")).get("build-arg:SOURCE_REVISION") != source_sha:
-            raise BuildEvidenceError("Provenance build revision differs from the candidate commit.")
-        materials = _objects(provenance.get("materials"))
-        if not materials:
-            raise BuildEvidenceError("Provenance materials are missing.")
-        if runtime_base is not None:
-            repository, _, base_digest = runtime_base.partition("@sha256:")
-            repository = repository.rsplit(":", 1)[0]
-            if not base_digest or not any(
-                unquote(str(item.get("uri", ""))).startswith("pkg:docker/" + repository + "@")
-                and _object(item.get("digest")).get("sha256") == base_digest
-                for item in materials
-            ):
-                raise BuildEvidenceError("Provenance does not identify the candidate DHI runtime base.")
-        sbom = predicates[SPDX]
-        if sbom.get("spdxVersion") != "SPDX-2.3" or not _objects(sbom.get("packages")):
-            raise BuildEvidenceError("BuildKit SPDX package evidence is missing.")
         return {
             "format": "oci",
             "image_digest": image_digest,
@@ -369,7 +346,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--platform", choices=("linux/amd64", "linux/arm64"))
     parser.add_argument("--source-sha")
     parser.add_argument("--expected-digest")
-    parser.add_argument("--runtime-base")
     parser.add_argument("--allow-legacy", action="store_true")
     parser.add_argument("--require-revision-label", action="store_true")
     parser.add_argument("--add-docker-load-manifest", action="store_true")
@@ -384,7 +360,6 @@ def main(argv: list[str] | None = None) -> int:
                 platform=args.platform,
                 source_sha=args.source_sha,
                 expected_digest=args.expected_digest,
-                runtime_base=args.runtime_base,
                 allow_legacy=args.allow_legacy,
                 require_revision_label=args.require_revision_label,
             )

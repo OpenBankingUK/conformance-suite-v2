@@ -314,11 +314,17 @@ publisher consumes those exact archives after successful CI. Candidate jobs have
 read-only repository permissions and never push an image.
 
 Candidate archives use BuildKit's OCI exporter with max-mode SLSA provenance
+(BuildKit's default version; the verifier accepts v0.2 and v1)
 and an SPDX SBOM attached to each runnable platform manifest. The verifier
 checks the archive's content-addressed OCI blobs, platform, source revision,
-runtime Config, DHI base digest, provenance subject and SBOM. This evidence
-binds publication to the tested image; it does not make a vulnerability
-judgement. GitHub's publication attestations remain separate and unchanged.
+and presence of provenance and SBOM statements whose subjects identify the
+exact image. It preserves those statements without enforcing BuildKit's
+internal build graph, provenance build arguments or base-image materials,
+or the SBOM's version and package inventory. The source-revision label and
+separate Dockerfile base-reference validation remain checked. This evidence
+binds publication to the tested image; it does not validate the statements'
+claims or make a vulnerability judgement. GitHub's publication attestations
+remain separate and unchanged.
 Before upload, CI adds a classic Docker `manifest.json` import view that points
 to the same config and compressed layer blobs with the candidate's local tag.
 It does not replace or rewrite any OCI member, provenance, SBOM, or descriptor.
