@@ -101,6 +101,26 @@ for registered callbacks, listener configuration and sandbox requirements.
 See [update selection and supported versions](docs/USAGE_GUIDE.md#openapi-document-updates).
 Read/Write CLI/REST plans must select an `openApiDocumentUpdate`.
 
+### PSU authorisation URL in the terminal
+
+For manual PSU authorisation steps, the CLI prints the complete ASPSP
+authorisation URL so you can click it or copy it into a browser, including one
+on another machine. The URL is not masked. It contains the signed request
+object, `state` and `nonce` for the consent being authorised, so treat it as
+sensitive until the step completes:
+
+- Don't record, stream or screen-share the terminal while the URL is shown.
+- Don't paste it into chat, tickets or shared documents. Move it to another
+  machine only over a channel you trust.
+- Clear terminal scrollback and any terminal session logs after the run.
+
+The URL is printed only when stdout and stderr are both interactive terminals,
+so CI jobs and redirected output don't receive it. Persisted execution logs mask
+the signed request object and selected credential-bearing query parameters,
+such as `request` and `client_assertion`. They retain `client_id`, `state` and
+`nonce` in the URL; `state` and `nonce` are also retained as separate event
+fields. Masking is disabled when `CONFORMANCE_DEVELOPER_MODE=true`.
+
 ## Browser and REST launch
 
 See [REST creation, status and evidence routes](docs/USAGE_GUIDE.md#browser-and-rest-launch).
