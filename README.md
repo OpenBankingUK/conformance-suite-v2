@@ -125,7 +125,10 @@ sensitive until the step completes:
 
 The URL is printed only when stdout and stderr are both interactive terminals,
 so CI jobs and redirected output don't receive it. Persisted execution logs mask
-its sensitive query parameters unless `CONFORMANCE_DEVELOPER_MODE=true`.
+the signed request object and selected credential-bearing query parameters,
+such as `request` and `client_assertion`. They retain `client_id`, `state` and
+`nonce` in the URL; `state` and `nonce` are also retained as separate event
+fields. Masking is disabled when `CONFORMANCE_DEVELOPER_MODE=true`.
 
 ## Browser and REST launch
 
