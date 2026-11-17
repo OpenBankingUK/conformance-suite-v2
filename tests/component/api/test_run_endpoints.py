@@ -53,6 +53,34 @@ VALID_TEST_PLAN = {
 }
 
 
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/api/runs/missing/"),
+        ("GET", "/api/runs/missing/result/"),
+        ("POST", "/api/runs/missing/auth-sessions/"),
+        ("GET", "/api/runs/missing/auth-sessions/state/"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("time_zone", "use_header"),
+    [
+        ("Mars/Olympus", False),
+        ("/synthetic/timezone", False),
+        ("../synthetic/timezone", True),
+    ],
+)
+def test_invalid_display_time_zone_returns_safe_error(method: str, path: str, time_zone: str, use_header: bool) -> None:
+    client = Client()
+    if use_header:
+        response = client.generic(method, path, HTTP_X_TIME_ZONE=time_zone)
+    else:
+        response = client.generic(method, path, query_params={"timeZone": time_zone})
+
+    assert response.status_code == 400
+    assert response.json() == {"error": "timeZone must be a valid IANA timezone"}
+
+
 @pytest.mark.usefixtures("api_singleton_stores")
 class TestCreateRunEndpoint:
     def test_rejects_non_json_body(self) -> None:

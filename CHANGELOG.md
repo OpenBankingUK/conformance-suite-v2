@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   backtracking, while preserving escape-aware RFC 2253 delimiter handling and
   valid trailing escaped-backslash pairs.
 
+- Normalize unknown and malformed display timezones to the same helpful API
+  validation message without returning library exception text or submitted values.
+
 - Refresh the digest-pinned DHI Python 3.14 / Debian 13 builder and runtime
   multi-architecture indexes. The runtime updates gcc-14, libgcc-s1 and
   libstdc++6; the Expat High findings remain unchanged and are not resolved by
