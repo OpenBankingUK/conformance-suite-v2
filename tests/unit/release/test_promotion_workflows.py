@@ -1,4 +1,4 @@
-"""Regression checks for cross-caller image publication and release serialization."""
+"""Regression checks for CI-driven publication and release serialization."""
 
 from __future__ import annotations
 
@@ -36,78 +36,80 @@ def test_caller_holds_shared_non_cancelling_workflow_lock(filename: str) -> None
 
 @pytest.mark.parametrize("filename", ("_promote-image.yml", "_finalize-release.yml"))
 def test_reusable_workflows_do_not_reacquire_the_caller_lock(filename: str) -> None:
-    workflow = (WORKFLOWS / filename).read_text()
-    assert not re.search(r"^\s*concurrency:", workflow, re.MULTILINE)
+    assert not re.search(r"^\s*concurrency:", (WORKFLOWS / filename).read_text(), re.MULTILINE)
 
 
 @pytest.mark.parametrize("filename", ("auto-promote.yml", "promote-beta.yml", "promote-ga.yml"))
 def test_release_finalization_remains_after_successful_promotion(filename: str) -> None:
-    workflow = (WORKFLOWS / filename).read_text()
-    finalize = workflow.split("\n  finalize:\n", 1)[1]
+    finalize = (WORKFLOWS / filename).read_text().split("\n  finalize:\n", 1)[1]
     assert FINALIZATION_CALL in finalize
     assert re.search(r"^    needs: (?:promote|\[resolve, promote\])$", finalize, re.MULTILINE)
     assert "always()" not in finalize
     assert "    environment:" not in finalize
 
 
-def test_preview_remains_publication_only_and_auto_resolution_keeps_its_own_group() -> None:
-    assert FINALIZATION_CALL not in (WORKFLOWS / "promote-preview.yml").read_text()
+def test_automatic_promotion_uses_only_successful_eligible_push_ci() -> None:
     automatic = (WORKFLOWS / "auto-promote.yml").read_text()
+    assert 'workflows: ["CI"]' in automatic
     resolve = automatic.split("\n  resolve:\n", 1)[1].split("\n  promote:\n", 1)[0]
+    assert "github.event.workflow_run.conclusion == 'success'" in resolve
+    assert "github.event.workflow_run.event == 'push'" in resolve
+    assert "github.event.workflow_run.head_repository.full_name == github.repository" in resolve
+    assert "head_branch == 'main'" not in resolve
+    assert "            release/*|preview/*) ;;\n" in resolve
+    assert "startsWith(github.event.workflow_run.head_branch, 'release/')" in resolve
+    assert "startsWith(github.event.workflow_run.head_branch, 'preview/')" in resolve
+    assert "CI_RUN_ID: ${{ github.event.workflow_run.id }}" in resolve
     assert "      group: auto-promote-resolve-${{ github.event.workflow_run.head_branch }}\n" in resolve
     assert "      cancel-in-progress: true\n" in resolve
     assert "    environment:" not in resolve
     assert "needs.resolve.outputs.should_promote == 'true'" in automatic
+    assert "ci_run_id: ${{ needs.resolve.outputs.ci_run_id }}" in automatic
     assert "(needs.resolve.outputs.channel == 'ga' || needs.resolve.outputs.channel == 'beta')" in automatic
+    assert FINALIZATION_CALL not in (WORKFLOWS / "promote-preview.yml").read_text()
+    policy = resolve.split("      - name: Resolve promotion policy\n", 1)[1]
+    assert "if: steps.artifact.outputs.available == 'true'" in policy
 
 
-def test_trusted_assessment_is_separate_and_candidate_bound() -> None:
-    assessment = (WORKFLOWS / "security-assessment.yml").read_text()
-    ci = (WORKFLOWS / "ci.yml").read_text()
-    automatic = (WORKFLOWS / "auto-promote.yml").read_text()
+def test_promotion_preserves_credential_boundary_without_scanner_dependencies() -> None:
+    for path in WORKFLOWS.glob("*.yml"):
+        workflow = path.read_text()
+        for retired in (
+            "security-assessment",
+            "security_assessment_run_id",
+            "security-exception",
+            "vulnerability-scan",
+            "SNYK_TOKEN",
+            "/approvals",
+            "candidate-context",
+        ):
+            assert retired not in workflow, (path.name, retired)
     promotion = (WORKFLOWS / "_promote-image.yml").read_text()
-
-    assert 'workflows: ["CI"]' in assessment
-    assert 'EXPECTED_CI_WORKFLOW_ID: "268848247"' in assessment
-    assert "and .run_attempt == 1" in assessment
-    assert "and .workflow_sha_under_test == $sha" in assessment
-    assert "commits/$source_sha" in assessment
-    assert '--arg head_sha "$check_sha"' in assessment
-    assert "environment: security-exception" in assessment
-    assert "actions/runs/$GITHUB_RUN_ID/approvals" in assessment
-    assert 'allow-exceptions: "false"' in assessment
-    assert "uses: ./.github/actions/vulnerability-scan" not in ci
-    assert 'workflows: ["Trusted security assessment"]' in automatic
-    assert "security_assessment_run_id:" in automatic
-    assert "security_assessment_run_id:" in promotion
-    assert "security-assessment-receipt" in promotion
-    assert 'verify-dhi-provenance: "true"' in promotion
+    publish = promotion.split("\n  promote:\n", 1)[1]
+    assert "    needs: locate\n" in publish
+    assert "    environment: ${{ inputs.environment_name }}\n" in publish
+    assert "always()" not in publish
+    assert "git diff --quiet" in publish
+    assert "No merged pull request found" in publish
+    assert "skopeo copy --all --preserve-digests" in publish
+    assert "--allow-legacy" in publish
+    assert "scripts.verify_build_evidence" in publish
+    assert "password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}" in publish
 
 
-def test_build_keeps_max_mode_evidence_and_scanned_leaf_identity() -> None:
+def test_build_keeps_quality_checks_and_platform_evidence() -> None:
     ci = (WORKFLOWS / "ci.yml").read_text()
-
+    assert "make check SECRET_SCAN_EXCLUDE_PATHSPEC=" in ci
     assert "--provenance=mode=max,version=v0.2" in ci
     assert "--sbom=true" in ci
     assert "type=oci,oci-artifact=false,compression=gzip,force-compression=true" in ci
     assert "scripts.verify_build_evidence" in ci
     assert "--add-docker-load-manifest" in ci
     assert "'.image_digest'" in ci
-
-
-def test_assessor_and_promoter_accept_legacy_archives_without_weakening_policy() -> None:
-    assessment = (WORKFLOWS / "security-assessment.yml").read_text()
-    promotion = (WORKFLOWS / "_promote-image.yml").read_text()
-
-    assert "--allow-legacy" in assessment
-    assert 'docker load --input "$RUNNER_TEMP/candidate/image-$SLUG.tar"' in assessment
-    assert "--allow-legacy" in promotion
-    assert 'docker load --input "$archive"' in promotion
-    assert "skopeo copy --all --preserve-digests" in promotion
-    assert "scripts.verify_build_evidence" in promotion
-    assert "scripts/verify_loaded_image.py" in promotion
-    assert 'allow-exceptions: "false"' in promotion
-    assert 'fail-on-findings: "false"' in promotion
+    upload = ci.split("      - name: Upload candidate artifacts\n", 1)[1].split("\n  candidate-manifest:", 1)[0]
+    assert "if: needs.plan.outputs.is_candidate == 'true'" in upload
+    assert "artifacts/image-${{ matrix.slug }}.tar" in upload
+    assert "artifacts/sbom-${{ matrix.slug }}.spdx.json" in upload
 
 
 def test_published_version_is_passed_through_environment_not_shell_interpolation() -> None:
@@ -115,7 +117,6 @@ def test_published_version_is_passed_through_environment_not_shell_interpolation
     publish = promotion.split("      - name: Assemble and publish the multi-arch manifest list\n", 1)[1].split(
         "\n      - name:", 1
     )[0]
-
     assert "RAW_VERSION: ${{ steps.validate.outputs.raw_version }}" in publish
     assert "AMD64_INDEX: ${{ steps.stage.outputs.amd64_index }}" in publish
     assert "ARM64_INDEX: ${{ steps.stage.outputs.arm64_index }}" in publish
@@ -126,21 +127,11 @@ def test_published_version_is_passed_through_environment_not_shell_interpolation
 
 
 def test_promotion_run_blocks_do_not_interpolate_dynamic_github_context() -> None:
-    workflow = (WORKFLOWS / "_promote-image.yml").read_text()
-    blocks = re.findall(
-        r"^        run: \|\n((?:^          .*\n|^\n)+)",
-        workflow,
-        re.MULTILINE,
-    )
-    assert blocks
-    for block in blocks:
-        assert not re.search(r"\$\{\{\s*(?:steps\.[\w-]+\.outputs\.|inputs\.|github\.event\.|needs\.)", block)
-
-
-def test_rescan_fetches_candidate_before_reading_its_dockerfile() -> None:
-    promotion = (WORKFLOWS / "_promote-image.yml").read_text()
-    rescan = promotion.split("\n  rescan:\n", 1)[1].split("\n  decision:", 1)[0]
-    load = rescan.split("      - name: Verify and load the candidate archive\n", 1)[1]
-    assert load.index('git fetch --no-tags origin "$INPUT_SOURCE_SHA"') < load.index(
-        'git show "$INPUT_SOURCE_SHA:Dockerfile"'
-    )
+    for filename in (*CALLERS, "_promote-image.yml"):
+        blocks = re.findall(
+            r"^        run: \|\n((?:^          .*\n|^\n)+)",
+            (WORKFLOWS / filename).read_text(),
+            re.MULTILINE,
+        )
+        for block in blocks:
+            assert not re.search(r"\$\{\{\s*(?:steps\.[\w-]+\.outputs\.|inputs\.|github\.event\.|needs\.)", block)

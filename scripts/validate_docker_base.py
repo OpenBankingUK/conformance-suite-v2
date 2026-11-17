@@ -43,8 +43,8 @@ def get_candidate_dhi_bases(dockerfile: str) -> CandidateDhiBases:
     """Parse the fixed DHI Python 3.14 / Debian 13 builder and runtime pair.
 
     Unlike :func:`get_runtime_base`, this validates the image family and digest
-    syntax rather than an advance-approved digest. The trusted assessment must
-    independently verify signed provenance for both returned references.
+    syntax rather than an advance-approved digest. This is a build-contract
+    check, not a vulnerability or signed-provenance assessment.
     """
     stages: dict[str, tuple[str, int]] = {}
     from_count = 0

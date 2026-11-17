@@ -1,10 +1,10 @@
 """Command-line entrypoint building the candidate promotion manifest.
 
-Used by candidate-image CI after the full hardened smoke test and vulnerability
-scan pass. Captures exactly what was built — the source commit, the raw
+Used by candidate-image CI after quality checks and the hardened smoke tests
+pass. Captures exactly what was built — the source commit, the raw
 version/channel, each platform's built image digest, and the OCI labels
 attached to those images — as a JSON file. The promotion workflow revalidates
-this manifest and republishes the same, already-scanned digests; it never
+this manifest and republishes the same, already-tested digests; it never
 rebuilds.
 
 Usage::

@@ -24,14 +24,12 @@
 |---------|
 | `astral-sh/setup-uv` |
 | `docker/*` |
-| `anchore/sbom-action` |
 | `snyk/actions/*` |
 
 **Rationale**: Only the actions required for the CI pipeline are allowlisted:
 
 - **`astral-sh/setup-uv`** — Required for installing `uv` in CI to manage Python and dependencies.
 - **`docker/*`** — Required for building, tagging, and pushing the conformance suite Docker container image.
-- **`anchore/sbom-action`** — Generates the SPDX SBOM for each native-platform candidate image in the `candidate-image` job.
 - **`snyk/actions/*`** — Required for dependency and container security scanning as part of the CI security-scan job.
 
 The principle is to remain closed by default and open incrementally.
@@ -87,9 +85,9 @@ The principle is to remain closed by default and open incrementally.
 | Setting | Value |
 |---------|-------|
 | Default GITHUB_TOKEN permissions | **Read** (repository contents and packages only) |
-| Allow Actions to create and approve PRs | ✅ Checked |
+| Allow Actions to create and approve PRs | ❌ Unchecked |
 
-**Rationale**: Follows the principle of least privilege for the default: workflows receive read-only access by default, and any workflow that requires write permissions must explicitly declare them via the `permissions` key in the workflow YAML (see the per-job `permissions:` blocks in `.github/workflows/`). This one repository-level setting must be **enabled**, however, because `promote-ga.yml` opens (but never merges or approves) a `main`-to-`develop` merge-back pull request via `gh pr create` using `GITHUB_TOKEN`; GitHub blocks `GITHUB_TOKEN`-authored PR creation entirely when this setting is off, regardless of the workflow's own `permissions:` block. No workflow in this repository calls the PR-approval API, so the "approve" half of this combined toggle is dormant capability, not exercised behaviour — the merge-back PR still requires a human review to satisfy `develop`'s branch protection rules before it can be merged.
+**Rationale**: Follows the principle of least privilege. Workflows receive read-only access by default; any workflow that requires write permissions must explicitly declare them via the `permissions` key in the workflow YAML. Disabling PR creation and approval by Actions prevents automated workflows from self-approving changes, which would undermine the required code review process.
 
 ---
 
@@ -99,8 +97,9 @@ Once CI workflows are committed, verify:
 
 - [ ] Workflows can resolve and use `actions/checkout`, `actions/setup-python`, and other GitHub-authored actions
 - [ ] `docker/*` actions resolve correctly in the container build job
-- [ ] `snyk/actions/*` actions resolve correctly in the security scan job
+- [ ] The external Snyk integration reports `code/snyk (Standards)` on PRs without an Actions scanner job
 - [ ] Actions pinned by SHA execute without permission errors
 - [ ] Fork PRs from external contributors are held for approval before workflows run
 - [ ] Workflow GITHUB_TOKEN has read-only access unless explicitly escalated in YAML
-- [ ] Trusted `workflow_run` security assessment can create the `Vulnerability Scan` check on the verified pull-request head SHA
+- [ ] Trusted `workflow_run` promotion accepts only successful same-repository eligible push CI
+- [ ] Publishing environments permit only `main`, retain their write credentials, and have no required reviewers or wait timers

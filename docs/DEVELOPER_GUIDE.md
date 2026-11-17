@@ -26,7 +26,7 @@ container deployment belongs in the [Docker guide](DOCKER_GUIDE.md).
 | --- | --- |
 | [Decision log](DECISION_LOG.md) | Current design decisions, recorded rationale, tradeoffs and evidence. |
 | [Testing strategy](TESTING_STRATEGY.md) | Offline unit/component boundaries, fixtures and structured-result assertions. |
-| [CI/CD strategy](CICD_STRATEGY.md) | Branch/review controls, vulnerability gates and release promotion. |
+| [CI/CD strategy](CICD_STRATEGY.md) | Branch/review controls, security checks and release promotion. |
 | [Legacy benchmark mapping](FCS_LEGACY_BENCHMARK_MAPPING.md) | Catalogue coverage and legacy source traceability. |
 | [DCR parity contract](DCR_3_4_PARITY_CONTRACT.md) | DCR request/state, migration and regression contract. |
 | [Read/Write endpoint requirements](READ_WRITE_ENDPOINT_REQUIREMENTS.md) | Specification endpoint classifications and source discrepancies. |
@@ -701,25 +701,25 @@ canonical `make check` gate with the local OpenAPI exclusion cleared, so it
 runs ruff, mypy, the complete offline `unit`/`component` suite with coverage,
 and a full tracked-file secret scan. `Docker Build` builds the image, starts a
 container, and probes `/health/`. `Image (linux/amd64|arm64)` builds each
-platform image. After successful CI, a trusted assessment scans both images
-and emits the `Vulnerability Scan` check. Fixable findings block; eligible
-unfixed high/critical findings require candidate-bound risk approval. Open
-the assessment summary and artifacts for the full report.
+platform image and verifies its identity and smoke-test behavior. The existing
+Snyk integration reports `code/snyk (Standards)` independently on PRs; GitHub
+CodeQL also remains required. Neither is called from the promotion workflow.
 
-To resolve a failing `Vulnerability Scan`, upgrade the affected package
-(`uv lock --upgrade-package <name>`) or base image. If no fix is possible,
-follow the [DHI security approval runbook](IMAGE_SECURITY_APPROVALS.md);
-source-controlled exceptions cannot approve a candidate or promotion.
-You can run the policy locally against scanner output with
-`uv run python -m scripts.vulnerability_gate --help`.
+Custom container/dependency scans, daily rescans, and security/publishing
+approvals are removed. Successful eligible push CI starts automatic publication
+of the exact tested artifacts after release validation. Normal PR review,
+secret scanning, Ruff security lint, and image-integrity checks remain.
+Snyk/CodeQL PR analysis does not replace multi-platform OS/container scanning.
+See [CI/CD Strategy §3.2](CICD_STRATEGY.md#32-vulnerability-scanning-and-the-pr-gate)
+and the [configuration guide](IMAGE_SECURITY_APPROVALS.md).
 
 Participant-facing preview, beta, RC, and GA images add a stricter release
 gate. The workflow builds an immutable candidate image, runs the full checks
-against that exact digest, scans the final runtime image with Snyk, generates
-SBOM/provenance, records a candidate manifest, and promotes the already-checked
-digest only after the appropriate GitHub Environment approval. The version/tag
-to publish is set in `[project].version` in `pyproject.toml` and reviewed in
-the PR; it is not typed into the workflow approval screen.
+against that exact digest, generates SBOM/provenance, records a candidate
+manifest, and automatically promotes the already-checked digest after
+successful push CI, without a separate approval. GA publication is paused while
+2.0.0 remains in beta. The version/tag to publish is set in
+`[project].version` in `pyproject.toml` and reviewed in the PR.
 
 There is no live-network or end-to-end workflow. Container startup and health
 checking validate packaging only; they are not an Ozone or conformance-system
