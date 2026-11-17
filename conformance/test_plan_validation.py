@@ -761,7 +761,9 @@ def _canonical_schema_issues(raw_plan: object) -> tuple[TestPlanValidationIssue,
     if not isinstance(raw_plan, dict) or raw_plan.get("schemaVersion") != "1.0":
         return ()
     return tuple(
-        TestPlanValidationIssue("schema", "error", f"{_json_schema_error_path(error)}: {error.message}")
+        TestPlanValidationIssue(
+            "schema", "error", f"{_json_schema_error_path(error)}: {_json_schema_error_detail(error)}"
+        )
         for error in sorted(
             _CANONICAL_TEST_PLAN_SCHEMA_VALIDATOR.iter_errors(raw_plan),
             key=_json_schema_error_sort_key,
@@ -826,12 +828,147 @@ def _json_schema_error_sort_key(error: object) -> tuple[str, str, str]:
         error: Validation error object from ``jsonschema``.
 
     Returns:
-        Tuple built from rendered instance path, schema path, and message.
+        Tuple built from rendered instance path, schema path, and safe detail.
     """
     path = ".".join(str(segment) for segment in getattr(error, "absolute_path", ()))
     schema_path = ".".join(str(segment) for segment in getattr(error, "absolute_schema_path", ()))
-    message = getattr(error, "message", "")
-    return (path, schema_path, message if isinstance(message, str) else "")
+    return (path, schema_path, _json_schema_error_detail(error))
+
+
+def _json_schema_error_detail(error: object) -> str:
+    """Describe a JSON Schema error without echoing submitted values.
+
+    Args:
+        error: Validation error produced by ``jsonschema``.
+
+    Returns:
+        Safe, actionable detail derived from the schema constraint.
+    """
+    validator = getattr(error, "validator", None)
+    validator_value = getattr(error, "validator_value", None)
+
+    if validator == "type":
+        expected = validator_value if isinstance(validator_value, list) else [validator_value]
+        return f"must be of type {', '.join(str(item) for item in expected)}"
+    if validator == "enum" and isinstance(validator_value, list):
+        return f"must be one of: {', '.join(repr(item) for item in validator_value)}"
+    if validator == "const":
+        return f"must equal {validator_value!r}"
+    if validator == "required" and isinstance(validator_value, list):
+        instance = getattr(error, "instance", None)
+        if isinstance(instance, dict):
+            missing = [key for key in validator_value if key not in instance]
+            if missing:
+                return f"missing required field(s): {', '.join(str(key) for key in missing)}"
+        return "is missing one or more required fields"
+    if validator == "additionalProperties":
+        instance = getattr(error, "instance", None)
+        schema = getattr(error, "schema", None)
+        properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+        if isinstance(instance, dict) and isinstance(properties, dict):
+            unexpected = [key for key in instance if key not in properties]
+            if unexpected:
+                return f"contains unsupported field(s): {', '.join(repr(key) for key in unexpected)}"
+        return "contains unsupported field(s)"
+    if validator == "minLength" and isinstance(validator_value, int):
+        return f"must contain at least {validator_value} characters"
+    if validator == "maxLength" and isinstance(validator_value, int):
+        return f"must contain at most {validator_value} characters"
+    if validator == "minItems" and isinstance(validator_value, int):
+        return f"must contain at least {validator_value} items"
+    if validator == "maxItems" and isinstance(validator_value, int):
+        return f"must contain at most {validator_value} items"
+    if validator == "pattern":
+        return "does not match the required format"
+    if validator == "format":
+        return f"must use the {validator_value!r} format"
+    if validator == "uniqueItems":
+        return "must not contain duplicate items"
+    if validator in {"minimum", "exclusiveMinimum", "maximum", "exclusiveMaximum", "multipleOf"}:
+        return f"does not satisfy the {validator} constraint ({validator_value})"
+    if validator == "contains":
+        shape = _schema_shape_summary(validator_value)
+        if shape is not None:
+            return f"must contain an item with {shape}"
+        return "must contain at least one item matching the required schema"
+    if validator in {"oneOf", "anyOf"} and isinstance(validator_value, list):
+        shapes = [_schema_shape_summary(option) for option in validator_value]
+        if shapes and all(shape is not None for shape in shapes):
+            return f"must match one of the allowed forms: {'; or '.join(str(shape) for shape in shapes)}"
+        if validator == "oneOf":
+            return "must match exactly one allowed schema form"
+        return "must match at least one allowed schema form"
+    if validator == "not":
+        forbidden = _forbidden_required_fields(validator_value)
+        if forbidden:
+            instance = getattr(error, "instance", None)
+            present = [key for key in forbidden if isinstance(instance, dict) and key in instance]
+            return f"must not include field(s): {', '.join(repr(key) for key in present or forbidden)}"
+        return "must not match a disallowed schema form"
+    if validator == "allOf":
+        return "does not satisfy the required schema constraints"
+    return "does not satisfy the required schema constraint"
+
+
+def _schema_shape_summary(schema: object) -> str | None:
+    """Summarise the fixed values a schema form requires.
+
+    Only ``const`` and ``enum`` values from the schema itself are rendered, so
+    the summary never repeats submitted test-plan content.
+
+    Args:
+        schema: JSON Schema fragment from the canonical test-plan schema.
+
+    Returns:
+        Readable summary, or ``None`` when the form has no fixed values.
+    """
+    if not isinstance(schema, dict):
+        return None
+    if "const" in schema:
+        return repr(schema["const"])
+    enum = schema.get("enum")
+    if isinstance(enum, list):
+        return f"one of {', '.join(repr(item) for item in enum)}"
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return None
+    required = schema.get("required")
+    names = [name for name in properties if not isinstance(required, list) or name in required]
+    parts: list[str] = []
+    for name in names:
+        constraint = properties[name]
+        if not isinstance(constraint, dict):
+            continue
+        if "const" in constraint:
+            parts.append(f"{name}={constraint['const']!r}")
+        elif isinstance(constraint.get("enum"), list):
+            parts.append(f"{name} one of {', '.join(repr(item) for item in constraint['enum'])}")
+    return ", ".join(parts) or None
+
+
+def _forbidden_required_fields(schema: object) -> list[str]:
+    """Return field names a ``not`` constraint forbids.
+
+    Recognises ``not: {required: [field]}`` and
+    ``not: {anyOf: [{required: [field]}, ...]}`` forms.
+
+    Args:
+        schema: Value of a JSON Schema ``not`` keyword.
+
+    Returns:
+        Forbidden field names, or an empty list for other forms.
+    """
+    if not isinstance(schema, dict):
+        return []
+    options = schema.get("anyOf")
+    candidates = options if isinstance(options, list) else [schema]
+    fields: list[str] = []
+    for candidate in candidates:
+        required = candidate.get("required") if isinstance(candidate, dict) else None
+        if not isinstance(required, list) or len(required) != 1 or not isinstance(required[0], str):
+            return []
+        fields.append(required[0])
+    return fields
 
 
 def _execution_mode_issues(document: PlanDocumentV2) -> tuple[TestPlanValidationIssue, ...]:

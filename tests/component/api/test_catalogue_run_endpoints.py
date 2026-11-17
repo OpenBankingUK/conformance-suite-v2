@@ -80,6 +80,25 @@ def test_api_create_run_rejects_unknown_capability_selected_plan(tmp_path: Path)
     assert "unknown capability 'accounts.unknown'" in response.json()["error"]
 
 
+def test_api_schema_validation_does_not_echo_submitted_values(tmp_path: Path) -> None:
+    """Schema errors retain field guidance without returning submitted credentials."""
+    credential = "synthetic-client-secret-value"
+    body = _canonical_plan_json()
+    security_environment = body["securityEnvironment"]
+    assert isinstance(security_environment, dict)
+    security_environment["clientAuthMethod"] = credential
+    security_environment["clientId"] = {"password": credential}
+
+    response = Client().post("/api/runs/", data=json.dumps(body), content_type="application/json")
+
+    assert response.status_code == 400
+    response_text = response.content.decode()
+    assert credential not in response_text
+    assert "testPlan.securityEnvironment.clientAuthMethod" in response_text
+    assert "must be one of:" in response_text
+    assert "private_key_jwt" in response_text
+
+
 def test_api_create_run_rejects_removed_manifest_field(tmp_path: Path) -> None:
     body = {"config": _config_json(tmp_path), "manifest": {"schemaVersion": "v1"}}
 
