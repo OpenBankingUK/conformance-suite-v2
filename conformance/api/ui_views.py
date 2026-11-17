@@ -1163,7 +1163,7 @@ def _is_secret_field(form: forms.Form, name: str) -> bool:
     return name.endswith(_SECRET_FIELD_SUFFIXES) or isinstance(form.fields.get(name), forms.FileField)
 
 
-def _secret_inputs_for(name: str, data: QueryDict, files: MultiValueDict[str, UploadedFile]) -> tuple[str, ...]:
+def _secret_inputs_for(name: str, data: QueryDict, files: MultiValueDict[str, UploadedFile[bytes]]) -> tuple[str, ...]:
     """Return pasted or uploaded inputs submitted alongside a credential path.
 
     Args:
@@ -1206,7 +1206,7 @@ def _restore_field(data: QueryDict, form: forms.Form, name: str) -> None:
 
 
 def _lenient_bind[FormT: forms.Form](
-    build: Callable[[Mapping[str, object], MultiValueDict[str, UploadedFile] | None], FormT],
+    build: Callable[[Mapping[str, object], MultiValueDict[str, UploadedFile[bytes]] | None], FormT],
     request: HttpRequest,
 ) -> _LenientBinding[FormT]:
     """Bind a step form so a page with bad values can still be saved and left.
@@ -1225,7 +1225,7 @@ def _lenient_bind[FormT: forms.Form](
         The final bound form and the rejected non-secret values.
     """
     data = request.POST.copy()
-    files: MultiValueDict[str, UploadedFile] = MultiValueDict(
+    files: MultiValueDict[str, UploadedFile[bytes]] = MultiValueDict(
         {key: request.FILES.getlist(key) for key in request.FILES}
     )
     invalid: dict[str, str] = {}

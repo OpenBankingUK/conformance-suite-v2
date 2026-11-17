@@ -1478,7 +1478,7 @@ class SecurityConfigForm(forms.Form):
         self.credentials: dict[str, CredentialMaterial | None] = {}
         super().__init__(
             data=cast(MutableMapping[str, object] | None, data),
-            files=cast("MultiValueDict[str, UploadedFile] | None", files),
+            files=cast("MultiValueDict[str, UploadedFile[bytes]] | None", files),
             initial=cast(MutableMapping[str, object] | None, initial),
         )
         add_credential_fields(self.fields, SECURITY_CREDENTIAL_SPECS_BY_NAME)

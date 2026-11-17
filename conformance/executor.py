@@ -3179,7 +3179,7 @@ def _apply_token_endpoint_auth_policy(
     if (
         fapi_signing_config.token_endpoint_auth_method == "private_key_jwt"  # noqa: S105 - FAPI auth-method enum, not a secret
     ):
-        conflicting_fields = [
+        conflicting_fields: list[str] = [
             field_name
             for field_name in ("client_assertion", "client_assertion_type")
             if field_name in resolved_form_body
