@@ -1,137 +1,92 @@
-# DHI image refresh and security approvals
+# CI security checks and automatic publication
 
-This runbook describes the GitHub configuration required by the trusted DHI
-image assessment and promotion workflows. These settings are manual; repository
-code does not create or modify environments, reviewers, secrets, or rulesets.
+This guide replaces the former DHI risk-approval runbook. Repository code does
+not configure GitHub rulesets or environment protection rules; administrators
+must coordinate the settings below with the workflow rollout.
 
-## What the workflows enforce
-
-- Dependabot proposes the digest-pinned DHI builder/runtime pair together,
-  daily, for `main` and the configured active release branch. The candidate
-  image family remains fixed to Python 3.14 / Debian 13.
-- After successful CI, `security-assessment.yml` validates the CI workflow
-  identity, run attempt, PR association and merge parents. It scans the exact
-  uploaded amd64 and arm64 images with trusted policy code from the default
-  branch. The check is `Vulnerability Scan`, attached to the PR head commit
-  (or push commit).
-- Open findings with fixes available at any severity are blocked. Unfixed
-  high/critical/unknown findings and explicitly missing signed SLSA v1 DHI
-  provenance may be accepted only by a fresh GitHub Environment approval.
-  Scout high/critical findings require that approval even when signed VEX
-  says `fixed` or `not_affected`; a reported package fix is still a hard block.
-  Signature, digest, subject, registry, scanner, authentication, and parsing
-  errors always block. Medium/low unfixed findings are reported.
-- Promotion requires a receipt bound to the exact successful CI run and
-  candidate SHA, then performs a fresh vulnerability rescan. If that rescan
-  finds an eligible risk, it requests another fresh approval before the
-  existing release publication Environment gate. Fixable findings remain
-  unoverrideable.
-- Candidate-controlled exception files are not used by either trusted
-  assessment. The source-controlled exception list remains for explicit
-  persistent policy exceptions and historical rescans.
-
-## Configure the `security-exception` Environment
-
-In **Repository Settings → Environments**, create an environment named
-`security-exception` exactly.
-
-1. Add the small, designated security-risk approver set under **Required
-   reviewers**. Only people who can make and record vulnerability risk
-   acceptance should be selected.
-2. Enable **Prevent administrators from bypassing configured protection
-   rules** where the repository plan exposes this setting. Do not add a
-   wait timer; the security approval is an explicit human decision, not a
-   time delay.
-3. Restrict deployment branches to `main`. The assessment workflow runs from
-   the trusted default branch; promotion workflows are also required to be
-   dispatched from `main`.
-4. Self-approval is permitted by the current policy decision. If the
-   approver is also the submitter, the workflow records a risk acceptance,
-   not independent review.
-5. Do not add Docker Hub publishing credentials to this environment.
-   `security-exception` gates risk acceptance only; the existing
-   `preview-release`, `beta-release`, and `ga-release` environments remain the
-   independent publication approval and credential boundary.
-
-When an approval is requested, inspect the per-platform findings on the pending
-check or promotion summary and both full platform report artifacts in the
-corresponding run. The reviewer must enter the exact comment shown in that run's
-summary: `APPROVE <full candidate image commit SHA>`. The workflow checks the
-actual Actions run approval record, environment name, and comment. A new
-assessment or promotion run requires a new approval; approvals are not reused.
-Missing DHI provenance is listed by platform and base role alongside the final
-policy decision, even when no vulnerabilities block.
-
-## Require status checks
-
-In **Settings → Rules → Rulesets**, verify each applicable ruleset for `main`,
-`develop`, `release/*`, and `preview/*`. GitHub only offers check names it has already
-seen, so search for each name and add it explicitly. The `preview/*` ruleset
-currently requires only `Vulnerability Scan` from this list:
+## Retained checks
 
 | Check | Source |
 |---|---|
-| `Check` | CI: secret scan, lint, types, tests, coverage |
+| `Check` | CI: full tracked-file secret scan, Ruff including security rules, mypy, offline tests and coverage |
 | `Docker Build` | CI: build and smoke test |
-| `Image (linux/amd64)` | CI: exact amd64 candidate image |
-| `Image (linux/arm64)` | CI: exact arm64 candidate image |
-| `Vulnerability Scan` | Trusted assessment, including any approved risk exception |
-| `code/snyk (Standards)` | Snyk integration |
+| `Image (linux/amd64)` | CI: exact amd64 image, evidence and smoke test |
+| `Image (linux/arm64)` | CI: exact arm64 image, evidence and smoke test |
+| `code/snyk (Standards)` | Existing external Snyk PR integration |
+| CodeQL | GitHub default setup; required code-scanning results at High or higher |
 
-- Require branches to be up to date before merging.
-- The `preview vulnerability check` ruleset (27127788) requires `Vulnerability
-  Scan` from GitHub Actions on `preview/*`, with strict checks and no bypass
-  actors. The existing main/develop and release rulesets also require it and
-  retain their existing bypasses.
-- Separately, **Require code scanning results → CodeQL** with security alerts
-  at **High or higher** once CodeQL default setup is enabled. CodeQL source
-  analysis complements, and does not replace, the image vulnerability gate.
+Snyk reports its own PR status. No Actions or promotion workflow invokes Snyk or
+requires `SNYK_TOKEN`. GitHub secret scanning/push protection, Dependabot updates,
+normal PR reviews, Code Owners, and fork workflow approval policy remain.
 
-The `Vulnerability Scan` check is emitted by a trusted `workflow_run`
-workflow; it is not the former scanner job inside PR-controlled CI. Fork pull
-requests cannot receive repository scan credentials and need to be assessed
-from a same-repository branch before they can satisfy this check.
+Custom Scout, Snyk Container and pip-audit scans, DHI provenance/VEX risk
+assessment, exception receipts, promotion rescans, and daily vulnerability-issue
+sync are removed. PR source/dependency checks are **not equivalent** to the
+removed multi-platform OS/container scans or surveillance of published images.
+Existing vulnerability issues and historical reports are not marked fixed or
+deleted; automatic updates stop.
 
-**Bootstrap:** `workflow_run` workflows execute from the default branch, so
-the PR that introduces `security-assessment.yml` cannot receive a
-`Vulnerability Scan` check from it. Merging that PR requires a recorded admin
-bypass; subsequent PRs are assessed normally.
+## Required PR checks
 
-Bypass applies to the whole ruleset, including required checks. To merge solo
-work without bypassing automated checks, keep checks and branch safety in a
-ruleset with no bypass actors, and put human-review rules in a separate
-ruleset whose bypass is limited to maintainers **for pull requests only**.
-Copilot code review is advisory and does not count as an approval.
+Update only the affected check requirements, preserving review rules, bypass
+actors, strict checks, and other branch protections:
 
-## Verify Actions and secrets
+- `main & develop` (`15781582`) and `release branch checks` (`24119519`):
+  remove `Vulnerability Scan`; keep the five CI/Snyk statuses above and the
+  existing CodeQL rule.
+- Preview ruleset (`27127788`, named `preview vulnerability check`):
+  replace its sole `Vulnerability Scan` requirement with `code/snyk (Standards)`.
+  Confirm Snyk reports for PRs targeting preview branches before relying on it.
 
-In **Settings → Actions → General**, retain the least-privilege default
-`GITHUB_TOKEN` permission and confirm workflows can grant their explicitly
-declared `checks: write`, `security-events: write`, `actions: read`, and
-`contents: read` permissions. The assessment requires `SNYK_TOKEN` and the
-read-only Docker organization credentials as repository Actions secrets.
-The read-only `DOCKER_ORG_USERNAME` and `DOCKER_ORG_ACCESS_TOKEN` are also
-needed as Dependabot secrets for private DHI pulls. Never place the
-write-capable Docker token in repository or Dependabot secrets; keep it only
-in the existing publication Environments.
+Do not leave a required check whose producer has been deleted, invent an
+always-successful replacement, or drop Snyk when it is missing. Repair the
+integration's branch coverage instead.
 
-## Manual promotion
+## Publishing environments
 
-The manual `promote-preview`, `promote-beta`, and `promote-ga` workflows now
-require `security_assessment_run_id`. Supply the Actions run ID of a successful
-`Trusted security assessment` run whose receipt matches the requested CI
-source SHA. Use the run ID from the Actions run URL, not the PR number or CI
-run ID. Promotion still validates the CI artifacts, rescans current findings,
-and pauses for the existing publication approval.
+Keep `preview-release`, `beta-release`, and `ga-release` as credential boundaries:
 
-## Enablement checklist
+1. Restrict deployment branches to **only `main`**, with no tag patterns.
+2. Remove required reviewers and wait timers. There is no security or
+   publication approval after a PR is merged and eligible push CI passes.
+3. Preserve each environment's write-capable `DOCKER_ORG_ACCESS_TOKEN`.
+   Never move this token into repository or Dependabot secrets.
+4. Keep the read-only `DOCKER_ORG_USERNAME` and `DOCKER_ORG_ACCESS_TOKEN`
+   credentials available for DHI pulls in repository and Dependabot scopes.
 
-- [x] Create and protect `security-exception`.
-- [x] Confirm `SNYK_TOKEN` and read-only DHI secrets are in the correct scopes.
-- [ ] Merge the trusted assessment workflow and observe `Vulnerability Scan`
-      on a same-repository PR.
-- [x] Require `Vulnerability Scan` in the relevant branch rulesets.
-- [ ] Confirm the existing publication Environments still require reviewers
-      and restrict deployments to `main`.
-- [ ] Make a manual promotion only with the successful assessment run ID for
-      the exact candidate commit.
+The reusable publisher retains `environment:` and checks out trusted `main`;
+GitHub resolves its environment secret in preference to the read-only secret
+passed by the caller. It validates the exact CI run, candidate metadata,
+archive checksums, source branch/merged PR, and publication digests. It never
+rebuilds or executes candidate code with publishing credentials.
+
+The unused `security-exception` environment and stored `SNYK_TOKEN` can remain
+inert during migration. They are not used by the new workflows.
+
+## Cutover and verification
+
+1. Save current non-secret ruleset/environment configuration and inspect pending
+   runs. Do not release an old queued deployment by removing its reviewer gate.
+2. Coordinate removal of the retired required check and retirement of the old
+   assessment/rescan automation with the reviewed workflow change on `main`.
+   Cancel only confirmed superseded scanner runs.
+3. Apply the publication environment restrictions before removing reviewers.
+   Re-read settings to verify credentials and unrelated protections were retained.
+4. Synchronize active release/preview branches with trusted main pipeline files
+   before producing new candidates. `workflow_run` executes from the default
+   branch, and promotion requires matching pipeline files.
+5. Verify a fresh PR receives Snyk, CodeQL where configured, and its normal CI
+   checks without `Vulnerability Scan`. Verify the next eligible push CI starts
+   publication without an approval pause.
+
+Manual `promote-preview`, `promote-beta`, and `promote-ga` dispatches remain
+recovery/backfill paths from `main`; they no longer take an assessment run ID.
+They still require a successful matching push CI run and immutable artifacts.
+After successful publication, beta/GA release finalization remains unchanged.
+Do not manufacture a version or publish an old candidate just to test rollout.
+
+GA publication is paused while 2.0.0 is in beta: automatic promotion ignores
+`main` pushes and **Promote GA image** is disabled in Actions settings. Without
+this, every `main` push would publish its placeholder version as GA with no
+approval. See [CI/CD Strategy §5.2](CICD_STRATEGY.md#52-standard-release-git-flow)
+to resume GA.

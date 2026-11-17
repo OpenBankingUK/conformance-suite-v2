@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Refresh the digest-pinned DHI Debian 13 builder and upgrade uv from 0.10.4
+  to 0.13.8 for frozen-lockfile Docker builds. The runtime base and locked
+  application dependencies are unchanged; this does not remediate the
+  published runtime CVEs.
+
+- Remove custom image/dependency security scans, scheduled rescans, and
+  security-risk and release-publishing approvals. Promote eligible candidates
+  directly after successful CI while preserving artifact integrity and release
+  validation. Keep the external Snyk PR check, CodeQL, secret scanning, Ruff
+  security lint, and normal CI/review requirements. Custom multi-platform
+  vulnerability surveillance and automatic vulnerability-issue updates stop.
+
+- Pause GA image publication while 2.0.0 is in beta. Automatic promotion no
+  longer publishes from `main`, whose placeholder version would otherwise be
+  released as GA on every push now that publication approvals are removed.
+
 ### Security
 
 - Refresh the digest-pinned DHI Python 3.14 / Debian 13 builder and runtime
