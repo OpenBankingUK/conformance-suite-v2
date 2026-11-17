@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.21] - 2026-11-17
+
+### Changed
+
+- Upgrade the locked runtime dependencies Django from 6.0.8 to 6.1.3 and
+  joserfc from 1.7.7 to 1.8.0, matching main. Upgrade development tooling to
+  django-stubs 6.1.2, mypy 2.4.1, packaging 26.3, pytest 9.2.0,
+  pytest-django 4.14.0 and Ruff 0.17.4, and type uploaded files as binary for
+  the now-generic Django `UploadedFile` stubs.
+
+### Removed
+
+- Remove the unused `security/vulnerability-exceptions.toml`. No release check
+  has read it since the custom vulnerability gate was retired in
+  2.0.0-beta.18.
+
+### Security
+
+- Require TLS 1.2 or later on the offline DCR test service's local TLS server.
+  The test service is not included in the published image.
+
+### Known issues
+
+- The runtime base image is unchanged from 2.0.0-beta.20. Docker Hub and
+  Docker Scout may continue to report the known `libexpat1` High findings
+  (CVE-2026-117610 and CVE-2026-118370), despite Docker's signed VEX marking
+  them `not_affected` for the DHI runtime base. This beta does not introduce a
+  runtime CVE remediation.
+
 ## [2.0.0-beta.20] - 2026-11-17
 
 ### Changed
@@ -818,7 +847,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.20...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.21...HEAD
+[2.0.0-beta.21]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.20...v2.0.0-beta.21
 [2.0.0-beta.20]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.19...v2.0.0-beta.20
 [2.0.0-beta.19]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.18...v2.0.0-beta.19
 [2.0.0-beta.18]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.17...v2.0.0-beta.18
