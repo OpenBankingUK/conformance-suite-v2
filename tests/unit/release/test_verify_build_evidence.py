@@ -21,8 +21,8 @@ from scripts.verify_build_evidence import (
 pytestmark = pytest.mark.unit
 
 SOURCE_SHA = "1" * 40
-RUNTIME_BASE = "dhi.io/python:3.14-debian13@sha256:" + "2" * 64
 PROVENANCE = "https://slsa.dev/provenance/v0.2"
+PROVENANCE_V1 = "https://slsa.dev/provenance/v1"
 SPDX = "https://spdx.dev/Document"
 MANIFEST_TYPE = "application/vnd.oci.image.manifest.v1+json"
 
@@ -92,6 +92,9 @@ def _oci_archive(
     config_arch: str | None = None,
     revision: str = SOURCE_SHA,
     labels_mode: str = "present",
+    provenance_version: str = "v0.2",
+    predicate_overrides: dict[str, dict[str, object]] | None = None,
+    subject_overrides: dict[str, str] | None = None,
 ) -> list[dict[str, object]]:
     source = "sha256:" + "2" * 64
     runtime_config: dict[str, object] = {"Labels": {"org.opencontainers.image.revision": revision}}
@@ -134,17 +137,30 @@ def _oci_archive(
             "uri": "pkg:docker/dhi.io/python@3.14-debian13?digest=" + source[7:],
             "digest": {"sha256": source[7:]},
         }
-        statements = {
-            PROVENANCE: {
+        provenance_type = PROVENANCE
+        provenance_predicate: dict[str, object] = {
+            "buildType": "https://mobyproject.org/buildkit@v1",
+            "buildConfig": {"llbDefinition": [{"id": "step0"}]},
+            "invocation": {"parameters": {"args": {"build-arg:SOURCE_REVISION": SOURCE_SHA}}},
+            "materials": [base_material],
+        }
+        if provenance_version == "v1":
+            provenance_type = PROVENANCE_V1
+            provenance_predicate = {
+                "buildDefinition": {
+                    "buildType": "https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md",
+                    "externalParameters": {"request": {"args": {"build-arg:SOURCE_REVISION": SOURCE_SHA}}},
+                    "internalParameters": {"buildConfig": {"llbDefinition": [{"id": "step0"}]}},
+                    "resolvedDependencies": [base_material],
+                },
+                "runDetails": {"builder": {"id": ""}},
+            }
+        statements: dict[str, dict[str, object]] = {
+            provenance_type: {
                 "_type": "https://in-toto.io/Statement/v1",
                 "subject": [{"name": "image", "digest": {"sha256": str(image_descriptor["digest"])[7:]}}],
-                "predicateType": PROVENANCE,
-                "predicate": {
-                    "buildType": "https://mobyproject.org/buildkit@v1",
-                    "buildConfig": {"llbDefinition": [{"id": "step0"}]},
-                    "invocation": {"parameters": {"args": {"build-arg:SOURCE_REVISION": SOURCE_SHA}}},
-                    "materials": [base_material],
-                },
+                "predicateType": provenance_type,
+                "predicate": provenance_predicate,
             },
             SPDX: {
                 "_type": "https://in-toto.io/Statement/v1",
@@ -153,6 +169,10 @@ def _oci_archive(
                 "predicate": {"spdxVersion": "SPDX-2.3", "packages": [{"name": "fixture"}]},
             },
         }
+        for kind, payload in (predicate_overrides or {}).items():
+            statements[kind]["predicate"] = payload
+        for kind, digest in (subject_overrides or {}).items():
+            statements[kind]["subject"] = [{"name": "image", "digest": {"sha256": digest}}]
         attestation_layers = []
         for predicate, statement in statements.items():
             content = _json(statement)
@@ -202,22 +222,62 @@ def _oci_archive(
     return descriptors
 
 
-def test_verifies_buildkit_provenance_sbom_and_dhi_base(tmp_path: Path) -> None:
+@pytest.mark.parametrize("provenance_version", ["v0.2", "v1"])
+def test_verifies_image_integrity_and_attached_evidence(tmp_path: Path, provenance_version: str) -> None:
     archive = tmp_path / "candidate.tar"
-    descriptors = _oci_archive(archive)
+    descriptors = _oci_archive(archive, provenance_version=provenance_version)
 
     result = verify_archive(
         archive,
         platform="linux/arm64",
         source_sha=SOURCE_SHA,
         expected_digest=str(descriptors[0]["digest"]),
-        runtime_base=RUNTIME_BASE,
         require_revision_label=True,
     )
 
     assert result["format"] == "oci"
     assert result["image_digest"] == descriptors[0]["digest"]
     assert result["descriptors"] == descriptors
+
+
+@pytest.mark.parametrize("provenance_version", ["v0.2", "v1"])
+def test_cli_preserves_attestations_without_enforcing_predicate_contents(
+    tmp_path: Path, provenance_version: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    archive = tmp_path / "candidate.tar"
+    provenance_type = PROVENANCE_V1 if provenance_version == "v1" else PROVENANCE
+    descriptors = _oci_archive(
+        archive,
+        provenance_version=provenance_version,
+        predicate_overrides={
+            provenance_type: {},
+            SPDX: {"spdxVersion": "SPDX-2.2", "packages": []},
+        },
+    )
+    original = archive.read_bytes()
+
+    assert (
+        main(
+            [
+                "--archive",
+                str(archive),
+                "--platform",
+                "linux/arm64",
+                "--source-sha",
+                SOURCE_SHA,
+                "--expected-digest",
+                str(descriptors[0]["digest"]),
+                "--require-revision-label",
+            ]
+        )
+        == 0
+    )
+    evidence = json.loads(capsys.readouterr().out)
+    assert evidence["format"] == "oci"
+    assert evidence["image_digest"] == descriptors[0]["digest"]
+    assert evidence["descriptors"] == descriptors
+    assert archive.read_bytes() == original
+    verify_publication({"mediaType": "application/vnd.oci.image.index.v1+json", "manifests": descriptors}, [evidence])
 
 
 def test_docker_import_view_preserves_every_original_oci_member_and_evidence(tmp_path: Path) -> None:
@@ -271,8 +331,6 @@ def test_cli_adds_import_view_only_after_evidence_verification(
                 "linux/arm64",
                 "--source-sha",
                 SOURCE_SHA,
-                "--runtime-base",
-                RUNTIME_BASE,
                 "--add-docker-load-manifest",
             ]
         )
@@ -493,10 +551,10 @@ def test_attested_publication_still_requires_oci_index() -> None:
         )
 
 
-@pytest.mark.parametrize("removed", [PROVENANCE, SPDX])
+@pytest.mark.parametrize("removed", [PROVENANCE, PROVENANCE_V1, SPDX])
 def test_archive_rejects_missing_provenance_or_sbom_descriptors(tmp_path: Path, removed: str) -> None:
     archive = tmp_path / "missing-attestation.tar"
-    _oci_archive(archive)
+    _oci_archive(archive, provenance_version="v1" if removed == PROVENANCE_V1 else "v0.2")
     _rewrite_graph_without_predicate(archive, removed)
 
     with pytest.raises(BuildEvidenceError, match="provenance and SBOM are both required"):
@@ -504,14 +562,26 @@ def test_archive_rejects_missing_provenance_or_sbom_descriptors(tmp_path: Path, 
             archive,
             platform="linux/arm64",
             source_sha=SOURCE_SHA,
-            runtime_base=RUNTIME_BASE,
         )
 
 
-@pytest.mark.parametrize("corrupted", [PROVENANCE, SPDX])
+@pytest.mark.parametrize("mismatched", [PROVENANCE, PROVENANCE_V1, SPDX])
+def test_archive_rejects_attestations_bound_to_a_different_image(tmp_path: Path, mismatched: str) -> None:
+    archive = tmp_path / "wrong-subject.tar"
+    _oci_archive(
+        archive,
+        provenance_version="v1" if mismatched == PROVENANCE_V1 else "v0.2",
+        subject_overrides={mismatched: "f" * 64},
+    )
+
+    with pytest.raises(BuildEvidenceError, match="Attestation subject differs"):
+        verify_archive(archive, platform="linux/arm64", source_sha=SOURCE_SHA)
+
+
+@pytest.mark.parametrize("corrupted", [PROVENANCE, PROVENANCE_V1, SPDX])
 def test_archive_rejects_corrupted_attestation_blobs(tmp_path: Path, corrupted: str) -> None:
     archive = tmp_path / "corrupted-attestation.tar"
-    descriptors = _oci_archive(archive)
+    descriptors = _oci_archive(archive, provenance_version="v1" if corrupted == PROVENANCE_V1 else "v0.2")
     members = _read_archive(archive)
     attestation = json.loads(members[_blob_name(descriptors[1])])
     layer = next(
@@ -527,7 +597,6 @@ def test_archive_rejects_corrupted_attestation_blobs(tmp_path: Path, corrupted: 
             archive,
             platform="linux/arm64",
             source_sha=SOURCE_SHA,
-            runtime_base=RUNTIME_BASE,
         )
 
 

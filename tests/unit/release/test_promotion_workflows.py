@@ -94,16 +94,21 @@ def test_promotion_preserves_credential_boundary_without_scanner_dependencies() 
     assert "skopeo copy --all --preserve-digests" in publish
     assert "--allow-legacy" in publish
     assert "scripts.verify_build_evidence" in publish
+    assert '--expected-digest "$expected" --require-revision-label' in publish
+    assert "--runtime-base" not in publish
+    assert "scripts.validate_docker_base --candidate-dhi --stdin" in publish
     assert "password: ${{ secrets.DOCKER_ORG_ACCESS_TOKEN }}" in publish
 
 
 def test_build_keeps_quality_checks_and_platform_evidence() -> None:
     ci = (WORKFLOWS / "ci.yml").read_text()
     assert "make check SECRET_SCAN_EXCLUDE_PATHSPEC=" in ci
-    assert "--provenance=mode=max,version=v0.2" in ci
+    assert "--provenance=mode=max \\\n" in ci
     assert "--sbom=true" in ci
     assert "type=oci,oci-artifact=false,compression=gzip,force-compression=true" in ci
     assert "scripts.verify_build_evidence" in ci
+    assert "--runtime-base" not in ci
+    assert "--require-revision-label" in ci
     assert "--add-docker-load-manifest" in ci
     assert "'.image_digest'" in ci
     upload = ci.split("      - name: Upload candidate artifacts\n", 1)[1].split("\n  candidate-manifest:", 1)[0]
