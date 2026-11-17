@@ -12,7 +12,6 @@ from conformance.catalogue import (
     CatalogueKey,
     CatalogueTestCase,
     EndpointRef,
-    HttpMethod,
     PlanDocumentV2,
     SecurityProfileApplicability,
     TestCaseApplicability,
@@ -124,7 +123,7 @@ def _dcr_catalogue() -> TestCatalogue:
                 security_profiles=SecurityProfileApplicability(("all",)),
                 endpoint_refs=(
                     EndpointRef(
-                        method=cast(HttpMethod, method),
+                        method=method,
                         path="/register" if method == "POST" else "/register/{ClientId}",
                     ),
                 ),
