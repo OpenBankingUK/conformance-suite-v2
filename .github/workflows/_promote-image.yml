@@ -418,12 +418,12 @@ jobs:
               --allow-legacy \
               > "artifacts/publication-evidence-$slug.json"
             if [[ "$(jq -r '.format' "artifacts/publication-evidence-$slug.json")" == "oci" ]]; then
-              runtime_base="$(git show "$INPUT_SOURCE_SHA:Dockerfile" | uv run python -m scripts.validate_docker_base --candidate-dhi --stdin --print-runtime-base)"
+              git show "$INPUT_SOURCE_SHA:Dockerfile" | uv run python -m scripts.validate_docker_base --candidate-dhi --stdin
               expected="$(jq -r --arg platform "$platform" '.platform_digests[$platform]' artifacts/manifest/promotion-manifest.json)"
               uv run python -m scripts.verify_build_evidence \
                 --archive "artifacts/candidate-$slug/image-$slug.tar" \
                 --platform "$platform" --source-sha "$INPUT_SOURCE_SHA" \
-                --expected-digest "$expected" --runtime-base "$runtime_base" --require-revision-label \
+                --expected-digest "$expected" --require-revision-label \
                 > "artifacts/publication-evidence-$slug.json"
             else
               expected="$(jq -r --arg platform "$platform" '.platform_digests[$platform]' artifacts/manifest/promotion-manifest.json)"

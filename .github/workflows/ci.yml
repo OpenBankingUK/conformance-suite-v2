@@ -264,6 +264,7 @@ jobs:
       - name: Build image archive
         # OCI retains BuildKit's platform-bound attestations; the Docker
         # exporter drops them. Only the trusted promotion workflow can publish.
+        # Provenance uses BuildKit's default SLSA version (v0.2 or v1).
         env:
           LOCAL_TAG: ob-conformance-candidate:${{ matrix.slug }}-${{ github.sha }}
           RAW_VERSION: ${{ steps.metadata.outputs.raw_version }}
@@ -274,7 +275,7 @@ jobs:
             --build-arg CONFORMANCE_TOOL_VERSION="$RAW_VERSION" \
             --build-arg SOURCE_REVISION="${{ github.sha }}" \
             --tag "$LOCAL_TAG" \
-            --provenance=mode=max,version=v0.2 \
+            --provenance=mode=max \
             --sbom=true \
             --output type=oci,oci-artifact=false,compression=gzip,force-compression=true,dest=artifacts/image-${{ matrix.slug }}.tar \
             --cache-from type=gha,scope=candidate-${{ matrix.slug }} \
@@ -420,8 +421,8 @@ jobs:
           set -euo pipefail
           args=()
           if [[ "$IS_HARDENED" == "true" ]]; then
-            runtime_base="$(uv run python -m scripts.validate_docker_base --candidate-dhi --print-runtime-base --dockerfile Dockerfile)"
-            args+=(--runtime-base "$runtime_base" --require-revision-label)
+            uv run python -m scripts.validate_docker_base --candidate-dhi --dockerfile Dockerfile
+            args+=(--require-revision-label)
           fi
           uv run python -m scripts.verify_build_evidence \
             --archive artifacts/image-${{ matrix.slug }}.tar \
