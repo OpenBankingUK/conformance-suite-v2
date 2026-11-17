@@ -317,7 +317,9 @@ def _start_canonical_test_plan(raw_test_plan: dict[str, JsonValue]) -> JsonRespo
     except TestPlanValidationError as error:
         return JsonResponse(
             {
-                "error": f"Test plan validation failed: {error}",
+                # Build the message from the structured result, not str(error), so the
+                # response never depends on exception text (CodeQL py/stack-trace-exposure).
+                "error": f"Test plan validation failed: {error.result.summary_message()}",
                 "validation": error.result.to_json_object(),
             },
             status=400,
