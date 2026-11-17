@@ -220,13 +220,13 @@ custom requirement with the external Snyk status.
 #### Docker Scout results on published images
 
 Docker Hub's Scout view analyses only the shipped runtime image: its OS
-packages, which all come from the pinned DHI runtime base, and the Python
-packages installed in `/app/.venv`. Builder-stage, `uv`, workflow, CI and
-dev-dependency changes never ship, so they cannot change published findings.
-A new beta has a new digest but reports the same findings when its runtime base
-digest and locked runtime packages are unchanged. Base-image findings change
-only after Docker publishes a fixed DHI image and the resulting Dependabot
-digest update is merged.
+packages (initially inherited from the pinned DHI runtime base) and the Python
+packages installed in `/app/.venv`. Builder-stage tools, `uv`, workflow, CI and
+dev-only dependencies do not ship. Runtime-stage instructions can add, remove,
+or replace shipped packages. Unchanged shipped contents do not guarantee
+unchanged findings over time: Scout advisories, package matching and VEX
+assessments can evolve independently of the image digest. A DHI digest update
+can also change the shipped base contents and findings.
 
 The `Image (linux/amd64)` job adds a non-blocking **Docker Scout impact**
 section to its job summary for every hardened build, including PRs. It compares
