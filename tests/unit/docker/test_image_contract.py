@@ -25,6 +25,13 @@ def test_release_image_uses_assessed_hardened_contract() -> None:
     assert "RUN .venv/bin/python manage.py collectstatic --noinput\n" in dockerfile
 
 
+def test_dockerignore_excludes_local_only_artifacts() -> None:
+    """Local configuration and generated artifacts must not enter the image."""
+    root = Path(__file__).resolve().parents[3]
+    ignored_paths = set((root / ".dockerignore").read_text().splitlines())
+    assert {"local-config/", "out/", "ai/"} <= ignored_paths
+
+
 def test_image_uses_debian_binary_wheels_and_removes_unused_pip() -> None:
     """Keep glibc stages aligned without the obsolete Alpine package overlay."""
     root = Path(__file__).resolve().parents[3]
