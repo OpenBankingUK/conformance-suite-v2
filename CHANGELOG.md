@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.20] - 2026-11-17
+
+### Changed
+
+- Align release finalization with main's pinned GitHub Actions versions and
+  add regression coverage for DHI Dependabot update rules.
+
 ### Security
 
 - Upgrade the locked urllib3 development dependency from 2.7.0 to 2.8.0,
@@ -18,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exclude local-only configuration, generated output and agent workspace
   directories (`local-config/`, `out/`, `ai/`) from the Docker build context
   so they cannot be copied into the image.
+
+### Known issues
+
+- The runtime base and locked runtime dependencies are unchanged from
+  2.0.0-beta.19. Docker Hub and Docker Scout may continue to report the known
+  `libexpat1` High findings (CVE-2026-117610 and CVE-2026-118370), despite
+  Docker's signed VEX marking them `not_affected` for the DHI runtime base.
+  This beta does not introduce a runtime CVE remediation.
 
 ## [2.0.0-beta.19] - 2026-11-17
 
@@ -803,7 +818,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.19...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.20...HEAD
+[2.0.0-beta.20]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.19...v2.0.0-beta.20
 [2.0.0-beta.19]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.18...v2.0.0-beta.19
 [2.0.0-beta.18]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.17...v2.0.0-beta.18
 [2.0.0-beta.17]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.16...v2.0.0-beta.17
