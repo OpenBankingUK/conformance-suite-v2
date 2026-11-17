@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Upgrade the locked urllib3 development dependency from 2.7.0 to 2.8.0,
+  fixing GHSA-8988-9cw3-xx77 (High), GHSA-vxq7-64xx-v4gw (High) and
+  GHSA-gh4c-6fx4-qh6g (Medium). urllib3 is not installed in the published
+  image.
+- Exclude local-only configuration, generated output and agent workspace
+  directories (`local-config/`, `out/`, `ai/`) from the Docker build context
+  so they cannot be copied into the image.
+
 ## [2.0.0-beta.19] - 2026-11-17
 
 ### Changed
