@@ -805,9 +805,89 @@ def _json_schema_error_detail(error: object) -> str:
         return "must not contain duplicate items"
     if validator in {"minimum", "exclusiveMinimum", "maximum", "exclusiveMaximum", "multipleOf"}:
         return f"does not satisfy the {validator} constraint ({validator_value})"
-    if validator in {"oneOf", "anyOf", "allOf", "not"}:
+    if validator == "contains":
+        shape = _schema_shape_summary(validator_value)
+        if shape is not None:
+            return f"must contain an item with {shape}"
+        return "must contain at least one item matching the required schema"
+    if validator in {"oneOf", "anyOf"} and isinstance(validator_value, list):
+        shapes = [_schema_shape_summary(option) for option in validator_value]
+        if shapes and all(shape is not None for shape in shapes):
+            return f"must match one of the allowed forms: {'; or '.join(str(shape) for shape in shapes)}"
+        if validator == "oneOf":
+            return "must match exactly one allowed schema form"
+        return "must match at least one allowed schema form"
+    if validator == "not":
+        forbidden = _forbidden_required_fields(validator_value)
+        if forbidden:
+            instance = getattr(error, "instance", None)
+            present = [key for key in forbidden if isinstance(instance, dict) and key in instance]
+            return f"must not include field(s): {', '.join(repr(key) for key in present or forbidden)}"
+        return "must not match a disallowed schema form"
+    if validator == "allOf":
         return "does not satisfy the required schema constraints"
     return "does not satisfy the required schema constraint"
+
+
+def _schema_shape_summary(schema: object) -> str | None:
+    """Summarise the fixed values a schema form requires.
+
+    Only ``const`` and ``enum`` values from the schema itself are rendered, so
+    the summary never repeats submitted test-plan content.
+
+    Args:
+        schema: JSON Schema fragment from the canonical test-plan schema.
+
+    Returns:
+        Readable summary, or ``None`` when the form has no fixed values.
+    """
+    if not isinstance(schema, dict):
+        return None
+    if "const" in schema:
+        return repr(schema["const"])
+    enum = schema.get("enum")
+    if isinstance(enum, list):
+        return f"one of {', '.join(repr(item) for item in enum)}"
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return None
+    required = schema.get("required")
+    names = [name for name in properties if not isinstance(required, list) or name in required]
+    parts: list[str] = []
+    for name in names:
+        constraint = properties[name]
+        if not isinstance(constraint, dict):
+            continue
+        if "const" in constraint:
+            parts.append(f"{name}={constraint['const']!r}")
+        elif isinstance(constraint.get("enum"), list):
+            parts.append(f"{name} one of {', '.join(repr(item) for item in constraint['enum'])}")
+    return ", ".join(parts) or None
+
+
+def _forbidden_required_fields(schema: object) -> list[str]:
+    """Return field names a ``not`` constraint forbids.
+
+    Recognises ``not: {required: [field]}`` and
+    ``not: {anyOf: [{required: [field]}, ...]}`` forms.
+
+    Args:
+        schema: Value of a JSON Schema ``not`` keyword.
+
+    Returns:
+        Forbidden field names, or an empty list for other forms.
+    """
+    if not isinstance(schema, dict):
+        return []
+    options = schema.get("anyOf")
+    candidates = options if isinstance(options, list) else [schema]
+    fields: list[str] = []
+    for candidate in candidates:
+        required = candidate.get("required") if isinstance(candidate, dict) else None
+        if not isinstance(required, list) or len(required) != 1 or not isinstance(required[0], str):
+            return []
+        fields.append(required[0])
+    return fields
 
 
 def _execution_mode_issues(document: PlanDocumentV2) -> tuple[TestPlanValidationIssue, ...]:
