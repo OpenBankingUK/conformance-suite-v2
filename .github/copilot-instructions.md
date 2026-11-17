@@ -61,7 +61,7 @@ This project targets **Python 3.14+**, so the following modern syntax is valid a
   ```python
   try:
       ...
-  except ValueError, TypeError:   # valid on 3.14+
+  except ValueError, TypeError:  # valid on 3.14+
       ...
   ```
   This is the accepted PEP 758 syntax and is semantically identical to `except (ValueError, TypeError):`. It is NOT the Python 2 `except Exception, name:` binding form (which was removed in 3.x). Do not request a change purely on the basis that the syntax looks unfamiliar.
