@@ -327,27 +327,58 @@ jobs:
           # provenance and SBOM visible to Scout, as on Docker Hub.
           tar -xf "$ARCHIVE" -C "$work/oci"
 
-          # Published provenance records the exact runtime base digest. An
-          # unchanged runtime base means unchanged OS-package findings.
-          base_name="${RUNTIME_BASE%@*}"
+          # Resolve the mutable beta tag once, then use the immutable manifest
+          # reference for both provenance and Scout comparison.
+          published_manifest_digest="$(
+            docker buildx imagetools inspect "$PUBLISHED_IMAGE" --format '{{.Manifest.Digest}}'
+          )" || published_manifest_digest=""
+          if [[ ! "$published_manifest_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::warning title=Scout impact report incomplete::Could not resolve the published beta to an immutable manifest digest."
+            exit 0
+          fi
+          immutable_image="${PUBLISHED_IMAGE%:*}@${published_manifest_digest}"
+
+          # Published provenance records the exact runtime base digest. Base
+          # equality is reported separately from the candidate's findings.
           base_digest="${RUNTIME_BASE##*@}"
-          purl_prefix="pkg:docker/${base_name%:*}@${base_name##*:}?"
-          published_digest="$(
-            docker buildx imagetools inspect "$PUBLISHED_IMAGE" --format '{{json .Provenance}}' \
-              | jq -r --arg platform "$PLATFORM" \
-                  '.[$platform].SLSA | (.materials // .buildDefinition.resolvedDependencies // [])[] | .uri' \
-              | grep -F "$purl_prefix" \
-              | sed -n 's/.*[?&]digest=\(sha256:[0-9a-f]\{64\}\).*/\1/p' | head -n 1
-          )" || published_digest=""
-          if [[ -z "$published_digest" ]]; then
+          published_base_digest="$(
+            docker buildx imagetools inspect "$immutable_image" --format '{{json .Provenance}}' \
+              | python3 -c '
+          import json
+          import re
+          import sys
+          from urllib.parse import parse_qs, unquote, urlsplit
+
+          provenance = json.load(sys.stdin)
+          platform, runtime_base = sys.argv[1:]
+          base_name, _, _ = runtime_base.rpartition("@")
+          repository, _, version = base_name.rpartition(":")
+          purl_prefix = f"pkg:docker/{repository}@{version}"
+          slsa = provenance.get(platform, {}).get("SLSA", {})
+          materials = slsa.get("materials") or slsa.get("buildDefinition", {}).get("resolvedDependencies", [])
+          for material in materials:
+              uri = unquote(str(material.get("uri", "")))
+              if uri.split("?", 1)[0].split("#", 1)[0] != purl_prefix:
+                  continue
+              digest_object = material.get("digest", {})
+              digest = digest_object.get("sha256", "") if isinstance(digest_object, dict) else ""
+              if not re.fullmatch(r"(?:sha256:)?[0-9a-fA-F]{64}", digest):
+                  digest = parse_qs(urlsplit(uri).query).get("digest", [""])[0]
+              match = re.fullmatch(r"(?:sha256:)?([0-9a-fA-F]{64})", digest)
+              if match:
+                  print("sha256:" + match.group(1).lower())
+                  break
+          ' "$PLATFORM" "$RUNTIME_BASE"
+          )" || published_base_digest=""
+          if [[ -z "$published_base_digest" ]]; then
             base_status="not found in the published image's provenance"
-          elif [[ "$published_digest" == "$base_digest" ]]; then
-            base_status="**unchanged** from the published image, so this change cannot alter its OS-package findings"
+          elif [[ "$published_base_digest" == "$base_digest" ]]; then
+            base_status="**unchanged** from the published image"
           else
-            base_status="**changed** from the published \`${published_digest}\`"
+            base_status="**changed** from the published \`${published_base_digest}\`"
           fi
 
-          docker scout compare "oci-dir://$work/oci" --to "registry://$PUBLISHED_IMAGE" \
+          docker scout compare "oci-dir://$work/oci" --to "registry://$immutable_image" \
             --platform "$PLATFORM" --ignore-unchanged --format markdown --output "$work/compare.md"
           docker scout cves "oci-dir://$work/oci" --platform "$PLATFORM" \
             --format only-packages --only-vuln-packages > "$work/cves.txt"
@@ -355,9 +386,9 @@ jobs:
           {
             echo "## Docker Scout impact (${PLATFORM})"
             echo
-            echo "Informational only. Compares this candidate with the published \`${PUBLISHED_IMAGE}\`, as reported by Docker Hub's Scout view. Builder-stage, tooling, CI and dev-dependency changes do not ship, so they cannot change these results."
+            echo "Informational only. Compares this candidate with the published manifest \`${immutable_image}\`, as reported by Docker Hub's Scout view. Builder-stage, tooling, CI and dev-dependency changes do not ship, so they cannot change these results."
             echo
-            echo "**Runtime base:** \`${RUNTIME_BASE}\` is ${base_status}."
+            echo "**Runtime base:** \`${RUNTIME_BASE}\` is ${base_status}. Base equality alone does not determine the candidate's vulnerability findings."
             echo
             # Render Scout's severity badges as text instead of third-party
             # images; the backticks are literal Markdown, not substitutions.
