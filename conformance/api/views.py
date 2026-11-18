@@ -40,6 +40,8 @@ from conformance.test_plan_validation import TestPlanValidationError, prepare_te
 
 logger = logging.getLogger(__name__)
 
+_INVALID_TIME_ZONE_MESSAGE = "timeZone must be a valid IANA timezone"
+
 
 def _requested_display_time_zone(request: HttpRequest) -> str | None:
     """Return an explicit display timezone requested by the caller.
@@ -75,15 +77,15 @@ def _resolve_display_time_zone(request: HttpRequest) -> tuple[str, ZoneInfo] | N
         ``None``.
 
     Raises:
-        ValueError: If the caller supplied an unknown IANA timezone.
+        ValueError: If the caller supplied an unknown or malformed IANA timezone.
     """
     time_zone_name = _requested_display_time_zone(request)
     if time_zone_name is None:
         return None
     try:
         return time_zone_name, ZoneInfo(time_zone_name)
-    except ZoneInfoNotFoundError as error:
-        raise ValueError("timeZone must be a valid IANA timezone") from error
+    except (ZoneInfoNotFoundError, ValueError) as error:
+        raise ValueError(_INVALID_TIME_ZONE_MESSAGE) from error
 
 
 def _to_local_iso_timestamp(timestamp: str, *, time_zone: ZoneInfo) -> str | None:
@@ -315,7 +317,9 @@ def _start_canonical_test_plan(raw_test_plan: dict[str, JsonValue]) -> JsonRespo
     except TestPlanValidationError as error:
         return JsonResponse(
             {
-                "error": f"Test plan validation failed: {error}",
+                # Build the message from the structured result, not str(error), so the
+                # response never depends on exception text (CodeQL py/stack-trace-exposure).
+                "error": f"Test plan validation failed: {error.result.summary_message()}",
                 "validation": error.result.to_json_object(),
             },
             status=400,
@@ -396,8 +400,8 @@ def get_run_status(request: HttpRequest, run_id: str) -> JsonResponse:
     """
     try:
         display_time_zone = _resolve_display_time_zone(request)
-    except ValueError as error:
-        return JsonResponse({"error": str(error)}, status=400)
+    except ValueError:
+        return JsonResponse({"error": _INVALID_TIME_ZONE_MESSAGE}, status=400)
 
     record = run_store.get_run(run_id)
     if record is None:
@@ -431,8 +435,8 @@ def get_run_result(request: HttpRequest, run_id: str) -> JsonResponse:
     """
     try:
         display_time_zone = _resolve_display_time_zone(request)
-    except ValueError as error:
-        return JsonResponse({"error": str(error)}, status=400)
+    except ValueError:
+        return JsonResponse({"error": _INVALID_TIME_ZONE_MESSAGE}, status=400)
 
     record = run_store.get_run(run_id)
     if record is None:
@@ -537,8 +541,8 @@ def register_auth_session(request: HttpRequest, run_id: str) -> JsonResponse:
     """
     try:
         display_time_zone = _resolve_display_time_zone(request)
-    except ValueError as error:
-        return JsonResponse({"error": str(error)}, status=400)
+    except ValueError:
+        return JsonResponse({"error": _INVALID_TIME_ZONE_MESSAGE}, status=400)
 
     raw_state: str | None = None
     # Parse whenever the caller sent a JSON-shaped payload, regardless of
@@ -593,8 +597,8 @@ def register_auth_session(request: HttpRequest, run_id: str) -> JsonResponse:
         session = auth_session_store.register(run_id, state=raw_state)
     except InvalidAuthSessionStateError as error:
         return JsonResponse({"error": str(error)}, status=400)
-    except DuplicateAuthSessionError as error:
-        return JsonResponse({"error": str(error)}, status=409)
+    except DuplicateAuthSessionError:
+        return JsonResponse({"error": "Auth-session state already registered"}, status=409)
     except AuthSessionLimitError as error:
         return JsonResponse({"error": str(error)}, status=400)
 
@@ -664,8 +668,8 @@ def get_auth_session(request: HttpRequest, run_id: str, state: str) -> JsonRespo
     """
     try:
         display_time_zone = _resolve_display_time_zone(request)
-    except ValueError as error:
-        return JsonResponse({"error": str(error)}, status=400)
+    except ValueError:
+        return JsonResponse({"error": _INVALID_TIME_ZONE_MESSAGE}, status=400)
 
     if run_store.get_run(run_id) is None:
         return JsonResponse({"error": "Auth session not found"}, status=404)

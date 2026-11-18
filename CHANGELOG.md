@@ -9,6 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.22] - 2026-11-18
+
+### Changed
+
+- Build candidate images with BuildKit's default SLSA provenance version
+  instead of pinning v0.2. Limit publication evidence verification to artifact
+  integrity, image identity and attached SLSA provenance (v0.2 or v1) and SPDX
+  SBOMs bound to the exact image. Stop enforcing BuildKit's internal build
+  graph, provenance build arguments and base materials, and SBOM contents;
+  retain source-revision labels and separate Dockerfile base validation.
+- Add a non-blocking Docker Scout impact report to candidate image CI. It
+  compares the candidate with the published `2.0.0-beta-latest` image and
+  states whether the runtime base digest changed.
+- Upgrade the Ruff development dependency from 0.17.4 to 0.17.5, matching
+  main.
+- Document that the CLI prints each manual-step PSU authorisation URL to
+  standard error, including in CI jobs and redirected logs, and that log access
+  should be restricted accordingly.
+
+### Security
+
+- Prevent canonical test-plan schema errors from echoing submitted values,
+  including credentials, while preserving field paths and safe validation
+  guidance. Browser plan import issues use the same safe guidance.
+- Make DCR `tls_client_auth_subject_dn` syntax validation linear-time so a
+  crafted subject DN, including one returned in an ASPSP registration response,
+  can no longer stall a run through exponential regular-expression
+  backtracking, while preserving escape-aware RFC 2253 delimiter handling and
+  valid trailing escaped-backslash pairs.
+- Normalize unknown and malformed display timezones to the same helpful API
+  validation message without returning library exception text or submitted
+  values.
+- Stop echoing OAuth state values in duplicate auth-session API errors while
+  preserving the HTTP 409 conflict response.
+
+### Known issues
+
+- The runtime base image is unchanged from 2.0.0-beta.21. Docker Hub and
+  Docker Scout may continue to report the known `libexpat1` High findings
+  (CVE-2026-117610 and CVE-2026-118370), despite Docker's signed VEX marking
+  them `not_affected` for the DHI runtime base. This beta does not introduce a
+  runtime CVE remediation.
+
 ## [2.0.0-beta.21] - 2026-11-17
 
 ### Changed
@@ -847,7 +890,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.21...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.22...HEAD
+[2.0.0-beta.22]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.21...v2.0.0-beta.22
 [2.0.0-beta.21]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.20...v2.0.0-beta.21
 [2.0.0-beta.20]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.19...v2.0.0-beta.20
 [2.0.0-beta.19]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.18...v2.0.0-beta.19

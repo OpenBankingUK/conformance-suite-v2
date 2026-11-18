@@ -827,6 +827,25 @@ def test_certificate_dn_derivation_numeric_oid_override_and_512_boundary(
         validate_dcr_subject_dn("CN=" + "a" * 510)
 
 
+def test_subject_dn_validation_rejects_ambiguous_rdns_without_backtracking() -> None:
+    """Repeated multi-``=`` RDNs fail fast while ``=`` in values stays valid."""
+    validate_dcr_subject_dn("CN=fixture,O=a=b")
+
+    with pytest.raises(DcrExecutionError, match="required DN pattern"):
+        validate_dcr_subject_dn("CN=fixture,=a=b")
+    with pytest.raises(DcrExecutionError, match="required DN pattern"):
+        validate_dcr_subject_dn("CN=+" + ",!==+" * 100 + ",")
+
+
+def test_subject_dn_validation_accepts_escaped_comma_and_equals_in_value() -> None:
+    """Escaped RFC 2253 commas remain part of a value, including before equals."""
+    validate_dcr_subject_dn(r"CN=fixture\,=a=b")
+    validate_dcr_subject_dn(r"CN=fixture\\,O=Example")
+
+    with pytest.raises(DcrExecutionError, match="RFC 2253 syntax"):
+        validate_dcr_subject_dn("CN=fixture\\")
+
+
 def test_runtime_input_round_trip_and_client_secret_post_rejection(
     dcr_protocol_service: DcrProtocolService,
     tmp_path: Path,

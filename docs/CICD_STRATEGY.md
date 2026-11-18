@@ -188,8 +188,9 @@ Neither scanner is invoked or awaited again by the release workflows.
 | GitHub CodeQL | GitHub default setup | Required CodeQL results on main/develop and release branches |
 | Secret scanning and Ruff security lint | `make check` in CI | Part of the required `Check` job |
 | Image contract and evidence | Both platform builds and publication | Exact tested artifact, digest, platform and source identity |
+| Docker Scout impact summary | `Image (linux/amd64)` on every hardened build | Informational job summary only; never blocks (see below) |
 
-The custom Docker Scout, Snyk Container and pip-audit pipeline, signed DHI
+The blocking custom Docker Scout, Snyk Container and pip-audit pipeline, signed DHI
 provenance/VEX assessment, persistent exception policy, promotion rescans and
 scheduled vulnerability-issue sync are removed. There are no candidate-bound
 security approvals or manual release-publishing approvals.
@@ -215,6 +216,41 @@ scanning/push protection and Code Owners remain in force.
 See the [configuration guide](IMAGE_SECURITY_APPROVALS.md) for removing the
 retired `Vulnerability Scan` ruleset requirement and replacing preview's sole
 custom requirement with the external Snyk status.
+
+#### Docker Scout results on published images
+
+Docker Hub's Scout view analyses only the shipped runtime image: its OS
+packages (initially inherited from the pinned DHI runtime base) and the Python
+packages installed in `/app/.venv`. Builder-stage tools, `uv`, workflow, CI and
+dev-only dependencies do not ship. Runtime-stage instructions can add, remove,
+or replace shipped packages. Unchanged shipped contents do not guarantee
+unchanged findings over time: Scout advisories, package matching and VEX
+assessments can evolve independently of the image digest. A DHI digest update
+can also change the shipped base contents and findings.
+
+The `Image (linux/amd64)` job adds a non-blocking **Docker Scout impact**
+section to its job summary for every hardened build, including PRs. It compares
+the candidate archive with the published `2.0.0-beta-latest`, reports whether
+the runtime base digest differs from the one in the published image's
+provenance, and lists the candidate's vulnerable packages. Check it before
+publishing a beta to test a security change. The step uses the read-only Docker
+Hub credentials already used for DHI pulls, runs a checksum-pinned Scout CLI
+rather than repository code, never pushes, and is skipped with a notice when
+the credentials are unavailable. Scout reports DHI findings that Docker's own
+VEX statements mark as not affecting the base; see
+[Docker Scout VEX statements](IMAGE_SECURITY_APPROVALS.md#docker-scout-vex-statements).
+
+Choose the target branch for a security fix by what it changes:
+
+- **Shipped image contents** (DHI digest, runtime Python dependency or
+  application code) can target the active `release/X.Y.Z` branch first so the
+  next beta carries them. Port the change to `main` separately. Dependabot
+  raises DHI digest PRs for both branches but `uv` PRs only for `main`. Port lock
+  changes with `uv lock --upgrade-package <package>==<version>`; never copy
+  `uv.lock` between branches because their dependency sets differ.
+- **Pipeline files** checked by promotion (`ci.yml`, `auto-promote.yml` and the
+  release scripts listed in `_promote-image.yml`) must merge to `main` first,
+  then be copied exactly to the release branch (Section 4.2).
 
 > **Developer tooling**: All developers should install the **Snyk IDE extension** (VS Code or JetBrains) to catch security issues locally before raising a PR. See [Section 10](#10-onboarding-checklist-for-new-developers).
 
@@ -311,14 +347,22 @@ base, explicit UID/GID `65532:65532`, and `docker/entrypoint.py`). Each
 `linux/amd64` and `linux/arm64` image is built once, smoke-tested, accompanied
 by an SPDX SBOM, and uploaded as a GitHub Actions artifact. The trusted
 publisher consumes those exact archives after successful CI. Candidate jobs have
-read-only repository permissions and never push an image.
+read-only repository permissions and never push an image. Every hardened
+`linux/amd64` build, including PR builds, also writes an informational Docker
+Scout impact summary (Section 3.2).
 
 Candidate archives use BuildKit's OCI exporter with max-mode SLSA provenance
+(BuildKit's default version; the verifier accepts v0.2 and v1)
 and an SPDX SBOM attached to each runnable platform manifest. The verifier
 checks the archive's content-addressed OCI blobs, platform, source revision,
-runtime Config, DHI base digest, provenance subject and SBOM. This evidence
-binds publication to the tested image; it does not make a vulnerability
-judgement. GitHub's publication attestations remain separate and unchanged.
+and presence of provenance and SBOM statements whose subjects identify the
+exact image. It preserves those statements without enforcing BuildKit's
+internal build graph, provenance build arguments or base-image materials,
+or the SBOM's version and package inventory. The source-revision label and
+separate Dockerfile base-reference validation remain checked. This evidence
+binds publication to the tested image; it does not validate the statements'
+claims or make a vulnerability judgement. GitHub's publication attestations
+remain separate and unchanged.
 Before upload, CI adds a classic Docker `manifest.json` import view that points
 to the same config and compressed layer blobs with the candidate's local tag.
 It does not replace or rewrite any OCI member, provenance, SBOM, or descriptor.
@@ -679,6 +723,7 @@ The badge reflects the latest CI run on the `main` branch. A red badge means the
 | Snyk monitoring | Continuous monitoring of production dependency tree |
 | No loose version ranges | `pyproject.toml` specifies minimum versions; `uv.lock` pins exact versions |
 | Dev/prod separation | `uv sync --no-dev --no-install-project` for production Docker builds |
+| Security fixes during a beta | Shipped-image fixes may target `release/X.Y.Z` first; pipeline files go to `main` first (Section 3.2) |
 
 ---
 

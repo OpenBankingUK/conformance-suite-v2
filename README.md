@@ -1,9 +1,9 @@
-# Functional Conformance Suite v2 beta.21
+# Functional Conformance Suite v2 beta.22
 
 [![CI (main)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/ci.yml?query=branch%3Amain)
 [![Image promotion](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/auto-promote.yml/badge.svg)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/auto-promote.yml)
 
-**Beta only — not for certification.** FCS v2 `2.0.0-beta.21` is an MVP for
+**Beta only — not for certification.** FCS v2 `2.0.0-beta.22` is an MVP for
 evaluating the new Open Banking UK Functional Conformance Suite and providing
 feedback. It is **not approved for certification**; runs and reports from this
 beta must not be submitted as certification evidence, even if a plan or result
@@ -95,6 +95,28 @@ for plan structure and supported configuration.
 
 See [manual and auto-approve modes](docs/USAGE_GUIDE.md#psu-authorisation-and-pipeline-runs)
 for registered callbacks, listener configuration and sandbox requirements.
+
+### PSU authorisation URL in the terminal
+
+For manual PSU authorisation steps, the CLI prints the complete ASPSP
+authorisation URL to stderr so you can click it or copy it into a browser,
+including one on another machine. The URL is not masked. It contains the signed
+request object, `state` and `nonce` for the consent being authorised, so treat
+it as sensitive until the step completes:
+
+- Don't record, stream or screen-share the terminal while the URL is shown.
+- Don't paste it into chat, tickets or shared documents. Move it to another
+  machine only over a channel you trust.
+- Clear terminal scrollback and any terminal session logs after the run.
+
+The CLI prints the URL for every manual step, including in CI jobs and when
+stderr is redirected, so it can appear in pipeline job logs and captured output.
+Restrict who can read those logs. `auto-approve` steps don't print the URL.
+Persisted execution logs mask the signed request object and selected
+credential-bearing query parameters, such as `request` and `client_assertion`.
+They retain `client_id`, `state` and `nonce` in the URL; `state` and `nonce` are
+also retained as separate event fields. Masking is disabled when
+`CONFORMANCE_DEVELOPER_MODE=true`.
 
 ### OpenAPI document updates
 

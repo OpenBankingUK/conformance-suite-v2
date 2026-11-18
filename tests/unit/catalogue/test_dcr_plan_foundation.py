@@ -243,7 +243,7 @@ def test_dcr_boundary_is_exposed_only_with_a_matching_catalogue() -> None:
         ("missing-post", "required"),
         ("unlocked-post", "locked"),
         ("resource-groups", "resourceGroups"),
-        ("token-endpoint", "/token"),
+        ("token-endpoint", "testPlan.endpoints[4]"),
     ],
 )
 def test_dcr_schema_rejects_invalid_family_scope(invalid_case: str, expected_message: str) -> None:
