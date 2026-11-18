@@ -92,6 +92,7 @@ def registered_token_server(
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(str(tls.server_certificate_path), str(tls.server_private_key_path))
     context.load_verify_locations(str(tls.ca_certificate_path))
     context.verify_mode = ssl.CERT_REQUIRED

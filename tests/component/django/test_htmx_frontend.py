@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Iterator
+from html.parser import HTMLParser
 from unittest.mock import Mock, patch
 
 import pytest
@@ -27,6 +28,36 @@ HEAD_SUPPORT_PATH = "/static/conformance/vendor/htmx-ext-head-support-2.0.5.min.
 HEAD_SUPPORT_SHA256 = "86e59ae1048bf02fb31a5842b4b559a1058b4c3ff190c258530ecb94f9fa6d56"  # pragma: allowlist secret - vendored file checksum
 DISCOVERY_URL = "https://example.com/.well-known/openid-configuration"
 PANEL_IDS = ("run-status", "run-steps", "run-log", "run-result")
+
+
+class _DiscoveryConflictValues(HTMLParser):
+    """Collect code-formatted values from discovery conflict descriptions."""
+
+    def __init__(self) -> None:
+        """Initialise the parser with no conflict values."""
+        super().__init__(convert_charrefs=True)
+        self.values: list[str] = []
+        self._in_definition: bool = False
+        self._in_code: bool = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Track code values inside definition-list descriptions."""
+        if tag == "dd":
+            self._in_definition = True
+        elif tag == "code" and self._in_definition:
+            self._in_code = True
+
+    def handle_data(self, data: str) -> None:
+        """Collect rendered code values."""
+        if self._in_code:
+            self.values.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        """Stop collecting when the code or definition element closes."""
+        if tag == "code":
+            self._in_code = False
+        elif tag == "dd":
+            self._in_definition = False
 
 
 @pytest.fixture(autouse=True)
@@ -298,7 +329,9 @@ class TestBuilderPages:
             "From discovery</span>"
         ) in content
         assert "These values you entered differ from discovery:" in content
-        assert "https://typed.example.com" in content
+        conflicts = _DiscoveryConflictValues()
+        conflicts.feed(content)
+        assert conflicts.values == ["https://typed.example.com", "https://issuer.example.com"]
         assert ">Replace with discovery values</button>" in content
         assert 'hx-vals=\'{"overwrite": "true"}\'' in content
 

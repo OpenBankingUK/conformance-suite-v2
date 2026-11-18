@@ -1484,7 +1484,8 @@ class TestBuilderWizardUi:
         assert "securityEnvironment.discoveryUrl must be an HTTPS URL." in content
         assert "unexpected is not a recognised test-plan field." in content
         assert "resourceGroups[1] could not be loaded" in content
-        assert "http://insecure.example.com" in content
+        rendered_plan = json.loads(_rendered_form_data(content)["plan_json"])
+        assert rendered_plan["securityEnvironment"]["discoveryUrl"] == "http://insecure.example.com"
         assert blocked_launch.status_code == 400
         mock_start_run.assert_not_called()
         assert blocked_export["unexpected"] is True
