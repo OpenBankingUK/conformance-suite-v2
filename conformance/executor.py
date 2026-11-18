@@ -3315,7 +3315,8 @@ def _execute_v1_psu_step_inner(
         A tuple of the PSU step result and updated execution context.
     """
     extra_query_parameters = _psu_query_parameters(manifest_step)
-    sensitive_query_parameters = frozenset(name for name, _value in extra_query_parameters)
+    # Configured names may already be in the endpoint URL, even when their values go into signed claims.
+    sensitive_query_parameters = frozenset(name for name, _value in manifest_step.custom_parameters)
     initial_result_url = _mask_result_url_query(
         manifest_step.authorization_endpoint,
         sensitive_params=sensitive_query_parameters,
