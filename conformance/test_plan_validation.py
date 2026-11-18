@@ -1125,17 +1125,19 @@ def json_schema_error(schema: Mapping[str, JsonValue], value: JsonValue) -> str 
     """Return the first JSON Schema error for a value against a canonical sub-schema.
 
     Used by lenient browser import to check individual test-plan fields against
-    :data:`CANONICAL_TEST_PLAN_JSON_SCHEMA` property definitions.
+    :data:`CANONICAL_TEST_PLAN_JSON_SCHEMA` property definitions. The detail is
+    derived from the schema constraint rather than ``jsonschema``'s message, so
+    imported values, including credentials, are never echoed back.
 
     Args:
         schema: JSON Schema (draft 2020-12) object.
         value: Value to validate.
 
     Returns:
-        Error message, or ``None`` when the value is valid.
+        Safe error detail, or ``None`` when the value is valid.
     """
     for error in Draft202012Validator(schema).iter_errors(value):
-        return str(error.message)
+        return _json_schema_error_detail(error)
     return None
 
 

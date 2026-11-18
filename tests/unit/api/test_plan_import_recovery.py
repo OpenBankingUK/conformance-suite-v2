@@ -135,6 +135,25 @@ def test_invalid_and_unknown_fields_are_preserved_not_defaulted() -> None:
     assert not validate_test_plan_for_load(composed).valid
 
 
+def test_schema_invalid_field_messages_do_not_echo_imported_values() -> None:
+    """Import issues describe the schema constraint without repeating submitted values."""
+    sentinel = "imported-credential-sentinel"
+    plan = _rw_plan()
+    plan["securityEnvironment"]["clientId"] = {"privateKeyPem": sentinel}
+    plan["securityEnvironment"]["clientAuthMethod"] = sentinel
+
+    draft = _recover(plan)
+
+    assert _issue(draft, "securityEnvironment.clientId").message == (
+        "securityEnvironment.clientId: must be of type string"
+    )
+    assert _issue(draft, "securityEnvironment.clientAuthMethod").message == (
+        "securityEnvironment.clientAuthMethod: must be one of: "
+        "'private_key_jwt', 'tls_client_auth', 'client_secret_jwt', 'client_secret_basic'"
+    )
+    assert all(sentinel not in issue.message for issue in draft.import_issues)
+
+
 def test_scope_items_are_recovered_individually() -> None:
     """One unresolvable scope item does not discard the rest of the scope."""
     plan = _rw_plan()
