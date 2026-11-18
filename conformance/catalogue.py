@@ -1341,6 +1341,21 @@ def _bind_openapi_documents(catalogue: TestCatalogue, update: OpenApiDocumentUpd
         case_changed = False
         for assertion in test_case.assertions:
             rule = dict(assertion.rule)
+            if "schemaRefsByUpdate" in rule:
+                schema_refs_by_update = rule.pop("schemaRefsByUpdate")
+                if update is None:
+                    raise CatalogueError(
+                        f"Test case {test_case.test_case_id} requires an openApiDocumentUpdate selection"
+                    )
+                if not isinstance(schema_refs_by_update, dict):
+                    raise CatalogueError(f"Test case {test_case.test_case_id} has invalid update-specific schema refs")
+                schema_refs = schema_refs_by_update.get(update.catalogue_id)
+                if not isinstance(schema_refs, dict):
+                    raise CatalogueError(
+                        f"Test case {test_case.test_case_id} has no schema refs for {update.catalogue_id}"
+                    )
+                rule["schemaRefs"] = schema_refs
+                case_changed = True
             for rule_key in _SCHEMA_DOCUMENT_RULE_KEYS:
                 document = rule.get(rule_key)
                 if not isinstance(document, str):

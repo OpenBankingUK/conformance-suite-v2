@@ -318,6 +318,7 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError("The local TLS certificate and private key must be configured together.")
         prepare_local_tls(data_dir)
     os.execvp(command[0], command)  # noqa: S606 - trusted, image-supplied CMD/operator override, not user input.
+    raise RuntimeError("os.execvp unexpectedly returned.")
 
 
 if __name__ == "__main__":
