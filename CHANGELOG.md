@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.23] - 2026-11-20
+
+### Changed
+
+- Refresh the DHI Python builder base image to the latest reviewed digest. The
+  runtime base image is unchanged.
+
 ## [2.0.0-beta.22] - 2026-11-18
 
 ### Changed
@@ -890,7 +897,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.22...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.23...HEAD
+[2.0.0-beta.23]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.22...v2.0.0-beta.23
 [2.0.0-beta.22]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.21...v2.0.0-beta.22
 [2.0.0-beta.21]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.20...v2.0.0-beta.21
 [2.0.0-beta.20]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.19...v2.0.0-beta.20
