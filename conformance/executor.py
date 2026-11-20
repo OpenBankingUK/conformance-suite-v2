@@ -9,7 +9,7 @@ import secrets
 import threading
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -374,11 +374,13 @@ def _mask_result_form_fields(fields: Mapping[str, str]) -> JsonObject:
     return cast("JsonObject", dict(mask_form_fields(fields)))
 
 
-def _mask_result_url_query(url: str) -> str:
+def _mask_result_url_query(url: str, *, sensitive_params: Collection[str] = ()) -> str:
     """Return URL query evidence masked unless developer mode is enabled.
 
     Args:
         url: URL whose query string may contain sensitive OAuth values.
+        sensitive_params: Additional plan-configured query parameter names to
+            mask because their values may contain credentials.
 
     Returns:
         Original URL in developer mode; otherwise URL with sensitive query
@@ -386,7 +388,7 @@ def _mask_result_url_query(url: str) -> str:
     """
     if is_developer_mode_enabled():
         return url
-    return mask_url_query(url, SENSITIVE_JSON_KEYS)
+    return mask_url_query(url, SENSITIVE_JSON_KEYS | frozenset(sensitive_params))
 
 
 def run_manifest(
@@ -3312,7 +3314,13 @@ def _execute_v1_psu_step_inner(
     Returns:
         A tuple of the PSU step result and updated execution context.
     """
-    initial_result_url = _mask_result_url_query(manifest_step.authorization_endpoint)
+    extra_query_parameters = _psu_query_parameters(manifest_step)
+    # Configured names may already be in the endpoint URL, even when their values go into signed claims.
+    sensitive_query_parameters = frozenset(name for name, _value in manifest_step.custom_parameters)
+    initial_result_url = _mask_result_url_query(
+        manifest_step.authorization_endpoint,
+        sensitive_params=sensitive_query_parameters,
+    )
     request_evidence: dict[str, JsonValue] = {
         "method": "GET",
         "url": initial_result_url,
@@ -3361,7 +3369,10 @@ def _execute_v1_psu_step_inner(
             new_context,
         )
 
-    resolved_result_url = _mask_result_url_query(resolved_authorization_endpoint)
+    resolved_result_url = _mask_result_url_query(
+        resolved_authorization_endpoint,
+        sensitive_params=sensitive_query_parameters,
+    )
     request_evidence["url"] = resolved_result_url
     try:
         validate_https_url(
@@ -3474,9 +3485,9 @@ def _execute_v1_psu_step_inner(
         state=session.state,
         nonce=resolved_nonce,
         request_object=resolved_request_object,
-        extra_query_parameters=_psu_query_parameters(manifest_step),
+        extra_query_parameters=extra_query_parameters,
     )
-    result_url = _mask_result_url_query(authorization_url)
+    result_url = _mask_result_url_query(authorization_url, sensitive_params=sensitive_query_parameters)
     request_record = RequestRecord(method="GET", url=result_url)
     request_evidence["url"] = result_url
     # The browser-facing URL is emitted as the raw event payload so the CLI
@@ -3492,6 +3503,7 @@ def _execute_v1_psu_step_inner(
             "state": session.state,
             "nonce": resolved_nonce,
             "mode": manifest_step.mode,
+            "_sensitive_query_parameters": list(sensitive_query_parameters),
         },
     )
 

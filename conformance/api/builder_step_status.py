@@ -436,6 +436,7 @@ def _step_started(draft: BuilderDraft, step: BuilderStepId) -> bool:
             return security_form_initial(draft) != security_form_initial(reference) or any(
                 value is not None for value in _stored_credentials(draft).values()
             )
+    return False
 
 
 def _with_boundary_of(reference: BuilderDraft, draft: BuilderDraft) -> BuilderDraft:

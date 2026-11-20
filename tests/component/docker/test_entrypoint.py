@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import stat
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 from cryptography import x509
@@ -202,19 +203,32 @@ class TestMain:
         """The resolved command and arguments are handed to os.execvp verbatim."""
         recorded: dict[str, object] = {}
 
-        def _fake_execvp(file: str, args: list[str]) -> None:
+        class ProcessReplaced(Exception):
+            pass
+
+        def _fake_execvp(file: str, args: list[str]) -> NoReturn:
             recorded["file"] = file
             recorded["args"] = args
+            raise ProcessReplaced
 
         monkeypatch.setattr(os, "execvp", _fake_execvp)
         monkeypatch.setenv("CONFORMANCE_DATA_DIR", str(tmp_path / "data"))
         monkeypatch.delenv("DJANGO_SECRET_KEY", raising=False)
 
-        main(["uvicorn", "config.asgi:application"])
+        with pytest.raises(ProcessReplaced):
+            main(["uvicorn", "config.asgi:application"])
 
         assert recorded["file"] == "uvicorn"
         assert recorded["args"] == ["uvicorn", "config.asgi:application"]
         assert os.environ["DJANGO_SECRET_KEY"]
+
+    def test_rejects_unexpected_exec_return(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """Returning from exec must not be reported as a successful startup."""
+        monkeypatch.setattr(os, "execvp", lambda _file, _args: None)
+        monkeypatch.setenv("CONFORMANCE_DATA_DIR", str(tmp_path / "data"))
+
+        with pytest.raises(RuntimeError, match=r"os\.execvp unexpectedly returned"):
+            main(["uvicorn", "config.asgi:application"])
 
     def test_rejects_incomplete_local_tls_command(
         self,

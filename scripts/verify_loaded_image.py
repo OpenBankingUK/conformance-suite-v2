@@ -53,10 +53,12 @@ def verify_loaded_image(evidence: dict[str, object], inspected: dict[str, object
 
     expected_layers = evidence.get("rootfs_layers")
     rootfs = _object(inspected.get("RootFS"), "daemon image RootFS")
-    actual_layers = rootfs.get("Layers")
+    actual_layers = rootfs.get("Layers", [])
     if not isinstance(expected_layers, list) or not all(isinstance(item, str) for item in expected_layers):
         raise LoadedImageError("Verified archive RootFS layers are invalid.")
-    if expected_layers and actual_layers != expected_layers:
+    if not isinstance(actual_layers, list) or not all(isinstance(item, str) for item in actual_layers):
+        raise LoadedImageError("Loaded image RootFS layers are invalid.")
+    if actual_layers != expected_layers:
         actual_count = len(actual_layers) if isinstance(actual_layers, list) else "invalid"
         raise LoadedImageError(
             f"Loaded image RootFS layers differ from the verified archive "

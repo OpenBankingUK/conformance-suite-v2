@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep OpenAPI response-schema references aligned with the selected document
+  update, explicitly fail if the entrypoint cannot replace itself, and verify
+  root filesystem layers even when an image archive reports zero layers.
+- Use an explicit false fallback for builder step status and disable proxy
+  environment variables for Docker health checks.
+
+### Security
+
+- Mask custom PSU authorisation query parameters in persisted results and
+  execution logs, including parameters already present in the endpoint URL
+  when using a generated request object. Keep the dispatch URL unchanged.
+
 ## [2.0.0-beta.22] - 2026-11-18
 
 ### Changed

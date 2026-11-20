@@ -44,8 +44,6 @@ from conformance.specification_registry import (
 
 pytestmark = pytest.mark.unit
 
-pytestmark = pytest.mark.unit
-
 _EXPECTED_UPDATES = {
     "3.1.11": ("Baseline", "Release-2", "Release-3", "Release-4", "Release-5"),
     "4.0.0": ("Baseline", "Release-2", "Update-3", "Update-4", "Update-5"),

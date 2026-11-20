@@ -33,6 +33,21 @@ def test_accepts_daemon_materialized_empty_config_defaults() -> None:
     verify_loaded_image(EVIDENCE, INSPECTED)
 
 
+def test_accepts_omitted_daemon_layers_when_archive_has_none() -> None:
+    evidence = {**EVIDENCE, "rootfs_layers": []}
+    inspected = {**INSPECTED, "RootFS": {}}
+
+    verify_loaded_image(evidence, inspected)
+
+
+def test_rejects_extra_daemon_layers_when_archive_has_none() -> None:
+    evidence = {**EVIDENCE, "rootfs_layers": []}
+    inspected = {**INSPECTED, "RootFS": {"Layers": ["sha256:" + "2" * 64]}}
+
+    with pytest.raises(LoadedImageError, match="RootFS layers"):
+        verify_loaded_image(evidence, inspected)
+
+
 @pytest.mark.parametrize(
     ("field", "replacement", "diagnostic"),
     [
