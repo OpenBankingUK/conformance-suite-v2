@@ -44,7 +44,7 @@ RUN mkdir -p /data/results /data/logs /data/sessions && \
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 # Distroless DHI runtime variant: no shell, defaults to non-root UID/GID 65532.
 # Pinned to an exact digest for the same reasons as the builder stage above.
-FROM dhi.io/python:3.14-debian13@sha256:d20d953b545c83acd9e1b6b6b6d27cf14de38e6a39689334f71454c33cf41893 AS runtime
+FROM dhi.io/python:3.14-debian13@sha256:5fa5f860496743696b4b3b0bb0b62b3df84d32661583ff8c28c12e7563f8d9fc AS runtime
 
 # System pip and its vendored packages are unused by the uv-managed venv.
 # Require the inspected Debian layout so an upstream change cannot silently
