@@ -121,7 +121,7 @@ class TestMain:
                     "--source-sha",
                     "a" * 40,
                     "--branch",
-                    "release/2.0.0",
+                    "main",
                     "--channel",
                     "beta",
                     "--published-versions-file",
@@ -180,7 +180,7 @@ def _summary_args(tmp_path: Path, *, version: str = "2.0.0-dev.1", channel: str 
     manifest = _write_manifest(tmp_path, raw_version=version, channel=channel)
     inventory = tmp_path / "published.txt"
     inventory.write_text("")
-    branch = {"preview": "preview/new-cert-flow", "beta": f"release/{version.split('-')[0]}", "ga": "main"}[channel]
+    branch = {"preview": "preview/new-cert-flow", "beta": "main", "ga": "main"}[channel]
     args = [
         "--manifest",
         str(manifest),

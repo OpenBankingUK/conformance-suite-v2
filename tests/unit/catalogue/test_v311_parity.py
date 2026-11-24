@@ -6,7 +6,6 @@ import hashlib
 import json
 import re
 from collections import Counter
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
@@ -998,39 +997,37 @@ def test_v311_pis_scheduled_submission_uses_its_legacy_consent_flow() -> None:
 
 def test_v311_vrp_authorization_produces_the_required_token() -> None:
     """Keep v3.1 VRP consent authorization and dependent token ids aligned."""
-    plan_spec = TestPlanSpec(
-        schema_version="v1",
-        catalogue_key=VRP_V31_LEGACY_FCS_CATALOGUE.key,
-        security_profile="fapi1-advanced",
-        implemented_endpoints=(
-            ImplementedEndpoint(
-                method="POST",
-                path="/open-banking/v3.1/pisp/domestic-vrp-consents",
-                resource_group="DomesticVRP",
-            ),
-            ImplementedEndpoint(
-                method="POST",
-                path="/open-banking/v3.1/pisp/domestic-vrp-consents/{consentId}/funds-confirmation",
-                resource_group="DomesticVRP",
-                capability_ids=("vrp.funds-confirmation",),
-            ),
-        ),
-        runtime_inputs={
-            "resourceBaseUrl": "https://resource.example.com",
-            "vrpCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
-            "vrpCreditorAccountIdentification": "70000170000002",
-            "vrpCreditorAccountName": "VRP creditor",
-            "vrpInstructedAmountAmount": "1.00",
-            "vrpInstructedAmountCurrency": "GBP",
-            "vrpValidFromDateTime": "2026-08-27T00:00:00+00:00",
-            "vrpValidToDateTime": "2026-09-27T00:00:00+00:00",
-        },
-        openapi_document_update="Release-5",
-    )
-    compiled = compile_test_plan(VRP_V31_LEGACY_FCS_CATALOGUE, plan_spec)
-    baseline_compiled = compile_test_plan(
+    compiled = compile_test_plan(
         VRP_V31_LEGACY_FCS_CATALOGUE,
-        replace(plan_spec, openapi_document_update="Baseline"),
+        TestPlanSpec(
+            schema_version="v1",
+            catalogue_key=VRP_V31_LEGACY_FCS_CATALOGUE.key,
+            security_profile="fapi1-advanced",
+            implemented_endpoints=(
+                ImplementedEndpoint(
+                    method="POST",
+                    path="/open-banking/v3.1/pisp/domestic-vrp-consents",
+                    resource_group="DomesticVRP",
+                ),
+                ImplementedEndpoint(
+                    method="POST",
+                    path="/open-banking/v3.1/pisp/domestic-vrp-consents/{consentId}/funds-confirmation",
+                    resource_group="DomesticVRP",
+                    capability_ids=("vrp.funds-confirmation",),
+                ),
+            ),
+            runtime_inputs={
+                "resourceBaseUrl": "https://resource.example.com",
+                "vrpCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+                "vrpCreditorAccountIdentification": "70000170000002",
+                "vrpCreditorAccountName": "VRP creditor",
+                "vrpInstructedAmountAmount": "1.00",
+                "vrpInstructedAmountCurrency": "GBP",
+                "vrpValidFromDateTime": "2026-08-27T00:00:00+00:00",
+                "vrpValidToDateTime": "2026-09-27T00:00:00+00:00",
+            },
+            openapi_document_update="Release-5",
+        ),
     )
     consent_step = next(
         request
@@ -1044,33 +1041,71 @@ def test_v311_vrp_authorization_produces_the_required_token() -> None:
         for request in test_case.request_steps
         if request.step_id == "vrp-consent-funds-confirmation-request"
     )
-    funds_case = next(
-        test_case
-        for test_case in compiled.test_cases
-        if any(request.step_id == funds_step.step_id for request in test_case.request_steps)
-    )
-    baseline_funds_case = next(
-        test_case
-        for test_case in baseline_compiled.test_cases
-        if any(request.step_id == funds_step.step_id for request in test_case.request_steps)
-    )
-    release_schema_refs = next(
-        assertion.rule["schemaRefs"] for assertion in funds_case.assertions if "schemaRefs" in assertion.rule
-    )
-    baseline_schema_refs = next(
-        assertion.rule["schemaRefs"] for assertion in baseline_funds_case.assertions if "schemaRefs" in assertion.rule
-    )
     inline_steps = compiled_plan_synthetic_inline_steps(compiled, consent_step)
     produced_token_ids = {step.produces_token_id for step in inline_steps if isinstance(step, ManifestStep)}
 
-    assert isinstance(release_schema_refs, dict)
-    assert isinstance(baseline_schema_refs, dict)
-    assert "201" in release_schema_refs and "200" not in release_schema_refs
-    assert "200" in baseline_schema_refs and "201" not in baseline_schema_refs
     assert funds_step.required_token_id == (
         "vrp-consent-create-awaiting-authorisation-v31-3111-psu-payment-access"  # noqa: S105 - semantic token id
     )
     assert funds_step.required_token_id in produced_token_ids
+
+
+def test_v311_vrp_schema_refs_follow_the_selected_openapi_update() -> None:
+    """Keep legacy schema status mappings aligned with the selected VRP snapshot."""
+    runtime_inputs = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "vrpCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "vrpCreditorAccountIdentification": "70000170000002",
+        "vrpCreditorAccountName": "VRP creditor",
+        "vrpInstructedAmountAmount": "1.00",
+        "vrpInstructedAmountCurrency": "GBP",
+        "vrpValidFromDateTime": "2026-08-27T00:00:00+00:00",
+        "vrpValidToDateTime": "2026-09-27T00:00:00+00:00",
+    }
+
+    def schema_refs_for(update: str) -> JsonObject:
+        compiled = compile_test_plan(
+            VRP_V31_LEGACY_FCS_CATALOGUE,
+            TestPlanSpec(
+                schema_version="v1",
+                catalogue_key=VRP_V31_LEGACY_FCS_CATALOGUE.key,
+                security_profile="fapi1-advanced",
+                implemented_endpoints=(
+                    ImplementedEndpoint(
+                        method="POST",
+                        path="/open-banking/v3.1/pisp/domestic-vrp-consents",
+                        resource_group="DomesticVRP",
+                    ),
+                    ImplementedEndpoint(
+                        method="POST",
+                        path="/open-banking/v3.1/pisp/domestic-vrp-consents/{consentId}/funds-confirmation",
+                        resource_group="DomesticVRP",
+                        capability_ids=("vrp.funds-confirmation",),
+                    ),
+                ),
+                runtime_inputs=runtime_inputs,
+                openapi_document_update=update,
+            ),
+        )
+        test_case = next(
+            test_case
+            for test_case in compiled.test_cases
+            if any(step.step_id == "vrp-consent-funds-confirmation-request" for step in test_case.request_steps)
+        )
+        assertion = next(
+            assertion
+            for assertion in test_case.assertions
+            if assertion.kind == "legacy_fcs" and "schemaRefs" in assertion.rule
+        )
+        return cast("JsonObject", assertion.rule["schemaRefs"])
+
+    baseline_refs = schema_refs_for("Baseline")
+    release_5_refs = schema_refs_for("Release-5")
+
+    assert "200" in baseline_refs
+    assert "201" not in baseline_refs
+    assert "201" in release_5_refs
+    assert "200" not in release_5_refs
 
 
 def test_every_non_setup_v311_case_maps_to_a_selected_parity_row() -> None:

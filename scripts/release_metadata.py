@@ -140,8 +140,7 @@ def validate_branch_compatibility(metadata: ReleaseMetadata, branch: str) -> Non
 
     Args:
         metadata: Classified release metadata for the candidate version.
-        branch: Exact source branch name (e.g. ``preview/new-cert-flow``,
-            ``release/2.0.0``, or ``main``).
+        branch: Exact source branch name (``preview/new-cert-flow`` or ``main``).
 
     Raises:
         ReleaseMetadataError: If the branch and channel are incompatible.
@@ -155,10 +154,9 @@ def validate_branch_compatibility(metadata: ReleaseMetadata, branch: str) -> Non
         return
 
     if metadata.channel is ReleaseChannel.BETA:
-        expected_branch = f"release/{metadata.base_release}"
-        if branch != expected_branch:
+        if branch != "main":
             raise ReleaseMetadataError(
-                f"Beta version {metadata.raw_version!r} must be published from {expected_branch!r}, not {branch!r}."
+                f"Beta version {metadata.raw_version!r} must be published from 'main', not {branch!r}."
             )
         return
 

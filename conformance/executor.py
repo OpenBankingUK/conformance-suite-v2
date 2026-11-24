@@ -3772,7 +3772,9 @@ def _redirect_target_without_parameters(location: str) -> str:
     return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
 
 
-def _auto_approve_response_evidence(response: httpx.Response, *, redirect_uri: str) -> dict[str, JsonValue]:
+def _auto_approve_response_evidence(
+    response: httpx.Response, *, redirect_uri: str, sensitive_params: Collection[str]
+) -> dict[str, JsonValue]:
     """Build masked diagnostic evidence for an auto-approve PSU authorisation response.
 
     The OAuth 2.0 authorisation endpoint is expected to answer an auto-approve
@@ -3786,6 +3788,7 @@ def _auto_approve_response_evidence(response: httpx.Response, *, redirect_uri: s
     Args:
         response: Authorisation-endpoint response (redirects not followed).
         redirect_uri: Configured redirect URI the ASPSP should return to.
+        sensitive_params: Additional configured query parameter names to mask.
 
     Returns:
         Masked response evidence for the step result.
@@ -3802,7 +3805,7 @@ def _auto_approve_response_evidence(response: httpx.Response, *, redirect_uri: s
         matches = redirect_matches_registered_uri(location=location, redirect_uri=redirect_uri)
         evidence["redirectsToRedirectUri"] = matches
         if matches:
-            evidence["location"] = _mask_result_url_query(location)
+            evidence["location"] = _mask_result_url_query(location, sensitive_params=sensitive_params)
         else:
             evidence["redirectTarget"] = _redirect_target_without_parameters(urljoin(str(response.url), location))
     media_type = (content_type or "").split(";", 1)[0].strip().lower()
@@ -4007,7 +4010,11 @@ def _execute_auto_approve_psu_authorization(
         )
 
     content_type = response.headers.get("Content-Type")
-    response_evidence = _auto_approve_response_evidence(response, redirect_uri=redirect_uri)
+    response_evidence = _auto_approve_response_evidence(
+        response,
+        redirect_uri=redirect_uri,
+        sensitive_params=tuple(name for name, _value in manifest_step.custom_parameters),
+    )
     execution_logger.emit(
         "response-received",
         step_id=manifest_step.id,

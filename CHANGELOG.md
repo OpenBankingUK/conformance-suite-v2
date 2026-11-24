@@ -9,19 +9,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Use `main` for v2 development and beta publication instead of maintaining a
+  separate active release branch. New beta versions publish after successful
+  CI; already-published versions are not overwritten. Dependency and security
+  updates target main once. GA publication remains disabled.
+
 ### Fixed
 
-- Keep OpenAPI response-schema references aligned with the selected document
-  update, explicitly fail if the entrypoint cannot replace itself, and verify
-  root filesystem layers even when an image archive reports zero layers.
-- Use an explicit false fallback for builder step status and disable proxy
-  environment variables for Docker health checks.
+- Fail explicitly if the entrypoint cannot replace itself, verify root
+  filesystem layers when an image archive reports zero layers, and disable
+  proxy environment variables for Docker health checks.
 
 ### Security
 
 - Mask custom PSU authorisation query parameters in persisted results and
   execution logs, including parameters already present in the endpoint URL
   when using a generated request object. Keep the dispatch URL unchanged.
+
+## [2.0.0-beta.26] - 2026-11-24
+
+### Changed
+
+- Switch the Python 3.14 builder and runtime from Debian 13 to Alpine for
+  amd64 and arm64. The runtime ships without pip; native dependencies use
+  locked musllinux wheels.
+- Refresh the pinned uv container digest. The uv version remains 0.13.8.
+
+## [2.0.0-beta.25] - 2026-11-24
+
+### Changed
+
+- Refresh the DHI Python runtime base image. The builder base image is unchanged
+  from 2.0.0-beta.24.
+- Update Ruff, the development linter and formatter, from 0.17.5 to 0.17.6
+  to match `main`.
+
+## [2.0.0-beta.24] - 2026-11-23
+
+### Changed
+
+- Republish the beta image so Docker Hub can re-evaluate its vulnerability
+  status after Docker Hub service updates. There are no application,
+  dependency or base image changes since 2.0.0-beta.23.
+
+## [2.0.0-beta.23] - 2026-11-20
+
+### Changed
+
+- Refresh the DHI Python builder base image to the latest reviewed digest. The
+  runtime base image is unchanged.
 
 ## [2.0.0-beta.22] - 2026-11-18
 
@@ -904,7 +942,11 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.22...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.26...HEAD
+[2.0.0-beta.26]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.25...v2.0.0-beta.26
+[2.0.0-beta.25]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.24...v2.0.0-beta.25
+[2.0.0-beta.24]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.23...v2.0.0-beta.24
+[2.0.0-beta.23]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.22...v2.0.0-beta.23
 [2.0.0-beta.22]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.21...v2.0.0-beta.22
 [2.0.0-beta.21]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.20...v2.0.0-beta.21
 [2.0.0-beta.20]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.19...v2.0.0-beta.20

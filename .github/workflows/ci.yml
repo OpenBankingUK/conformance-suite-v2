@@ -4,17 +4,11 @@ on:
   pull_request:
     branches:
       - main
-      - develop
       - "preview/**"
-      - "release/**"
-      - "hotfix/**"
   push:
     branches:
       - main
-      - develop
       - "preview/**"
-      - "release/**"
-      - "hotfix/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -33,7 +27,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           enable-cache: true
 
@@ -54,7 +48,7 @@ jobs:
         # the version unchanged prepare no release and are not checked.
         if: >-
           github.event_name == 'pull_request' &&
-          (github.base_ref == 'main' || startsWith(github.base_ref, 'release/'))
+          github.base_ref == 'main'
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
@@ -87,17 +81,15 @@ jobs:
           target_branch="$PUSH_REF_NAME"
           is_candidate=false
           is_hardened=false
-          # Bootstrap compatibility gate: main keeps its existing Docker CI
-          # until the hardened Docker implementation lands. The hardened
-          # contract is DHI base, distroless UID, and entrypoint; candidate
-          # builds start automatically on eligible push branches once present.
+          # Candidate publication requires the hardened image contract.
+          # PR builds never publish, including feature branches targeting main.
           if python3 -m scripts.validate_docker_base --candidate-dhi --dockerfile Dockerfile \
             && grep -q '^USER 65532:65532$' Dockerfile \
             && [[ -f docker/entrypoint.py ]]; then
               is_hardened=true
           fi
           if [[ "$is_hardened" == "true" && "$EVENT_NAME" == "push" ]] \
-            && { [[ "$target_branch" == "main" ]] || [[ "$target_branch" == preview/* ]] || [[ "$target_branch" == release/* ]]; }; then
+            && { [[ "$target_branch" == "main" ]] || [[ "$target_branch" == preview/* ]]; }; then
               is_candidate=true
           fi
 
@@ -215,7 +207,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           enable-cache: true
 
@@ -491,7 +483,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           enable-cache: true
 

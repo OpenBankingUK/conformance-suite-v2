@@ -32,8 +32,8 @@ def test_dockerignore_excludes_local_only_artifacts() -> None:
     assert {"local-config/", "out/", "ai/"} <= ignored_paths
 
 
-def test_image_uses_debian_binary_wheels_and_removes_unused_pip() -> None:
-    """Keep glibc stages aligned without the obsolete Alpine package overlay."""
+def test_image_uses_matching_binary_wheel_runtime_without_extra_base_packages() -> None:
+    """Keep the builder and runtime family aligned without adding base packages."""
     root = Path(__file__).resolve().parents[3]
     dockerfile = (root / "Dockerfile").read_text()
     bases = get_candidate_dhi_bases(dockerfile)
@@ -43,13 +43,15 @@ def test_image_uses_debian_binary_wheels_and_removes_unused_pip() -> None:
         f"FROM {bases.runtime} AS runtime",
     ]
     assert "uv sync --frozen --no-dev --no-install-project --no-build\n" in dockerfile
-    assert "apk" not in dockerfile
     assert "package-patch" not in dockerfile
     assert not (root / "docker/patch_base_packages.py").exists()
     runtime = dockerfile.split(" AS runtime\n", 1)[1]
-    cleanup, non_root = runtime.split("USER 65532:65532\n", 1)
-    assert "USER 0:0\nRUN [" in cleanup
-    assert "USER 0:0" not in non_root
+    if "3.14-alpine@" in bases.runtime:
+        assert "USER 0:0" not in runtime
+    else:
+        cleanup, non_root = runtime.split("USER 65532:65532\n", 1)
+        assert "USER 0:0\nRUN [" in cleanup
+        assert "USER 0:0" not in non_root
 
 
 @pytest.mark.parametrize(
@@ -57,10 +59,12 @@ def test_image_uses_debian_binary_wheels_and_removes_unused_pip() -> None:
     ["expected", "missing-pip", "missing-metadata", "missing-bin", "missing-bin3", "duplicate-metadata", "unexpected"],
 )
 def test_system_pip_removal_fails_closed_on_layout_drift(tmp_path: Path, layout: str) -> None:
-    """Execute the actual Docker build cleanup against a disposable Debian layout."""
+    """Execute the Debian base cleanup when the selected runtime includes system pip."""
     root = Path(__file__).resolve().parents[3]
     dockerfile = (root / "Dockerfile").read_text()
-    run = next(line.removeprefix("RUN ") for line in dockerfile.splitlines() if line.startswith("RUN ["))
+    run = next((line.removeprefix("RUN ") for line in dockerfile.splitlines() if line.startswith("RUN [")), None)
+    if run is None:
+        pytest.skip("The Alpine runtime ships without system pip.")
     command = json.loads(run)
     packages = tmp_path / "usr/lib/python3/dist-packages"
     packages.mkdir(parents=True)
@@ -95,17 +99,19 @@ def test_system_pip_removal_fails_closed_on_layout_drift(tmp_path: Path, layout:
         assert result.stderr
 
 
-def test_debian_smoke_check_is_valid_exec_form_python() -> None:
+def test_runtime_smoke_check_is_valid_exec_form_python() -> None:
     """The shell must preserve the Python checks passed to the distroless image."""
     root = Path(__file__).resolve().parents[3]
     smoke = (root / "scripts/docker_smoke_test.sh").read_text()
-    check = smoke.split(
-        'echo "==> Checking Debian/glibc, binary wheels, system pip removal, and OpenSSL inventory"\n', 1
-    )[1].split('echo "==> Creating persistent volume', 1)[0]
+    start = 'echo "==> Checking runtime libc, binary wheels, pip absence, and OpenSSL inventory"\n'
+    check = smoke.split(start, 1)[1].split('echo "==> Creating persistent volume', 1)[0]
     tokens = shlex.split(check)
     code = tokens[tokens.index("-c") + 1]
-    compile(code, "debian-smoke-check", "exec")
-    assert "CS_GNU_LIBC_VERSION" in code
-    assert "manylinux" in code
+    compile(code, "runtime-smoke-check", "exec")
+    assert "release['ID'] == 'debian'" in code
+    assert "release['ID'] == 'alpine'" in code
+    assert "'manylinux'" in code
+    assert "'musllinux'" in code
     assert "/usr/lib/python3/dist-packages" in code
     assert "/var/lib/dpkg/status" in code
+    assert "/lib/apk/db/installed" in code

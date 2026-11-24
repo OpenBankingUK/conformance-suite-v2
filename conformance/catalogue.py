@@ -15,7 +15,10 @@ from conformance.execution_settings import (
     parse_execution_settings,
 )
 from conformance.json_types import JsonObject, JsonValue
-from conformance.openapi_documents import bind_read_write_document, is_logical_read_write_document
+from conformance.openapi_documents import (
+    bind_read_write_document,
+    is_logical_read_write_document,
+)
 from conformance.specification_registry import (
     OpenApiDocumentUpdate,
     SpecificationDefinition,
@@ -1341,21 +1344,6 @@ def _bind_openapi_documents(catalogue: TestCatalogue, update: OpenApiDocumentUpd
         case_changed = False
         for assertion in test_case.assertions:
             rule = dict(assertion.rule)
-            if "schemaRefsByUpdate" in rule:
-                schema_refs_by_update = rule.pop("schemaRefsByUpdate")
-                if update is None:
-                    raise CatalogueError(
-                        f"Test case {test_case.test_case_id} requires an openApiDocumentUpdate selection"
-                    )
-                if not isinstance(schema_refs_by_update, dict):
-                    raise CatalogueError(f"Test case {test_case.test_case_id} has invalid update-specific schema refs")
-                schema_refs = schema_refs_by_update.get(update.catalogue_id)
-                if not isinstance(schema_refs, dict):
-                    raise CatalogueError(
-                        f"Test case {test_case.test_case_id} has no schema refs for {update.catalogue_id}"
-                    )
-                rule["schemaRefs"] = schema_refs
-                case_changed = True
             for rule_key in _SCHEMA_DOCUMENT_RULE_KEYS:
                 document = rule.get(rule_key)
                 if not isinstance(document, str):
@@ -1373,6 +1361,21 @@ def _bind_openapi_documents(catalogue: TestCatalogue, update: OpenApiDocumentUpd
                 if bound != document:
                     rule[rule_key] = bound
                     case_changed = True
+            if "schemaRefsByUpdate" in rule:
+                schema_refs_by_update = rule.pop("schemaRefsByUpdate")
+                if update is None:
+                    raise CatalogueError(
+                        f"Test case {test_case.test_case_id} requires an openApiDocumentUpdate selection"
+                    )
+                if not isinstance(schema_refs_by_update, dict):
+                    raise CatalogueError(f"Test case {test_case.test_case_id} has invalid update-specific schema refs")
+                schema_refs = schema_refs_by_update.get(update.catalogue_id)
+                if not isinstance(schema_refs, dict):
+                    raise CatalogueError(
+                        f"Test case {test_case.test_case_id} has no schema refs for {update.catalogue_id}"
+                    )
+                rule["schemaRefs"] = schema_refs
+                case_changed = True
             bound_assertions.append(replace(assertion, rule=rule) if rule != dict(assertion.rule) else assertion)
         if case_changed:
             changed = True

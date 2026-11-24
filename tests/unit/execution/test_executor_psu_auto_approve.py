@@ -389,13 +389,16 @@ def test_psu_auto_approve_step_fails_when_authorization_endpoint_returns_ok() ->
 
 
 def _run_auto_approve(
-    handler: Callable[[httpx.Request], httpx.Response], *, state: str
+    handler: Callable[[httpx.Request], httpx.Response],
+    *,
+    state: str,
+    custom_parameters: tuple[tuple[str, str], ...] = (),
 ) -> tuple[dict[str, object], list[tuple[str, dict[str, object]]]]:
     """Run one auto-approve PSU step and return its result JSON and log events."""
     execution_logger = BufferedExecutionLogger(run_id="run-auto-approve-evidence", developer_mode=False)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result, _context = _execute_v1_psu_step(
-            psu_auto_approve_step(state=state),
+            psu_auto_approve_step(state=state, custom_parameters=custom_parameters),
             context=ExecutionContext(),
             client=client,
             run_id="run-auto-approve-evidence",
@@ -468,6 +471,37 @@ def test_psu_auto_approve_success_attaches_masked_redirect_evidence() -> None:
     assert details["response"]["redirectsToRedirectUri"] is True
     assert "code=***" in str(details["response"]["location"])
     assert "secret-code" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("separator", ["?", "#"])
+@pytest.mark.parametrize("developer_mode", [False, True])
+def test_psu_auto_approve_masks_custom_callback_parameters(
+    separator: str, developer_mode: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mask configured custom values in callback evidence unless developer mode is enabled."""
+    monkeypatch.setenv("CONFORMANCE_DEVELOPER_MODE", str(developer_mode))
+    state = "s" * 32
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            302,
+            headers={
+                "Location": (
+                    f"https://conformance.example.com/callback{separator}"
+                    f"state={state}&code=callback-code&sandbox_token=callback-fixture"
+                )
+            },
+        )
+
+    result, _events = _run_auto_approve(handler, state=state, custom_parameters=(("sandbox_token", "request-fixture"),))
+    location = cast("dict[str, dict[str, str]]", result["details"])["response"]["location"]
+    assert result["status"] == "passed"
+    if developer_mode:
+        assert "sandbox_token=callback-fixture" in location
+    else:
+        assert "sandbox_token=***" in location
+        assert "callback-fixture" not in json.dumps(result)
+        assert "request-fixture" not in json.dumps(result)
 
 
 def test_psu_auto_approve_off_target_redirect_records_target_without_parameters() -> None:

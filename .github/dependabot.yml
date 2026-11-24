@@ -25,7 +25,7 @@ updates:
 
   - package-ecosystem: docker
     # Builder and runtime digests are refreshed together. New digests within
-    # the fixed Python 3.14 / Debian 13 DHI family need no allowlist update;
+    # the selected DHI Python 3.14 image family need no allowlist update;
     # CI validates the image contract and smoke-tests both platforms.
     directory: /
     registries: [dhi]
@@ -33,22 +33,6 @@ updates:
       interval: daily
     # Docker dependency names omit the registry host: dhi.io/python is python.
     # Ignore tag major/minor jumps, not digest refreshes within the current tag.
-    ignore:
-      - dependency-name: python
-        update-types: [version-update:semver-major, version-update:semver-minor]
-    groups:
-      dhi-python-base-images:
-        patterns: ["python"]
-
-  # Dependabot reads this file only from the default branch, so the active
-  # release branch is targeted explicitly. Update target-branch when a new
-  # release/* branch is cut and remove this entry once it is merged to main.
-  - package-ecosystem: docker
-    directory: /
-    target-branch: release/2.0.0
-    registries: [dhi]
-    schedule:
-      interval: daily
     ignore:
       - dependency-name: python
         update-types: [version-update:semver-major, version-update:semver-minor]

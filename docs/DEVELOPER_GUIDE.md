@@ -43,11 +43,11 @@ or design choice has been implemented.
 - Docker for container builds; authenticate with `docker login dhi.io` before
   pulling the Docker Hardened Image bases
 
-Docker builds use digest-pinned Debian 13 Docker Hardened Images for amd64 and
-arm64. The builder installs locked binary wheels for glibc (manylinux), without
-source builds. The distroless runtime removes unused system pip and runs as
-UID/GID `65532`; per-platform CI smoke tests verify these properties and record
-the OpenSSL package versions before scanning.
+Docker builds use digest-pinned Alpine Docker Hardened Images for amd64 and
+arm64. The builder installs locked binary wheels for musl (musllinux), without
+source builds. The distroless runtime ships without pip and runs as UID/GID
+`65532`; per-platform CI smoke tests verify these properties and record the
+OpenSSL package versions.
 
 ## Getting started
 
@@ -718,8 +718,11 @@ gate. The workflow builds an immutable candidate image, runs the full checks
 against that exact digest, generates SBOM/provenance, records a candidate
 manifest, and automatically promotes the already-checked digest after
 successful push CI, without a separate approval. GA publication is paused while
-2.0.0 remains in beta. The version/tag to publish is set in
-`[project].version` in `pyproject.toml` and reviewed in the PR.
+2.0.0 remains in beta. Main is the active development and beta-publication
+branch; optional `preview/*` branches keep their preview channel. The version
+to publish is set in `[project].version` in `pyproject.toml` and reviewed in
+the PR. Already-published versions skip publication without overwriting them.
+A stable version does not enable GA; that requires a separate release decision.
 
 There is no live-network or end-to-end workflow. Container startup and health
 checking validate packaging only; they are not an Ozone or conformance-system
@@ -727,7 +730,11 @@ test.
 
 ## Making a change
 
-Follow the branching and review process in the [CI/CD strategy](CICD_STRATEGY.md).
+Branch from and open PRs to **main**, including feature, dependency and security
+changes. Do not synchronize changes to develop or release/2.0.0; those branches
+are historical. A beta-bump PR on main publishes after successful CI using the
+existing version, lockfile, changelog and guide-update process in the
+[CI/CD strategy](CICD_STRATEGY.md#53-beta-releases).
 Keep changes and tests aligned with the public browser/CLI/REST contract:
 use unit tests for isolated logic and component tests for boundary behaviour,
 mock external services, and assert structured result evidence where produced.

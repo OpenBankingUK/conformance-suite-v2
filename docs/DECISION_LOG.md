@@ -16,6 +16,7 @@ alternatives are not reconstructed.
 | [DL-003](#dl-003-local-report-assurance) | Local report validation is not proof of authenticity | Implemented Phase 1 boundary |
 | [DL-004](#dl-004-server-side-drafts-and-masked-evidence) | Server-side drafts and masked evidence | Implemented |
 | [DL-005](#dl-005-offline-unit-and-component-tests) | Deterministic offline unit/component suite | Implemented |
+| [DL-006](#dl-006-main-based-beta-development) | Main-based beta development without duplicate release-branch work | Implemented |
 
 ## DL-001: Shared canonical test plan
 
@@ -126,6 +127,34 @@ packaging checks do not replace conformance assertions.
 
 **Evidence:** [Testing strategy](TESTING_STRATEGY.md),
 [test enforcement](../tests/conftest.py), [local checks](DEVELOPER_GUIDE.md#local-checks).
+
+## DL-006: Main-based beta development
+
+**Context:** This temporary repository isolates v2 from the original v1
+repository. Keeping beta development on release/2.0.0 while trusted tooling and
+dependency updates land on main required repeated synchronization.
+
+**Decision:** Main is the single active development and beta-publication branch.
+New beta versions publish automatically after successful CI; already-published
+versions skip. GA publication remains disabled pending a separate release and
+upstream-migration decision. Preview branches remain optional.
+
+**Status:** Implemented in the main-beta migration; retained develop/release
+refs and their protections are historical, not active development targets.
+
+**Recorded rationale:** The maintainer selected main-based beta development
+and keeping GA disabled. The separate repository already provides v1/v2
+isolation; another integration branch does not provide a needed release boundary.
+
+**Tradeoffs:** Main no longer means GA-ready. Version tags and immutable GitHub
+prereleases identify shipped betas. Existing trusted-main promotion, artifact
+verification, branch reviews and security gates remain; older candidates can
+still be rejected if trusted pipeline files change before publication.
+
+**Evidence:** [Branching and release policy](CICD_STRATEGY.md),
+[branch validation](../scripts/release_metadata.py),
+[automatic resolution](../scripts/resolve_auto_promotion.py),
+[Dependabot targets](../.github/dependabot.yml).
 
 ## Maintaining this log
 

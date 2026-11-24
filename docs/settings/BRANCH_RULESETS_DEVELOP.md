@@ -1,12 +1,19 @@
 # GitHub Settings: Branch Rulesets — develop
 
-> `develop` is the protected integration branch for normal development. See
-> [CICD_STRATEGY.md](../CICD_STRATEGY.md), Section 1.
+> **Historical setup notes, not the current development workflow.** Normal
+> development and beta publication now use main. Develop is retained only as a
+> historical reference. See [CICD_STRATEGY.md](../CICD_STRATEGY.md), Section 1.
 
 > **Repository**: `OpenBankingUK/conformance-suite-v2`
 > **Page**: Settings → Rules → Rulesets
 > **Ruleset ID**: 15781582
 > **Last reviewed**: 6 May 2026
+
+For the current shared `main & develop` ruleset, branch targets, review
+requirements and CI checks, see [BRANCH_RULESETS.md](BRANCH_RULESETS.md).
+This page retains the original develop setup notes rather than prescribing new
+settings. Its merge-method guidance follows the current repository-wide policy.
+Do not recreate this old integration workflow or weaken the retained rules.
 
 ---
 
@@ -73,7 +80,7 @@ development baselines as described in the CI/CD strategy.
 | Require approval of the most recent reviewable push | ✅ Enabled |
 | Require conversation resolution before merging | ✅ Enabled |
 | Require review from Code Owners | ✅ Enabled |
-| Allowed merge methods | **Squash only** |
+| Allowed merge methods | **Merge only** |
 | Require review from specific teams | _(none configured)_ |
 | Restrict dismissals to authorised actors only | ❌ Disabled |
 | Ignore approvals from contributors | ❌ Disabled |
@@ -85,7 +92,7 @@ development baselines as described in the CI/CD strategy.
 - **Require last push approval**: The person who pushed the most recent commit cannot be the one who approves the PR. Enforces genuine peer review — no self-approving.
 - **Conversation resolution**: All review comments must be resolved before merge. Prevents unaddressed feedback from slipping through.
 - **Code Owners enabled**: Ensures the Standards team reviews changes in owned paths.
-- **Squash only**: Enforces a clean, linear history on `develop`. Each PR becomes a single commit, making `git log` readable and `git bisect` effective. Eliminates merge commits and messy rebase histories.
+- **Merge only**: Preserves ancestry when merging `main` or release branches back into `develop`. Feature and Dependabot PRs use the same method so maintainers cannot accidentally squash a branch-synchronisation PR. Intermediate commits are retained.
 
 ### Automatically request Copilot code review
 
@@ -107,7 +114,7 @@ The following rules are available but intentionally **not enabled**:
 |------|--------------------|
 | Restrict creations | Not needed — branch creation is not a risk for `develop` (it already exists) |
 | Restrict updates | Not needed — updates are governed by the pull request requirement |
-| Require linear history | Redundant — squash-only merge method already guarantees linear history |
+| Require linear history | Incompatible with the merge-commit-only policy |
 | Require merge queue | Not needed at current team size; can be reconsidered as contributor count grows |
 | Require deployments to succeed | No deployment environments configured yet |
 | Require signed commits | Not enforced at this stage; may revisit based on organisation security policy |

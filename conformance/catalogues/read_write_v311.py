@@ -27,10 +27,7 @@ from conformance.catalogue import (
 )
 from conformance.json_types import JsonObject, JsonValue
 from conformance.openapi_documents import logical_read_write_document, read_write_openapi_document_path
-from conformance.specification_registry import (
-    OpenApiDocumentUpdate,
-    specification_version_for_catalogue,
-)
+from conformance.specification_registry import OpenApiDocumentUpdate, specification_version_for_catalogue
 
 _STANDARDS_ROOT = Path(__file__).resolve().parents[1] / "standards" / "ob_read_write" / "v3_1_11"
 """Directory containing the pinned v3.1.11 standards and parity artifacts."""

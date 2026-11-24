@@ -89,7 +89,7 @@ def handoff(tmp_path: Path) -> dict[str, str]:
         "name": "CI",
         "path": ".github/workflows/ci.yml",
         "head_sha": SOURCE_SHA,
-        "head_branch": "release/2.0.0",
+        "head_branch": "main",
         "event": "push",
         "conclusion": "success",
         "run_attempt": 1,
@@ -102,7 +102,7 @@ def handoff(tmp_path: Path) -> dict[str, str]:
                 {
                     "databaseId": 123,
                     "headSha": SOURCE_SHA,
-                    "headBranch": "release/2.0.0",
+                    "headBranch": "main",
                     "event": "push",
                     "conclusion": "success",
                 }
@@ -117,10 +117,10 @@ def handoff(tmp_path: Path) -> dict[str, str]:
         "GITHUB_OUTPUT": str(tmp_path / "output"),
         "CI_RUN_ID": "123",
         "SOURCE_SHA": SOURCE_SHA,
-        "SOURCE_BRANCH": "release/2.0.0",
+        "SOURCE_BRANCH": "main",
         "INPUT_CI_RUN_ID": "123",
         "INPUT_SOURCE_SHA": SOURCE_SHA,
-        "INPUT_BRANCH": "release/2.0.0",
+        "INPUT_BRANCH": "main",
         "TRUSTED_CI_WORKFLOW_ID": "268848247",
         "TRUSTED_CI_WORKFLOW_PATH": ".github/workflows/ci.yml",
     }
@@ -130,13 +130,20 @@ def handoff(tmp_path: Path) -> dict[str, str]:
     ("workflow", "step", "occurrence"),
     [(AUTOMATIC, IDENTITY, 0), (PROMOTION, LOCATE, 0), (PROMOTION, LOCATE, 1)],
 )
+@pytest.mark.parametrize("branch", ["main", "preview/new-flow"])
 def test_successful_ci_handoff_without_assessment_receipt(
-    handoff: dict[str, str], workflow: str, step: str, occurrence: int
+    handoff: dict[str, str], workflow: str, step: str, occurrence: int, branch: str
 ) -> None:
+    path = Path(handoff["TEST_DATA"]) / "run.json"
+    run = json.loads(path.read_text())
+    run["head_branch"] = branch
+    path.write_text(json.dumps(run))
+    handoff["SOURCE_BRANCH"] = branch
+    handoff["INPUT_BRANCH"] = branch
     result = _run_script(_shell(workflow, step, occurrence), handoff)
     assert result.returncode == 0, result.stderr
     expected = (
-        {"ci_run_id": "123", "source_sha": SOURCE_SHA, "source_branch": "release/2.0.0"}
+        {"ci_run_id": "123", "source_sha": SOURCE_SHA, "source_branch": branch}
         if workflow == AUTOMATIC
         else {"run_id": "123"}
     )
@@ -179,7 +186,7 @@ def test_untrusted_or_failed_ci_cannot_handoff(
         ("CI_RUN_ID", "not-an-id"),
         ("SOURCE_SHA", "invalid"),
         ("SOURCE_BRANCH", "feature/not-a-release"),
-        ("SOURCE_BRANCH", "main"),
+        ("SOURCE_BRANCH", "release/2.0.0"),
     ],
 )
 def test_automatic_handoff_rejects_invalid_event_identity(handoff: dict[str, str], key: str, value: str) -> None:
@@ -223,6 +230,69 @@ def test_only_an_available_candidate_manifest_enables_resolution(handoff: dict[s
     assert result.returncode == 0, result.stderr
     assert _outputs(handoff) == {"available": "true" if state == "present" else "false"}
     if state != "present":
+        assert "::notice::" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("event", "branch", "candidate"),
+    [
+        ("push", "main", "true"),
+        ("push", "preview/new-flow", "true"),
+        ("push", "release/2.0.0", "false"),
+        ("push", "feature/new-flow", "false"),
+        ("pull_request", "358/merge", "false"),
+    ],
+)
+def test_ci_only_builds_publishable_candidates_on_active_push_branches(
+    tmp_path: Path, event: str, branch: str, candidate: str
+) -> None:
+    env = {
+        **os.environ,
+        "TEST_PYTHON": sys.executable,
+        "GITHUB_OUTPUT": str(tmp_path / "output"),
+        "EVENT_NAME": event,
+        "PUSH_REF_NAME": branch,
+    }
+    result = _run_script('python3() { "$TEST_PYTHON" "$@"; }\n' + _shell("ci.yml", "Classify this run"), env)
+    assert result.returncode == 0, result.stderr
+    assert _outputs(env) == {"target_branch": branch, "is_hardened": "true", "is_candidate": candidate}
+
+
+@pytest.mark.parametrize(
+    ("version", "promote", "channel", "environment"),
+    [
+        ("2.0.0-beta.27", "true", "beta", "beta-release"),
+        ("2.0.0-beta.26", "false", "beta", "beta-release"),
+        ("2.0.0", "false", "ga", ""),
+    ],
+)
+def test_main_resolution_handoff_publishes_only_unpublished_betas(
+    tmp_path: Path, version: str, promote: str, channel: str, environment: str
+) -> None:
+    (tmp_path / "candidate-pyproject.toml").write_text(f'[project]\nversion = "{version}"\n')
+    (tmp_path / "published-versions.txt").write_text("2.0.0-beta.26\n")
+    env = {
+        **os.environ,
+        "TEST_PYTHON": sys.executable,
+        "PYTHONPATH": str(ROOT),
+        "GITHUB_OUTPUT": str(tmp_path / "output"),
+        "SOURCE_BRANCH": "main",
+        "SOURCE_SHA": SOURCE_SHA,
+    }
+    result = _run_script(
+        'uv() { [[ "$1 $2" == "run python" ]] || return 95; shift 2; "$TEST_PYTHON" "$@"; }\n'
+        + _shell(AUTOMATIC, "Resolve promotion policy"),
+        env,
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert _outputs(env) == {
+        "should_promote": promote,
+        "channel": channel,
+        "environment_name": environment,
+        "tag": "",
+    }
+    if promote == "false":
         assert "::notice::" in result.stdout
 
 

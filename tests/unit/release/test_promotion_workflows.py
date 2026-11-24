@@ -55,9 +55,9 @@ def test_automatic_promotion_uses_only_successful_eligible_push_ci() -> None:
     assert "github.event.workflow_run.conclusion == 'success'" in resolve
     assert "github.event.workflow_run.event == 'push'" in resolve
     assert "github.event.workflow_run.head_repository.full_name == github.repository" in resolve
-    assert "head_branch == 'main'" not in resolve
-    assert "            release/*|preview/*) ;;\n" in resolve
-    assert "startsWith(github.event.workflow_run.head_branch, 'release/')" in resolve
+    assert "head_branch == 'main'" in resolve
+    assert "            main|preview/*) ;;\n" in resolve
+    assert "startsWith(github.event.workflow_run.head_branch, 'release/')" not in resolve
     assert "startsWith(github.event.workflow_run.head_branch, 'preview/')" in resolve
     assert "CI_RUN_ID: ${{ github.event.workflow_run.id }}" in resolve
     assert "      group: auto-promote-resolve-${{ github.event.workflow_run.head_branch }}\n" in resolve
@@ -65,10 +65,20 @@ def test_automatic_promotion_uses_only_successful_eligible_push_ci() -> None:
     assert "    environment:" not in resolve
     assert "needs.resolve.outputs.should_promote == 'true'" in automatic
     assert "ci_run_id: ${{ needs.resolve.outputs.ci_run_id }}" in automatic
-    assert "(needs.resolve.outputs.channel == 'ga' || needs.resolve.outputs.channel == 'beta')" in automatic
+    assert "needs.resolve.outputs.channel == 'beta'" in automatic
+    assert "needs.resolve.outputs.channel == 'ga'" not in automatic
     assert FINALIZATION_CALL not in (WORKFLOWS / "promote-preview.yml").read_text()
     policy = resolve.split("      - name: Resolve promotion policy\n", 1)[1]
     assert "if: steps.artifact.outputs.available == 'true'" in policy
+
+
+def test_manual_beta_recovery_uses_main_without_a_branch_input() -> None:
+    workflow = (WORKFLOWS / "promote-beta.yml").read_text()
+    header, jobs = workflow.split("\njobs:\n", 1)
+    assert "      branch:" not in header
+    assert "      branch: main\n" in jobs
+    assert "      channel: beta\n" in jobs
+    assert "      environment_name: beta-release\n" in jobs
 
 
 def test_promotion_preserves_credential_boundary_without_scanner_dependencies() -> None:
