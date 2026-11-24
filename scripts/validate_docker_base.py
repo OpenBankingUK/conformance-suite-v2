@@ -21,10 +21,7 @@ APPROVED_RUNTIME_BASES = frozenset(
     }
 )
 _FROM_PATTERN = re.compile(r"^\s*FROM\s+(.+?)\s*$", re.IGNORECASE)
-_CANDIDATE_BASE_PATTERNS = {
-    "builder": re.compile(r"^dhi\.io/python:3\.14-debian13-dev@sha256:[0-9a-f]{64}$"),
-    "runtime": re.compile(r"^dhi\.io/python:3\.14-debian13@sha256:[0-9a-f]{64}$"),
-}
+_CANDIDATE_BASE = re.compile(r"dhi\.io/python:3\.14-(?P<family>debian13|alpine)(?P<dev>-dev)?@sha256:[0-9a-f]{64}")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -40,13 +37,13 @@ class DockerBaseError(ValueError):
 
 
 def get_candidate_dhi_bases(dockerfile: str) -> CandidateDhiBases:
-    """Parse the fixed DHI Python 3.14 / Debian 13 builder and runtime pair.
+    """Parse a matching DHI Python 3.14 builder and runtime pair.
 
     Unlike :func:`get_runtime_base`, this validates the image family and digest
     syntax rather than an advance-approved digest. This is a build-contract
     check, not a vulnerability or signed-provenance assessment.
     """
-    stages: dict[str, tuple[str, int]] = {}
+    stages: dict[str, tuple[str, int, str]] = {}
     from_count = 0
     for line in dockerfile.splitlines():
         if line.lstrip().startswith("#"):
@@ -59,23 +56,26 @@ def get_candidate_dhi_bases(dockerfile: str) -> CandidateDhiBases:
         if tokens and tokens[0].casefold().startswith("--platform="):
             tokens.pop(0)
         aliases = [tokens[index + 1].casefold() for index in range(len(tokens) - 1) if tokens[index].casefold() == "as"]
-        if len(tokens) < 3 or len(aliases) != 1 or aliases[0] not in _CANDIDATE_BASE_PATTERNS:
+        if len(tokens) < 3 or len(aliases) != 1 or aliases[0] not in {"builder", "runtime"}:
             continue
         alias = aliases[0]
         if alias in stages:
             raise DockerBaseError(f"Dockerfile defines more than one {alias} stage.")
         reference = tokens[0]
-        if not _CANDIDATE_BASE_PATTERNS[alias].fullmatch(reference):
+        base = _CANDIDATE_BASE.fullmatch(reference)
+        if base is None or bool(base["dev"]) != (alias == "builder"):
             raise DockerBaseError(
-                f"The {alias} stage must use the pinned DHI Python 3.14 Debian 13 image family "
-                f"with a SHA-256 digest; found {reference!r}."
+                f"The {alias} stage must use the corresponding DHI Python 3.14 Debian 13 or Alpine "
+                f"variant with a SHA-256 digest; found {reference!r}."
             )
-        stages[alias] = (reference, from_count)
+        stages[alias] = (reference, from_count, base["family"])
 
-    if set(stages) != set(_CANDIDATE_BASE_PATTERNS):
+    if set(stages) != {"builder", "runtime"}:
         raise DockerBaseError("Dockerfile must define exactly one DHI builder and one DHI runtime stage.")
-    builder, builder_number = stages["builder"]
-    runtime, runtime_number = stages["runtime"]
+    builder, builder_number, builder_family = stages["builder"]
+    runtime, runtime_number, runtime_family = stages["runtime"]
+    if builder_family != runtime_family:
+        raise DockerBaseError("The DHI builder and runtime must use the same image family.")
     if builder_number >= runtime_number or runtime_number != from_count:
         raise DockerBaseError("The DHI builder must precede the final DHI runtime stage.")
     return CandidateDhiBases(builder=builder, runtime=runtime)
