@@ -43,11 +43,11 @@ or design choice has been implemented.
 - Docker for container builds; authenticate with `docker login dhi.io` before
   pulling the Docker Hardened Image bases
 
-Docker builds use digest-pinned Debian 13 Docker Hardened Images for amd64 and
-arm64. The builder installs locked binary wheels for glibc (manylinux), without
-source builds. The distroless runtime removes unused system pip and runs as
-UID/GID `65532`; per-platform CI smoke tests verify these properties and record
-the OpenSSL package versions before scanning.
+Docker builds use digest-pinned Alpine Docker Hardened Images for amd64 and
+arm64. The builder installs locked binary wheels for musl (musllinux), without
+source builds. The distroless runtime ships without pip and runs as UID/GID
+`65532`; per-platform CI smoke tests verify these properties and record the
+OpenSSL package versions.
 
 ## Getting started
 

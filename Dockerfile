@@ -1,19 +1,16 @@
 # ─── Build stage ──────────────────────────────────────────────────────────────
-# Docker Hardened Image (DHI), Debian 13, "-dev" variant: has a shell, apt,
-# and pip so it can build the venv, but is otherwise the same underlying
-# Python 3.14/glibc environment as the distroless runtime stage below.
-# Uvicorn's C-extension dependencies (httptools, uvloop, and watchfiles)
-# provide prebuilt manylinux wheels, so no compiler toolchain is required.
+# The Alpine DHI builder and distroless runtime share Python 3.14 and musl.
+# Install native dependencies from locked musllinux wheels, without a compiler.
 #
 # Pulling from `dhi.io` requires `docker login dhi.io` using a Docker account
 # (see docs/DEVELOPER_GUIDE.md); CI authenticates with a read-only
 # organisation-owned credential. Both stages pin multi-architecture index
 # digests for reproducibility on amd64 and arm64; base updates require a
 # reviewed digest bump and scanner policy reassessment.
-FROM dhi.io/python:3.14-debian13-dev@sha256:331fffd6ff7fcf9bf5f7dbde8d48fad634375baa739d1db23f65e0ec83bcd198 AS builder
+FROM dhi.io/python:3.14-alpine-dev@sha256:a1712836aac7f2ab317577d24db7a219121fd9c2e71874c5feab960a31b3b302 AS builder
 
 # Install uv for fast, reproducible dependency resolution
-COPY --from=docker.io/astral/uv:0.13.8@sha256:5cc1805e2426484abca4ad46ea783bab281fdb225fd82d8ce6d66a81254bac85 /uv /usr/local/bin/uv
+COPY --from=docker.io/astral/uv:0.13.8@sha256:d3b601f0c7b118bc1753febf7c41cc80981df678445e0254284eecf84db79a7d /uv /usr/local/bin/uv
 
 WORKDIR /app
 
@@ -44,13 +41,7 @@ RUN mkdir -p /data/results /data/logs /data/sessions && \
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 # Distroless DHI runtime variant: no shell, defaults to non-root UID/GID 65532.
 # Pinned to an exact digest for the same reasons as the builder stage above.
-FROM dhi.io/python:3.14-debian13@sha256:5fa5f860496743696b4b3b0bb0b62b3df84d32661583ff8c28c12e7563f8d9fc AS runtime
-
-# System pip and its vendored packages are unused by the uv-managed venv.
-# Require the inspected Debian layout so an upstream change cannot silently
-# leave a second pip installation behind. CI also checks the final filesystem.
-USER 0:0
-RUN ["python3", "-c", "import shutil; from pathlib import Path; root = Path('/usr/lib/python3/dist-packages'); metadata, = root.glob('pip-*.dist-info'); shutil.rmtree(root / 'pip'); shutil.rmtree(metadata); Path('/usr/bin/pip').unlink(); Path('/usr/bin/pip3').unlink()\nif list(root.glob('pip*')): raise RuntimeError('Unexpected system pip files remain')"]
+FROM dhi.io/python:3.14-alpine@sha256:5a0de944ac147790f69ef8dbda3b934b61c07cc07541fff8fd1af7f5a2f2e4c0 AS runtime
 
 WORKDIR /app
 
