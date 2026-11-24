@@ -1,7 +1,8 @@
 # GitHub Settings: Branch Rulesets — develop
 
-> `develop` is the protected integration branch for normal development. See
-> [CICD_STRATEGY.md](../CICD_STRATEGY.md), Section 1.
+> **Historical setup notes, not the current development workflow.** Normal
+> development and beta publication now use main. Develop is retained only as a
+> historical reference. See [CICD_STRATEGY.md](../CICD_STRATEGY.md), Section 1.
 
 > **Repository**: `OpenBankingUK/conformance-suite-v2`
 > **Page**: Settings → Rules → Rulesets
@@ -10,8 +11,9 @@
 
 For the current shared `main & develop` ruleset, branch targets, review
 requirements and CI checks, see [BRANCH_RULESETS.md](BRANCH_RULESETS.md).
-This page otherwise retains the original develop setup notes; its merge-method
-guidance below follows the current repository-wide policy.
+This page retains the original develop setup notes rather than prescribing new
+settings. Its merge-method guidance follows the current repository-wide policy.
+Do not recreate this old integration workflow or weaken the retained rules.
 
 ---
 

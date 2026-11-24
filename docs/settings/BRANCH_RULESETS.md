@@ -3,6 +3,11 @@
 > **Repository**: `OpenBankingUK/conformance-suite-v2`
 > **Page**: Settings → Rules → Rulesets
 
+Main is now the only active integration and beta-publication branch. The
+develop/release entries below describe retained historical protections, not
+active development targets. This transition does not modify the live rulesets
+or remove any review or security requirement.
+
 ## Required checks after the security-pipeline simplification
 
 | Ruleset | ID | Target branches | Required statuses |
@@ -54,8 +59,8 @@ Required linear history remains disabled because it would reject merge commits.
 Preview branches inherit the repository-wide merge-method restriction without
 adding or removing rules from their existing ruleset.
 
-This permanent policy preserves ancestry when synchronising long-lived
-branches, such as `release/*` into `main` and `main` into `develop`. Squashing a
+This permanent policy preserves ancestry, including the historical
+release-to-main migration and any later upstream integration. Squashing a
 long-lived branch can cause later PRs to repeat changes or conflicts because
 the source commits are not recorded as ancestors of the target. Merge commits
 avoid that ancestry loss, but cannot prevent conflicts caused by new changes.

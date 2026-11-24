@@ -134,21 +134,21 @@ inert during migration. They are not used by the new workflows.
    Cancel only confirmed superseded scanner runs.
 3. Apply the publication environment restrictions before removing reviewers.
    Re-read settings to verify credentials and unrelated protections were retained.
-4. Synchronize active release/preview branches with trusted main pipeline files
-   before producing new candidates. `workflow_run` executes from the default
-   branch, and promotion requires matching pipeline files.
+4. Main is the active development and beta-publication branch. Only optional
+   preview branches need to incorporate main's pipeline changes. `workflow_run`
+   executes from the default branch, and promotion still requires matching
+   pipeline files, including for older main candidates.
 5. Verify a fresh PR receives Snyk, CodeQL where configured, and its normal CI
    checks without `Vulnerability Scan`. Verify the next eligible push CI starts
    publication without an approval pause.
 
-Manual `promote-preview`, `promote-beta`, and `promote-ga` dispatches remain
-recovery/backfill paths from `main`; they no longer take an assessment run ID.
+Manual `promote-preview` and `promote-beta` dispatches remain recovery paths
+from `main`; they no longer take an assessment run ID. The GA caller is disabled.
 They still require a successful matching push CI run and immutable artifacts.
 After successful publication, beta/GA release finalization remains unchanged.
 Do not manufacture a version or publish an old candidate just to test rollout.
 
-GA publication is paused while 2.0.0 is in beta: automatic promotion ignores
-`main` pushes and **Promote GA image** is disabled in Actions settings. Without
-this, every `main` push would publish its placeholder version as GA with no
-approval. See [CI/CD Strategy §5.2](CICD_STRATEGY.md#52-standard-release-git-flow)
-to resume GA.
+GA publication is paused while 2.0.0 is in beta: automatic promotion accepts
+main beta candidates but explicitly skips stable/GA versions, and **Promote GA
+image** stays disabled in Actions settings. A version bump alone cannot enable
+GA. See [CI/CD Strategy §5.2](CICD_STRATEGY.md#52-ga-publication-paused).

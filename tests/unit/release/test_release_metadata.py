@@ -106,14 +106,16 @@ class TestValidateBranchCompatibility:
         with pytest.raises(ReleaseMetadataError):
             validate_branch_compatibility(metadata, "develop")
 
-    def test_beta_requires_matching_release_branch(self) -> None:
-        """A beta version may only be published from its matching release/<version> branch."""
+    def test_beta_accepts_main(self) -> None:
+        """Main is the active beta development and publication branch."""
         metadata = classify_raw_version("2.0.0-beta.1")
-        validate_branch_compatibility(metadata, "release/2.0.0")
-        with pytest.raises(ReleaseMetadataError):
-            validate_branch_compatibility(metadata, "release/2.0.1")
-        with pytest.raises(ReleaseMetadataError):
-            validate_branch_compatibility(metadata, "main")
+        validate_branch_compatibility(metadata, "main")
+
+    @pytest.mark.parametrize("branch", ["release/2.0.0", "release/2.0.1", "preview/new-flow", "feature/new-flow"])
+    def test_beta_rejects_other_branches(self, branch: str) -> None:
+        """Retired release branches and unmerged feature branches cannot publish betas."""
+        with pytest.raises(ReleaseMetadataError, match="from 'main'"):
+            validate_branch_compatibility(classify_raw_version("2.0.0-beta.1"), branch)
 
     def test_ga_requires_main(self) -> None:
         """A GA version may only be published from main."""

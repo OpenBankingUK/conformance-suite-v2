@@ -22,11 +22,11 @@
 |---------|-------|
 | Default branch | `main` |
 
-**Rationale**: `main` is the stable GA branch in the repository branching
-model (see [CICD_STRATEGY.md](../CICD_STRATEGY.md)). Normal development PRs
-target `develop`; participant-facing previews use `preview/**`; beta and
-GA candidates use `release/**`; and `main` records the approved supported
-release history.
+**Rationale**: `main` is the single active v2 development and beta-publication
+branch (see [CICD_STRATEGY.md](../CICD_STRATEGY.md)). All normal PRs target main,
+including security and dependency updates. Optional participant-facing previews
+use `preview/**`. Develop and release/2.0.0 remain historical references.
+GA publication stays disabled until a separate release decision.
 
 ---
 
@@ -74,8 +74,7 @@ Enabled for lightweight documentation that doesn't belong in the main codebase (
 ### Issues — On
 
 Primary mechanism for tracking work. Used with labels and milestones aligned to
-the repository branching strategy (`feature/`, `bugfix/`, `preview/`,
-`release/`, `hotfix/`).
+the repository branching strategy (`feature/`, `bugfix/`, `preview/`, `hotfix/`).
 
 ### Sponsorships — Off
 

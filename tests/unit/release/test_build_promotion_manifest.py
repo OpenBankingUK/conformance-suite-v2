@@ -30,9 +30,18 @@ def _write_pyproject(tmp_path: Path, version: str) -> Path:
 class TestMain:
     """Behaviour of the ``build_promotion_manifest`` CLI entrypoint."""
 
-    def test_builds_manifest_for_valid_preview_candidate(self, tmp_path: Path) -> None:
-        """A valid preview candidate writes the expected manifest JSON."""
-        pyproject_path = _write_pyproject(tmp_path, "2.0.0-dev.1")
+    @pytest.mark.parametrize(
+        ("branch", "version", "comparison", "channel"),
+        [
+            ("preview/new-cert-flow", "2.0.0-dev.1", "2.0.0.dev1", "preview"),
+            ("main", "2.0.0-beta.1", "2.0.0b1", "beta"),
+        ],
+    )
+    def test_builds_manifest_for_valid_candidate(
+        self, tmp_path: Path, branch: str, version: str, comparison: str, channel: str
+    ) -> None:
+        """Preview and main-beta candidates write version-only publication manifests."""
+        pyproject_path = _write_pyproject(tmp_path, version)
         output_path = tmp_path / "promotion-manifest.json"
 
         exit_code = main(
@@ -40,7 +49,7 @@ class TestMain:
                 "--pyproject",
                 str(pyproject_path),
                 "--branch",
-                "preview/new-cert-flow",
+                branch,
                 "--source-sha",
                 "abc123",
                 "--platform-digest",
@@ -57,9 +66,9 @@ class TestMain:
         assert exit_code == 0
         manifest = json.loads(output_path.read_text())
         assert manifest == {
-            "raw_version": "2.0.0-dev.1",
-            "comparison_version": "2.0.0.dev1",
-            "channel": "preview",
+            "raw_version": version,
+            "comparison_version": comparison,
+            "channel": channel,
             "image_name": "docker.io/openbanking/conformance-suite-v2",
             "source_sha": "abc123",
             "platform_digests": {
@@ -67,7 +76,7 @@ class TestMain:
                 "linux/arm64": "sha256:bbb",
             },
             "oci_labels": {"org.opencontainers.image.revision": "abc123"},
-            "expected_tags": ["2.0.0-dev.1"],
+            "expected_tags": [version],
         }
 
     def test_ga_candidate_expects_latest_tag(self, tmp_path: Path) -> None:

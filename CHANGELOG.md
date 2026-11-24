@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Use `main` for v2 development and beta publication instead of maintaining a
+  separate active release branch. New beta versions publish after successful
+  CI; already-published versions are not overwritten. Dependency and security
+  updates target main once. GA publication remains disabled.
+
 ## [2.0.0-beta.26] - 2026-11-24
 
 ### Changed
