@@ -103,9 +103,10 @@ def test_runtime_smoke_check_is_valid_exec_form_python() -> None:
     tokens = shlex.split(check)
     code = tokens[tokens.index("-c") + 1]
     compile(code, "runtime-smoke-check", "exec")
-    assert "CS_GNU_LIBC_VERSION" in code
-    assert "manylinux" in code
+    assert "release['ID'] == 'debian'" in code
+    assert "release['ID'] == 'alpine'" in code
+    assert "'manylinux'" in code
+    assert "'musllinux'" in code
     assert "/usr/lib/python3/dist-packages" in code
     assert "/var/lib/dpkg/status" in code
-    assert "musllinux" in code
     assert "/lib/apk/db/installed" in code
