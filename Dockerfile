@@ -10,7 +10,7 @@
 # organisation-owned credential. Both stages pin multi-architecture index
 # digests for reproducibility on amd64 and arm64; base updates require a
 # reviewed digest bump and scanner policy reassessment.
-FROM dhi.io/python:3.14-debian13-dev@sha256:331fffd6ff7fcf9bf5f7dbde8d48fad634375baa739d1db23f65e0ec83bcd198 AS builder
+FROM dhi.io/python:3.14-debian13-dev@sha256:422c5e9568e37d64eac9f1d04dfc48ee7d7738272a983bdb35c2cf3ec4f4b5a6 AS builder
 
 # Install uv for fast, reproducible dependency resolution
 COPY --from=docker.io/astral/uv:0.13.8@sha256:5cc1805e2426484abca4ad46ea783bab281fdb225fd82d8ce6d66a81254bac85 /uv /usr/local/bin/uv
@@ -40,7 +40,7 @@ RUN mkdir -p /data/results /data/logs /data/sessions && \
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 # Distroless DHI runtime variant: no shell, defaults to non-root UID/GID 65532.
 # Pinned to an exact digest for the same reasons as the builder stage above.
-FROM dhi.io/python:3.14-debian13@sha256:5fa5f860496743696b4b3b0bb0b62b3df84d32661583ff8c28c12e7563f8d9fc AS runtime
+FROM dhi.io/python:3.14-debian13@sha256:f11473f548b1d047acaf942034495b495f0c50a208464b03eb94616071669fed AS runtime
 
 # System pip and its vendored packages are unused by the uv-managed venv.
 # Require the inspected Debian layout so an upstream change cannot silently
