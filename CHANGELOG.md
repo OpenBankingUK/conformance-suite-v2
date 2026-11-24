@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.24] - 2026-11-23
+
+### Changed
+
+- Republish the beta image so Docker Hub can re-evaluate its vulnerability
+  status after Docker Hub service updates. There are no application,
+  dependency or base image changes since 2.0.0-beta.23.
+
 ## [2.0.0-beta.23] - 2026-11-20
 
 ### Changed
@@ -897,7 +905,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.23...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.24...HEAD
+[2.0.0-beta.24]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.23...v2.0.0-beta.24
 [2.0.0-beta.23]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.22...v2.0.0-beta.23
 [2.0.0-beta.22]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.21...v2.0.0-beta.22
 [2.0.0-beta.21]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.20...v2.0.0-beta.21
