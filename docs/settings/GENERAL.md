@@ -102,10 +102,17 @@ Project management is handled at the organisation level, not per-repository. Dis
 | Setting | Value |
 |---------|-------|
 | Allow merge commits | On (Default message) |
-| Allow squash merging | On (Default message) |
+| Allow squash merging | Off |
 | Allow rebase merging | Off |
 
-**Rationale**: Both merge commits and squash merging are enabled at the repository level, but branch rulesets further restrict the allowed methods per branch. The `main` branch ruleset enforces **squash-only** merges (see [BRANCH_RULESETS.md](BRANCH_RULESETS.md)), giving a clean linear history where each commit represents one release or hotfix. Merge commits remain available for branches not covered by restrictive rulesets (e.g. `release/` or `hotfix/` merges back into `develop`). Rebase merging is disabled to avoid rewriting commit history, which can cause problems with our Git Flow model and signed commits.
+**Rationale**: Merge commits are the only allowed method for all PRs, including
+feature, Dependabot, release and branch-synchronisation PRs. This preserves
+ancestry between long-lived branches without requiring maintainers to select a
+different method for each source branch. The trade-off is retaining intermediate
+commits rather than squashing each PR into one commit. The main/develop and
+release [branch rulesets](BRANCH_RULESETS.md) also allow only `merge`; required
+linear history must remain disabled. Existing review and CI requirements still
+apply. This is the permanent policy, not a temporary release exception.
 
 ---
 

@@ -108,6 +108,12 @@ hotfix/107 ───────────────────────
 
 These rules **must** be configured in **GitHub → Repository Settings → Branches** for each protected branch. They cannot be bypassed by repository administrators.
 
+Repository merge settings and branch rulesets allow **merge commits only**.
+This applies to all PRs, including feature and Dependabot updates, and preserves
+ancestry when synchronising long-lived branches without a source-dependent
+choice of merge method. See [merge settings](settings/GENERAL.md#pull-requests--merge-strategies)
+and [branch rulesets](settings/BRANCH_RULESETS.md#merge-strategy).
+
 ### 2.1 `main` Branch
 
 | Rule | Setting |
@@ -120,7 +126,8 @@ These rules **must** be configured in **GitHub → Repository Settings → Branc
 | Required status checks | `Check`, `Docker Build`, `Image (linux/amd64)`, `Image (linux/arm64)`, and `code/snyk (Standards)`, plus CodeQL code scanning results (High or higher) |
 | Require branches to be up to date before merging | **Enabled** |
 | Require conversation resolution before merging | **Enabled** |
-| Require linear history | **Enabled** (merge squash or rebase only) |
+| Allowed merge methods | **Merge only** |
+| Require linear history | **Disabled** (merge commits preserve branch ancestry) |
 | Allow administrators to bypass | **Enabled** — repository admins may override in exceptional circumstances; see [Section 5.4](#54-release-exception-process) |
 | Restrict who can push to matching branches | Standards Team leads only |
 
@@ -136,6 +143,8 @@ These rules **must** be configured in **GitHub → Repository Settings → Branc
 | Required status checks | `Check`, `Docker Build`, `Image (linux/amd64)`, `Image (linux/arm64)`, and `code/snyk (Standards)`, plus CodeQL code scanning results (High or higher) |
 | Require branches to be up to date before merging | **Enabled** |
 | Require conversation resolution before merging | **Enabled** |
+| Allowed merge methods | **Merge only** |
+| Require linear history | **Disabled** (merge commits preserve branch ancestry) |
 | Allow administrators to bypass | **Enabled** — repository admins may override in exceptional circumstances; see [Section 5.4](#54-release-exception-process) |
 
 ### 2.3 `release/**` Branches
@@ -598,7 +607,7 @@ since moved. `v2.0.0-beta.1` and `v2.0.0-beta.2` already have Releases.
    - Full CI gates enforced (`make check`, Docker build and health check)
    - Requires the normal human PR review; Copilot review remains advisory
 
-4. Merge into main (squash or merge commit). Successful `main` push CI
+4. Merge into main with a merge commit. Successful `main` push CI
    produces the GA candidate, then automatic promotion starts.
 
 5. The workflow validates and
@@ -607,8 +616,8 @@ since moved. `v2.0.0-beta.1` and `v2.0.0-beta.2` already have Releases.
 
 6. After publication, the finalizer creates `vX.Y.Z` at the promoted source
    commit if it is missing, creates the GitHub Release (marked latest), and
-   opens the main-to-develop PR. Review and merge that PR; it is never merged
-   automatically.
+   opens the main-to-develop PR. Review and merge that PR with a merge commit;
+   it is never merged automatically.
 
 Manual **Promote GA image** dispatch is available from `main` only for
 recovery/backfill.
