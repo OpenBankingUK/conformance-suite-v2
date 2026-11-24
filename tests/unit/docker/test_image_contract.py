@@ -94,17 +94,19 @@ def test_system_pip_removal_fails_closed_on_layout_drift(tmp_path: Path, layout:
         assert result.stderr
 
 
-def test_debian_smoke_check_is_valid_exec_form_python() -> None:
+def test_runtime_smoke_check_is_valid_exec_form_python() -> None:
     """The shell must preserve the Python checks passed to the distroless image."""
     root = Path(__file__).resolve().parents[3]
     smoke = (root / "scripts/docker_smoke_test.sh").read_text()
-    check = smoke.split(
-        'echo "==> Checking Debian/glibc, binary wheels, system pip removal, and OpenSSL inventory"\n', 1
-    )[1].split('echo "==> Creating persistent volume', 1)[0]
+    start = 'echo "==> Checking runtime libc, binary wheels, pip absence, and OpenSSL inventory"\n'
+    check = smoke.split(start, 1)[1].split('echo "==> Creating persistent volume', 1)[0]
     tokens = shlex.split(check)
     code = tokens[tokens.index("-c") + 1]
-    compile(code, "debian-smoke-check", "exec")
-    assert "CS_GNU_LIBC_VERSION" in code
-    assert "manylinux" in code
+    compile(code, "runtime-smoke-check", "exec")
+    assert "release['ID'] == 'debian'" in code
+    assert "release['ID'] == 'alpine'" in code
+    assert "'manylinux'" in code
+    assert "'musllinux'" in code
     assert "/usr/lib/python3/dist-packages" in code
     assert "/var/lib/dpkg/status" in code
+    assert "/lib/apk/db/installed" in code
