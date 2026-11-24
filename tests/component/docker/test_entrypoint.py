@@ -211,6 +211,14 @@ class TestMain:
         assert recorded["args"] == ["uvicorn", "config.asgi:application"]
         assert os.environ["DJANGO_SECRET_KEY"]
 
+    def test_rejects_unexpected_exec_return(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """Returning from exec must not be reported as a successful startup."""
+        monkeypatch.setattr(os, "execvp", lambda _file, _args: None)
+        monkeypatch.setenv("CONFORMANCE_DATA_DIR", str(tmp_path / "data"))
+
+        with pytest.raises(RuntimeError, match=r"os\.execvp unexpectedly returned"):
+            entrypoint.main(["uvicorn", "config.asgi:application"])
+
     def test_rejects_incomplete_local_tls_command(
         self,
         monkeypatch: pytest.MonkeyPatch,

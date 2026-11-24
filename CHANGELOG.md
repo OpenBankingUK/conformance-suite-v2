@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CI; already-published versions are not overwritten. Dependency and security
   updates target main once. GA publication remains disabled.
 
+### Fixed
+
+- Fail explicitly if the entrypoint cannot replace itself, verify root
+  filesystem layers when an image archive reports zero layers, and disable
+  proxy environment variables for Docker health checks.
+
+### Security
+
+- Mask custom PSU authorisation query parameters in persisted results and
+  execution logs, including parameters already present in the endpoint URL
+  when using a generated request object. Keep the dispatch URL unchanged.
+
 ## [2.0.0-beta.26] - 2026-11-24
 
 ### Changed

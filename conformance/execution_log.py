@@ -489,21 +489,29 @@ class BufferedExecutionLogger(ExecutionLogger):
             :data:`conformance.masking.MASKED_VALUE`, or a deep-copied
             unmasked payload when developer mode is enabled.
         """
+        raw_sensitive_params = payload.get("_sensitive_query_parameters", [])
+        if not isinstance(raw_sensitive_params, list):
+            raise ValueError("PSU authorization sensitive query parameter names must be a string array")
+        sensitive_param_names = tuple(name for name in raw_sensitive_params if isinstance(name, str))
+        if len(sensitive_param_names) != len(raw_sensitive_params):
+            raise ValueError("PSU authorization sensitive query parameter names must be a string array")
+        sensitive_params = SENSITIVE_JSON_KEYS | frozenset(sensitive_param_names)
+        event_payload = {key: value for key, value in payload.items() if key != "_sensitive_query_parameters"}
         if self._developer_mode:
             # Deep-copy via mask_json_value's traversal would still mask
             # nested credential keys; in developer mode we want the raw
             # payload, but we still copy to detach the caller's references.
-            return cast("JsonObject", json.loads(json.dumps(payload)))
+            return cast("JsonObject", json.loads(json.dumps(event_payload)))
 
         masked: JsonObject = {}
-        for key, value in payload.items():
+        for key, value in event_payload.items():
             if key == "headers" and isinstance(value, dict):
                 # ``headers`` is mapped str→str by upstream callers; the
                 # cast is safe because mask_headers only reads .items().
                 str_headers = {str(name): str(header_value) for name, header_value in value.items()}
                 masked[key] = cast("JsonObject", mask_headers(str_headers))
             elif event_type == "psu-authorization-url" and key == "url" and isinstance(value, str):
-                masked[key] = mask_url_query(value, SENSITIVE_JSON_KEYS)
+                masked[key] = mask_url_query(value, sensitive_params)
             elif event_type == "psu-authorization-url" and key in {"client_id", "request_object"}:
                 masked[key] = MASKED_VALUE if value is not None else None
             elif key.lower() in SENSITIVE_JSON_KEYS:

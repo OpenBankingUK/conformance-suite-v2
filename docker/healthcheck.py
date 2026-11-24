@@ -32,6 +32,7 @@ def main() -> int:
             headers={"Host": HEALTHCHECK_HOST_HEADER},
             timeout=TIMEOUT_SECONDS,
             verify=tls_context,
+            trust_env=False,
         )
         response.raise_for_status()
     except (OSError, httpx.HTTPError) as error:

@@ -299,6 +299,7 @@ def _write_private_file(path: Path, content: bytes, *, mode: int = 0o600) -> Non
 def _exec_command(command: list[str]) -> NoReturn:
     """Replace the entrypoint process with the requested command."""
     os.execvp(command[0], command)  # noqa: S606 - trusted, image-supplied CMD/operator override, not user input.
+    raise RuntimeError("os.execvp unexpectedly returned.")
 
 
 def main(argv: list[str] | None = None) -> int:

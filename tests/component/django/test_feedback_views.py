@@ -417,7 +417,8 @@ def test_csrf_and_http_method_guards() -> None:
         client.post(location + "bundle.zip", {"csrfmiddlewaretoken": client.cookies["csrftoken"].value}).status_code
         == 405
     )
-    assert Client().delete("/feedback/").status_code == 405
+    delete_response = Client().delete("/feedback/")
+    assert delete_response.status_code == 405
 
 
 def test_bundle_size_failure_is_visible_without_a_report(monkeypatch: pytest.MonkeyPatch) -> None:

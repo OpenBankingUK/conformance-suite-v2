@@ -142,16 +142,18 @@ def test_psu_manual_step_times_out() -> None:
 def test_psu_manual_timeout_masks_authorization_url_query_evidence() -> None:
     """Non-PASS PSU results mask credential-bearing authorization URL params."""
     fake_clock = FakeClock()
+    execution_logger = BufferedExecutionLogger(run_id="run-timeout-masked-url", developer_mode=False)
     result, context = _execute_v1_psu_step(
         psu_manual_step(
             authorization_endpoint="https://auth.example.com/authorize?client_assertion=inline.assertion",
             request_object="signed.request.jwt",
+            custom_parameters=(("sandbox_token", "raw-custom-token"),),
         ),
         context=ExecutionContext(),
         client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
         run_id="run-timeout-masked-url",
         auth_session_store=AuthSessionStore(),
-        execution_logger=BufferedExecutionLogger(run_id="run-timeout-masked-url", developer_mode=False),
+        execution_logger=execution_logger,
         clock=fake_clock.monotonic,
         sleep=fake_clock.sleep,
     )
@@ -163,9 +165,15 @@ def test_psu_manual_timeout_masks_authorization_url_query_evidence() -> None:
     assert result.url == request_url
     assert "client_assertion=***" in request_url
     assert "request=***" in request_url
+    assert "sandbox_token=***" in request_url
     assert context.steps["psu"].request.url == request_url
     assert "inline.assertion" not in rendered
     assert "signed.request.jwt" not in rendered
+    assert "raw-custom-token" not in rendered
+    event = next(event for event in execution_logger.events() if event.type == "psu-authorization-url")
+    assert "sandbox_token=***" in str(event.payload["url"])
+    assert "raw-custom-token" not in json.dumps(event.payload)
+    assert "_sensitive_query_parameters" not in event.payload
 
 
 def test_psu_manual_timeout_developer_mode_keeps_authorization_url_query_unmasked(
@@ -237,7 +245,11 @@ def test_psu_manual_step_generates_and_masks_signed_request_object(tmp_path: Pat
         tmp_path: Pytest temporary directory used to hold generated signing PEM files.
     """
     store = AuthSessionStore()
-    step = psu_manual_step(request_object=GeneratedRequestObject(source="fapi-signing"))
+    step = psu_manual_step(
+        authorization_endpoint="https://auth.example.com/authorize?sandbox_token=endpoint-fixture",
+        request_object=GeneratedRequestObject(source="fapi-signing"),
+        custom_parameters=(("sandbox_token", "claim-fixture"),),
+    )
 
     def capture_once() -> None:
         if store.get("run-psu-signed-manual", "s" * 32) is not None:
@@ -261,15 +273,19 @@ def test_psu_manual_step_generates_and_masks_signed_request_object(tmp_path: Pat
     assert result.status == "passed"
     assert result.url is not None
     assert "request=***" in result.url
+    assert result.url.count("sandbox_token=***") == 1
+    assert "endpoint-fixture" not in json.dumps(result.to_json_object())
     assert context.steps["psu"].request.url == result.url
 
     psu_url_events = [event for event in execution_logger.events() if event.type == "psu-authorization-url"]
     assert len(psu_url_events) == 1
     event_payload = psu_url_events[0].payload
     assert event_payload["request_object"] == "***"
-    raw_url = cast(str, event_payload["url"])
-    assert "request=***" in raw_url
-    assert "response_type=code+id_token" in raw_url
+    logged_url = cast(str, event_payload["url"])
+    assert "request=***" in logged_url
+    assert "response_type=code+id_token" in logged_url
+    assert logged_url.count("sandbox_token=***") == 1
+    assert "endpoint-fixture" not in json.dumps(event_payload)
 
 
 def test_psu_manual_step_invalid_signing_credentials_fail_the_step(tmp_path: Path) -> None:

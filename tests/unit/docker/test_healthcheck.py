@@ -31,10 +31,12 @@ class TestMain:
             headers: dict[str, str],
             timeout: float,
             verify: ssl.SSLContext,
+            trust_env: bool,
         ) -> httpx.Response:
             assert url == HEALTHCHECK_URL
             assert headers == {"Host": HEALTHCHECK_HOST_HEADER}
             assert verify is tls_context
+            assert trust_env is False
             return httpx.Response(200, request=httpx.Request("GET", url))
 
         monkeypatch.setattr(ssl, "create_default_context", _fake_create_default_context)
@@ -53,7 +55,9 @@ class TestMain:
             headers: dict[str, str],
             timeout: float,
             verify: ssl.SSLContext,
+            trust_env: bool,
         ) -> httpx.Response:
+            assert trust_env is False
             return httpx.Response(503, request=httpx.Request("GET", url))
 
         monkeypatch.setattr(httpx, "get", _fake_get)
@@ -70,7 +74,9 @@ class TestMain:
             headers: dict[str, str],
             timeout: float,
             verify: ssl.SSLContext,
+            trust_env: bool,
         ) -> httpx.Response:
+            assert trust_env is False
             raise httpx.ConnectError("connection refused", request=httpx.Request("GET", url))
 
         monkeypatch.setattr(httpx, "get", _fake_get)
