@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.27] - 2026-11-24
+
 ### Changed
 
 - Use `main` for v2 development and beta publication instead of maintaining a
@@ -942,7 +944,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.26...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.27...HEAD
+[2.0.0-beta.27]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.26...v2.0.0-beta.27
 [2.0.0-beta.26]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.25...v2.0.0-beta.26
 [2.0.0-beta.25]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.24...v2.0.0-beta.25
 [2.0.0-beta.24]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.23...v2.0.0-beta.24
