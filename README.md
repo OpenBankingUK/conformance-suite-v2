@@ -1,260 +1,154 @@
-# Functional Conformance Suite V2 (WIP)
+# Functional Conformance Suite v2 beta.26
 
-This repository is used to develop the next Open Banking UK Functional
-Conformance Suite before it is ready to merge back into the official
-conformance-suite repository. It is not the official released suite.
+[![CI (main)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/ci.yml?query=branch%3Amain)
+[![Image promotion](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/auto-promote.yml/badge.svg)](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/auto-promote.yml)
 
-## Participant workflow
+**Beta only — not for certification.** FCS v2 `2.0.0-beta.26` is an MVP for
+evaluating the new Open Banking UK Functional Conformance Suite and providing
+feedback. It is **not approved for certification**; runs and reports from this
+beta must not be submitted as certification evidence, even if a plan or result
+mentions certification or appears eligible in the UI.
 
-Participants no longer select checked-in suites, manifests, or config examples.
-The supported workflow is:
+This applies to the published Docker image, a locally built image, and runs
+from source. **Keep using the existing FCS v1 for certification.** Open Banking
+UK will announce when a later FCS v2 release is formally approved; there is no
+need to migrate your certification process in advance.
 
-1. Open the browser main menu at `/`.
-2. Choose **Create a new test plan with builder** or **Import test plan**.
-3. For a new plan, select the scheme, specification, and version.
-4. Enter the single security environment for the plan, starting with the OpenID
-   discovery URL and then confirming OAuth/FAPI, mTLS, and resource-server
-   values.
-5. For Read/Write, select compatible resource groups and implemented endpoints.
-   For Dynamic Client Registration 3.4, select direct endpoints: POST is always
-   selected and locked; GET, PUT, and DELETE are optional.
-6. Confirm endpoint capabilities. DCR token traffic is generated and is never a
-   participant-selected endpoint.
-7. Review the endpoint capabilities shown inline on each selected endpoint card.
-   Required capabilities are checked and locked; optional capabilities are
-   unchecked until the participant declares that behaviour as implemented.
-8. Provide resource-group-specific business data and generated runtime artifacts.
-   Domain-specific fields appear only for the selected endpoint scope.
-9. Review the generated schemaVersion `1.0` test plan, export reusable JSON, or launch the
-   run.
+## Deployment and security highlights
 
-The UI shows generated tests, counts, source traceability, runtime/auth
-requirements, launch blockers, and certification status after preview. Generated
-tests are read-only: participants cannot select exact generated tests. Lower-level
-request and assertion details stay collapsed under audit details.
+| Highlight | Live status and details |
+| --- | --- |
+| Published images | [Docker Hub](https://hub.docker.com/r/openbanking/conformance-suite-v2/tags) and [GitHub releases](https://github.com/OpenBankingUK/conformance-suite-v2/releases). Use `2.0.0-beta-latest` for evaluation or an exact published tag for reproducibility. |
+| Image deployment | [Automatic promotion runs](https://github.com/OpenBankingUK/conformance-suite-v2/actions/workflows/auto-promote.yml) show publication and release finalization. [Release policy](docs/CICD_STRATEGY.md#51-tagging-and-release-strategy) explains automatic, immutable-image promotion. |
+| Security checks | Pull requests require the external Snyk check (`code/snyk (Standards)`) and GitHub CodeQL; [Dependabot alerts](https://github.com/OpenBankingUK/conformance-suite-v2/security/dependabot) cover repository dependency alerts (access required). Custom container scans and published-image re-scans are retired; see the [security check policy](docs/CICD_STRATEGY.md#32-vulnerability-scanning-and-the-pr-gate). Existing [vulnerability issues](https://github.com/OpenBankingUK/conformance-suite-v2/issues?q=is%3Aissue%20label%3Avulnerability) are historical and no longer refreshed. |
 
-## CLI plan execution
+Badges report workflow status: CI is scoped to `main` and image promotion spans
+release channels. Promotion can skip publication when no eligible candidate
+exists; inspect its run and the registry/release links to confirm what was
+published. A green badge means the workflow passed, not that every image has
+zero vulnerabilities or that this beta is approved for certification.
 
-The preferred CLI path accepts a canonical JSON-first test plan that contains
-the specification, security environment, specification-owned scope/config, and
-reporting metadata in one portable document:
+## Documentation
+
+| Category | Start here | What you will find |
+| --- | --- | --- |
+| Installation | [Installation guide](docs/INSTALLATION_GUIDE.md) | Prerequisites, Docker or source setup, readiness and troubleshooting. [Docker deployment reference](docs/DOCKER_GUIDE.md) covers persistence, certificates and Compose. |
+| Usage | [Usage guide](docs/USAGE_GUIDE.md) | Build/import a plan, supply credentials, run tests, complete PSU authorisation, interpret/download results and give feedback; advanced CLI and REST workflows. |
+| Developer / decision logs | [Developer guide](docs/DEVELOPER_GUIDE.md) and [Decision log](docs/DECISION_LOG.md) | Onboarding, architecture, local checks, contributing changes and recorded design choices with evidence and tradeoffs. |
+
+## Get started: local browser UI
+
+With Docker installed and running, start the beta on your own computer:
+
+```bash
+docker run --pull=always --rm -p 127.0.0.1:8443:8443 openbanking/conformance-suite-v2:2.0.0-beta-latest
+```
+
+`2.0.0-beta-latest` tracks the newest published 2.0.0 beta. `--pull=always`
+refreshes the image at launch, not an already running container.
+
+Open `https://127.0.0.1:8443/`. The container generates a local self-signed
+HTTPS certificate, so your browser will show a certificate warning. The port
+binding keeps the UI local to your computer.
+
+Choose **Create new test plan with builder**, follow the prompts, and supply the
+credentials requested for your scope using **Paste or upload** and **Paste PEM
+text**. Review the plan and choose **Launch run**; some tests require runtime
+inputs or PSU authorisation. Save results before stopping with Ctrl+C: this
+disposable command does not retain sessions, results or logs across runs.
+
+Continue with the [browser walkthrough](docs/USAGE_GUIDE.md#browser-builder-workflow).
+For durable storage or source setup, use the [Installation guide](docs/INSTALLATION_GUIDE.md).
+
+## Give beta feedback
+
+Choose **Give beta feedback** on any browser page to prepare a diagnostic ZIP
+and email text for `standardsteam@openbanking.org.uk`. Nothing is uploaded or
+sent automatically. Review every file and manually attach the ZIP to your
+email; masking does not remove all potentially sensitive data.
+See [feedback instructions and retention limits](docs/USAGE_GUIDE.md#give-beta-feedback).
+
+## Alternative: run from source
+
+Follow [source installation](docs/INSTALLATION_GUIDE.md#alternative-run-from-source)
+to run the same UI with Python and uv. For code changes, start with the
+[Developer guide](docs/DEVELOPER_GUIDE.md).
+
+## Browser builder workflow
+
+The [Usage guide](docs/USAGE_GUIDE.md#browser-builder-workflow) walks through
+specification and scope selection, discovery, credentials, business data,
+review, import/export and launch.
+
+## Advanced reference: CLI plan execution
+
+Use a canonical schemaVersion `1.0` test plan:
 
 ```bash
 uv run python main.py --test-plan path/to/test-plan.json
 ```
 
-Browser discovery can prefill OAuth/FAPI values from OpenID metadata, but
-exported JSON includes only the final accepted values without recording whether
-they came from discovery or manual entry. A single Read/Write plan can span AIS,
-PIS, CBPII, and VRP catalogue areas when those groups use one security
-environment and OpenID discovery URL. cVRP is not exposed under the Open Banking
-UK Read/Write boundary for now. Read/Write version `3.1.11` is backed by
-dedicated v3.1 catalogue areas and the pinned v3.1.11 OpenAPI documents; it is
-not routed through the v4 catalogues.
+See [CLI reference](docs/USAGE_GUIDE.md#advanced-reference-cli-plan-execution)
+for plan structure and supported configuration.
 
-For v3.1.11 domestic standing orders, set
-`businessTestData.pis.standingOrderFrequencyV31` to the scalar frequency format
-defined by the v3.1 specification, such as `EvryDay` or
-`IntrvlWkDay:01:03`. The v4 `standingOrderFrequency` object remains unchanged
-for v4 plans.
+### PSU authorisation and pipeline runs
 
-```json
-{
-  "schemaVersion": "1.0",
-  "specification": {
-    "family": "OBL_READ_WRITE",
-    "version": "4.0.1",
-    "profile": "FAPI1_ADVANCED"
-  },
-  "executionMode": "certification",
-  "securityEnvironment": {
-    "name": "Primary Authorization Server",
-    "discoveryUrl": "https://aspsp.example.com/.well-known/openid-configuration",
-    "clientAuthMethod": "private_key_jwt",
-    "signingAlgorithm": "PS256",
-    "resourceBaseUrl": "https://resource.example.com",
-    "mtls": {
-      "enabled": true,
-      "certificatePath": "/absolute/path/to/transport-cert.pem"
-    }
-  },
-  "resourceGroups": ["AIS"],
-  "businessTestData": {
-    "ais": {"accountIds": ["account-123"]},
-    "inputs": {"accessToken": {"value": "token-reference-or-local-debug-value"}}
-  },
-  "metadata": {
-    "aspspName": "Example Bank",
-    "brandName": "Example Retail",
-    "environmentName": "Sandbox"
-  }
-}
-```
-
-`resourceGroups` accepts either shorthand group names such as `"AIS"` or detailed
-objects with explicit endpoint/capability selections for builder exports. Required
-endpoint capabilities may be omitted because the compiler selects them
-automatically for implemented endpoints. Optional capabilities must be listed
-under their endpoint to generate implementation-dependent tests. Public browser,
-CLI, and REST execution paths accept canonical schemaVersion `1.0` plans only.
-`config.testSuite`, public `--manifest`, public `--deselect`, public
-`--plan-spec`, REST `manifest`, REST `planSpec`, and REST `deselectStepIds` are
-intentionally rejected. Mandatory applicable catalogue tests cannot be
-arbitrarily deselected.
-
-DCR plans instead use family `OBL_DCR`, specification
-`dynamic-client-registration`, version `3.4`, top-level `endpoints`, and
-`dynamicClientRegistration`; they must not contain `resourceGroups` or
-`businessTestData`. See
-[`docs/DCR_3_4_PARITY_CONTRACT.md`](docs/DCR_3_4_PARITY_CONTRACT.md) for the
-complete canonical example, configuration migration, supported auth methods, and
-operator workflow. Legacy `conformance-dcr` JSON is not directly importable.
+See [manual and auto-approve modes](docs/USAGE_GUIDE.md#psu-authorisation-and-pipeline-runs)
+for registered callbacks, listener configuration and sandbox requirements.
 
 ### PSU authorisation URL in the terminal
 
 For manual PSU authorisation steps, the CLI prints the complete ASPSP
-authorisation URL so you can click it or copy it into a browser, including one
-on another machine. The URL is not masked. It contains the signed request
-object, `state` and `nonce` for the consent being authorised, so treat it as
-sensitive until the step completes:
+authorisation URL to stderr so you can click it or copy it into a browser,
+including one on another machine. The URL is not masked. It contains the signed
+request object, `state` and `nonce` for the consent being authorised, so treat
+it as sensitive until the step completes:
 
 - Don't record, stream or screen-share the terminal while the URL is shown.
 - Don't paste it into chat, tickets or shared documents. Move it to another
   machine only over a channel you trust.
 - Clear terminal scrollback and any terminal session logs after the run.
 
-The URL is printed only when stdout and stderr are both interactive terminals,
-so CI jobs and redirected output don't receive it. Persisted execution logs mask
-the signed request object and selected credential-bearing query parameters,
-such as `request` and `client_assertion`. They retain `client_id`, `state` and
-`nonce` in the URL; `state` and `nonce` are also retained as separate event
-fields. Masking is disabled when `CONFORMANCE_DEVELOPER_MODE=true`.
+The CLI prints the URL for every manual step, including in CI jobs and when
+stderr is redirected, so it can appear in pipeline job logs and captured output.
+Restrict who can read those logs. `auto-approve` steps don't print the URL.
+Persisted execution logs mask the signed request object and selected
+credential-bearing query parameters, such as `request` and `client_assertion`.
+They retain `client_id`, `state` and `nonce` in the URL; `state` and `nonce` are
+also retained as separate event fields. Masking is disabled when
+`CONFORMANCE_DEVELOPER_MODE=true`.
+
+### OpenAPI document updates
+
+See [update selection and supported versions](docs/USAGE_GUIDE.md#openapi-document-updates).
+Read/Write CLI/REST plans must select an `openApiDocumentUpdate`.
 
 ## Browser and REST launch
 
-The browser wizard imports, exports, reviews, and launches the same canonical
-test plan that the catalogue compiler accepts through CLI and REST. The REST run
-creation endpoint accepts the canonical document directly, or under `testPlan`,
-in `POST /api/runs/`:
-
-```json
-{
-  "schemaVersion": "1.0",
-  "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1"},
-  "securityEnvironment": {
-    "discoveryUrl": "https://aspsp.example.com/.well-known/openid-configuration",
-    "resourceBaseUrl": "https://resource.example.com"
-  },
-  "resourceGroups": ["AIS"],
-  "businessTestData": {},
-  "metadata": {}
-}
-```
-
-Browser exports are secret-safe by default: the generated schemaVersion `1.0`
-test plan preserves resource-group, endpoint, capability, business-data, and
-non-sensitive runtime references, but writes secret-bearing strings as empty strings. A separate
-export-with-secrets action is available for local power-user workflows. Launch
-still uses Read/Write runtime values retained in the same browser session or
-supplied by direct CLI/API submission. DCR accepts credential file references
-only, never inline SSA, PEM, assertion, secret, or token material.
-
-Run detail, result downloads, and NDJSON execution logs keep the existing
-masking and evidence behaviour. Result JSON includes the safe test-plan snapshot,
-the shared validation outcome, catalogue traceability for selected endpoints,
-selected capabilities, generated test-case IDs, applicability decisions, runtime
-input snapshots with sensitive values omitted, and non-certifying reasons. Manual
-PSU authorisation handoff URLs remain transient browser state; persisted
-artifacts mask credentials, tokens, request objects, client assertions, detached
-JWS values, and sensitive headers.
-
-DCR results additionally contain ordered scenario → case → step trace groups.
-Unselected optional operations are explicit `skipped` cases/steps with
-`endpoint-not-selected`; prerequisite failures skip dependent runtime steps and
-fail the aggregate run. Automation must use
-`python -m conformance.result_gate out/test-results.json`, which rejects any
-failed structured case or step regardless of console transcript text.
+See [REST creation, status and evidence routes](docs/USAGE_GUIDE.md#browser-and-rest-launch).
+The API is intended for local programmatic use, not public exposure.
 
 ## Bundled catalogues
 
-The bundled catalogue registry currently covers the legacy FCS baseline for:
-
-| Standard | Version | API family |
-| --- | --- | --- |
-| `open-banking` | `v3.1` | `ais` |
-| `open-banking` | `v3.1` | `pis` |
-| `open-banking` | `v3.1` | `cbpii` |
-| `open-banking` | `v3.1` | `vrp` |
-| `open-banking` | `v4.0` | `ais` |
-| `open-banking` | `v4.0` | `pis` |
-| `open-banking` | `v4.0` | `cbpii` |
-| `open-banking` | `v4.0` | `vrp` |
-| `open-banking` | `v3.4` | `dcr` |
-
-The participant-facing Read/Write versions are `3.1.11`, `4.0`, `4.0.0`, and
-`4.0.1`; the internal `v3.1` key is used only to bind exact `3.1.11` plans.
-Each catalogue case carries traceability back to the relevant legacy FCS
-coverage in its compliance scope. Each catalogue can also define endpoint-scoped
-capabilities that explain baseline and optional implementation coverage without
-turning generated tests into participant selections. The hand-maintained mapping
-lives in `docs/FCS_LEGACY_BENCHMARK_MAPPING.md`.
-
-Dynamic Client Registration 3.4 is first-class across browser, CLI, and local
-REST execution. It has no resource-group page or resource-server/business-data
-configuration.
+Read/Write `3.1.11`, `4.0.0` and `4.0.1` cover AIS, PIS, CBPII and VRP;
+Dynamic Client Registration `3.4` has a separate direct-endpoint workflow.
+See [catalogue reference](docs/USAGE_GUIDE.md#bundled-catalogues),
+[endpoint requirements](docs/READ_WRITE_ENDPOINT_REQUIREMENTS.md),
+[legacy benchmark mapping](docs/FCS_LEGACY_BENCHMARK_MAPPING.md) and
+[DCR parity contract](docs/DCR_3_4_PARITY_CONTRACT.md).
 
 ## Outputs and exit codes
 
-The runner writes a structured result JSON to `resultOutputPath`, defaulting to
-`out/test-results.json`, and writes an NDJSON execution log to
-`executionLogPath`, defaulting to `out/execution-log.ndjson`.
+See [results, execution logs, exit codes and cancellation](docs/USAGE_GUIDE.md#outputs-and-exit-codes).
+Use structured results for automation, not incidental console text.
 
-CLI exit codes are:
+## Internal certification report validation (not for beta submissions)
 
-| Code | Meaning |
-| --- | --- |
-| `0` | All selected checks passed. |
-| `1` | Execution completed with failed checks. |
-| `2` | Config, canonical test plan, or catalogue compilation input was invalid. |
-| `3` | Result or execution-log output could not be written. |
-
-Set `CONFORMANCE_DEVELOPER_MODE=true` only for local debugging. It disables
-masking in developer-visible logs and must never be enabled in release builds.
-
-## Certification report validation
-
-The OBL-side certification validator remains an internal reviewer tool. It
-validates a submitted result report against the manifest representation used for
-the original run and an independently supplied approved-release policy:
-
-```bash
-uv run python -m conformance.certification_cli out/test-results.json \
-  --manifest path/to/internal-manifest.json \
-  --approved-releases path/to/approved-releases.json
-```
-
-Approved-release policy files use this shape:
-
-```json
-{
-  "schemaVersion": "v1",
-  "approvedToolVersions": ["OBL-APPROVED-RELEASE-VERSION"]
-}
-```
-
-Generated reports include catalogue traceability, runtime input snapshots with
-sensitive values omitted, certification/non-certification reasons, and stable
-`metadata.reportVersion` plus `tool.version` fields consumed by the validator.
+The [internal validator](docs/DEVELOPER_GUIDE.md#certification-validation) is
+for OBL reviewers. Its output does not approve this beta for certification.
 
 ### Phase 1 assurance boundary
 
-A passing validator result means that the submitted report is consistent with
-the independently supplied mandatory-test criteria and approved-release policy.
-It is certification-ready evidence for OBL review, not proof that a locally
-produced report is authentic and not an automated certification decision.
-
-Participants control the Phase 1 container and filesystem, so deliberate report
-tampering cannot be excluded. This is an accepted Phase 1 risk. Tamper-resistant
-provenance is a Phase 2 portal responsibility and applies to runs managed within
-OBL-controlled infrastructure; uploading a local report does not by itself
-establish authenticity.
+Local report validation checks consistency against independently supplied
+criteria; it does not authenticate participant-controlled evidence or make a
+formal certification decision. See [local report assurance](docs/DECISION_LOG.md#dl-003-local-report-assurance).

@@ -63,6 +63,7 @@ def test_api_create_run_accepts_nested_canonical_test_plan(tmp_path: Path) -> No
         standard="open-banking-uk",
         version="4.0.1",
         api="read-write",
+        specification_version="4.0.1",
     )
     assert [case.test_case_id for case in compiled_plan.test_cases] == ["accounts-read", "accounts-balances"]
     assert start_run_mock.call_args.kwargs["runtime_inputs"]["accessToken"] == "secret-access-token"

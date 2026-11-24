@@ -22,7 +22,11 @@
 |---------|-------|
 | Default branch | `main` |
 
-**Rationale**: `main` is the production-ready branch in our Git Flow model. All pull requests and commits target `main` by default. The `develop` branch is used for integration but is not the default because releases are cut from `main`.
+**Rationale**: `main` is the stable GA branch in the repository branching
+model (see [CICD_STRATEGY.md](../CICD_STRATEGY.md)). Normal development PRs
+target `develop`; participant-facing previews use `preview/**`; beta and
+GA candidates use `release/**`; and `main` records the approved supported
+release history.
 
 ---
 
@@ -32,10 +36,12 @@
 |---------|-------|
 | Release immutability | On |
 
-**Rationale**: Enabled for the release lifecycle so newly published Releases and
-their tags cannot be edited or deleted. The finalizer creates each Release in
-one call and leaves an existing Release unchanged during recovery. This setting
-does not retroactively make previously published Releases immutable.
+**Rationale**: Stable GitHub releases and Docker image version tags are
+intended to be immutable audit records. If a bad release is published, issue a
+new hotfix version rather than deleting or re-tagging the old one.
+The release finalizer creates each GitHub Release in one call and leaves an
+existing Release unchanged during recovery. This setting does not
+retroactively make previously published Releases immutable.
 
 ---
 
@@ -67,7 +73,9 @@ Enabled for lightweight documentation that doesn't belong in the main codebase (
 
 ### Issues — On
 
-Primary mechanism for tracking work. Used with labels and milestones aligned to our Git Flow branching strategy (`feature/`, `bugfix/`, `release/`, `hotfix/`).
+Primary mechanism for tracking work. Used with labels and milestones aligned to
+the repository branching strategy (`feature/`, `bugfix/`, `preview/`,
+`release/`, `hotfix/`).
 
 ### Sponsorships — Off
 
@@ -179,7 +187,10 @@ Left at default. Allows inline discussion on individual commits, which is useful
 |---------|-------|
 | Limit pushes | On — **5** branches/tags per push |
 
-**Rationale**: Safety net against accidental bulk operations (e.g. a misconfigured script deleting or force-pushing many branches). The limit of 5 is generous enough for normal Git Flow work (pushing a feature branch + tag) while blocking potentially destructive bulk pushes.
+**Rationale**: Safety net against accidental bulk operations (e.g. a
+misconfigured script deleting or force-pushing many branches). The limit of 5
+is generous enough for normal branch and tag pushes while blocking potentially
+destructive bulk pushes.
 
 ---
 

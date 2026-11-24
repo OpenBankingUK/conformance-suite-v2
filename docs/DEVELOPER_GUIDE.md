@@ -1,24 +1,58 @@
 # Developer Guide
 
+[Project README](../README.md) | [Installation guide](INSTALLATION_GUIDE.md) |
+[Usage guide](USAGE_GUIDE.md) | [Decision log](DECISION_LOG.md)
+
+Use this guide to set up a checkout, change the implementation and understand
+its architecture. Participant operations belong in the usage guide; advanced
+container deployment belongs in the [Docker guide](DOCKER_GUIDE.md).
+
+## Contents
+
+- [Prerequisites and setup](#prerequisites)
+- [Running the application](#running-the-application)
+- [Local checks](#local-checks)
+- [Environment variables](#environment-variables)
+- [Catalogue architecture](#catalogue-architecture)
+- [Shared plan-document contract](#shared-plan-document-contract)
+- [Browser plan builder](#browser-plan-builder)
+- [Internal certification validation](#certification-validation)
+- [CI pipeline](#ci-pipeline)
+- [Making a change](#making-a-change)
+
+## Documentation map
+
+| Reference | Purpose |
+| --- | --- |
+| [Decision log](DECISION_LOG.md) | Current design decisions, recorded rationale, tradeoffs and evidence. |
+| [Testing strategy](TESTING_STRATEGY.md) | Offline unit/component boundaries, fixtures and structured-result assertions. |
+| [CI/CD strategy](CICD_STRATEGY.md) | Branch/review controls, security checks and release promotion. |
+| [Legacy benchmark mapping](FCS_LEGACY_BENCHMARK_MAPPING.md) | Catalogue coverage and legacy source traceability. |
+| [DCR parity contract](DCR_3_4_PARITY_CONTRACT.md) | DCR request/state, migration and regression contract. |
+| [Read/Write endpoint requirements](READ_WRITE_ENDPOINT_REQUIREMENTS.md) | Specification endpoint classifications and source discrepancies. |
+
+The [draft PRD](FCS%20Rebuild%20-%20PRD%20v3%20%5BDRAFT%5D.md) describes product
+intent, including future work; it is not evidence that every proposed feature
+or design choice has been implemented.
+
 ## Prerequisites
 
-- Python 3.14+ (managed via `.python-version`)
+- Python 3.14.4+ (`.python-version` pins 3.14.4)
 - [uv](https://docs.astral.sh/uv/) package manager
-- Docker for container builds
-- GNU Make
+- Git, GNU Make and OpenSSL (with `req -addext` support for local HTTPS)
+- Docker for container builds; authenticate with `docker login dhi.io` before
+  pulling the Docker Hardened Image bases
 
-Docker builds use digest-pinned Debian 13 Docker Hardened Images from `dhi.io`
-for amd64 and arm64. The builder installs locked binary wheels for glibc
-(manylinux), without source builds. The distroless runtime removes unused
-system pip and runs as UID/GID `65532`; per-platform CI smoke tests verify
-these properties and record the OpenSSL package versions before scanning.
-Authenticate before building with `docker login dhi.io`, using a Docker
-account with access to those images. CI already uses organisation credentials.
+Docker builds use digest-pinned Alpine Docker Hardened Images for amd64 and
+arm64. The builder installs locked binary wheels for musl (musllinux), without
+source builds. The distroless runtime ships without pip and runs as UID/GID
+`65532`; per-platform CI smoke tests verify these properties and record the
+OpenSSL package versions.
 
 ## Getting started
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/OpenBankingUK/conformance-suite-v2.git
 cd conformance-suite-v2
 uv sync --frozen --no-install-project
 git config core.hooksPath .githooks
@@ -28,24 +62,22 @@ git config core.hooksPath .githooks
 
 | Command | Server | Auto-reload | Use case |
 | --- | --- | --- | --- |
-| `make dev` | Django `runserver` on `0.0.0.0:8443` | Yes | Day-to-day browser development. |
-| `make dev-unmasked` | Django `runserver` on `0.0.0.0:8443` | Yes | Local engine debugging with unmasked logs. |
-| `make serve` | Uvicorn on `0.0.0.0:8443` | No | Local production-behaviour check. |
-| `make docker` | Uvicorn in Docker | No | Production-like container run. |
+| `make dev` | Uvicorn (HTTPS) on `0.0.0.0:8443` | Yes | Day-to-day browser development. |
+| `make dev-unmasked` | Uvicorn (HTTPS) on `0.0.0.0:8443` | Yes | Local engine debugging with unmasked logs. |
+| `make serve` | Uvicorn (HTTP) on `0.0.0.0:8443` | No | Local production-behaviour check, not hardened deployment. |
+| `make docker` | Uvicorn (HTTPS) in Docker, published on `127.0.0.1:8443` | No | Hardened container run with generated local TLS and persistent data (see the [Docker guide](DOCKER_GUIDE.md)). |
 
 All runtime entry points bind to port `8443` so callback registrations against
 the legacy FCS callback URI continue to reach the local application.
 
+Open `https://127.0.0.1:8443/` for `make dev`, `make dev-unmasked` or
+`make docker`; use `http://127.0.0.1:8443/` for `make serve`.
+The source server targets bind all interfaces: use a trusted local development
+machine and do not expose them to an untrusted network. Docker's documented
+publish binding is loopback-only.
+
 `make dev-unmasked` can write credentials and tokens in clear text to
 developer-visible logs. Use it only for local debugging.
-
-`make docker` runs the distroless image as UID/GID `65532`, with a read-only
-root filesystem, private writable `/tmp`, and a named `/data` volume.
-The entrypoint generates and persists the Django secret and local TLS identity;
-explicitly exported `DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS` override
-its defaults. Open `https://127.0.0.1:8443/` and accept the local self-signed
-certificate warning. The published port binds only to localhost. See
-[Docker guide](DOCKER_GUIDE.md) for Compose and certificate mounts.
 
 ## Local checks
 
@@ -106,23 +138,36 @@ untracked local files, or deployment secret stores.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `DJANGO_SECRET_KEY` | Production only | Django signing key. |
+| `DJANGO_SECRET_KEY` | No | Django signing key. `docker/entrypoint.py` generates and persists one automatically inside the container when unset; local source runs fall back to `settings.py`'s safe `django-insecure-` default. |
 | `DJANGO_DEBUG` | No | Enables Django debug mode when `"true"`. |
-| `DJANGO_ALLOWED_HOSTS` | Production only | Comma-separated allowed hosts. |
+| `DJANGO_ALLOWED_HOSTS` | No | Comma-separated allowed hosts. The container entrypoint defaults to `127.0.0.1,localhost,0.0.0.0,[::1]` when unset, matching the documented localhost-only publish profile. |
 | `DJANGO_SESSION_ENGINE` | No | Overrides the default server-side file session backend. |
-| `DJANGO_SESSION_FILE_PATH` | No | Optional directory for file-backed browser session drafts. |
+| `DJANGO_SESSION_FILE_PATH` | No | Optional directory for file-backed browser session drafts. The container entrypoint defaults this to `<data-dir>/sessions` when a writable `/data` mount is present. |
+| `CONFORMANCE_DATA_DIR` | No | Overrides the container's persistent data root (`/data` by default). Also redirects CLI `resultOutputPath`/`executionLogPath` defaults under `<data-dir>/results` and `<data-dir>/logs`. |
 | `CONFORMANCE_DEVELOPER_MODE` | No | Disables masking for local engine debugging only. |
 | `CONFORMANCE_TOOL_VERSION` | No | Overrides generated report `tool.version`. |
 
-`make docker` requires production-style configuration and fails fast when
-misconfigured. Local source runs fall back to the project version in
-`pyproject.toml`, then `0+unknown` if no version can be resolved.
+`make docker` runs the hardened profile (read-only root filesystem, all
+capabilities dropped, `no-new-privileges`) and needs no manually supplied
+Django secret or allowed-hosts configuration; see
+[`docs/DOCKER_GUIDE.md`](DOCKER_GUIDE.md) for the full command and the
+optional `/certs` mount contract. Local source runs fall back to the project
+version in `pyproject.toml`, then `0+unknown` if no version can be resolved.
 
 Browser wizard drafts use Django sessions. The default session backend is
 server-side file storage, so `make dev` and `make dev-unmasked` do not require
 running Django migrations before creating a builder draft. Do not switch to
 signed-cookie sessions for the builder because imported plan documents may carry
 participant-supplied secret values until launch or explicit export.
+
+Credentials pasted or uploaded in the wizard are stored inline in the draft, so
+private keys and software statement assertions live in that server-side session
+store for the life of the draft. Each inline credential is capped at 64 KiB, is
+never rendered back into the page once stored (the wizard shows only a
+non-secret descriptor plus Keep/Replace/Clear controls), and is removed from the
+draft by Clear. Inline material is redacted from logs, results, and safe plan
+exports. Participants who prefer credentials never to reach the web tier should
+continue to use absolute file paths with the read-only `/certs` mount.
 
 ## Catalogue architecture
 
@@ -161,6 +206,7 @@ version `1.0`:
   "specification": {
     "family": "OBL_READ_WRITE",
     "version": "4.0.1",
+    "openApiDocumentUpdate": "Update-1",
     "profile": "FAPI1_ADVANCED"
   },
   "securityEnvironment": {
@@ -190,31 +236,138 @@ version `1.0`:
 ```
 
 The canonical `specification.family` and `version` select one or more underlying
-bundled catalogues. The current Open Banking UK Read/Write boundary maps to the
-bundled Open Banking v4.0 AIS, PIS, CBPII, and VRP catalogue areas so one plan
-document can span multiple resource families. cVRP is intentionally not exposed
+bundled catalogues. Read/Write `4.0.0` and `4.0.1` each map to their own copy of
+the Open Banking v4.0 AIS, PIS, CBPII, and VRP catalogue areas (keyed by
+`CatalogueKey.specification_version`; `CatalogueKey.version` is the shared `v4.0`
+endpoint version), so one plan document can span multiple resource families and
+the two versions' coverage can diverge independently. cVRP is intentionally not exposed
 under this Open Banking UK boundary for now. Dynamic Client Registration 3.4 is
 bound to the executable `open-banking/v3.4/dcr` catalogue and uses direct
 endpoint scope with no synthetic resource group.
 
+### OpenAPI document updates
+
+Read/Write core specification pages only change with a version bump, but the
+OpenAPI ("swagger") documents for a version are republished upstream in
+`OpenBankingUK/read-write-api-specs` as updates. Each version in
+`conformance.specification_registry` lists its `OpenApiDocumentUpdate`s in
+publication order with the upstream tag and immutable commit. Plans select one
+with `specification.openApiDocumentUpdate` (mandatory for Read/Write).
+
+Catalogue assertions reference *logical* documents such as
+`ob-read-write/account-info-openapi`. Compilation binds them to the selected
+update's bundled snapshot, `ob-read-write/<catalogue-id>/<document>` (for example
+`ob-read-write/v4.0.1-Update-1/account-info-openapi`), stored at
+`conformance/standards/ob_read_write/openapi/<catalogue-id>/`. Naming follows
+upstream history: `Baseline` for the original publication, then `Release-N` or
+`Update-N` matching the tag terminology used at the time. Release candidates and
+drafts are not bundled.
+
+To add a new update (for example `v4.0.1-Update-2`):
+
+1. Download the four YAML-generated JSON documents (`account-info-openapi.json`,
+   `payment-initiation-openapi.json`, `confirmation-funds-openapi.json`,
+   `vrp-openapi.json`) from `dist/openapi/` at the tag's commit into
+   `conformance/standards/ob_read_write/openapi/v4.0.1-Update-2/`.
+2. Write `sources.json` beside them, copying an existing one: record the tag,
+   commit, raw URLs, and each file's SHA-256 split into eight 8-character
+   `sha256Chunks` (this keeps detect-secrets quiet).
+3. Append an `OpenApiDocumentUpdate` to the version's
+   `openapi_document_updates` tuple in `conformance/specification_registry.py`.
+   The last entry is treated as the latest and preselected in the builder.
+4. Run `make check`. `tests/unit/catalogue/test_openapi_document_updates.py`
+   verifies hashes, registry/directory consistency, and that every catalogue
+   `schemaRef` resolves in every update; fix any schema renames it reports.
+5. Add a `CHANGELOG.md` entry under `[Unreleased]`.
+
 Each exact specification version declares its valid security profiles in
-`conformance.specification_registry`. Read/Write 4.0.x derives
+`conformance.specification_registry`. Read/Write 3.1.11 and 4.0.x derive
 `FAPI1_ADVANCED`; DCR 3.4 is profile-neutral and uses the internal `all` value.
 The profile remains in the compiler model for catalogue applicability, but it is
 not a participant choice when the selected version declares only one value.
 Token endpoint client authentication (`private_key_jwt` or `tls_client_auth`)
 is configured separately as part of the security environment.
 
+### Read/Write TLS client authentication
+
+All currently supported Read/Write versions use the tool's FAPI 1 Advanced
+profile:
+
+| Read/Write version | Security profile | Supported token authentication |
+| --- | --- | --- |
+| 3.1.11 | `fapi1-advanced` | `private_key_jwt`, `tls_client_auth` |
+| 4.0.0 | `fapi1-advanced` | `private_key_jwt`, `tls_client_auth` |
+| 4.0.1 | `fapi1-advanced` | `private_key_jwt`, `tls_client_auth` |
+
+[FAPI 1 Advanced section 5.2.2-14](https://openid.net/specs/openid-financial-api-part-2-1_0.html#authorization-server)
+permits certificate-based client authentication as an alternative to
+`private_key_jwt`. The tool does not support `self_signed_tls_client_auth`.
+OpenAPI document updates do not change the version's security-profile binding.
+
+Read/Write runs require an **already registered client**, including one
+registered through external DCR. They do not generate or register a client,
+or run DCR tests as a prerequisite. Per
+[OB DCR 3.4](https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html),
+register that client with `token_endpoint_auth_method: "tls_client_auth"` and
+the required `tls_client_auth_subject_dn` identifying the certificate presented
+at the token endpoint. That DN is RFC 2253 metadata with the DCR 3.4 pattern
+and 512-character limit; it is **not** a token-request parameter. The independent
+DCR runner derives and validates it. Read/Write cannot verify external
+registration metadata it has not received; the ASPSP authenticates the
+registered client against the presented certificate.
+
+In the builder, select `tls_client_auth` and supply the registered client ID,
+token endpoint and mTLS transport certificate/key. The equivalent canonical
+security section for a token-only flow is:
+
+```json
+{
+  "clientAuthMethod": "tls_client_auth",
+  "clientId": "already-registered-client",
+  "tokenEndpoint": "https://aspsp.example/mtls/token",
+  "mtls": {
+    "enabled": true,
+    "certificatePath": "/certs/transport.pem",
+    "privateKeyPath": "/certs/transport.key"
+  }
+}
+```
+
+Use the ASPSP's mTLS token endpoint, including its advertised alias where
+applicable: the runner uses the saved explicit `tokenEndpoint`, not automatic
+alias selection. Path references and inline PEM use the same credential input
+and safe-export rules as other flows.
+
+Client-credentials and authorization-code token requests send `client_id`
+and grant parameters over the certificate-authenticated TLS connection, without
+`client_assertion`, `client_assertion_type`, a client secret or an Authorization
+header. Missing credentials and mixed authentication are explicit failures.
+Transport mTLS, OAuth client authentication and certificate-bound access tokens
+are distinct mechanisms: configuring mTLS alone does not select
+`tls_client_auth`, and `private_key_jwt` may also use mTLS transport.
+
+Signing credentials are required only when the selected steps perform JOSE
+signing. TLS token-only flows need no signing certificate/key, `signingKeyId`,
+`clientAssertionIssuer` or `clientAssertionSubject`. Generated authorization
+request objects and signed API payloads still need the signing pair, key ID
+and issuer (`clientAssertionIssuer`, reused for those signing operations);
+they do not need `clientAssertionSubject` solely because they sign. Existing
+`private_key_jwt` flows retain their signing and assertion metadata requirements.
+Internally, the legacy `config.fapiSigning.tokenEndpointAuthMethod` mapping is
+retained for compatibility, but a TLS-only config can omit its signing material.
+
 Canonical sections such as `securityEnvironment`, `businessTestData`, and
 runtime `inputs` derive exact runtime inputs like `resourceBaseUrl`,
 `consentedAccountId`, and debtor account fields so the browser does not duplicate
-them as endpoint runtime prompts. The browser collects values in PRD order:
-specification, discovery URL, OAuth/FAPI/security details, resource
-groups, endpoints/capabilities, business test data, and generated runtime
-artifacts. Discovery metadata can prefill security fields, but only values
-accepted on the security page become part of the exported plan JSON. Sensitive
-runtime values may still be supplied to browser launch, REST, or CLI execution,
-but the compiler's traceability snapshot records only that they were provided.
+them as a separate runtime-input step. For Read/Write the browser collects
+values in this order: specification, resource groups/endpoints/capabilities,
+connection and security (discovery URL, OAuth/FAPI/security details), and
+business test data. Scope comes before security because the selected tests
+decide which security values are needed to run. Discovery metadata can prefill
+empty OAuth fields, but only values saved on the security page become part of
+the exported plan JSON. Runtime inputs remain supported by canonical
+plans submitted through import, REST, and CLI execution; the compiler's
+traceability snapshot records only that sensitive values were provided.
 
 Keep capability IDs stable and domain-oriented, for example
 `ais.transactions.date-range-filtering`, rather than generated test-case IDs.
@@ -231,9 +384,52 @@ rendered summaries, and are included in downloaded JSON only through the
 explicit export-with-secrets action.
 
 The CLI accepts canonical test plans through `--test-plan path/to/test-plan.json`.
+It prints the MVP beta notice once per run and flushes preparation, callback
+listener, HTTP/TLS setup, step progress and elapsed execution time to stderr.
+The final run summary remains on stdout; structured results and execution logs
+retain their existing format. The standalone CLI callback pages also show the
+beta notice.
+CLI startup also directs feedback to `standardsteam@openbanking.org.uk`.
+The CLI callback banner offers a pre-filled email link and an expandable,
+copyable email template for participants without a configured email app.
+Neither automatically includes callback parameters or run evidence; participants
+must review their feedback for credentials and personal/customer data before sending.
+
+For a slow CLI run, use the last progress message to distinguish application
+loading, plan preparation, listener/client setup, and an executing step. A
+manual PSU URL means the run is waiting for browser authorisation. Step progress
+does not print request/response payloads or credentials; use the masked result
+and execution log for details after the run. A delay before the first
+`[CLI] Loading conformance suite...` line is outside the application entry point:
+check `uv` environment setup separately. With dependencies already installed,
+`uv run --no-sync python main.py --help` isolates startup from dependency syncing,
+and `uv run --no-sync python -X importtime main.py --help` reports Python import
+costs without executing a plan. These probes are not a reason to bypass normal
+dependency syncing when running conformance checks.
+
+The CLI callback listener binds without a reverse DNS lookup: it does not need
+a canonical hostname to correlate OAuth callbacks. This avoids resolver-related
+stalls between the listener's starting and ready messages.
+
+CLI status labels use yellow for beta/warnings, cyan for progress and PSU
+prompts, green for passed, red for failed and dim text for skipped. Colours
+are enabled separately for stdout/stderr only when each is a terminal.
+Setting `NO_COLOR` (including an empty value) disables all CLI ANSI styling.
+Redirected logs and structured result files remain plain text.
+
+For participant-facing exit codes, evidence publication and signal handling,
+see [CLI progress and cancellation](USAGE_GUIDE.md#cli-progress-and-cancellation).
+
+Cancellation is handled during application loading as well as execution.
+Executor workers stop PSU polling and do not
+dispatch further steps once signalled. An in-flight worker HTTP request must
+finish or hit its existing transport timeout before cleanup can complete.
+These process-signal handlers apply only to CLI calls; API/UI
+execution is unchanged.
+
 The REST API accepts the same document as the request body or under `testPlan`.
 The browser builder generates the same canonical document from selected
-specification, security environment, scope, business data, and runtime prompts.
+specification, security environment, scope, and business data.
 
 ## Removed public surfaces
 
@@ -258,46 +454,157 @@ Do not re-expose those internals as participant configuration.
 The browser root menu at `/` exposes the multi-step builder and canonical JSON
 import flow. The legacy single-page `/plan/` builder is no longer mounted.
 
-The wizard follows the PRD order:
+The Read/Write wizard follows this order:
 
 1. POST `/builder/new/` to create a session-backed draft.
 2. Select scheme, specification, and version at `/builder/<draft>/catalogue/`.
    The registry derives the matching security profile. Registered future
    boundaries without an executable catalogue render a generic blocked state.
-3. Enter the `.well-known/openid-configuration` URL at
-   `/builder/<draft>/config/discovery/`. The server attempts discovery metadata
-   lookup, records non-secret helper metadata in the draft, and allows manual
-   continuation when the lookup fails.
-4. Enter OAuth/FAPI/security, mTLS, and resource-server settings at
-   `/builder/<draft>/config/security/`. Discovery-derived values are editable
-   prefilled fields; the token-endpoint-auth-method selector remains the tool's
-   supported list while discovery-supported methods are shown as metadata.
-5. Select scope at `/builder/<draft>/scope/`. Read/Write uses resource groups,
+3. Select scope at `/builder/<draft>/scope/`. Read/Write uses resource groups,
    endpoints, and optional capabilities. DCR shows direct POST/GET/PUT/DELETE
    operations with POST locked and management methods optional. The
    server-rendered fragment at
    `/builder/<draft>/scope/options/` shows endpoints from the selected AIS, PIS,
    CBPII, or VRP groups and reveals capabilities only for selected endpoints.
-6. Enter business/request defaults at `/builder/<draft>/config/`. DCR skips this
+   `conformance/endpoint_requirements.py` codifies the
+   [reviewed specification matrix](READ_WRITE_ENDPOINT_REQUIREMENTS.md).
+   Mandatory covered endpoints are locked within selected groups, and a selected
+   resource POST locks its mandatory dependent endpoints. The server restores
+   these selections even if checkbox values are omitted. Conditional/Optional
+   endpoints remain selectable; unknown catalogue-only paths are not inferred
+   to be Optional. This is separate from required capabilities for an implemented
+   endpoint and does not change the raw JSON compiler's declared-scope contract.
+   Ticking a group (or **Select all endpoints and features**) sends
+   `expand_resource_group`, and ticking an endpoint sends `expand_endpoint`, on
+   the fragment refresh; `scope_selection_defaults()` then adds every endpoint
+   and optional feature for those items only. An empty scope, or a group with
+   no endpoint (`resource_groups_without_endpoints()`), is saved and reported
+   as a scope issue at review; `/config/` then shows no fields and links to
+   scope.
+4. Enter connection and security settings at `/builder/<draft>/config/security/`:
+   the `.well-known/openid-configuration` URL, OAuth/FAPI signing, mTLS, and
+   the resource-server base URL. For Read/Write, `/config/discovery/` redirects
+   here. Saving fetches discovery metadata again only when the URL changed or
+   the previous fetch failed, stores non-secret helper metadata on the draft,
+   and fills empty OAuth endpoint, response type and algorithm fields from it.
+   The inline **Fetch and fill** button posts to
+   `/builder/<draft>/config/discovery/preview/`, which validates and fetches
+   without saving and fills empty OAuth inputs with HTMX out-of-band swaps.
+   It summarises what was filled and kept, tags each field holding the
+   discovery value **From discovery** (the tag clears when the field is
+   edited), and lists typed values that differ from discovery. Typed values
+   are only replaced when the participant chooses **Replace with discovery
+   values**, which reposts with `overwrite=true`.
+   Field badges come from `security_field_requirements()` in
+   `builder_wizard.py`, which uses `compiled_plan_run_config_requirements()`
+   (`conformance/run_config_requirements.py`) on the draft's compiled scope:
+   **Required to run** (with the reason), **Optional**, or **Depends on
+   scope** when no endpoints are selected. The mTLS certificate and key are
+   required to run only when the token endpoint auth method is
+   `tls_client_auth`. DCR keeps its separate discovery page before security, whose
+   **Preview discovery** button shows the metadata without filling anything.
+5. Enter business/request defaults at `/builder/<draft>/config/`. DCR skips this
    page. AIS, PIS,
    CBPII, and VRP fields render only when selected endpoints need that domain.
    Known account, amount, date, and frequency shapes use friendly fields with
    advanced JSON fallbacks.
-7. Enter generated runtime artifacts such as tokens, token file references,
-   consent ids, payment ids, and idempotency keys at
-   `/builder/<draft>/config/runtime/`. DCR skips this page because token and
-   client state are generated during each scenario.
-8. Review the generated plan at `/builder/<draft>/review/`, including summary
-   counts, masked config, launch blockers, safe export preview, and collapsed
-   generated-test rows.
-9. Download safe JSON from `/builder/<draft>/export.json`, explicitly request
+6. Review the generated plan at `/builder/<draft>/review/`, including summary
+   counts, import warnings, launch blockers, the unmasked, editable plan JSON
+   (the single view of the plan: launch, export, and the step-bar buttons all
+   submit it and apply it to the draft first, with no separate save), and
+   collapsed generated-test rows.
+7. Download safe JSON from `/builder/<draft>/export.json`, explicitly request
    local secret-bearing JSON with a POST `include_secrets=1`, or launch through
    `/builder/<draft>/launch/`.
 
-Imported schemaVersion `1.0` plans enter through `/builder/import/` and go
-straight to the same review page. Missing secret-capable runtime inputs do not
-block import; the review page shows launch blockers and edit links back to the
-appropriate wizard steps.
+Every step page and review render a step bar from
+`conformance/api/builder_steps.py`, the single definition of both flow orders
+(Read/Write: specification, scope, connection & security, business data, review;
+direct endpoint/DCR: specification, scope, discovery, security, review). A
+supported specification is the only navigation gate: until one is chosen every
+later step (and typed URL) redirects to `/catalogue/`; afterwards every step is
+open in any order. Step-bar buttons and **Back** submit the page form with
+`next=<step id>` (or `next=back`), redirected via `resolve_next`, which accepts
+only fixed step ids; anything else falls back to the following step.
+Every builder page uses the same `main` width (`min(1180px, calc(100% - 32px))`)
+and header, and the step pills have one fixed height in every state, so the
+bar never moves between steps; a divider sets **Review** apart from the editing
+steps. When scope has issues, review reports them instead of the raw plan
+validation error they cause.
+
+Leaving a step always saves it. Step views bind their form leniently
+(`_lenient_bind` in `ui_views.py`, `lenient=True` on the config forms): required
+and whole-group checks are skipped, a non-secret field that fails format
+validation is reverted to its saved value and its raw text is kept in the
+draft's `invalid_field_values[step]`, then shown back with its error on the
+next visit. Pasted or uploaded credential material that fails validation is
+dropped, never stored or echoed, and reported with a Django `messages`
+warning. `conformance/api/builder_step_status.py` replays the saved values
+(plus retained invalid values) through the strict forms to produce per-step
+issues, and derives the step bar's `complete`/`attention`/`not_started`
+progress from them. For Read/Write, the connection and security step also
+reports each value the selected scope needs to run but that is missing
+(`draft_run_config_requirements` and `_run_config_issues`); the same check runs
+in shared plan validation (`_run_config_issues` in
+`conformance/test_plan_validation.py`), so imported, REST and CLI plans are held
+to it too. Review lists those issues per step with a **Fix** button
+and treats them as launch blockers, so lenient saving never relaxes launch
+validation. The review JSON jump still renders a discard `<dialog>` when the
+submitted plan JSON is not a JSON object.
+
+The review page's plan JSON box applies edits live. An HTMX
+`input changed delay:800ms` trigger (`hx-sync="this:queue last"`) posts the
+text to `/builder/<draft>/review/apply/` (`builder_review_apply`), which runs
+the same lenient recovery as import and answers with the
+`partials/builder_review_apply.html` fragment: out-of-band swaps of the step
+bar, summary, generated tests, and status line. The textarea itself is never
+swapped, so the caret and undo history survive. Each edit sends an
+`edit_seq` value that the server echoes as `X-Edit-Seq`; the client drops any
+response older than the latest edit. Text that is not a JSON object leaves the
+last applied plan untouched.
+`PlanImportError` carries `line`/`column`; `_display_error_position` in
+`plan_import_recovery.py` moves a missing-comma error onto the previous
+non-blank line (where the comma belongs), and the fragment's `data-error-line`
+lets the page underline that line. Syntax highlighting is an `aria-hidden`
+`<pre class="json-highlight">` layer behind a transparent-text textarea inside
+`.json-editor`; it is enabled only once JavaScript adds `is-highlighted`, so
+the box stays a plain textarea without JavaScript. The layer's font, size,
+line-height, padding, border, `white-space`, and `tab-size` must match the
+textarea exactly or the colours drift from the text.
+
+Changing the specification on `/catalogue/` when it would switch flow or prune
+saved scope re-renders with the affected items and a confirmation token
+(`confirm_specification_change`); the change is saved only when the token
+matches the newly chosen boundary.
+
+Imported plans enter through `/builder/import/` (pasted JSON or an uploaded
+`.json` file, up to 1 MB) and go straight to the same review page, or to the specification step (with the
+import warnings and **Start a new plan instead**) when no supported
+specification was loaded. Import is
+lenient (`conformance/api/plan_import_recovery.py`): only empty input, invalid
+JSON, or a non-object root is rejected. Every other document is recovered field
+by field against the schemaVersion `1.0` shape. Values the builder can represent
+load into the draft; missing, invalid, unrecognised, or unresolvable values
+(including individual scope items) are recorded as import warnings and kept
+verbatim in the draft's unrepresented-field overlay rather than being replaced
+with defaults. The plan JSON composed from the builder and that overlay is the
+single source of truth for review, export, and launch: while the overlay is
+non-empty, review runs normal load validation on the composed JSON and launch
+uses `prepare_test_plan_for_run` on it, so lenient import never relaxes launch
+validation. Saving a builder step takes ownership of the overlay fields that
+step produces and clears their warnings. The review JSON editor reloads the
+draft with the same recovery rules. Because it shows secrets unmasked, the
+review page is served with `Cache-Control: no-store`.
+
+Every builder page header also has an **Import plan** link
+(`partials/builder_header_actions.html`) to `/builder/<draft>/import/?from=<step id>`
+(`builder_draft_import`). It reuses `builder_import.html` and `PlanImportForm`,
+replaces the existing draft's contents in place with the same lenient recovery
+(the draft id is kept), and then redirects to review, or to the specification
+step when no supported specification was loaded. When the draft already has
+values, the submit button reads **Replace current plan** and a
+**Replace current plan?** `<dialog>` confirms first. **Cancel** returns to the
+validated `from` step.
 
 Generated tests are always read-only. Scope changes happen by editing resource
 groups, endpoints, and capabilities; the review page must not expose generated
@@ -308,6 +615,44 @@ downloads continue to use the same masking boundary as CLI/API execution. Run
 detail surfaces the top-level catalogue evidence summary from the completed
 result: selected endpoints, selected capabilities, generated test-case counts,
 and non-certifying reasons.
+
+### Dynamic pages (HTMX)
+
+The browser UI is server-rendered Django templates enhanced with
+[HTMX](https://htmx.org/); there is no single-page app or JavaScript build step.
+Every page except the OAuth callback includes
+`conformance/partials/htmx_script.html`, which loads the vendored bundle,
+sends Django's CSRF token on HTMX requests, disables HTMX history snapshots
+(builder pages can render credential references), and swaps `4xx`/`5xx`
+response bodies so `400` validation re-renders appear in place.
+
+- **Run detail** panels poll their partial routes every 2 seconds while the run
+  is `pending` or `running`. Terminal states render no `hx-trigger`, so polling
+  stops. The terminal status poll sends `HX-Trigger: run-finished` and the other
+  panels refresh once more on that event. A `<noscript>` meta refresh keeps the
+  page live without JavaScript.
+- **Builder steps** set `hx-boost="true"` on `<main>`, so wizard links and form
+  posts swap the page body instead of reloading it. The `head-support`
+  extension merges each page's `<head>` styles. Export downloads, export with
+  secrets, launch and links to run pages opt out with `hx-boost="false"`.
+  Inline page scripts must stay idempotent IIFEs because boosted swaps re-run them.
+- **Builder dropdowns** are native `<select class="builder-select">` elements
+  styled by `conformance/partials/builder_select_styles.html`, included in the
+  page `<head>`. Every browser gets the restyled closed control. Browsers that
+  support `appearance: base-select` also get a styled option list; others keep
+  the native list. There is no dropdown JavaScript, so scripts that hide or
+  disable options keep working.
+- **Scope** refreshes `#scope-options` through `hx-post` to
+  `/builder/<draft>/scope/options/`; the bulk select buttons fire a
+  `scope-refresh` event.
+
+Static assets are served by [WhiteNoise](https://whitenoise.readthedocs.io/)
+because uvicorn has no static file handler. The Docker build runs
+`collectstatic`; local runs and tests fall back to the static finders
+(`WHITENOISE_USE_FINDERS`). Vendored files live in
+`conformance/api/static/conformance/vendor/` with their versions in the
+filenames. The README there records source, licence and SHA-256 and explains
+how to upgrade.
 
 ## Certification validation
 
@@ -333,6 +678,9 @@ The approved-release policy shape is:
 Participant config may include `approvedReleasePolicyPath` for advisory
 self-assessment in generated reports. OBL-side validation remains authoritative
 and recomputes approved-release status from independently supplied inputs.
+
+**The current beta is not approved for certification.** Validator output does
+not override the participant-facing beta restriction.
 
 For Phase 1, validator authority is limited to consistency and
 certification-readiness. It must derive expected mandatory coverage and approved
@@ -365,6 +713,28 @@ Snyk/CodeQL PR analysis does not replace multi-platform OS/container scanning.
 See [CI/CD Strategy §3.2](CICD_STRATEGY.md#32-vulnerability-scanning-and-the-pr-gate)
 and the [configuration guide](IMAGE_SECURITY_APPROVALS.md).
 
+Participant-facing preview, beta, RC, and GA images add a stricter release
+gate. The workflow builds an immutable candidate image, runs the full checks
+against that exact digest, generates SBOM/provenance, records a candidate
+manifest, and automatically promotes the already-checked digest after
+successful push CI, without a separate approval. GA publication is paused while
+2.0.0 remains in beta. The version/tag to publish is set in
+`[project].version` in `pyproject.toml` and reviewed in the PR.
+
 There is no live-network or end-to-end workflow. Container startup and health
 checking validate packaging only; they are not an Ozone or conformance-system
 test.
+
+## Making a change
+
+Follow the branching and review process in the [CI/CD strategy](CICD_STRATEGY.md).
+Keep changes and tests aligned with the public browser/CLI/REST contract:
+use unit tests for isolated logic and component tests for boundary behaviour,
+mock external services, and assert structured result evidence where produced.
+Run the smallest relevant tests while iterating and `make check` before pushing.
+
+Update the participant guides when workflows or configuration change, and the
+specialised contract documents when coverage or conformance semantics change.
+For a material design choice, add or supersede an entry in the
+[decision log](DECISION_LOG.md#maintaining-this-log). Behaviour-changing fixes
+and features also need a `CHANGELOG.md` entry under `[Unreleased]`.

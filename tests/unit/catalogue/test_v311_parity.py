@@ -228,9 +228,10 @@ def test_v311_parity_contract_pins_sources_and_complete_inventory() -> None:
 
 def test_v311_openapi_sources_match_pinned_hashes_and_load() -> None:
     """Pin all four normative OpenAPI snapshots and loader identifiers."""
+    openapi_root = REPO_ROOT / "conformance" / "standards" / "ob_read_write" / "openapi" / "v3.1.11-Release-5"
     sources = cast(
         "JsonObject",
-        json.loads((_STANDARDS_ROOT / "sources.json").read_text(encoding="utf-8")),
+        json.loads((openapi_root / "sources.json").read_text(encoding="utf-8")),
     )
     openapi_sources = [
         source
@@ -239,14 +240,14 @@ def test_v311_openapi_sources_match_pinned_hashes_and_load() -> None:
     ]
     assert len(openapi_sources) == 4
     for source in openapi_sources:
-        assert source["ref"] == "v3.1.11"
-        assert _sha256(_STANDARDS_ROOT / str(source["file"])) == source["sha256"]
+        assert source["ref"] == "v3.1.11r5"
+        assert _sha256(openapi_root / str(source["file"])) == "".join(cast("list[str]", source["sha256Chunks"]))
 
     for document in (
-        "ob-read-write-v3.1.11-account-info-openapi",
-        "ob-read-write-v3.1.11-payment-initiation-openapi",
-        "ob-read-write-v3.1.11-confirmation-funds-openapi",
-        "ob-read-write-v3.1.11-vrp-openapi",
+        "ob-read-write/v3.1.11-Release-5/account-info-openapi",
+        "ob-read-write/v3.1.11-Release-5/payment-initiation-openapi",
+        "ob-read-write/v3.1.11-Release-5/confirmation-funds-openapi",
+        "ob-read-write/v3.1.11-Release-5/vrp-openapi",
     ):
         assert "paths" in _load_bundled_document(document)
 
@@ -263,7 +264,7 @@ def test_v311_boundary_is_exact_and_uses_fapi1_advanced() -> None:
     assert "3.1" not in versions
     assert derived_security_profile_for_boundary("open-banking-uk", "read-write", "3.1.11") == "fapi1-advanced"
     assert {catalogue.key for catalogue in _V311_CATALOGUES.values()} == {
-        CatalogueKey("open-banking", "v3.1", api) for api in _V311_CATALOGUES
+        CatalogueKey("open-banking", "v3.1", api, "3.1.11") for api in _V311_CATALOGUES
     }
 
 
@@ -424,7 +425,7 @@ def test_v311_ais_compiles_every_legacy_row_without_optional_capability_gates() 
                 "resourceBaseUrl": "https://resource.example.com",
                 "consentedAccountId": "account-123",
             },
-            specification_version="3.1.11",
+            openapi_document_update="Release-5",
         ),
     )
     compiled_ids = tuple(
@@ -469,7 +470,7 @@ def test_v311_ais_replays_distinct_legacy_transaction_queries(tmp_path: Path) ->
                 ),
             ),
             runtime_inputs=runtime_inputs,
-            specification_version="3.1.11",
+            openapi_document_update="Release-5",
         ),
     )
     manifest = _compiled_plan_to_manifest(
@@ -553,7 +554,7 @@ def test_v311_cbpii_replays_legacy_generated_request_values(tmp_path: Path) -> N
                 ),
             ),
             runtime_inputs=runtime_inputs,
-            specification_version="3.1.11",
+            openapi_document_update="Release-5",
         ),
     )
     before = datetime.now(UTC)
@@ -630,6 +631,7 @@ def test_v311_canonical_plan_round_trips_and_compiles_version_correct_paths() ->
         "specification": {
             "family": "OBL_READ_WRITE",
             "version": "3.1.11",
+            "openApiDocumentUpdate": "Release-5",
             "profile": "FAPI1_ADVANCED",
         },
         "securityEnvironment": {
@@ -651,7 +653,7 @@ def test_v311_canonical_plan_round_trips_and_compiles_version_correct_paths() ->
     compiled = compile_test_plan_document(reparsed, supported_catalogues())
 
     assert exported["specification"] == raw_plan["specification"]
-    assert compiled.catalogue_key == CatalogueKey("open-banking-uk", "3.1.11", "read-write")
+    assert compiled.catalogue_key == CatalogueKey("open-banking-uk", "3.1.11", "read-write", "3.1.11")
     assert compiled.traceability.provenance is not None
     assert compiled.traceability.provenance.commit == _LEGACY_COMMIT
     assert all("/v4.0/" not in request.path for test_case in compiled.test_cases for request in test_case.request_steps)
@@ -682,6 +684,7 @@ def test_v311_rejects_a_conflicting_security_profile() -> None:
         "specification": {
             "family": "OBL_READ_WRITE",
             "version": "3.1.11",
+            "openApiDocumentUpdate": "Release-5",
             "profile": "FAPI2",
         },
         "securityEnvironment": {
@@ -732,7 +735,7 @@ def test_v311_pis_manifest_uses_explicit_signing_profile(tmp_path: Path) -> None
                 ),
             ),
             runtime_inputs=runtime_inputs,
-            specification_version="3.1.11",
+            openapi_document_update="Release-5",
         ),
     )
     manifest = _compiled_plan_to_manifest(
@@ -857,7 +860,7 @@ def test_v311_pis_replays_legacy_request_constants_and_date_macros(tmp_path: Pat
                 ),
             ),
             runtime_inputs=runtime_inputs,
-            specification_version="3.1.11",
+            openapi_document_update="Release-5",
         ),
     )
     before = datetime.now(UTC)
@@ -937,6 +940,7 @@ def test_v311_builder_uses_scalar_standing_order_frequency() -> None:
                 "specification": {
                     "family": "OBL_READ_WRITE",
                     "version": "3.1.11",
+                    "openApiDocumentUpdate": "Release-5",
                     "profile": "FAPI1_ADVANCED",
                 },
                 "executionMode": "development",
@@ -1018,7 +1022,7 @@ def test_v311_vrp_authorization_produces_the_required_token() -> None:
                 "vrpValidFromDateTime": "2026-08-27T00:00:00+00:00",
                 "vrpValidToDateTime": "2026-09-27T00:00:00+00:00",
             },
-            specification_version="3.1.11",
+            openapi_document_update="Release-5",
         ),
     )
     consent_step = next(

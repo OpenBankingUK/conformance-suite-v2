@@ -26,6 +26,11 @@ from conformance.catalogue import (
     TestCatalogue,
 )
 from conformance.json_types import JsonObject, JsonValue
+from conformance.openapi_documents import logical_read_write_document, read_write_openapi_document_path
+from conformance.specification_registry import openapi_document_update_by_catalogue_id
+
+_LATEST_V311_UPDATE = openapi_document_update_by_catalogue_id("v3.1.11-Release-5")
+"""OpenAPI document update used to derive v3.1.11 response schema references."""
 
 _STANDARDS_ROOT = Path(__file__).resolve().parents[1] / "standards" / "ob_read_write" / "v3_1_11"
 """Directory containing the pinned v3.1.11 standards and parity artifacts."""
@@ -45,9 +50,9 @@ _SCHEMA_FILES = {
 """Bundled OpenAPI document filenames keyed by catalogue API."""
 
 _SCHEMA_DOCUMENTS = {
-    api: f"ob-read-write-v3.1.11-{filename.removesuffix('.json')}" for api, filename in _SCHEMA_FILES.items()
+    api: logical_read_write_document(filename.removesuffix(".json")) for api, filename in _SCHEMA_FILES.items()
 }
-"""Schema-validation document identifiers keyed by catalogue API."""
+"""Logical schema-validation document identifiers keyed by catalogue API, bound at compile time."""
 
 _API_PATH_PREFIXES = {
     "ais": "/open-banking/v3.1/aisp",
@@ -120,7 +125,7 @@ def build_v311_catalogue(source: TestCatalogue, *, api: str) -> TestCatalogue:
             raise ValueError(f"{api} v3.1.11 case {test_case.test_case_id} has missing dependencies: {missing}")
 
     return TestCatalogue(
-        key=CatalogueKey(standard="open-banking", version="v3.1", api=api),
+        key=CatalogueKey(standard="open-banking", version="v3.1", api=api, specification_version="3.1.11"),
         catalogue_version=f"{source.catalogue_version}.v3.1.11",
         test_cases=selected_cases,
         capabilities=capabilities,
@@ -1349,7 +1354,7 @@ def _included_script_ids(api: str) -> frozenset[str]:
 
 @cache
 def _openapi_document(api: str) -> JsonObject:
-    """Load a pinned v3.1.11 OpenAPI document.
+    """Load the latest pinned v3.1.11 OpenAPI document update used to derive schema references.
 
     Args:
         api: Open Banking API family.
@@ -1357,7 +1362,8 @@ def _openapi_document(api: str) -> JsonObject:
     Returns:
         Parsed OpenAPI document.
     """
-    return cast("JsonObject", json.loads((_STANDARDS_ROOT / _SCHEMA_FILES[api]).read_text(encoding="utf-8")))
+    path = read_write_openapi_document_path(_LATEST_V311_UPDATE, _SCHEMA_FILES[api].removesuffix(".json"))
+    return cast("JsonObject", json.loads(path.read_text(encoding="utf-8")))
 
 
 def _response_schema_ref(*, api: str, method: HttpMethod, path: str, status: int) -> str | None:

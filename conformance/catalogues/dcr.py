@@ -28,7 +28,7 @@ from conformance.catalogue import (
 )
 from conformance.json_types import JsonObject, JsonValue
 
-DCR_CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v3.4", api="dcr")
+DCR_CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v3.4", api="dcr", specification_version="3.4")
 """Internal catalogue boundary for Open Banking UK DCR 3.4."""
 
 DCR_CATALOGUE_VERSION = "2026.09.dcr-v3.4-parity.1"

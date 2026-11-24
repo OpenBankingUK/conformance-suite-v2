@@ -45,7 +45,7 @@ def test_parse_v1_manifest_accepts_extended_assertion_vocabulary() -> None:
         {
             "type": "response_schema",
             "source": "bundled_openapi",
-            "document": "ob-read-write-v4.0-account-info-openapi",
+            "document": "ob-read-write/v4.0.0-Update-5/account-info-openapi",
             "schemaRef": "#/components/schemas/OBReadAccount6",
         },
     ]
@@ -65,7 +65,7 @@ def test_parse_v1_manifest_accepts_response_schema_assertion_with_schema_ref() -
         {
             "type": "response_schema",
             "source": "bundled_openapi",
-            "document": "ob-read-write-v4.0-account-info-openapi",
+            "document": "ob-read-write/v4.0.0-Update-5/account-info-openapi",
             "schemaRef": "#/components/schemas/OBReadAccount6",
             "bodyPath": "Data.Account",
         }
@@ -76,7 +76,7 @@ def test_parse_v1_manifest_accepts_response_schema_assertion_with_schema_ref() -
     assertion = cast("ResponseSchemaAssertion", cast("ManifestStep", manifest.steps[0]).assertions[0])
     assert assertion.type == "response_schema"
     assert assertion.source == "bundled_openapi"
-    assert assertion.document == "ob-read-write-v4.0-account-info-openapi"
+    assert assertion.document == "ob-read-write/v4.0.0-Update-5/account-info-openapi"
     assert assertion.schema_ref == "#/components/schemas/OBReadAccount6"
     assert assertion.body_path == "Data.Account"
     assert assertion.schema is None
@@ -89,7 +89,7 @@ def test_parse_v1_manifest_accepts_response_schema_assertion_with_inline_schema(
         {
             "type": "response_schema",
             "source": "bundled_openapi",
-            "document": "ob-read-write-v4.0-account-info-openapi",
+            "document": "ob-read-write/v4.0.0-Update-5/account-info-openapi",
             "schema": {
                 "type": "object",
                 "required": ["Data"],
@@ -112,7 +112,7 @@ def test_parse_v1_manifest_accepts_response_schema_assertion_with_inline_schema(
             {
                 "type": "response_schema",
                 "source": "external_url",
-                "document": "ob-read-write-v4.0-account-info-openapi",
+                "document": "ob-read-write/v4.0.0-Update-5/account-info-openapi",
                 "schemaRef": "#/components/schemas/OBReadAccount6",
             },
             r"steps\[0\]\.assertions\[0\]\.source must be one of: bundled_openapi",
@@ -124,23 +124,13 @@ def test_parse_v1_manifest_accepts_response_schema_assertion_with_inline_schema(
                 "document": "ob-read-write-v9.9-account-info-openapi",
                 "schemaRef": "#/components/schemas/OBReadAccount6",
             },
-            (
-                r"steps\[0\]\.assertions\[0\]\.document must be one of: "
-                r"ob-read-write-v3\.1\.11-account-info-openapi, "
-                r"ob-read-write-v3\.1\.11-confirmation-funds-openapi, "
-                r"ob-read-write-v3\.1\.11-payment-initiation-openapi, "
-                r"ob-read-write-v3\.1\.11-vrp-openapi, "
-                r"ob-read-write-v4\.0-account-info-openapi, "
-                r"ob-read-write-v4\.0-payment-initiation-openapi, "
-                r"ob-read-write-v4\.0\.1-account-info-openapi, "
-                r"ob-read-write-v4\.0\.1-payment-initiation-openapi"
-            ),
+            r"steps\[0\]\.assertions\[0\]\.document must be one of: ob-read-write/",
         ),
         (
             {
                 "type": "response_schema",
                 "source": "bundled_openapi",
-                "document": "ob-read-write-v4.0-account-info-openapi",
+                "document": "ob-read-write/v4.0.0-Update-5/account-info-openapi",
             },
             r"steps\[0\]\.assertions\[0\] must provide exactly one of schemaRef or schema",
         ),
@@ -148,7 +138,7 @@ def test_parse_v1_manifest_accepts_response_schema_assertion_with_inline_schema(
             {
                 "type": "response_schema",
                 "source": "bundled_openapi",
-                "document": "ob-read-write-v4.0-account-info-openapi",
+                "document": "ob-read-write/v4.0.0-Update-5/account-info-openapi",
                 "schemaRef": "#/components/schemas/OBReadAccount6",
                 "schema": {"type": "object"},
             },
@@ -158,7 +148,7 @@ def test_parse_v1_manifest_accepts_response_schema_assertion_with_inline_schema(
             {
                 "type": "response_schema",
                 "source": "bundled_openapi",
-                "document": "ob-read-write-v4.0-account-info-openapi",
+                "document": "ob-read-write/v4.0.0-Update-5/account-info-openapi",
                 "schemaRef": "#/components/schemas/OBReadAccount6",
                 "extra": "bad",
             },
@@ -339,17 +329,17 @@ def test_parse_v1_manifest_rejects_unsupported_header_rule() -> None:
 
 BUNDLED_RESPONSE_SCHEMA_DOCUMENTS = (
     pytest.param(
-        "ob-read-write-v4.0.1-account-info-openapi",
+        "ob-read-write/v4.0.1-Baseline/account-info-openapi",
         "#/components/schemas/OBReadAccount6",
         id="account-info-v4.0.1",
     ),
     pytest.param(
-        "ob-read-write-v4.0-payment-initiation-openapi",
+        "ob-read-write/v4.0.0-Update-5/payment-initiation-openapi",
         "#/components/schemas/OBWriteDomesticStandingOrderResponse6",
         id="payment-initiation-v4.0",
     ),
     pytest.param(
-        "ob-read-write-v4.0.1-payment-initiation-openapi",
+        "ob-read-write/v4.0.1-Baseline/payment-initiation-openapi",
         "#/components/schemas/OBWriteDomesticStandingOrderResponse6",
         id="payment-initiation-v4.0.1",
     ),

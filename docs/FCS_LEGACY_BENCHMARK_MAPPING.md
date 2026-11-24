@@ -23,6 +23,10 @@ inside catalogue test-case `compliance_scope` values and result traceability.
 | `ob_4.0_variable_recurring_payments.json` | `open-banking / v4.0 / vrp` |
 | `cVRP_4.0_variable_recurring_payments.json` | `open-banking / v4.0 / cvrp` |
 
+Each `v4.0` catalogue exists twice, once for specification version `4.0.0` and
+once as an independent copy for `4.0.1` (`conformance/catalogues/read_write_v4_0_1/`);
+both copies carry the same legacy mapping below.
+
 Read/Write `3.1.11` binds only to the dedicated internal `v3.1` catalogue keys.
 The participant interface does not expose generic `3.1` or earlier v3.1.x
 versions. Security profile `FAPI1_ADVANCED` is normalized to
@@ -51,13 +55,15 @@ separate row identities. VRP `apiVersion` predicates are evaluated against
 CBPII consent expirations execute the pinned UTC `nextDayDate` and
 `nextDayDateTime` macro semantics, and the invalid-consent delete replays the
 legacy literal identifier `42`.
-The four normative OpenAPI snapshots are pinned from
-`OpenBankingUK/read-write-api-specs` tag `v3.1.11`.
+The four normative OpenAPI snapshots for each selectable v3.1.11 OpenAPI
+document update (`Baseline` through `Release-5`) are pinned from
+`OpenBankingUK/read-write-api-specs` under
+`conformance/standards/ob_read_write/openapi/`.
 
 Each selected row compiles an executable legacy assertion bundle preserving
 the source `asserts`, `asserts_one_of`, and `asserts_last_if_all` group
-semantics. Response schema checks select the pinned v3.1.11 OpenAPI response
-schema by the actual HTTP status. Legacy query variants compile as distinct
+semantics. Response schema checks select the response schema from the plan's selected
+v3.1.11 OpenAPI document update by the actual HTTP status. Legacy query variants compile as distinct
 requests with their pinned query values; they are not suppressed by v2-only
 optional capability gates. Domestic standing-order requests use the
 scalar `businessTestData.pis.standingOrderFrequencyV31` value required by v3.1;

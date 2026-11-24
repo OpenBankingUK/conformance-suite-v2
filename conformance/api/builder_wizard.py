@@ -4,14 +4,27 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Mapping, MutableMapping
-from dataclasses import dataclass
+from collections.abc import Collection, Iterable, Mapping, MutableMapping
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from django import forms
 
+if TYPE_CHECKING:
+    from django.core.files.uploadedfile import UploadedFile
+    from django.utils.datastructures import MultiValueDict
+
+from conformance.api.builder_credentials import (
+    SECURITY_CREDENTIAL_SPECS,
+    SECURITY_CREDENTIAL_SPECS_BY_NAME,
+    CredentialState,
+    add_credential_fields,
+    credential_state,
+    resolve_credential,
+    set_credential_keys,
+)
 from conformance.api.builder_draft_store import BuilderDraft
 from conformance.catalogue import (
     CatalogueError,
@@ -32,9 +45,30 @@ from conformance.catalogue import (
     supported_plan_document_boundaries,
 )
 from conformance.catalogue_registry import supported_catalogues
+from conformance.credentials import CredentialMaterial, credential_from_inline, credential_from_path
+from conformance.endpoint_requirements import (
+    EndpointRequirement,
+    endpoint_requirement_key,
+    read_write_endpoint_requirement,
+)
+from conformance.execution_settings import (
+    ExecutionSettingsError,
+    PsuAuthorizationModeSetting,
+    PsuAuthorizationSettings,
+    validate_psu_headers,
+    validate_psu_parameters,
+)
+from conformance.executor import compiled_plan_run_config_requirements
 from conformance.json_types import JsonObject, JsonValue
-from conformance.model_bank_config import ConfigError, parse_model_bank_config
+from conformance.run_config_requirements import (
+    RUN_CONFIG_REASONS,
+    RunConfigKey,
+    RunConfigRequirement,
+    required_run_config_keys,
+)
 from conformance.specification_registry import (
+    latest_openapi_document_update,
+    openapi_document_update_for_boundary,
     specification_for_boundary,
     supported_specifications,
 )
@@ -73,9 +107,6 @@ _VRP_RESOURCE_PATH_SEGMENTS = frozenset({"domestic-vrp-consents", "domestic-vrps
 _CAPABILITY_VALUE_SEPARATOR = "::"
 """Separator used in endpoint-scoped capability checkbox values."""
 
-_RUNTIME_INPUT_PREFIX = "runtime_input__"
-"""Prefix used for grouped-config runtime input form fields."""
-
 _MODEL_CONFIG_KEYS = {
     "discoveryUrl",
     "followUp",
@@ -94,24 +125,6 @@ _MODEL_CONFIG_KEYS = {
 }
 """Top-level v2 config keys that also belong to the executable model-bank config."""
 
-_STRUCTURED_CONFIG_RUNTIME_INPUT_IDS = {
-    "resourceBaseUrl",
-    "consentedAccountId",
-    "fromBookingDateTime",
-    "toBookingDateTime",
-    "debtorAccountSchemeName",
-    "debtorAccountIdentification",
-    "debtorAccountName",
-    "vrpCreditorAccountSchemeName",
-    "vrpCreditorAccountIdentification",
-    "vrpCreditorAccountName",
-    "vrpInstructedAmountAmount",
-    "vrpInstructedAmountCurrency",
-    "vrpValidFromDateTime",
-    "vrpValidToDateTime",
-}
-"""Plan-authored runtime inputs that have first-class grouped-config equivalents."""
-
 _BUSINESS_CONFIG_KEYS = frozenset({"ais", "pis", "cbpii", "vrp", "conditionalProperties"})
 """Config keys owned by the business/request defaults step."""
 
@@ -128,11 +141,8 @@ _SECURITY_CONFIG_KEYS = frozenset(
 )
 """Config keys owned by the OAuth/FAPI/security step."""
 
-SecurityRequirementStatus = Literal["required", "conditional", "optional"]
+SecurityRequirementStatus = Literal["required", "conditional", "optional", "depends_on_scope"]
 """User-facing field requirement status values for builder security fields."""
-
-_RUNTIME_CONFIG_KEYS = frozenset({"inputs"})
-"""Config keys owned by the runtime-artifact step."""
 
 
 @dataclass(frozen=True)
@@ -235,6 +245,28 @@ class VersionOption:
 
 
 @dataclass(frozen=True)
+class OpenApiDocumentUpdateOption:
+    """One OpenAPI document update option rendered beneath the version selector.
+
+    Attributes:
+        value: Plan value for ``specification.openApiDocumentUpdate``.
+        label: Participant-facing label, for example ``"Release 2"``.
+        scheme: Scheme value that owns the update.
+        specification: Specification value that owns the update.
+        version: Specification version that publishes the update.
+        latest: Whether this is the most recently published update for the
+            version and therefore the default selection.
+    """
+
+    value: str
+    label: str
+    scheme: str
+    specification: str
+    version: str
+    latest: bool
+
+
+@dataclass(frozen=True)
 class FeatureOption:
     """One endpoint-scoped optional or required implementation feature.
 
@@ -278,6 +310,9 @@ class EndpointOption:
             coverage.
         selected: Whether the participant selected this endpoint.
         features: Endpoint-scoped required and optional features.
+        implementation_requirement: Specification-derived implementation status,
+            independent of test coverage; None for unclassified test-only paths.
+        required: Whether implementation is mandatory in the current scope.
     """
 
     id: str
@@ -292,6 +327,8 @@ class EndpointOption:
     baseline: bool
     selected: bool
     features: tuple[FeatureOption, ...]
+    implementation_requirement: EndpointRequirement | None = None
+    required: bool = False
 
 
 @dataclass(frozen=True)
@@ -334,46 +371,6 @@ class CatalogueScopeHierarchy:
 
 
 @dataclass(frozen=True)
-class WizardRuntimeInputPrompt:
-    """One grouped-config runtime input prompt derived from selected scope.
-
-    Attributes:
-        input_id: Stable catalogue runtime input id.
-        name: Form field name used by the grouped config step.
-        label: Participant-facing prompt label.
-        input_type: Runtime input type expected by the catalogue compiler.
-        required: Whether the compiled plan requires this value before launch.
-        sensitive: Whether the value is secret-bearing and must be masked.
-        value: Current draft value as a display string.
-        group: Participant-facing config group for this prompt.
-        description: Optional participant-facing guidance for this prompt.
-    """
-
-    input_id: str
-    name: str
-    label: str
-    input_type: str
-    required: bool
-    sensitive: bool
-    value: str
-    group: str
-    description: str | None = None
-
-
-@dataclass(frozen=True)
-class RuntimeInputGroup:
-    """Runtime input prompts grouped for the configuration template.
-
-    Attributes:
-        label: Participant-facing group label.
-        prompts: Runtime input prompts in compiler order.
-    """
-
-    label: str
-    prompts: tuple[WizardRuntimeInputPrompt, ...]
-
-
-@dataclass(frozen=True)
 class ConfigVisibility:
     """Scope-derived visibility flags for grouped execution config.
 
@@ -383,7 +380,7 @@ class ConfigVisibility:
         show_ais: Whether AIS/account-and-transaction config fields apply.
         show_pis: Whether payment-initiation config fields apply.
         show_cbpii: Whether confirmation-of-funds config fields apply.
-        show_vrp: Whether variable-recurring-payment runtime prompts apply.
+        show_vrp: Whether variable-recurring-payment business defaults apply.
         show_business_defaults: Whether any domain-specific business/request
             defaults section should be rendered.
         ais_account_id_required: Whether the selected AIS scope needs a
@@ -462,7 +459,25 @@ _FULL_CONFIG_VISIBILITY = ConfigVisibility(
 )
 """Default grouped-config visibility used outside a scoped wizard draft."""
 
+EMPTY_CONFIG_VISIBILITY = ConfigVisibility(
+    selected_api_ids=frozenset(),
+    show_ais=False,
+    show_pis=False,
+    show_cbpii=False,
+    show_vrp=False,
+    show_business_defaults=False,
+)
+"""Grouped-config visibility when a draft's scope cannot be resolved: show no domain fields."""
+
 _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
+    SecurityFieldMetadata(
+        name="discovery_url",
+        status="optional",
+        label="Optional",
+        type_hint="HTTPS URL ending in /.well-known/openid-configuration",
+        description="OpenID Provider discovery document; its metadata can fill the OAuth endpoints below.",
+        requirement="Needed when selected tests fetch discovery metadata or validate response signatures.",
+    ),
     SecurityFieldMetadata(
         name="oauth_client_id",
         status="conditional",
@@ -536,8 +551,8 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         status="conditional",
         label="Conditional",
         type_hint="Enum: private_key_jwt or tls_client_auth",
-        description="FAPI token endpoint client-authentication mode.",
-        requirement="Required when FAPI signing/client-auth is configured for selected token or signing flows.",
+        description="Token authentication method of the already registered client; independent of JOSE signing.",
+        requirement="Required when selected flows obtain tokens. tls_client_auth uses the registered transport certificate.",
     ),
     SecurityFieldMetadata(
         name="signing_kid",
@@ -551,7 +566,7 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         name="signing_certificate_path",
         status="conditional",
         label="Conditional",
-        type_hint="Absolute file path",
+        type_hint="Absolute file path or pasted PEM",
         description="X.509 certificate used by runtime FAPI signing.",
         requirement="Required with the rest of the FAPI signing group when selected flows need runtime signing.",
     ),
@@ -559,7 +574,7 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         name="signing_private_key_path",
         status="conditional",
         label="Conditional",
-        type_hint="Absolute file path",
+        type_hint="Absolute file path or pasted PEM",
         description="Private key paired with the signing certificate.",
         requirement="Required with the rest of the FAPI signing group when selected flows need runtime signing.",
     ),
@@ -568,8 +583,8 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         status="conditional",
         label="Conditional",
         type_hint="String",
-        description="iss claim used when the runner signs private-key JWT client assertions.",
-        requirement="Required with the rest of the FAPI signing group when selected flows need private_key_jwt.",
+        description="Issuer used for private-key JWT assertions, generated JARs and Open Banking payload signatures.",
+        requirement="Required when selected flows sign client assertions, request objects or payloads.",
     ),
     SecurityFieldMetadata(
         name="signing_client_assertion_subject",
@@ -583,7 +598,7 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         name="tls_ca_bundle_path",
         status="optional",
         label="Optional",
-        type_hint="Absolute file path",
+        type_hint="Absolute file path or pasted PEM",
         description="Custom CA bundle used to verify the ASPSP TLS certificate.",
         requirement="Only needed for environments that use a private or non-standard issuing CA.",
     ),
@@ -591,7 +606,7 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         name="tls_client_certificate_path",
         status="conditional",
         label="Conditional",
-        type_hint="Absolute file path",
+        type_hint="Absolute file path or pasted PEM",
         description="Client certificate used by the HTTP client for mTLS.",
         requirement=(
             "Required with the private key when the selected environment or tls_client_auth flow requires mTLS."
@@ -601,7 +616,7 @@ _SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
         name="tls_client_private_key_path",
         status="conditional",
         label="Conditional",
-        type_hint="Absolute file path",
+        type_hint="Absolute file path or pasted PEM",
         description="Private key paired with the mTLS client certificate.",
         requirement=(
             "Required with the client certificate when the selected environment or tls_client_auth flow requires mTLS."
@@ -641,6 +656,8 @@ class CatalogueBoundaryForm(forms.Form):
         specification: Specification family selector filtered by scheme.
         version: Specification-version selector filtered by scheme and
             specification.
+        openapi_document_update: OpenAPI document update selector filtered by
+            version. Blank selects the latest published update.
         resource_groups: Deprecated compatibility field ignored by the
             specification step.
     """
@@ -648,6 +665,10 @@ class CatalogueBoundaryForm(forms.Form):
     scheme: forms.ChoiceField = forms.ChoiceField(label="Scheme")
     specification: forms.ChoiceField = forms.ChoiceField(label="Specification")
     version: forms.ChoiceField = forms.ChoiceField(label="Version")
+    openapi_document_update: forms.ChoiceField = forms.ChoiceField(
+        label="OpenAPI document update",
+        required=False,
+    )
     resource_groups: forms.MultipleChoiceField = forms.MultipleChoiceField(required=False)
 
     def __init__(
@@ -696,6 +717,12 @@ class CatalogueBoundaryForm(forms.Form):
         cast(forms.ChoiceField, self.fields["version"]).choices = [
             (option.value, option.label) for option in version_options(boundaries=self._boundaries)
         ]
+        cast(forms.ChoiceField, self.fields["openapi_document_update"]).choices = [
+            ("", "Latest"),
+            *dict.fromkeys(
+                (option.value, option.value) for option in openapi_document_update_options(boundaries=self._boundaries)
+            ),
+        ]
         cast(forms.MultipleChoiceField, self.fields["resource_groups"]).choices = [
             (group.id, group.label) for group in self.resource_group_hierarchy.resource_groups
         ]
@@ -723,6 +750,23 @@ class CatalogueBoundaryForm(forms.Form):
                 "Choose a supported scheme, specification, and version from the available catalogue options.",
                 code="unsupported_boundary",
             )
+        update = _cleaned_optional_string(cleaned_data.get("openapi_document_update"))
+        if update is None:
+            _definition, version_definition = specification_for_boundary(scheme, specification, version)
+            latest = latest_openapi_document_update(version_definition)
+            update = latest.update if latest is not None else None
+        try:
+            openapi_document_update_for_boundary(scheme, specification, version, update)
+        except ValueError:
+            self.add_error(
+                "openapi_document_update",
+                forms.ValidationError(
+                    "Choose an OpenAPI document update published for the selected version.",
+                    code="unsupported_openapi_document_update",
+                ),
+            )
+            return cleaned_data
+        cleaned_data["openapi_document_update"] = update
         return cleaned_data
 
     @property
@@ -757,6 +801,7 @@ class ScopeSelectionForm(forms.Form):
         initial: Mapping[str, object] | None = None,
         catalogues: Iterable[TestCatalogue] | None = None,
         prune_unavailable_choices: bool = False,
+        enforce_endpoint_requirements: bool = True,
     ) -> None:
         """Initialise the form from catalogue-derived scope options.
 
@@ -769,6 +814,8 @@ class ScopeSelectionForm(forms.Form):
                 values before field validation. This is used only for dynamic
                 preview refreshes where a just-deselected parent can still post
                 previously rendered child inputs.
+            enforce_endpoint_requirements: False only when pruning scope during
+                a specification edit, which must not expand an imported plan.
         """
         selected_resource_groups = _raw_or_initial_values(data, initial, "resource_groups")
         selected_endpoints = _raw_or_initial_values(data, initial, "endpoints")
@@ -779,6 +826,7 @@ class ScopeSelectionForm(forms.Form):
             selected_endpoint_ids=selected_endpoints,
             selected_capability_values=selected_capability_values,
             catalogues=catalogues,
+            enforce_endpoint_requirements=enforce_endpoint_requirements,
         )
         effective_initial = {
             "resource_groups": list(selected_resource_groups),
@@ -870,6 +918,10 @@ class ScopeSelectionForm(forms.Form):
                 endpoint.id for endpoint in _endpoint_options(self.hierarchy) if endpoint.id in selected_endpoint_ids
             )
             return cleaned_data
+        selected_endpoint_ids.update(endpoint.id for endpoint in endpoint_options.values() if endpoint.required)
+        cleaned_data["endpoints"] = tuple(
+            endpoint.id for endpoint in endpoint_options.values() if endpoint.id in selected_endpoint_ids
+        )
         for endpoint_id in selected_endpoint_ids:
             endpoint = endpoint_options.get(endpoint_id)
             if endpoint is not None and endpoint.resource_group_id not in selected_group_ids:
@@ -900,221 +952,6 @@ class ScopeSelectionForm(forms.Form):
                     code="invalid_capability",
                 )
         return cleaned_data
-
-
-class ExecutionConfigForm(forms.Form):
-    """Form for grouped execution config and runtime input values.
-
-    Attributes:
-        discovery_url: OpenID discovery document URL.
-        oauth_client_id: Optional OAuth client id.
-        oauth_redirect_uri: Optional OAuth redirect URI.
-        oauth_authorization_endpoint: Optional authorization endpoint override.
-        oauth_issuer: Optional OpenID issuer URL.
-        oauth_token_endpoint: Optional token endpoint URL.
-        oauth_resource_base_url: Optional OAuth resource server base URL.
-        oauth_response_type: Optional OAuth response type.
-        oauth_request_object_signing_alg: Optional request-object signing alg.
-        resource_server_base_url: Optional protected-resource base URL.
-        signing_certificate_path: Optional absolute signing certificate path.
-        signing_private_key_path: Optional absolute signing private-key path.
-        signing_kid: Optional JOSE key id.
-        signing_client_assertion_issuer: Optional private-key JWT issuer.
-        signing_client_assertion_subject: Optional private-key JWT subject.
-        signing_token_endpoint_auth_method: Optional token endpoint auth method.
-        tls_ca_bundle_path: Optional absolute CA bundle path.
-        tls_client_certificate_path: Optional absolute mTLS client certificate path.
-        tls_client_private_key_path: Optional absolute mTLS private-key path.
-        ais_resource_ids_json: Optional AIS resource ids JSON object.
-        ais_transaction_from_date: Optional transaction lower date bound.
-        ais_transaction_to_date: Optional transaction upper date bound.
-        pis_creditor_account_json: Optional domestic creditor account object.
-        pis_international_creditor_account_json: Optional international
-            creditor account object.
-        pis_instructed_amount_json: Optional instructed amount object.
-        pis_currency_of_transfer: Optional currency of transfer.
-        pis_requested_execution_date_time: Optional requested execution time.
-        pis_first_payment_date_time: Optional first payment time.
-        pis_standing_order_frequency_json: Optional standing-order frequency
-            object.
-        cbpii_debtor_account_json: Optional CBPII debtor account object.
-        conditional_properties_json: Optional conditional properties array.
-        config_json: Optional advanced v2 config JSON override.
-        config: Parsed v2 config object after successful validation.
-    """
-
-    discovery_url: forms.CharField = forms.CharField(label="Discovery URL", required=False)
-    oauth_client_id: forms.CharField = forms.CharField(label="Client ID", required=False)
-    oauth_redirect_uri: forms.CharField = forms.CharField(label="Redirect URI", required=False)
-    oauth_authorization_endpoint: forms.CharField = forms.CharField(
-        label="Authorization endpoint override",
-        required=False,
-    )
-    oauth_issuer: forms.CharField = forms.CharField(label="Issuer", required=False)
-    oauth_token_endpoint: forms.CharField = forms.CharField(label="Token endpoint", required=False)
-    oauth_resource_base_url: forms.CharField = forms.CharField(label="OAuth resource base URL", required=False)
-    oauth_response_type: forms.CharField = forms.CharField(label="Response type", required=False)
-    oauth_request_object_signing_alg: forms.CharField = forms.CharField(
-        label="Request object signing algorithm",
-        required=False,
-    )
-    resource_server_base_url: forms.CharField = forms.CharField(label="Resource server base URL", required=False)
-    signing_certificate_path: forms.CharField = forms.CharField(
-        label="Signing certificate absolute path",
-        required=False,
-    )
-    signing_private_key_path: forms.CharField = forms.CharField(
-        label="Signing private key absolute path",
-        required=False,
-    )
-    signing_kid: forms.CharField = forms.CharField(label="Signing key ID", required=False)
-    signing_client_assertion_issuer: forms.CharField = forms.CharField(
-        label="Client assertion issuer",
-        required=False,
-    )
-    signing_client_assertion_subject: forms.CharField = forms.CharField(
-        label="Client assertion subject",
-        required=False,
-    )
-    signing_token_endpoint_auth_method: forms.ChoiceField = forms.ChoiceField(
-        label="Token endpoint auth method",
-        required=False,
-    )
-    tls_ca_bundle_path: forms.CharField = forms.CharField(label="CA bundle absolute path", required=False)
-    tls_client_certificate_path: forms.CharField = forms.CharField(
-        label="mTLS client certificate absolute path",
-        required=False,
-    )
-    tls_client_private_key_path: forms.CharField = forms.CharField(
-        label="mTLS client private key absolute path",
-        required=False,
-    )
-    ais_resource_ids_json: forms.CharField = forms.CharField(
-        label="AIS resource IDs JSON",
-        required=False,
-        widget=forms.Textarea,
-    )
-    ais_transaction_from_date: forms.CharField = forms.CharField(label="Transaction from date", required=False)
-    ais_transaction_to_date: forms.CharField = forms.CharField(label="Transaction to date", required=False)
-    pis_creditor_account_json: forms.CharField = forms.CharField(
-        label="Creditor account JSON",
-        required=False,
-        widget=forms.Textarea,
-    )
-    pis_international_creditor_account_json: forms.CharField = forms.CharField(
-        label="International creditor account JSON",
-        required=False,
-        widget=forms.Textarea,
-    )
-    pis_instructed_amount_json: forms.CharField = forms.CharField(
-        label="Instructed amount JSON",
-        required=False,
-        widget=forms.Textarea,
-    )
-    pis_currency_of_transfer: forms.CharField = forms.CharField(label="Currency of transfer", required=False)
-    pis_requested_execution_date_time: forms.CharField = forms.CharField(
-        label="Requested execution date/time",
-        required=False,
-    )
-    pis_first_payment_date_time: forms.CharField = forms.CharField(label="First payment date/time", required=False)
-    pis_standing_order_frequency_json: forms.CharField = forms.CharField(
-        label="Standing-order frequency JSON",
-        required=False,
-        widget=forms.Textarea,
-    )
-    cbpii_debtor_account_json: forms.CharField = forms.CharField(
-        label="CBPII debtor account JSON",
-        required=False,
-        widget=forms.Textarea,
-    )
-    conditional_properties_json: forms.CharField = forms.CharField(
-        label="Conditional properties JSON",
-        required=False,
-        widget=forms.Textarea,
-    )
-    config_json: forms.CharField = forms.CharField(label="Advanced config JSON", required=False, widget=forms.Textarea)
-
-    config: JsonObject | None = None
-
-    def __init__(
-        self,
-        data: Mapping[str, object] | None = None,
-        *,
-        initial: Mapping[str, object] | None = None,
-        runtime_prompts: Iterable[WizardRuntimeInputPrompt] = (),
-        config_visibility: ConfigVisibility | None = None,
-    ) -> None:
-        """Initialise the grouped config form.
-
-        Args:
-            data: Optional bound form data.
-            initial: Initial values decoded from the draft config.
-            runtime_prompts: Runtime prompts derived from selected endpoints.
-            config_visibility: Optional scope-derived structured-field
-                visibility. Defaults to all grouped fields for standalone unit
-                tests and non-wizard callers.
-        """
-        self.runtime_prompts = tuple(runtime_prompts)
-        self.config_visibility = config_visibility if config_visibility is not None else _FULL_CONFIG_VISIBILITY
-        super().__init__(
-            data=cast(MutableMapping[str, object] | None, data),
-            initial=cast(MutableMapping[str, object] | None, initial),
-        )
-        cast(forms.ChoiceField, self.fields["signing_token_endpoint_auth_method"]).choices = [
-            ("", "Select auth method"),
-            ("private_key_jwt", "private_key_jwt"),
-            ("tls_client_auth", "tls_client_auth"),
-        ]
-        for prompt in self.runtime_prompts:
-            self.fields[prompt.name] = forms.CharField(
-                label=prompt.label,
-                required=False,
-                initial=prompt.value,
-            )
-
-    @property
-    def runtime_prompt_groups(self) -> tuple[RuntimeInputGroup, ...]:
-        """Return runtime prompts grouped for rendering.
-
-        Returns:
-            Runtime prompt groups in a stable participant-facing order.
-        """
-        groups: dict[str, list[WizardRuntimeInputPrompt]] = {}
-        for prompt in self.runtime_prompts:
-            groups.setdefault(prompt.group, []).append(prompt)
-        return tuple(RuntimeInputGroup(label=label, prompts=tuple(prompts)) for label, prompts in groups.items())
-
-    def clean(self) -> dict[str, object]:
-        """Build and validate the draft v2 config object.
-
-        Returns:
-            Cleaned form data.
-        """
-        base_cleaned_data = super().clean()
-        cleaned_data: dict[str, object] = {} if base_cleaned_data is None else dict(base_cleaned_data)
-        if self.errors:
-            return cleaned_data
-
-        raw_config_json = _cleaned_optional_string(cleaned_data.get("config_json"))
-        if raw_config_json is not None:
-            config = _load_json_object(raw_config_json, label="Advanced config JSON")
-        else:
-            config = _config_from_grouped_fields(cleaned_data, self.runtime_prompts, self.config_visibility)
-
-        self._validate_model_config(config)
-        self.config = config
-        return cleaned_data
-
-    def _validate_model_config(self, config: Mapping[str, JsonValue]) -> None:
-        """Validate the executable model-bank portion of a v2 config object.
-
-        Args:
-            config: Draft executable config object.
-        """
-        try:
-            parse_model_bank_config(model_bank_config_from_plan_config(config), base_dir=Path.cwd())
-        except ConfigError as error:
-            self.add_error("config_json", f"Config validation failed: {error}")
 
 
 class BusinessConfigForm(forms.Form):
@@ -1281,6 +1118,7 @@ class BusinessConfigForm(forms.Form):
         *,
         initial: Mapping[str, object] | None = None,
         config_visibility: ConfigVisibility | None = None,
+        lenient: bool = False,
     ) -> None:
         """Initialise the business defaults form.
 
@@ -1288,24 +1126,45 @@ class BusinessConfigForm(forms.Form):
             data: Optional bound form data.
             initial: Initial values decoded from the draft config.
             config_visibility: Optional scope-derived field visibility.
+            lenient: Skip required-field checks so a partially completed page
+                can be saved; format errors are still reported. Completeness
+                is checked at review instead.
         """
         self.config_visibility = config_visibility if config_visibility is not None else _FULL_CONFIG_VISIBILITY
+        self.lenient = lenient
         super().__init__(
             data=cast(MutableMapping[str, object] | None, data),
             initial=cast(MutableMapping[str, object] | None, initial),
         )
+        required_names: list[str] = []
         if self.config_visibility.show_cbpii:
-            self.fields["cbpii_debtor_account_scheme_name"].required = True
-            self.fields["cbpii_debtor_account_identification"].required = True
-            self.fields["cbpii_debtor_account_name"].required = True
+            required_names.extend(
+                (
+                    "cbpii_debtor_account_scheme_name",
+                    "cbpii_debtor_account_identification",
+                    "cbpii_debtor_account_name",
+                )
+            )
         if self.config_visibility.show_vrp:
-            self.fields["vrp_creditor_account_scheme_name"].required = True
-            self.fields["vrp_creditor_account_identification"].required = True
-            self.fields["vrp_creditor_account_name"].required = True
-            self.fields["vrp_instructed_amount_amount"].required = True
-            self.fields["vrp_instructed_amount_currency"].required = True
-            self.fields["vrp_valid_from_date_time"].required = True
-            self.fields["vrp_valid_to_date_time"].required = True
+            required_names.extend(
+                (
+                    "vrp_creditor_account_scheme_name",
+                    "vrp_creditor_account_identification",
+                    "vrp_creditor_account_name",
+                    "vrp_instructed_amount_amount",
+                    "vrp_instructed_amount_currency",
+                    "vrp_valid_from_date_time",
+                    "vrp_valid_to_date_time",
+                )
+            )
+        # Requirement badges follow the selected scope's specification
+        # requirements even when lenient binding lets the page be left
+        # incomplete, so labels never downgrade a required field to optional.
+        self.required_fields: dict[str, bool] = dict.fromkeys(required_names, True)
+        if lenient:
+            return
+        for name in required_names:
+            self.fields[name].required = True
 
     def clean(self) -> dict[str, object]:
         """Build and validate the business-default partial config.
@@ -1315,9 +1174,16 @@ class BusinessConfigForm(forms.Form):
         """
         base_cleaned_data = super().clean()
         cleaned_data: dict[str, object] = {} if base_cleaned_data is None else dict(base_cleaned_data)
+        self._add_json_field_errors(cleaned_data)
         if self.errors:
             return cleaned_data
-        self.config = _business_config_from_fields(cleaned_data, self.config_visibility)
+        self.config = _business_config_from_fields(
+            cleaned_data,
+            self.config_visibility,
+            changed_fields=self.changed_data,
+        )
+        if self.lenient:
+            return cleaned_data
         if self.config_visibility.show_ais and self.config_visibility.ais_account_id_required:
             ais_config = self.config.get("ais")
             if not _ais_config_has_account_id(ais_config):
@@ -1328,6 +1194,33 @@ class BusinessConfigForm(forms.Form):
         if self.config_visibility.show_pis:
             _add_required_pis_errors(self, cleaned_data)
         return cleaned_data
+
+    def _add_json_field_errors(self, cleaned_data: Mapping[str, object]) -> None:
+        """Attach malformed advanced-JSON errors to the field that holds them.
+
+        Field-level errors let the builder keep the rest of the page and flag
+        just the bad JSON instead of rejecting the whole submission.
+
+        Args:
+            cleaned_data: Cleaned form data.
+        """
+        for name in self.fields:
+            if not name.endswith("_json"):
+                continue
+            raw_value = _cleaned_optional_string(cleaned_data.get(name))
+            if raw_value is None:
+                continue
+            label = str(self.fields[name].label or name)
+            try:
+                loaded = json.loads(raw_value)
+            except json.JSONDecodeError as error:
+                self.add_error(name, f"{label} must be valid JSON: {error.msg}")
+                continue
+            expected_array = name == "conditional_properties_json"
+            if expected_array and not isinstance(loaded, list):
+                self.add_error(name, f"{label} must be a JSON array")
+            elif not expected_array and not isinstance(loaded, dict):
+                self.add_error(name, f"{label} must be a JSON object")
 
 
 class DiscoveryConfigForm(forms.Form):
@@ -1348,6 +1241,7 @@ class DiscoveryConfigForm(forms.Form):
         *,
         initial: Mapping[str, object] | None = None,
         discovery_required: bool = False,
+        lenient: bool = False,
     ) -> None:
         """Initialise the discovery config form.
 
@@ -1355,12 +1249,14 @@ class DiscoveryConfigForm(forms.Form):
             data: Optional bound form data.
             initial: Initial values decoded from the draft config.
             discovery_required: Whether the selected specification mandates discovery.
+            lenient: Allow an empty URL even when discovery is required, so the
+                page can be left incomplete; review reports it instead.
         """
         super().__init__(
             data=cast(MutableMapping[str, object] | None, data),
             initial=cast(MutableMapping[str, object] | None, initial),
         )
-        self.fields["discovery_url"].required = discovery_required
+        self.fields["discovery_url"].required = discovery_required and not lenient
 
     def clean_discovery_url(self) -> str:
         """Validate the submitted OpenID discovery URL.
@@ -1393,6 +1289,17 @@ class DiscoveryConfigForm(forms.Form):
             return cleaned_data
         self.config = _discovery_config_from_fields(cleaned_data)
         return cleaned_data
+
+
+class DiscoveryFillForm(forms.Form):
+    """Options for the connection page's "Fetch and fill" discovery action.
+
+    Attributes:
+        overwrite: Replace typed OAuth values that differ from OpenID discovery
+            metadata instead of only filling empty fields.
+    """
+
+    overwrite: forms.BooleanField = forms.BooleanField(required=False)
 
 
 class SecurityConfigForm(forms.Form):
@@ -1434,6 +1341,9 @@ class SecurityConfigForm(forms.Form):
         dynamic_client_registration: Canonical DCR-only values emitted in DCR mode.
         metadata: Canonical reporting metadata emitted in DCR mode.
         execution_mode: Canonical execution mode emitted in DCR mode.
+        psu_authorization_mode: Manual or auto-approve PSU authorisation mode.
+        psu_authorization_headers: Custom auto-approve authorisation headers.
+        psu_authorization_parameters: Custom parameters used in both modes.
     """
 
     oauth_client_id: forms.CharField = forms.CharField(label="Client ID", required=False)
@@ -1515,6 +1425,11 @@ class SecurityConfigForm(forms.Form):
     metadata_aspsp_name: forms.CharField = forms.CharField(label="ASPSP name", required=False)
     metadata_brand_name: forms.CharField = forms.CharField(label="Brand name", required=False)
     metadata_environment_name: forms.CharField = forms.CharField(label="Environment name", required=False)
+    psu_authorization_mode: forms.ChoiceField = forms.ChoiceField(
+        label="PSU authorisation mode",
+        choices=(("manual", "Manual"), ("auto-approve", "Auto-approve")),
+        required=False,
+    )
     signing_client_auth_algorithm: forms.CharField = forms.CharField(
         label="Client authentication signing algorithm",
         required=False,
@@ -1525,27 +1440,53 @@ class SecurityConfigForm(forms.Form):
     dynamic_client_registration: JsonObject | None = None
     metadata: JsonObject | None = None
     execution_mode: PlanExecutionMode | None = None
+    psu_authorization_settings: PsuAuthorizationSettings | None = None
+    psu_authorization_headers: tuple[tuple[str, str], ...] = ()
+    psu_parameter_row_count: int = 1
+    psu_header_row_count: int = 1
 
     def __init__(
         self,
         data: Mapping[str, object] | None = None,
         *,
+        files: Mapping[str, object] | None = None,
         initial: Mapping[str, object] | None = None,
         dcr_mode: bool = False,
+        stored_credentials: Mapping[str, CredentialMaterial | None] | None = None,
+        lenient: bool = False,
     ) -> None:
         """Initialise the OAuth/FAPI/security config form.
 
         Args:
             data: Optional bound form data.
+            files: Optional uploaded credential files from ``request.FILES``.
             initial: Initial values decoded from draft config and discovery
                 helper metadata.
             dcr_mode: Whether to apply DCR-specific fields and requiredness.
+            stored_credentials: Credentials already held in the draft. They are
+                used to honour a "keep" action without ever re-rendering
+                stored material into the page.
+            lenient: Skip required-field and whole-group completeness checks so
+                a partially completed page can be saved; format errors are
+                still reported. Completeness is checked at review instead.
         """
         self.dcr_mode = dcr_mode
+        self.lenient = lenient
+        self.psu_parameter_row_count = _psu_row_count(data, initial, "parameter")
+        self.psu_header_row_count = _psu_row_count(data, initial, "header")
+        self.stored_credentials: Mapping[str, CredentialMaterial | None] = stored_credentials or {}
+        self.credentials: dict[str, CredentialMaterial | None] = {}
         super().__init__(
             data=cast(MutableMapping[str, object] | None, data),
+            files=cast("MultiValueDict[str, UploadedFile[bytes]] | None", files),
             initial=cast(MutableMapping[str, object] | None, initial),
         )
+        add_credential_fields(self.fields, SECURITY_CREDENTIAL_SPECS_BY_NAME)
+        for index in range(32):
+            self.fields[f"psu_parameter_name_{index}"] = forms.CharField(required=False)
+            self.fields[f"psu_parameter_value_{index}"] = forms.CharField(required=False, strip=False)
+            self.fields[f"psu_header_name_{index}"] = forms.CharField(required=False)
+            self.fields[f"psu_header_value_{index}"] = forms.CharField(required=False, strip=False)
         auth_choices = [
             ("", "Select auth method"),
             ("private_key_jwt", "private_key_jwt"),
@@ -1559,14 +1500,13 @@ class SecurityConfigForm(forms.Form):
                 ]
             )
         cast(forms.ChoiceField, self.fields["signing_token_endpoint_auth_method"]).choices = auth_choices
-        if dcr_mode:
+        if dcr_mode and not lenient:
+            # Credential fields are deliberately absent: each may be satisfied
+            # by a path, pasted text, an upload, or a previously stored value,
+            # so their presence is enforced on the resolved credential instead.
             for name in (
-                "signing_private_key_path",
                 "signing_kid",
                 "signing_token_endpoint_auth_method",
-                "tls_client_certificate_path",
-                "tls_client_private_key_path",
-                "dcr_software_statement_assertion_path",
                 "dcr_registration_audience",
                 "dcr_execution_mode",
             ):
@@ -1580,113 +1520,117 @@ class SecurityConfigForm(forms.Form):
         """
         base_cleaned_data = super().clean()
         cleaned_data: dict[str, object] = {} if base_cleaned_data is None else dict(base_cleaned_data)
-        if self.errors:
-            return cleaned_data
-        signing_fields = (
-            "signing_certificate_path",
-            "signing_private_key_path",
+        self._clean_psu_authorization_settings(cleaned_data)
+        self.credentials = {
+            spec.name: resolve_credential(
+                self,
+                cleaned_data,
+                spec,
+                stored=self.stored_credentials.get(spec.name),
+            )
+            for spec in SECURITY_CREDENTIAL_SPECS
+        }
+
+        signing_fields: tuple[str, ...] = (
             "signing_kid",
             "signing_client_assertion_issuer",
             "signing_client_assertion_subject",
             "signing_token_endpoint_auth_method",
         )
-        if not self.dcr_mode and any(
-            _cleaned_optional_string(cleaned_data.get(field_name)) is not None for field_name in signing_fields
+        tls_auth = cleaned_data.get("signing_token_endpoint_auth_method") == "tls_client_auth"
+        if tls_auth:
+            signing_fields = ("signing_kid",)
+        signing_credentials = ("signing_certificate", "signing_private_key")
+        if (
+            not self.lenient
+            and not self.dcr_mode
+            and (
+                (
+                    not tls_auth
+                    and any(
+                        _cleaned_optional_string(cleaned_data.get(field_name)) is not None
+                        for field_name in signing_fields
+                    )
+                )
+                or any(self.credentials.get(name) is not None for name in signing_credentials)
+            )
         ):
+            message = "Complete every FAPI signing field, or leave the whole group blank."
             for field_name in signing_fields:
                 if _cleaned_optional_string(cleaned_data.get(field_name)) is None:
-                    self.add_error(field_name, "Complete every FAPI signing field, or leave the whole group blank.")
+                    self.add_error(field_name, message)
+            for name in signing_credentials:
+                if self.credentials.get(name) is None:
+                    self.add_error(SECURITY_CREDENTIAL_SPECS_BY_NAME[name].path_field, message)
 
-        mtls_certificate = _cleaned_optional_string(cleaned_data.get("tls_client_certificate_path"))
-        mtls_private_key = _cleaned_optional_string(cleaned_data.get("tls_client_private_key_path"))
-        if (mtls_certificate is None) != (mtls_private_key is None):
+        if not self.lenient and (self.credentials.get("tls_client_certificate") is None) != (
+            self.credentials.get("tls_client_private_key") is None
+        ):
             message = "mTLS client certificate and private key must be supplied together."
-            if mtls_certificate is None:
-                self.add_error("tls_client_certificate_path", message)
-            if mtls_private_key is None:
-                self.add_error("tls_client_private_key_path", message)
+            for name in ("tls_client_certificate", "tls_client_private_key"):
+                if self.credentials.get(name) is None:
+                    self.add_error(SECURITY_CREDENTIAL_SPECS_BY_NAME[name].path_field, message)
+
+        if self.dcr_mode and not self.lenient:
+            for name in (
+                "signing_private_key",
+                "tls_client_certificate",
+                "tls_client_private_key",
+                "dcr_software_statement_assertion",
+            ):
+                if self.credentials.get(name) is None:
+                    spec = SECURITY_CREDENTIAL_SPECS_BY_NAME[name]
+                    self.add_error(
+                        spec.path_field,
+                        f"Supply the {spec.label} as a file path, pasted text, or an upload.",
+                    )
 
         if self.errors:
             return cleaned_data
         if self.dcr_mode:
-            _validate_dcr_form_fields(self, cleaned_data)
+            _validate_dcr_form_fields(self, cleaned_data, require_audience=not self.lenient)
             if self.errors:
                 return cleaned_data
             self.config = {}
-            self.security_environment = _dcr_security_environment_from_fields(cleaned_data)
-            self.dynamic_client_registration = _dcr_config_from_fields(cleaned_data)
+            self.security_environment = _dcr_security_environment_from_fields(cleaned_data, self.credentials)
+            self.dynamic_client_registration = _dcr_config_from_fields(cleaned_data, self.credentials)
             self.metadata = _dcr_metadata_from_fields(cleaned_data)
-            self.execution_mode = cast(PlanExecutionMode, cleaned_data["dcr_execution_mode"])
+            self.execution_mode = cast(PlanExecutionMode | None, cleaned_data.get("dcr_execution_mode") or None)
         else:
-            self.config = _security_config_from_fields(cleaned_data)
+            self.config = _security_config_from_fields(cleaned_data, self.credentials)
         return cleaned_data
 
-
-class RuntimeInputsConfigForm(forms.Form):
-    """Form for catalogue-generated runtime execution artifacts.
-
-    Attributes:
-        config: Parsed partial v2 config owned by this step.
-    """
-
-    config: JsonObject | None = None
-
-    def __init__(
-        self,
-        data: Mapping[str, object] | None = None,
-        *,
-        initial: Mapping[str, object] | None = None,
-        runtime_prompts: Iterable[WizardRuntimeInputPrompt] = (),
-    ) -> None:
-        """Initialise the runtime-input form.
+    def _clean_psu_authorization_settings(self, cleaned_data: Mapping[str, object]) -> None:
+        """Validate indexed PSU header and parameter rows with shared rules.
 
         Args:
-            data: Optional bound form data.
-            initial: Initial values decoded from the draft config.
-            runtime_prompts: Runtime prompts derived from selected endpoints and
-                current structured config.
+            cleaned_data: Cleaned Django form fields.
         """
-        self.runtime_prompts = tuple(runtime_prompts)
-        super().__init__(
-            data=cast(MutableMapping[str, object] | None, data),
-            initial=cast(MutableMapping[str, object] | None, initial),
-        )
-        for prompt in self.runtime_prompts:
-            self.fields[prompt.name] = forms.CharField(
-                label=prompt.label,
-                required=False,
-                initial=prompt.value,
+        mode_raw = cleaned_data.get("psu_authorization_mode") or "manual"
+        mode: PsuAuthorizationModeSetting = "auto-approve" if mode_raw == "auto-approve" else "manual"
+        if _psu_has_oversized_rows(self.data):
+            self.add_error(None, "At most 32 PSU parameter or header rows are supported.")
+        parameter_pairs = _psu_form_pairs(cleaned_data, "parameter")
+        header_pairs = _psu_form_pairs(cleaned_data, "header")
+        typed_parameters = tuple((name, _psu_parameter_value(value)) for name, value in parameter_pairs)
+        valid_parameters: tuple[tuple[str, str | int | float | bool], ...] = ()
+        valid_headers: tuple[tuple[str, str], ...] = ()
+        try:
+            valid_parameters = validate_psu_parameters(typed_parameters, location="execution.psuAuthorization")
+        except ExecutionSettingsError as error:
+            _add_psu_row_error(self, "parameter", cleaned_data, str(error))
+        if mode == "auto-approve":
+            try:
+                valid_headers = validate_psu_headers(header_pairs, location="execution.psuAuthorization")
+            except ExecutionSettingsError as error:
+                _add_psu_row_error(self, "header", cleaned_data, str(error))
+        self.psu_authorization_headers = header_pairs
+        if not self.errors:
+            self.psu_authorization_settings = PsuAuthorizationSettings(
+                mode=mode,
+                headers=valid_headers,
+                parameters=valid_parameters,
             )
-
-    @property
-    def runtime_prompt_groups(self) -> tuple[RuntimeInputGroup, ...]:
-        """Return runtime prompts grouped for rendering.
-
-        Returns:
-            Runtime prompt groups in a stable participant-facing order.
-        """
-        groups: dict[str, list[WizardRuntimeInputPrompt]] = {}
-        for prompt in self.runtime_prompts:
-            groups.setdefault(prompt.group, []).append(prompt)
-        return tuple(RuntimeInputGroup(label=label, prompts=tuple(prompts)) for label, prompts in groups.items())
-
-    def clean(self) -> dict[str, object]:
-        """Build and validate the runtime-input partial config.
-
-        Returns:
-            Cleaned form data.
-        """
-        base_cleaned_data = super().clean()
-        cleaned_data: dict[str, object] = {} if base_cleaned_data is None else dict(base_cleaned_data)
-        if self.errors:
-            return cleaned_data
-        inputs: JsonObject = {}
-        for prompt in self.runtime_prompts:
-            value = _runtime_input_value_from_form(prompt, cleaned_data.get(prompt.name))
-            if value is not None:
-                inputs[prompt.input_id] = {"value": value}
-        self.config = {"inputs": inputs} if inputs else {}
-        return cleaned_data
 
 
 def catalogue_boundary_options() -> tuple[PlanDocumentBoundary, ...]:
@@ -1758,6 +1702,7 @@ def catalogue_scope_hierarchy(
     selected_endpoint_ids: Iterable[str] = (),
     selected_capability_values: Iterable[str] = (),
     catalogues: Iterable[TestCatalogue] | None = None,
+    enforce_endpoint_requirements: bool = True,
 ) -> CatalogueScopeHierarchy:
     """Return resource-group, endpoint, and feature options for a boundary.
 
@@ -1769,6 +1714,8 @@ def catalogue_scope_hierarchy(
         selected_capability_values: Endpoint capability checkbox values
             currently selected by the participant.
         catalogues: Optional catalogue override used by tests.
+        enforce_endpoint_requirements: Whether to select required endpoints;
+            disabled when merely pruning an existing imported scope.
 
     Returns:
         Catalogue-derived scope hierarchy with endpoints revealed only for
@@ -1794,6 +1741,7 @@ def catalogue_scope_hierarchy(
                 baseline=required,
                 selected=required or _endpoint_id("dcr", EndpointRef(method=method, path=path)) in selected_endpoints,
                 features=(),
+                required=required,
             )
             for method, path, operation_id, required in _DCR_ENDPOINTS
         )
@@ -1814,6 +1762,8 @@ def catalogue_scope_hierarchy(
     for catalogue in candidate_catalogues:
         for endpoint in _endpoint_options_for_catalogue(
             catalogue,
+            specification_version=boundary.version,
+            enforce_endpoint_requirements=enforce_endpoint_requirements,
             selected_endpoint_ids=selected_endpoints,
             selected_capability_ids_by_endpoint=selected_capabilities,
         ):
@@ -1842,6 +1792,100 @@ def catalogue_scope_hierarchy(
         for accumulator in (accumulators[group_id] for group_id in group_order)
     )
     return CatalogueScopeHierarchy(boundary=boundary, resource_groups=resource_groups)
+
+
+def scope_selection_defaults(
+    boundary: PlanDocumentBoundary,
+    *,
+    selected_resource_group_ids: Iterable[str],
+    expand_resource_group_ids: Iterable[str] = (),
+    expand_endpoint_ids: Iterable[str] = (),
+    catalogues: Iterable[TestCatalogue] | None = None,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return endpoints and optional features selected by default for newly ticked scope items.
+
+    A newly selected resource group defaults to every endpoint in that group, and a
+    newly selected endpoint defaults to every optional feature it offers. Required
+    features are implied by endpoint selection, so they are not returned. Ids that
+    are not part of the currently selected scope are ignored.
+
+    Args:
+        boundary: Selected scheme/specification/version boundary.
+        selected_resource_group_ids: Resource groups currently selected.
+        expand_resource_group_ids: Newly selected groups to fill with defaults.
+        expand_endpoint_ids: Newly selected endpoints to fill with defaults.
+        catalogues: Optional catalogue override used by tests.
+
+    Returns:
+        Endpoint option ids and endpoint capability checkbox values to add.
+    """
+    selected_groups = tuple(selected_resource_group_ids)
+    groups_hierarchy = catalogue_scope_hierarchy(
+        boundary,
+        selected_resource_group_ids=selected_groups,
+        catalogues=catalogues,
+    )
+    expand_groups = set(expand_resource_group_ids)
+    expand_endpoints = set(expand_endpoint_ids)
+    endpoint_ids = tuple(
+        endpoint.id
+        for group in groups_hierarchy.resource_groups
+        if group.selected
+        for endpoint in group.endpoints
+        if group.id in expand_groups or endpoint.id in expand_endpoints
+    )
+    if not endpoint_ids:
+        return (), ()
+    endpoints_hierarchy = catalogue_scope_hierarchy(
+        boundary,
+        selected_resource_group_ids=selected_groups,
+        selected_endpoint_ids=endpoint_ids,
+        catalogues=catalogues,
+    )
+    defaulted = set(endpoint_ids)
+    capability_values = tuple(
+        feature.value
+        for endpoint in _endpoint_options(endpoints_hierarchy)
+        if endpoint.id in defaulted
+        for feature in endpoint.features
+        if not feature.required
+    )
+    return endpoint_ids, capability_values
+
+
+def resource_groups_without_endpoints(
+    boundary: PlanDocumentBoundary,
+    *,
+    resource_group_ids: Iterable[str],
+    endpoint_ids: Iterable[str],
+    catalogues: Iterable[TestCatalogue] | None = None,
+) -> tuple[str, ...]:
+    """Return labels of selected resource groups that have no selected endpoint.
+
+    A resource group contributes nothing to the generated test plan without at
+    least one implemented endpoint, so the guided builder must not advance with one.
+
+    Args:
+        boundary: Selected scheme/specification/version boundary.
+        resource_group_ids: Selected resource-group ids.
+        endpoint_ids: Selected endpoint option ids.
+        catalogues: Optional catalogue override used by tests.
+
+    Returns:
+        Participant-facing labels of selected groups with no selected endpoint.
+    """
+    hierarchy = catalogue_scope_hierarchy(
+        boundary,
+        selected_resource_group_ids=resource_group_ids,
+        selected_endpoint_ids=endpoint_ids,
+        catalogues=catalogues,
+        enforce_endpoint_requirements=False,
+    )
+    return tuple(
+        group.label
+        for group in hierarchy.resource_groups
+        if group.selected and not any(endpoint.selected for endpoint in group.endpoints)
+    )
 
 
 def scheme_options(*, boundaries: Iterable[PlanDocumentBoundary] | None = None) -> tuple[SchemeOption, ...]:
@@ -1913,6 +1957,43 @@ def version_options(*, boundaries: Iterable[PlanDocumentBoundary] | None = None)
         )
         for boundary in boundary_values
     )
+
+
+def openapi_document_update_options(
+    *, boundaries: Iterable[PlanDocumentBoundary] | None = None
+) -> tuple[OpenApiDocumentUpdateOption, ...]:
+    """Return OpenAPI document update selector options for every version.
+
+    Args:
+        boundaries: Optional boundary set to derive the selector from.
+
+    Returns:
+        Update options in publication order, scoped to their owning version.
+    """
+    boundary_values = tuple(boundaries) if boundaries is not None else catalogue_boundary_options()
+    options: list[OpenApiDocumentUpdateOption] = []
+    for boundary in boundary_values:
+        try:
+            _definition, version_definition = specification_for_boundary(
+                boundary.scheme,
+                boundary.specification,
+                boundary.version,
+            )
+        except ValueError:
+            continue
+        latest = latest_openapi_document_update(version_definition)
+        options.extend(
+            OpenApiDocumentUpdateOption(
+                value=update.update,
+                label=update.label,
+                scheme=boundary.scheme,
+                specification=boundary.specification,
+                version=boundary.version,
+                latest=update == latest,
+            )
+            for update in version_definition.openapi_document_updates
+        )
+    return tuple(options)
 
 
 def endpoint_capability_value(*, endpoint_id: str, capability_id: str) -> str:
@@ -2021,8 +2102,6 @@ def config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, object]:
     cbpii = _object_config_value(config, "cbpii")
     initial["cbpii_debtor_account_json"] = _json_config_value(cbpii, "debtorAccount")
     initial["conditional_properties_json"] = _display_json_value(config.get("conditionalProperties"))
-    for input_id, value in _runtime_input_values_from_config(config).items():
-        initial[f"{_RUNTIME_INPUT_PREFIX}{input_id}"] = _display_json_value(value)
     return initial
 
 
@@ -2132,6 +2211,9 @@ def security_config_form_initial(
     dynamic_client_registration: Mapping[str, JsonValue] | None = None,
     metadata: Mapping[str, JsonValue] | None = None,
     execution_mode: PlanExecutionMode = "certification",
+    psu_authorization_mode: PsuAuthorizationModeSetting = "manual",
+    psu_authorization_headers: tuple[tuple[str, str], ...] = (),
+    psu_authorization_parameters: tuple[tuple[str, JsonValue], ...] = (),
 ) -> dict[str, object]:
     """Return security form initial values from config and discovery metadata.
 
@@ -2142,6 +2224,9 @@ def security_config_form_initial(
         dynamic_client_registration: Optional canonical DCR-only configuration.
         metadata: Optional canonical shared reporting metadata.
         execution_mode: Canonical execution mode used by DCR audience controls.
+        psu_authorization_mode: Saved PSU authorisation mode.
+        psu_authorization_headers: Saved header rows, including rows retained in manual mode.
+        psu_authorization_parameters: Saved typed parameter rows.
 
     Returns:
         Initial form values keyed by security field name.
@@ -2151,6 +2236,7 @@ def security_config_form_initial(
     signing = _object_config_value(config, "fapiSigning")
     tls = _object_config_value(config, "tls")
     initial: dict[str, object] = {
+        "psu_authorization_mode": psu_authorization_mode,
         "oauth_client_id": _string_config_value(oauth, "clientId"),
         "oauth_redirect_uri": _string_config_value(oauth, "redirectUri"),
         "oauth_authorization_endpoint": _config_or_discovery_string(
@@ -2182,6 +2268,12 @@ def security_config_form_initial(
         "tls_client_certificate_path": _string_config_value(tls, "clientCertificatePath"),
         "tls_client_private_key_path": _string_config_value(tls, "clientPrivateKeyPath"),
     }
+    for index, (name, value) in enumerate(psu_authorization_parameters[:32]):
+        initial[f"psu_parameter_name_{index}"] = name
+        initial[f"psu_parameter_value_{index}"] = _display_psu_parameter_value(value)
+    for index, (name, value) in enumerate(psu_authorization_headers[:32]):
+        initial[f"psu_header_name_{index}"] = name
+        initial[f"psu_header_value_{index}"] = value
     canonical_security = security_environment or {}
     canonical_mtls = _object_config_value(canonical_security, "mtls")
     dcr = dynamic_client_registration or {}
@@ -2189,10 +2281,13 @@ def security_config_form_initial(
     if canonical_security:
         initial.update(
             {
+                "signing_certificate_path": _string_config_value(canonical_security, "signingCertificatePath")
+                or initial["signing_certificate_path"],
                 "signing_private_key_path": _string_config_value(
                     canonical_security,
                     "signingPrivateKeyPath",
-                ),
+                )
+                or initial["signing_private_key_path"],
                 "signing_kid": _string_config_value(canonical_security, "signingKeyId"),
                 "signing_token_endpoint_auth_method": _string_config_value(
                     canonical_security,
@@ -2240,6 +2335,167 @@ def security_config_form_initial(
         }
     )
     return initial
+
+
+_CREDENTIAL_SOURCE_KEYS: Mapping[str, tuple[tuple[str, str, str], ...]] = {
+    "signing_certificate": (
+        ("securityEnvironment", "signingCertificatePath", "signingCertificatePem"),
+        ("fapiSigning", "signingCertificatePath", "signingCertificatePem"),
+    ),
+    "signing_private_key": (
+        ("securityEnvironment", "signingPrivateKeyPath", "signingPrivateKeyPem"),
+        ("fapiSigning", "signingPrivateKeyPath", "signingPrivateKeyPem"),
+    ),
+    "tls_ca_bundle": (
+        ("securityEnvironment.mtls", "caBundlePath", "caBundlePem"),
+        ("tls", "caBundlePath", "caBundlePem"),
+    ),
+    "tls_client_certificate": (
+        ("securityEnvironment.mtls", "certificatePath", "certificatePem"),
+        ("tls", "clientCertificatePath", "clientCertificatePem"),
+    ),
+    "tls_client_private_key": (
+        ("securityEnvironment.mtls", "privateKeyPath", "privateKeyPem"),
+        ("tls", "clientPrivateKeyPath", "clientPrivateKeyPem"),
+    ),
+    "dcr_software_statement_assertion": (
+        ("dynamicClientRegistration", "softwareStatementAssertionPath", "softwareStatementAssertion"),
+    ),
+    "dcr_signing_certificate": (("dynamicClientRegistration", "signingCertificatePath", "signingCertificatePem"),),
+}
+
+
+def _credential_container(
+    container: str,
+    config: Mapping[str, JsonValue],
+    security_environment: Mapping[str, JsonValue],
+    dynamic_client_registration: Mapping[str, JsonValue],
+) -> Mapping[str, JsonValue]:
+    """Resolve one named credential container to its object.
+
+    Args:
+        container: Container name used by ``_CREDENTIAL_SOURCE_KEYS``.
+        config: Draft executable config object.
+        security_environment: Canonical shared security configuration.
+        dynamic_client_registration: Canonical DCR-only configuration.
+
+    Returns:
+        The container object, empty when absent.
+    """
+    if container == "securityEnvironment":
+        return security_environment
+    if container == "securityEnvironment.mtls":
+        return _object_config_value(security_environment, "mtls")
+    if container == "dynamicClientRegistration":
+        return dynamic_client_registration
+    return _object_config_value(config, container)
+
+
+def stored_security_credentials(
+    config: Mapping[str, JsonValue],
+    *,
+    security_environment: Mapping[str, JsonValue] | None = None,
+    dynamic_client_registration: Mapping[str, JsonValue] | None = None,
+) -> dict[str, CredentialMaterial | None]:
+    """Return credentials already held by a draft, keyed by field-name stem.
+
+    Args:
+        config: Draft executable config object.
+        security_environment: Optional canonical shared security configuration.
+        dynamic_client_registration: Optional canonical DCR-only configuration.
+
+    Returns:
+        Stored credential material per credential, ``None`` when unset.
+    """
+    canonical_security = security_environment or {}
+    dcr = dynamic_client_registration or {}
+    stored: dict[str, CredentialMaterial | None] = {}
+    for spec in SECURITY_CREDENTIAL_SPECS:
+        material: CredentialMaterial | None = None
+        for container, path_key, inline_key in _CREDENTIAL_SOURCE_KEYS[spec.name]:
+            source = _credential_container(container, config, canonical_security, dcr)
+            inline = _string_config_value(source, inline_key)
+            if inline:
+                material = credential_from_inline(inline)
+                break
+            path_value = _string_config_value(source, path_key)
+            if path_value:
+                material = credential_from_path(Path(path_value))
+                break
+        stored[spec.name] = material
+    return stored
+
+
+def security_credential_states(
+    stored: Mapping[str, CredentialMaterial | None],
+) -> list[CredentialState]:
+    """Return non-secret presentation state for every security credential.
+
+    Args:
+        stored: Stored credential material keyed by field-name stem.
+
+    Returns:
+        Presentation states in wizard display order, containing no material.
+    """
+    return [credential_state(spec, stored.get(spec.name)) for spec in SECURITY_CREDENTIAL_SPECS]
+
+
+@dataclass(frozen=True)
+class CredentialRow:
+    """Everything one credential needs to render, holding no secret material.
+
+    Attributes:
+        state: Non-secret presentation state for the stored credential.
+        metadata: Participant-facing requirement metadata for the credential.
+        path: Bound field for the absolute-path input.
+        pem: Bound field for the paste textarea.
+        file: Bound field for the upload input.
+        source: Bound field for the supply-method selector.
+        action: Bound field for the keep/replace/clear selector.
+    """
+
+    state: CredentialState
+    metadata: SecurityFieldMetadata | None
+    path: forms.BoundField
+    pem: forms.BoundField
+    file: forms.BoundField
+    source: forms.BoundField
+    action: forms.BoundField
+
+
+def security_credential_rows(
+    form: SecurityConfigForm,
+    stored: Mapping[str, CredentialMaterial | None],
+    *,
+    field_metadata: Mapping[str, SecurityFieldMetadata] | None = None,
+) -> dict[str, CredentialRow]:
+    """Return per-credential render rows keyed by field-name stem.
+
+    Stored credential material is reduced to a non-secret descriptor, so no
+    pasted PEM or private key can be re-rendered into the page.
+
+    Args:
+        form: Bound or unbound security config form.
+        stored: Stored credential material keyed by field-name stem.
+        field_metadata: Requirement metadata by field name; defaults to the
+            scope-independent metadata.
+
+    Returns:
+        Render rows keyed by credential field-name stem.
+    """
+    metadata = field_metadata if field_metadata is not None else security_field_metadata()
+    return {
+        spec.name: CredentialRow(
+            state=credential_state(spec, stored.get(spec.name)),
+            metadata=metadata.get(spec.path_field),
+            path=form[spec.path_field],
+            pem=form[spec.pem_field],
+            file=form[spec.file_field],
+            source=form[spec.source_field],
+            action=form[spec.action_field],
+        )
+        for spec in SECURITY_CREDENTIAL_SPECS
+    }
 
 
 def merge_config_sections(
@@ -2305,17 +2561,58 @@ def merge_security_config(config: Mapping[str, JsonValue], section_config: Mappi
     return merge_config_sections(config, section_config, section_keys=_SECURITY_CONFIG_KEYS)
 
 
-def merge_runtime_input_config(config: Mapping[str, JsonValue], section_config: Mapping[str, JsonValue]) -> JsonObject:
-    """Return ``config`` with runtime input fields replaced.
+_SECURITY_STEP_ENVIRONMENT_KEYS = (
+    "signingCertificatePath",
+    "signingCertificatePem",
+    "signingPrivateKeyPath",
+    "signingPrivateKeyPem",
+    "signingKeyId",
+    "clientAuthMethod",
+)
+_SECURITY_STEP_MTLS_KEYS = (
+    "caBundlePath",
+    "caBundlePem",
+    "certificatePath",
+    "certificatePem",
+    "privateKeyPath",
+    "privateKeyPem",
+)
+
+
+def refresh_security_environment(
+    security_environment: Mapping[str, JsonValue],
+    config: Mapping[str, JsonValue],
+) -> JsonObject:
+    """Return imported security context updated with values saved by the security step.
+
+    The non-DCR security step writes credentials, the signing key id, and the
+    client authentication method into the executable config, but an imported
+    plan also carries them in ``securityEnvironment``. Without this refresh the
+    imported values keep winning: a credential replaced by pasted PEM would be
+    shown (and exported) as its old file reference alongside the new material.
 
     Args:
-        config: Existing draft config.
-        section_config: Runtime-input partial config emitted by the form.
+        security_environment: Canonical security context held by the draft.
+        config: Executable config after the security step saved.
 
     Returns:
-        Updated config with runtime-input keys replaced.
+        Security context whose step-owned keys reflect ``config`` only.
     """
-    return merge_config_sections(config, section_config, section_keys=_RUNTIME_CONFIG_KEYS)
+    refreshed = _copy_json_mapping(security_environment)
+    for key in _SECURITY_STEP_ENVIRONMENT_KEYS:
+        refreshed.pop(key, None)
+    mtls = refreshed.pop("mtls", None)
+    if isinstance(mtls, dict):
+        remaining = {key: value for key, value in mtls.items() if key not in _SECURITY_STEP_MTLS_KEYS}
+        remaining.pop("enabled", None)
+        if remaining:
+            refreshed["mtls"] = {**remaining, "enabled": False}
+    derived = security_environment_from_plan_config(config)
+    for key in (*_SECURITY_STEP_ENVIRONMENT_KEYS, "mtls"):
+        value = derived.get(key)
+        if value is not None and value != "":
+            refreshed[key] = _copy_json_value(value)
+    return refreshed
 
 
 def model_bank_config_from_plan_config(config: Mapping[str, JsonValue]) -> JsonObject:
@@ -2335,6 +2632,9 @@ def model_bank_config_from_plan_config(config: Mapping[str, JsonValue]) -> JsonO
 def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonValue] | None = None) -> PlanDocumentV2:
     """Build a parsed canonical test plan document from a wizard draft.
 
+    Only builder-represented values are used; the draft's unrepresented plan
+    fields are ignored (see :func:`plan_json_from_draft`).
+
     Args:
         draft: Session-backed builder draft.
         config: Optional config object to use instead of ``draft.config``.
@@ -2342,6 +2642,151 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
     Returns:
         Parsed schemaVersion ``1.0`` plan document suitable for compile, export,
         or launch.
+
+    Raises:
+        CatalogueError: If the draft is incomplete or contains stale scope ids.
+    """
+    document = parse_test_plan_document(builder_plan_json_from_draft(draft, config=config))
+    if not isinstance(document, PlanDocumentV2):
+        raise CatalogueError("Builder drafts must produce a canonical test plan document")
+    return document
+
+
+def plan_json_from_draft(draft: BuilderDraft) -> JsonObject:
+    """Return the full canonical test-plan JSON a draft represents.
+
+    The plan JSON is the shared source of truth for guided editing, direct JSON
+    editing on review, export, and launch. It is the builder-generated JSON
+    with the draft's unrepresented plan fields merged over it, so invalid or
+    unknown values loaded from imported JSON are preserved (never silently
+    replaced by builder defaults) and normal test-plan validation keeps failing
+    until they are fixed.
+
+    Args:
+        draft: Session-backed builder draft.
+
+    Returns:
+        Unvalidated schemaVersion ``1.0`` test-plan JSON object.
+    """
+    return merge_plan_json_overlay(builder_plan_json_from_draft_or_skeleton(draft), draft.unrepresented_plan_fields)
+
+
+def builder_plan_json_from_draft_or_skeleton(draft: BuilderDraft) -> JsonObject:
+    """Return builder-generated plan JSON, falling back to a partial skeleton.
+
+    Args:
+        draft: Session-backed builder draft.
+
+    Returns:
+        Builder-generated canonical JSON, or, when the draft has no
+        specification boundary or holds stale scope ids, the sections the
+        builder can still represent without scope.
+    """
+    try:
+        return builder_plan_json_from_draft(draft)
+    except CatalogueError, ValueError:
+        return _skeleton_plan_json_from_draft(draft)
+
+
+def merge_plan_json_overlay(base: Mapping[str, JsonValue], overlay: Mapping[str, JsonValue]) -> JsonObject:
+    """Deep-merge an unrepresented-field overlay over builder plan JSON.
+
+    Objects merge key by key, arrays are concatenated (overlay items appended,
+    for example resource groups the builder could not resolve), and any other
+    overlay value replaces the builder value.
+
+    Args:
+        base: Builder-generated plan JSON.
+        overlay: Unrepresented plan fields.
+
+    Returns:
+        New merged JSON object.
+    """
+    merged = _copy_json_mapping(base)
+    for key, overlay_value in overlay.items():
+        base_value = merged.get(key)
+        if isinstance(base_value, dict) and isinstance(overlay_value, dict):
+            merged[key] = merge_plan_json_overlay(base_value, overlay_value)
+        elif isinstance(base_value, list) and isinstance(overlay_value, list):
+            merged[key] = [*base_value, *(_copy_json_value(item) for item in overlay_value)]
+        else:
+            merged[key] = _copy_json_value(overlay_value)
+    return merged
+
+
+def _canonical_specification_json(boundary: PlanDocumentBoundary, security_profile: str) -> JsonObject:
+    """Return the canonical ``specification`` JSON for a draft boundary.
+
+    Args:
+        boundary: Selected specification boundary.
+        security_profile: Internal compiler security profile.
+
+    Returns:
+        ``OBL_DCR`` or ``OBL_READ_WRITE`` specification object.
+    """
+    if not boundary_requires_resource_groups(boundary):
+        return {
+            "family": "OBL_DCR",
+            "scheme": boundary.scheme,
+            "name": boundary.specification,
+            "version": boundary.version,
+        }
+    return {
+        "family": "OBL_READ_WRITE",
+        "version": boundary.version,
+        "profile": _canonical_security_profile(security_profile),
+    }
+
+
+def _skeleton_plan_json_from_draft(draft: BuilderDraft) -> JsonObject:
+    """Return the scope-independent plan JSON the builder can represent.
+
+    Args:
+        draft: Builder draft without a usable boundary or scope.
+
+    Returns:
+        Partial canonical JSON for review, direct editing, and validation.
+    """
+    config_object = _copy_json_mapping(draft.config)
+    raw_plan: JsonObject = {"schemaVersion": "1.0"}
+    boundary: PlanDocumentBoundary | None = None
+    if draft.scheme is not None and draft.specification is not None and draft.version is not None:
+        boundary = PlanDocumentBoundary(draft.scheme, draft.specification, draft.version)
+        try:
+            raw_plan["specification"] = _canonical_specification_json(boundary, draft.security_profile)
+        except CatalogueError, ValueError:
+            boundary = None
+    raw_plan["executionMode"] = draft.execution_mode
+    raw_plan["securityEnvironment"] = _merged_plan_context(
+        draft.security_environment,
+        security_environment_from_plan_config(config_object),
+    )
+    uses_resource_groups = boundary is None or boundary_requires_resource_groups(boundary)
+    if uses_resource_groups:
+        business_test_data = _merged_plan_context(
+            draft.business_test_data,
+            business_test_data_from_plan_config(config_object),
+        )
+        if boundary is not None or business_test_data:
+            raw_plan["businessTestData"] = business_test_data
+    if not uses_resource_groups or (boundary is None and draft.dynamic_client_registration):
+        raw_plan["dynamicClientRegistration"] = _copy_json_mapping(draft.dynamic_client_registration)
+    raw_plan["metadata"] = _copy_json_mapping(draft.metadata)
+    execution = _psu_execution_json(draft)
+    if execution is not None:
+        raw_plan["execution"] = execution
+    return raw_plan
+
+
+def builder_plan_json_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonValue] | None = None) -> JsonObject:
+    """Build unvalidated canonical test-plan JSON from builder-represented values.
+
+    Args:
+        draft: Session-backed builder draft.
+        config: Optional config object to use instead of ``draft.config``.
+
+    Returns:
+        Raw schemaVersion ``1.0`` plan JSON generated by the builder.
 
     Raises:
         CatalogueError: If the draft is incomplete or contains stale scope ids.
@@ -2391,10 +2836,10 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
             "dynamicClientRegistration": _copy_json_mapping(draft.dynamic_client_registration),
             "metadata": _copy_json_mapping(draft.metadata),
         }
-        document = parse_test_plan_document(dcr_raw_plan)
-        if not isinstance(document, PlanDocumentV2):
-            raise CatalogueError("Builder drafts must produce a canonical test plan document")
-        return document
+        execution = _psu_execution_json(draft)
+        if execution is not None:
+            dcr_raw_plan["execution"] = execution
+        return dcr_raw_plan
     selected_group_ids = _normalized_resource_group_ids_for_hierarchy(draft.resource_group_ids, hierarchy=hierarchy)
     selected_endpoint_ids = set(draft.endpoint_ids)
     known_group_ids = {group.id for group in hierarchy.resource_groups}
@@ -2446,6 +2891,11 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
         "specification": {
             "family": "OBL_READ_WRITE",
             "version": boundary.version,
+            **(
+                {"openApiDocumentUpdate": draft.openapi_document_update}
+                if draft.openapi_document_update is not None
+                else {}
+            ),
             "profile": _canonical_security_profile(draft.security_profile),
         },
         "executionMode": draft.execution_mode,
@@ -2454,10 +2904,10 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
         "businessTestData": business_test_data,
         "metadata": _copy_json_mapping(draft.metadata),
     }
-    document = parse_test_plan_document(raw_plan)
-    if not isinstance(document, PlanDocumentV2):
-        raise CatalogueError("Builder drafts must produce a canonical test plan document")
-    return document
+    execution = _psu_execution_json(draft)
+    if execution is not None:
+        raw_plan["execution"] = execution
+    return raw_plan
 
 
 def _canonical_security_profile(security_profile: str) -> str:
@@ -2586,72 +3036,6 @@ def draft_scope_from_plan_document(
             if endpoint.capability_ids:
                 capability_ids_by_endpoint[endpoint_id] = endpoint.capability_ids
     return tuple(resource_group_ids), tuple(endpoint_ids), capability_ids_by_endpoint
-
-
-def runtime_input_prompts_for_draft(draft: BuilderDraft) -> tuple[WizardRuntimeInputPrompt, ...]:
-    """Return runtime prompts derived from a draft's selected endpoints.
-
-    Args:
-        draft: Current wizard draft.
-
-    Returns:
-        Runtime prompts in compiler trace order.
-
-    Raises:
-        CatalogueError: If the draft scope cannot be resolved against bundled
-            catalogues.
-    """
-    return runtime_input_prompts_for_plan_document(plan_document_from_draft(draft))
-
-
-def runtime_input_prompts_for_plan_document(document: PlanDocumentV2) -> tuple[WizardRuntimeInputPrompt, ...]:
-    """Return runtime prompts derived from a canonical test-plan document.
-
-    Args:
-        document: Parsed canonical test-plan document.
-
-    Returns:
-        Runtime prompts in compiler trace order.
-
-    Raises:
-        CatalogueError: If endpoint scope cannot be compiled.
-    """
-    if not document.endpoints and not any(
-        resource_group.endpoints or resource_group.select_all for resource_group in document.resource_groups
-    ):
-        return ()
-    boundary_requirements = _runtime_requirements_for_boundary(
-        PlanDocumentBoundary(document.scheme, document.specification, document.version)
-    )
-    preview_document = plan_document_with_runtime_placeholders(document, boundary_requirements.values())
-    compiled_plan = compile_test_plan_document(preview_document, supported_catalogues())
-    requirements = _runtime_requirements_for_test_cases(compiled_plan.test_cases)
-    actual_values = document.runtime_inputs
-    prompts: list[WizardRuntimeInputPrompt] = []
-    for trace in compiled_plan.traceability.runtime_input_snapshot:
-        if trace.input_id in _STRUCTURED_CONFIG_RUNTIME_INPUT_IDS and _runtime_input_is_present(
-            actual_values.get(trace.input_id)
-        ):
-            continue
-        requirement = requirements.get(trace.input_id)
-        if requirement is not None and requirement.source != "plan":
-            continue
-        label = requirement.label if requirement is not None else trace.input_id
-        description = requirement.description if requirement is not None else None
-        prompts.append(
-            WizardRuntimeInputPrompt(
-                input_id=trace.input_id,
-                name=f"{_RUNTIME_INPUT_PREFIX}{trace.input_id}",
-                label=label,
-                input_type=trace.input_type,
-                required=trace.required,
-                sensitive=trace.sensitive,
-                value=_display_json_value(actual_values.get(trace.input_id)),
-                group=_runtime_prompt_group(trace.input_id, trace.input_type),
-                description=description,
-            )
-        )
-    return tuple(prompts)
 
 
 def config_visibility_for_draft(draft: BuilderDraft) -> ConfigVisibility:
@@ -2834,6 +3218,18 @@ def _selected_scope_requires_runtime_input(document: PlanDocumentV2, input_id: s
     return requirement is not None and requirement.required and requirement.source == "plan"
 
 
+def plan_document_with_runtime_placeholders(
+    document: PlanDocumentV2,
+    requirements: Iterable[RuntimeInputRequirement],
+) -> PlanDocumentV2:
+    """Return a preview document with missing required runtime inputs filled.
+
+    This enables scope-derived business-field requiredness before the
+    participant has supplied those business values.
+    """
+    return _plan_document_with_config(document, _config_with_runtime_placeholders(document.config, requirements))
+
+
 def security_field_metadata() -> dict[str, SecurityFieldMetadata]:
     """Return security field metadata keyed by form field name.
 
@@ -2843,41 +3239,109 @@ def security_field_metadata() -> dict[str, SecurityFieldMetadata]:
     return dict(_SECURITY_FIELD_METADATA_BY_NAME)
 
 
-def plan_document_with_runtime_placeholders(
-    document: PlanDocumentV2,
-    requirements: Iterable[RuntimeInputRequirement | WizardRuntimeInputPrompt],
-) -> PlanDocumentV2:
-    """Return a copy of ``document`` with missing required runtime inputs filled.
+RUN_CONFIG_FIELD_NAMES: Mapping[RunConfigKey, str] = {
+    "discoveryUrl": "discovery_url",
+    "oauth.clientId": "oauth_client_id",
+    "oauth.redirectUri": "oauth_redirect_uri",
+    "oauth.authorizationEndpoint": "oauth_authorization_endpoint",
+    "oauth.issuer": "oauth_issuer",
+    "oauth.tokenEndpoint": "oauth_token_endpoint",
+    "resourceBaseUrl": "resource_server_base_url",
+    "fapiSigning.signingCertificate": "signing_certificate_path",
+    "fapiSigning.signingPrivateKey": "signing_private_key_path",  # pragma: allowlist secret - form field name
+    "fapiSigning.kid": "signing_kid",
+    "fapiSigning.clientAssertionIssuer": "signing_client_assertion_issuer",
+    "fapiSigning.clientAssertionSubject": "signing_client_assertion_subject",
+    "fapiSigning.tokenEndpointAuthMethod": "signing_token_endpoint_auth_method",
+    "tls.clientCertificate": "tls_client_certificate_path",
+    "tls.clientPrivateKey": "tls_client_private_key_path",  # pragma: allowlist secret - form field name
+}
+"""Connection and security form field that supplies each runner config value."""
+
+_MTLS_FIELD_NAMES = frozenset({"tls_client_certificate_path", "tls_client_private_key_path"})
+"""mTLS client credential fields, needed only for ``tls_client_auth``."""
+
+
+def run_config_requirements_for_document(document: PlanDocumentV2) -> frozenset[RunConfigRequirement] | None:
+    """Return the connection and security values a plan's selected scope needs to run.
+
+    The scope is compiled with placeholder business data, the same preview
+    used for scope-derived business-field requiredness, and the runner
+    requirements are read from the compiled steps (OAuth 2.0 token and PSU
+    consent steps, FAPI request-object and client-assertion signing,
+    detached JWS, discovery and protected resource calls).
 
     Args:
-        document: Parsed canonical test-plan document to copy.
-        requirements: Runtime requirements or prompts whose required missing
-            values should be substituted for preview compilation only.
+        document: Parsed canonical test-plan document.
 
     Returns:
-        Parsed canonical test-plan document with placeholder runtime values.
+        Required values, or ``None`` when no endpoints are selected yet.
     """
-    return _plan_document_with_config(document, _config_with_runtime_placeholders(document.config, requirements))
-
-
-def missing_required_runtime_inputs(
-    document: PlanDocumentV2,
-    prompts: Iterable[WizardRuntimeInputPrompt],
-) -> tuple[WizardRuntimeInputPrompt, ...]:
-    """Return required runtime prompts absent from a plan document.
-
-    Args:
-        document: Parsed canonical test-plan document with actual participant config.
-        prompts: Runtime prompts derived from selected scope.
-
-    Returns:
-        Required prompts whose value is absent or blank.
-    """
-    return tuple(
-        prompt
-        for prompt in prompts
-        if prompt.required and not _runtime_input_is_present(document.runtime_inputs.get(prompt.input_id))
+    if not any(resource_group.endpoints or resource_group.select_all for resource_group in document.resource_groups):
+        return None
+    boundary_requirements = _runtime_requirements_for_boundary(
+        PlanDocumentBoundary(document.scheme, document.specification, document.version)
     )
+    preview_document = plan_document_with_runtime_placeholders(document, boundary_requirements.values())
+    compiled_plan = compile_test_plan_document(preview_document, supported_catalogues())
+    return compiled_plan_run_config_requirements(compiled_plan)
+
+
+def security_field_requirements(
+    requirements: frozenset[RunConfigRequirement] | None,
+    *,
+    config: Mapping[str, JsonValue],
+    security_environment: Mapping[str, JsonValue] | None = None,
+) -> dict[str, SecurityFieldMetadata]:
+    """Return Read/Write connection and security field metadata for the selected scope.
+
+    Args:
+        requirements: Values the selected scope needs to run, or ``None`` when
+            no scope is selected yet.
+        config: Draft config, used for the token endpoint auth method.
+        security_environment: Draft canonical security environment.
+
+    Returns:
+        Field metadata keyed by form field name, marked "Required to run",
+        "Optional", or "Depends on scope".
+    """
+    metadata = dict(_SECURITY_FIELD_METADATA_BY_NAME)
+    scope_fields = set(RUN_CONFIG_FIELD_NAMES.values())
+    if requirements is None:
+        for name in scope_fields:
+            metadata[name] = replace(
+                metadata[name],
+                status="depends_on_scope",
+                label="Depends on scope",
+                requirement="Whether this is required to run depends on the tests selected on the scope step.",
+            )
+        return metadata
+    required = required_run_config_keys(requirements, config, security_environment=security_environment)
+    required_fields = {RUN_CONFIG_FIELD_NAMES[key]: key for key in required}
+    for name in scope_fields:
+        if name in required_fields:
+            reason = RUN_CONFIG_REASONS[required_fields[name]]
+            metadata[name] = replace(
+                metadata[name],
+                status="required",
+                label="Required to run",
+                requirement=f"Required to run because {reason}.",
+            )
+        elif name in _MTLS_FIELD_NAMES and "tokenEndpointAuth" in requirements:
+            metadata[name] = replace(
+                metadata[name],
+                status="optional",
+                label="Optional",
+                requirement="Required to run only when the token endpoint auth method is tls_client_auth.",
+            )
+        else:
+            metadata[name] = replace(
+                metadata[name],
+                status="optional",
+                label="Optional",
+                requirement="The selected tests do not use this value.",
+            )
+    return metadata
 
 
 def plan_document_to_export_json(
@@ -2907,6 +3371,8 @@ def plan_document_to_export_json(
 def _endpoint_options_for_catalogue(
     catalogue: TestCatalogue,
     *,
+    specification_version: str,
+    enforce_endpoint_requirements: bool,
     selected_endpoint_ids: set[str],
     selected_capability_ids_by_endpoint: Mapping[str, set[str]],
 ) -> tuple[EndpointOption, ...]:
@@ -2935,9 +3401,34 @@ def _endpoint_options_for_catalogue(
                 endpoint_refs.append(endpoint_ref)
 
     options: list[EndpointOption] = []
+    selected_keys = {
+        endpoint_requirement_key(endpoint_ref)
+        for endpoint_ref in endpoint_refs
+        if (
+            _endpoint_id(catalogue.key.api, endpoint_ref) in selected_endpoint_ids
+            or _legacy_endpoint_id(endpoint_ref) in selected_endpoint_ids
+        )
+    }
     resource_group_id = _resource_group_id(catalogue.key.api)
     resource_group_label = _resource_group_label(catalogue.key.api)
     for endpoint_ref in endpoint_refs:
+        requirement = (
+            read_write_endpoint_requirement(specification_version, endpoint_ref)
+            if specification_version in {"4.0.1", "4.0.0", "3.1.11"}
+            and catalogue.key.api in _CANONICAL_RESOURCE_GROUP_ID_BY_API
+            else None
+        )
+        required = (
+            enforce_endpoint_requirements
+            and requirement is not None
+            and (
+                requirement.kind == "M"
+                or (
+                    requirement.prerequisite is not None
+                    and endpoint_requirement_key(requirement.prerequisite) in selected_keys
+                )
+            )
+        )
         endpoint_id = _endpoint_id(catalogue.key.api, endpoint_ref)
         legacy_endpoint_id = _legacy_endpoint_id(endpoint_ref)
         selected_capability_ids = selected_capability_ids_by_endpoint.get(
@@ -2946,7 +3437,7 @@ def _endpoint_options_for_catalogue(
             legacy_endpoint_id,
             set(),
         )
-        selected = endpoint_id in selected_endpoint_ids or legacy_endpoint_id in selected_endpoint_ids
+        selected = required or endpoint_id in selected_endpoint_ids or legacy_endpoint_id in selected_endpoint_ids
         options.append(
             EndpointOption(
                 id=endpoint_id,
@@ -2959,6 +3450,8 @@ def _endpoint_options_for_catalogue(
                 resource_group_id=resource_group_id,
                 resource_group_label=resource_group_label,
                 baseline=_endpoint_has_baseline_coverage(catalogue, endpoint_ref),
+                implementation_requirement=requirement,
+                required=required,
                 selected=selected,
                 features=(
                     _feature_options_for_endpoint(
@@ -3007,7 +3500,7 @@ def _feature_options_for_endpoint(
             label=capability.label,
             description=capability.description,
             required=capability.required,
-            kind="Required baseline" if capability.required else "Optional feature",
+            kind="Required feature" if capability.required else "Optional feature",
             selected=capability.required or capability.capability_id in selected_capability_ids,
         )
         for capability in catalogue.capabilities
@@ -3112,7 +3605,7 @@ def _pruned_catalogue_boundary_form_data(
     """
     available_group_ids = {group.id for group in hierarchy.resource_groups}
     pruned_data: dict[str, object] = {}
-    for key in ("scheme", "specification", "version"):
+    for key in ("scheme", "specification", "version", "openapi_document_update"):
         values = _raw_values(data, key)
         if values:
             pruned_data[key] = values[0]
@@ -3125,12 +3618,17 @@ def _pruned_catalogue_boundary_form_data(
 def _business_config_from_fields(
     cleaned_data: Mapping[str, object],
     config_visibility: ConfigVisibility,
+    *,
+    changed_fields: Collection[str] = (),
 ) -> JsonObject:
     """Build a business/default partial config from form fields.
 
     Args:
         cleaned_data: Cleaned form values.
         config_visibility: Scope-derived structured-field visibility.
+        changed_fields: Names of fields the participant actually edited. Friendly
+            fields listed here take precedence over the advanced JSON fallback,
+            which would otherwise silently discard the edit.
 
     Returns:
         Partial v2 plan config containing business/request default sections.
@@ -3149,7 +3647,10 @@ def _business_config_from_fields(
         )
         resource_ids_json = _cleaned_optional_string(cleaned_data.get("ais_resource_ids_json"))
         if resource_ids_json is not None:
-            ais["resourceIds"] = _load_json_object(resource_ids_json, label="AIS resource IDs JSON")
+            resource_ids = _load_json_object(resource_ids_json, label="AIS resource IDs JSON")
+            if "ais_consented_account_id" in changed_fields:
+                _overlay_ais_account_id(resource_ids, cleaned_data.get("ais_consented_account_id"))
+            ais["resourceIds"] = resource_ids
         else:
             account_id = _cleaned_optional_string(cleaned_data.get("ais_consented_account_id"))
             if account_id is not None:
@@ -3177,6 +3678,7 @@ def _business_config_from_fields(
                 "name": "pis_creditor_account_name",
             },
             label="Domestic creditor account JSON",
+            changed_fields=changed_fields,
         )
         _set_object_from_fields_or_json(
             pis,
@@ -3189,6 +3691,7 @@ def _business_config_from_fields(
                 "name": "pis_international_creditor_account_name",
             },
             label="International creditor account JSON",
+            changed_fields=changed_fields,
         )
         _set_object_from_fields_or_json(
             pis,
@@ -3200,6 +3703,7 @@ def _business_config_from_fields(
                 "currency": "pis_instructed_amount_currency",
             },
             label="Instructed amount JSON",
+            changed_fields=changed_fields,
         )
         _set_object_from_fields_or_json(
             pis,
@@ -3211,6 +3715,7 @@ def _business_config_from_fields(
                 "pointInTime": "pis_standing_order_frequency_point_in_time",
             },
             label="Standing-order frequency JSON",
+            changed_fields=changed_fields,
         )
         _set_optional_string(
             pis,
@@ -3234,6 +3739,7 @@ def _business_config_from_fields(
                 "name": "cbpii_debtor_account_name",
             },
             label="CBPII debtor account JSON",
+            changed_fields=changed_fields,
         )
         if cbpii:
             config["cbpii"] = cbpii
@@ -3459,11 +3965,158 @@ def _discovery_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObj
     return config
 
 
-def _security_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
+def _psu_row_count(
+    data: Mapping[str, object] | None,
+    initial: Mapping[str, object] | None,
+    kind: str,
+) -> int:
+    """Find the number of rendered PSU name/value rows, capped at the supported limit.
+
+    Args:
+        data: Optional submitted form mapping.
+        initial: Optional initial values from the draft.
+        kind: ``parameter`` or ``header`` row prefix.
+
+    Returns:
+        At least one row and no more than 32.
+    """
+    indexes = [0]
+    for values in (data, initial):
+        if values is None:
+            continue
+        for key in values:
+            match = re.fullmatch(rf"psu_{kind}_(?:name|value)_(\d+)", str(key))
+            if match is not None:
+                indexes.append(int(match.group(1)))
+    return min(max(indexes) + 1, 32)
+
+
+def _psu_has_oversized_rows(data: Mapping[str, object] | None) -> bool:
+    """Return whether a submission contains a row index outside the 32-row limit.
+
+    Args:
+        data: Bound form data.
+
+    Returns:
+        True when any PSU header or parameter row index is 32 or greater.
+    """
+    if data is None:
+        return False
+    return any(
+        (match := re.fullmatch(r"psu_(?:parameter|header)_(?:name|value)_(\d+)", str(key))) is not None
+        and int(match.group(1)) >= 32
+        for key in data
+    )
+
+
+def _psu_form_pairs(cleaned_data: Mapping[str, object], kind: str) -> tuple[tuple[str, str], ...]:
+    """Collect non-empty indexed PSU form rows in input order.
+
+    Args:
+        cleaned_data: Cleaned form fields.
+        kind: ``parameter`` or ``header``.
+
+    Returns:
+        Name/value pairs; only rows with both fields blank are ignored.
+    """
+    pairs: list[tuple[str, str]] = []
+    for index in range(32):
+        raw_name = cleaned_data.get(f"psu_{kind}_name_{index}", "")
+        raw_value = cleaned_data.get(f"psu_{kind}_value_{index}", "")
+        name = raw_name if isinstance(raw_name, str) else ""
+        value = raw_value if isinstance(raw_value, str) else ""
+        if not name.strip() and not value.strip():
+            continue
+        pairs.append((name.strip(), value))
+    return tuple(pairs)
+
+
+def _psu_parameter_value(value: str) -> str | bool:
+    """Convert only the textual booleans ``true`` and ``false`` to JSON booleans.
+
+    Other input remains a string, including values that resemble numbers, so
+    the UI never silently changes numeric formatting or precision.
+
+    Args:
+        value: Text entered into a parameter value field.
+
+    Returns:
+        Boolean for a case-insensitive boolean literal; otherwise the original string.
+    """
+    if value.lower() == "true":
+        return True
+    if value.lower() == "false":
+        return False
+    return value
+
+
+def _display_psu_parameter_value(value: JsonValue) -> str:
+    """Render an imported scalar parameter as editable text.
+
+    Args:
+        value: Canonical JSON scalar.
+
+    Returns:
+        Boolean values use lower-case JSON spelling; other values use text.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _add_psu_row_error(
+    form: SecurityConfigForm,
+    kind: str,
+    cleaned_data: Mapping[str, object],
+    message: str,
+) -> None:
+    """Attach a shared validation error to its matching indexed name field.
+
+    Args:
+        form: Bound security form.
+        kind: ``parameter`` or ``header``.
+        cleaned_data: Cleaned indexed form rows.
+        message: Shared execution-settings validation message.
+    """
+    for index in range(31, -1, -1):
+        raw_name = cleaned_data.get(f"psu_{kind}_name_{index}", "")
+        raw_value = cleaned_data.get(f"psu_{kind}_value_{index}", "")
+        name = raw_name.strip() if isinstance(raw_name, str) else ""
+        value = raw_value if isinstance(raw_value, str) else ""
+        if (name or value.strip()) and f"[{name!r}]" in message:
+            form.add_error(f"psu_{kind}_name_{index}", str(message))
+            return
+    form.add_error(None, str(message))
+
+
+def _psu_execution_json(draft: BuilderDraft) -> JsonObject | None:
+    """Build the plan ``execution`` object, excluding inactive manual headers.
+
+    Args:
+        draft: Builder draft.
+
+    Returns:
+        Canonical execution object, or ``None`` when settings are default.
+    """
+    if draft.psu_authorization_mode == "manual" and not draft.psu_authorization_parameters:
+        return None
+    psu: JsonObject = {"mode": draft.psu_authorization_mode}
+    if draft.psu_authorization_mode == "auto-approve" and draft.psu_authorization_headers:
+        psu["headers"] = dict(draft.psu_authorization_headers)
+    if draft.psu_authorization_parameters:
+        psu["parameters"] = dict(draft.psu_authorization_parameters)
+    return {"psuAuthorization": psu}
+
+
+def _security_config_from_fields(
+    cleaned_data: Mapping[str, object],
+    credentials: Mapping[str, CredentialMaterial | None],
+) -> JsonObject:
     """Build an OAuth/FAPI/security partial config from form fields.
 
     Args:
         cleaned_data: Cleaned form values.
+        credentials: Credentials resolved from path, paste, upload, or storage.
 
     Returns:
         Partial v2 plan config containing security and communication settings.
@@ -3499,41 +4152,65 @@ def _security_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObje
     signing = _nested_object_from_fields(
         cleaned_data,
         {
-            "signingCertificatePath": "signing_certificate_path",
-            "signingPrivateKeyPath": "signing_private_key_path",
             "kid": "signing_kid",
             "clientAssertionIssuer": "signing_client_assertion_issuer",
             "clientAssertionSubject": "signing_client_assertion_subject",
             "tokenEndpointAuthMethod": "signing_token_endpoint_auth_method",
         },
     )
+    set_credential_keys(
+        signing,
+        credentials.get("signing_certificate"),
+        path_key="signingCertificatePath",
+        inline_key="signingCertificatePem",
+    )
+    set_credential_keys(
+        signing,
+        credentials.get("signing_private_key"),
+        path_key="signingPrivateKeyPath",
+        inline_key="signingPrivateKeyPem",
+    )
     if signing:
         config["fapiSigning"] = signing
 
-    tls = _nested_object_from_fields(
-        cleaned_data,
-        {
-            "caBundlePath": "tls_ca_bundle_path",
-            "clientCertificatePath": "tls_client_certificate_path",
-            "clientPrivateKeyPath": "tls_client_private_key_path",
-        },
+    tls: JsonObject = {}
+    set_credential_keys(
+        tls,
+        credentials.get("tls_ca_bundle"),
+        path_key="caBundlePath",
+        inline_key="caBundlePem",
+    )
+    set_credential_keys(
+        tls,
+        credentials.get("tls_client_certificate"),
+        path_key="clientCertificatePath",
+        inline_key="clientCertificatePem",
+    )
+    set_credential_keys(
+        tls,
+        credentials.get("tls_client_private_key"),
+        path_key="clientPrivateKeyPath",
+        inline_key="clientPrivateKeyPem",
     )
     if tls:
         config["tls"] = tls
     return config
 
 
-def _dcr_security_environment_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
+def _dcr_security_environment_from_fields(
+    cleaned_data: Mapping[str, object],
+    credentials: Mapping[str, CredentialMaterial | None],
+) -> JsonObject:
     """Build canonical shared security fields entered for a DCR plan.
 
     Args:
         cleaned_data: Cleaned DCR security form values.
+        credentials: Credentials resolved from path, paste, upload, or storage.
 
     Returns:
         Canonical ``securityEnvironment`` values excluding discovery.
     """
     environment: JsonObject = {
-        "signingPrivateKeyPath": cast(str, cleaned_data["signing_private_key_path"]).strip(),
         "signingKeyId": cast(str, cleaned_data["signing_kid"]).strip(),
         "clientAuthMethod": cast(str, cleaned_data["signing_token_endpoint_auth_method"]).strip(),
         "signingAlgorithm": "PS256",
@@ -3543,30 +4220,49 @@ def _dcr_security_environment_from_fields(cleaned_data: Mapping[str, object]) ->
         "clientAuthSigningAlgorithm",
         cleaned_data.get("signing_client_auth_algorithm"),
     )
-    mtls: JsonObject = {
-        "enabled": True,
-        "certificatePath": cast(str, cleaned_data["tls_client_certificate_path"]).strip(),
-        "privateKeyPath": cast(str, cleaned_data["tls_client_private_key_path"]).strip(),
-    }
-    _set_optional_string(mtls, "caBundlePath", cleaned_data.get("tls_ca_bundle_path"))
+    set_credential_keys(
+        environment,
+        credentials.get("signing_private_key"),
+        path_key="signingPrivateKeyPath",
+        inline_key="signingPrivateKeyPem",
+    )
+    mtls: JsonObject = {"enabled": True}
+    set_credential_keys(
+        mtls,
+        credentials.get("tls_client_certificate"),
+        path_key="certificatePath",
+        inline_key="certificatePem",
+    )
+    set_credential_keys(
+        mtls,
+        credentials.get("tls_client_private_key"),
+        path_key="privateKeyPath",
+        inline_key="privateKeyPem",
+    )
+    set_credential_keys(
+        mtls,
+        credentials.get("tls_ca_bundle"),
+        path_key="caBundlePath",
+        inline_key="caBundlePem",
+    )
     environment["mtls"] = mtls
     return environment
 
 
-def _dcr_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
+def _dcr_config_from_fields(
+    cleaned_data: Mapping[str, object],
+    credentials: Mapping[str, CredentialMaterial | None],
+) -> JsonObject:
     """Build canonical DCR-only configuration from form fields.
 
     Args:
         cleaned_data: Cleaned DCR security form values.
+        credentials: Credentials resolved from path, paste, upload, or storage.
 
     Returns:
         Canonical ``dynamicClientRegistration`` object.
     """
     config: JsonObject = {
-        "softwareStatementAssertionPath": cast(
-            str,
-            cleaned_data["dcr_software_statement_assertion_path"],
-        ).strip(),
         "registrationAudience": cast(str, cleaned_data["dcr_registration_audience"]).strip(),
         "useNumericOidSubjectDn": cleaned_data.get("dcr_use_numeric_oid_subject_dn") is True,
         "disableKeepAlive": cleaned_data.get("dcr_disable_keep_alive") is True,
@@ -3579,7 +4275,18 @@ def _dcr_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
     redirects = _dcr_redirect_uri_lines(cleaned_data.get("dcr_redirect_uris_override"))
     if redirects:
         config["redirectUrisOverride"] = list(redirects)
-    _set_optional_string(config, "signingCertificatePath", cleaned_data.get("dcr_signing_certificate_path"))
+    set_credential_keys(
+        config,
+        credentials.get("dcr_software_statement_assertion"),
+        path_key="softwareStatementAssertionPath",
+        inline_key="softwareStatementAssertion",
+    )
+    set_credential_keys(
+        config,
+        credentials.get("dcr_signing_certificate"),
+        path_key="signingCertificatePath",
+        inline_key="signingCertificatePem",
+    )
     _set_optional_string(
         config,
         "transportCertificateSubjectDnOverride",
@@ -3604,26 +4311,23 @@ def _dcr_metadata_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
     return metadata
 
 
-def _validate_dcr_form_fields(form: SecurityConfigForm, cleaned_data: Mapping[str, object]) -> None:
-    """Add DCR URL, path, and subject-DN errors to a security form.
+def _validate_dcr_form_fields(
+    form: SecurityConfigForm, cleaned_data: Mapping[str, object], *, require_audience: bool = True
+) -> None:
+    """Add DCR URL and subject-DN errors to a security form.
+
+    Credential fields are validated separately, because each may be satisfied
+    by a path, pasted text, an upload, or a previously stored value.
 
     Args:
         form: Bound DCR security form to update.
         cleaned_data: Cleaned form values to validate.
+        require_audience: Whether an empty registration audience is an error.
     """
-    for field_name in (
-        "signing_private_key_path",
-        "tls_ca_bundle_path",
-        "tls_client_certificate_path",
-        "tls_client_private_key_path",
-        "dcr_software_statement_assertion_path",
-        "dcr_signing_certificate_path",
-    ):
-        value = _cleaned_optional_string(cleaned_data.get(field_name))
-        if value is not None and not Path(value).is_absolute():
-            form.add_error(field_name, "Enter an absolute file path.")
     audience = _cleaned_optional_string(cleaned_data.get("dcr_registration_audience"))
-    if audience is None or re.fullmatch(r"[0-9A-Za-z]{1,18}", audience) is None:
+    if (audience is None and require_audience) or (
+        audience is not None and re.fullmatch(r"[0-9A-Za-z]{1,18}", audience) is None
+    ):
         form.add_error(
             "dcr_registration_audience",
             "Enter the 1 to 18 character Base62 ASPSP identifier required by Open Banking DCR.",
@@ -3656,6 +4360,30 @@ def _dcr_redirect_uri_lines(value: object) -> tuple[str, ...]:
     return () if text is None else tuple(line.strip() for line in text.splitlines() if line.strip())
 
 
+def _overlay_ais_account_id(resource_ids: JsonObject, value: object) -> None:
+    """Overlay an edited consented account identifier onto AIS resource IDs.
+
+    The friendly field only ever displays the first ``accountIds`` entry, so an
+    edit is applied there while any further entries are preserved.
+
+    Args:
+        resource_ids: Mutable resource IDs object parsed from the advanced JSON.
+        value: Raw friendly-field value for the consented account identifier.
+    """
+    account_id = _cleaned_optional_string(value)
+    if account_id is None:
+        return
+    account_ids = resource_ids.get("accountIds")
+    if isinstance(account_ids, list) and account_ids:
+        first = account_ids[0]
+        if isinstance(first, dict):
+            first["accountId"] = account_id
+            return
+        account_ids[0] = {"accountId": account_id}
+        return
+    resource_ids["accountIds"] = [{"accountId": account_id}]
+
+
 def _set_object_from_fields_or_json(
     target: JsonObject,
     key: str,
@@ -3664,8 +4392,16 @@ def _set_object_from_fields_or_json(
     json_field: str,
     field_mapping: Mapping[str, str],
     label: str,
+    changed_fields: Collection[str] = (),
 ) -> None:
     """Set a nested object from friendly fields or an advanced JSON fallback.
+
+    The advanced JSON textarea is pre-filled from the current config, so it is
+    almost always submitted even when the participant never opened it. Treating
+    it as an unconditional override silently discarded edits made in the
+    friendly fields, so any friendly field the participant actually changed is
+    overlaid on top of the JSON base. Keys the friendly fields cannot represent
+    are preserved from the JSON.
 
     Args:
         target: Mutable object to update.
@@ -3674,166 +4410,23 @@ def _set_object_from_fields_or_json(
         json_field: Field containing advanced JSON fallback text.
         field_mapping: Mapping of nested config key to friendly form field.
         label: Human-readable JSON field label for validation messages.
+        changed_fields: Names of fields the participant actually edited.
 
     Raises:
         ValidationError: If the advanced JSON fallback is malformed.
     """
     raw_json = _cleaned_optional_string(cleaned_data.get(json_field))
     if raw_json is not None:
-        target[key] = _load_json_object(raw_json, label=label)
+        nested = _load_json_object(raw_json, label=label)
+        for config_key, field_name in field_mapping.items():
+            if field_name not in changed_fields:
+                continue
+            _set_optional_string(nested, config_key, cleaned_data.get(field_name))
+        target[key] = nested
         return
     nested = _nested_object_from_fields(cleaned_data, field_mapping)
     if nested:
         target[key] = nested
-
-
-def _config_from_grouped_fields(
-    cleaned_data: Mapping[str, object],
-    runtime_prompts: Iterable[WizardRuntimeInputPrompt],
-    config_visibility: ConfigVisibility,
-) -> JsonObject:
-    """Build a v2 config object from grouped form fields.
-
-    Args:
-        cleaned_data: Cleaned form values.
-        runtime_prompts: Runtime prompts rendered by the config step.
-        config_visibility: Scope-derived structured-field visibility.
-
-    Returns:
-        builder config object.
-
-    Raises:
-        ValidationError: If a typed runtime input value is malformed.
-    """
-    config: JsonObject = {}
-    _set_optional_string(config, "discoveryUrl", cleaned_data.get("discovery_url"))
-
-    oauth = _nested_object_from_fields(
-        cleaned_data,
-        {
-            "clientId": "oauth_client_id",
-            "redirectUri": "oauth_redirect_uri",
-            "authorizationEndpoint": "oauth_authorization_endpoint",
-            "issuer": "oauth_issuer",
-            "tokenEndpoint": "oauth_token_endpoint",
-            "resourceBaseUrl": "oauth_resource_base_url",
-            "responseType": "oauth_response_type",
-            "requestObjectSigningAlg": "oauth_request_object_signing_alg",
-        },
-    )
-    if oauth:
-        config["oauth"] = oauth
-
-    resource_server = _nested_object_from_fields(
-        cleaned_data,
-        {
-            "baseUrl": "resource_server_base_url",
-        },
-    )
-    if resource_server:
-        config["resourceServer"] = resource_server
-
-    signing = _nested_object_from_fields(
-        cleaned_data,
-        {
-            "signingCertificatePath": "signing_certificate_path",
-            "signingPrivateKeyPath": "signing_private_key_path",
-            "kid": "signing_kid",
-            "clientAssertionIssuer": "signing_client_assertion_issuer",
-            "clientAssertionSubject": "signing_client_assertion_subject",
-            "tokenEndpointAuthMethod": "signing_token_endpoint_auth_method",
-        },
-    )
-    if signing:
-        config["fapiSigning"] = signing
-
-    tls = _nested_object_from_fields(
-        cleaned_data,
-        {
-            "caBundlePath": "tls_ca_bundle_path",
-            "clientCertificatePath": "tls_client_certificate_path",
-            "clientPrivateKeyPath": "tls_client_private_key_path",
-        },
-    )
-    if tls:
-        config["tls"] = tls
-
-    if config_visibility.show_ais:
-        ais = _nested_object_from_fields(
-            cleaned_data,
-            {
-                "transactionFromDate": "ais_transaction_from_date",
-                "transactionToDate": "ais_transaction_to_date",
-            },
-        )
-        _set_optional_json_object(ais, "resourceIds", cleaned_data.get("ais_resource_ids_json"))
-        if ais:
-            config["ais"] = ais
-
-    if config_visibility.show_pis:
-        pis = _nested_object_from_fields(
-            cleaned_data,
-            {
-                "currencyOfTransfer": "pis_currency_of_transfer",
-                "requestedExecutionDateTime": "pis_requested_execution_date_time",
-                "firstPaymentDateTime": "pis_first_payment_date_time",
-            },
-        )
-        _set_optional_json_object(pis, "creditorAccount", cleaned_data.get("pis_creditor_account_json"))
-        _set_optional_json_object(
-            pis,
-            "internationalCreditorAccount",
-            cleaned_data.get("pis_international_creditor_account_json"),
-        )
-        _set_optional_json_object(pis, "instructedAmount", cleaned_data.get("pis_instructed_amount_json"))
-        _set_optional_json_object(
-            pis,
-            "standingOrderFrequency",
-            cleaned_data.get("pis_standing_order_frequency_json"),
-        )
-        if pis:
-            config["pis"] = pis
-        _set_optional_json_array(config, "conditionalProperties", cleaned_data.get("conditional_properties_json"))
-
-    if config_visibility.show_cbpii:
-        cbpii: JsonObject = {}
-        _set_optional_json_object(cbpii, "debtorAccount", cleaned_data.get("cbpii_debtor_account_json"))
-        if cbpii:
-            config["cbpii"] = cbpii
-
-    inputs: JsonObject = {}
-    for prompt in runtime_prompts:
-        value = _runtime_input_value_from_form(prompt, cleaned_data.get(prompt.name))
-        if value is not None:
-            inputs[prompt.input_id] = {"value": value}
-    if inputs:
-        config["inputs"] = inputs
-    return config
-
-
-def _runtime_input_value_from_form(prompt: WizardRuntimeInputPrompt, raw_value: object) -> JsonValue | None:
-    """Parse one runtime input from the grouped config form.
-
-    Args:
-        prompt: Runtime prompt carrying the expected input type.
-        raw_value: Submitted form value.
-
-    Returns:
-        Parsed JSON value, or ``None`` when the field is blank.
-
-    Raises:
-        ValidationError: If the value cannot be parsed as the prompt type.
-    """
-    if not isinstance(raw_value, str) or not raw_value.strip():
-        return None
-    value = raw_value.strip()
-    if prompt.input_type == "json":
-        return _load_json_value(value, label=prompt.label)
-    if prompt.input_type == "number":
-        return _load_json_number(value, label=prompt.label)
-    if prompt.input_type == "boolean":
-        return _load_json_boolean(value, label=prompt.label)
-    return value
 
 
 def _nested_object_from_fields(
@@ -3866,22 +4459,6 @@ def _set_optional_string(target: JsonObject, key: str, raw_value: object) -> Non
     value = _cleaned_optional_string(raw_value)
     if value is not None:
         target[key] = value
-
-
-def _set_optional_json_object(target: JsonObject, key: str, raw_value: object) -> None:
-    """Set ``target[key]`` from a JSON object form value when supplied.
-
-    Args:
-        target: Mutable JSON object to update.
-        key: Target key to set.
-        raw_value: Candidate JSON object text from cleaned form data.
-
-    Raises:
-        ValidationError: If the supplied value is malformed or not an object.
-    """
-    value = _cleaned_optional_string(raw_value)
-    if value is not None:
-        target[key] = _load_json_object(value, label=key)
 
 
 def _set_optional_json_array(target: JsonObject, key: str, raw_value: object) -> None:
@@ -4026,6 +4603,8 @@ def _plan_document_with_config(document: PlanDocumentV2, config: Mapping[str, Js
         execution_mode=document.execution_mode,
         endpoints=document.endpoints,
         dynamic_client_registration=document.dynamic_client_registration,
+        openapi_document_update=document.openapi_document_update,
+        execution_settings=document.execution_settings,
     )
 
 
@@ -4081,7 +4660,7 @@ def _scoped_business_plan_context(
 
 def _config_with_runtime_placeholders(
     config: Mapping[str, JsonValue],
-    requirements: Iterable[RuntimeInputRequirement | WizardRuntimeInputPrompt],
+    requirements: Iterable[RuntimeInputRequirement],
 ) -> JsonObject:
     """Return config with required missing runtime inputs set to placeholders.
 
@@ -4095,7 +4674,7 @@ def _config_with_runtime_placeholders(
     updated = _copy_json_mapping(config)
     current_values = _runtime_input_values_from_config(updated)
     for requirement in requirements:
-        if isinstance(requirement, RuntimeInputRequirement) and requirement.source != "plan":
+        if requirement.source != "plan":
             continue
         if not requirement.required:
             continue
@@ -4141,24 +4720,6 @@ def _runtime_placeholder(input_type: str) -> JsonValue:
     if input_type == "json":
         return {}
     return "placeholder"
-
-
-def _runtime_prompt_group(input_id: str, input_type: str) -> str:
-    """Return the grouped-config section for a runtime prompt.
-
-    Args:
-        input_id: Runtime input id.
-        input_type: Runtime input type.
-
-    Returns:
-        Participant-facing config group label.
-    """
-    normalized = input_id.lower()
-    if normalized.startswith("xfapi") or normalized.startswith("xcustomer") or normalized == "idempotencykey":
-        return "Request metadata and headers"
-    if input_type == "url" or "baseurl" in normalized or normalized.endswith("url"):
-        return "Resource server targets"
-    return "PSU authorisation/runtime inputs"
 
 
 def _runtime_input_values_from_config(config: Mapping[str, JsonValue]) -> JsonObject:

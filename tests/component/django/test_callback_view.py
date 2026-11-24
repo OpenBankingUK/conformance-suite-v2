@@ -41,6 +41,7 @@ class TestCallbackView:
         assert response.status_code == 200
         body = response.content.decode("utf-8")
         assert "Authorization code received" in body
+        assert 'aria-label="Beta release notice"' in body
         assert "window.setTimeout" in body
         assert "window.close()" in body
         # Raw values must never appear in the rendered HTML.

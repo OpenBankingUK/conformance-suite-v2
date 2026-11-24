@@ -3,7 +3,8 @@
 import logging
 from collections.abc import Sequence
 
-from conformance.cli import run
+from conformance.cli_cancellation import run_cancellable
+from conformance.cli_console import write_notice
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -15,6 +16,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     Returns:
         Process-style exit code from the CLI runner.
     """
+    return run_cancellable(lambda: _main(argv))
+
+
+def _main(argv: Sequence[str] | None) -> int:
+    write_notice("[CLI]", "Loading conformance suite...")
+    from conformance.cli import run
+
     return run(argv)
 
 

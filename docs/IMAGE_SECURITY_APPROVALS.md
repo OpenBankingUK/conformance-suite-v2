@@ -64,7 +64,7 @@ approval. To evaluate it, use a published preview image:
    ```bash
    docker scout vex get --verify --platform linux/amd64 \
      --output base-amd64.vex.json \
-     registry://dhi.io/python:3.14-debian13@sha256:<runtime-base-digest>
+     registry://dhi.io/python:3.14-alpine@sha256:<runtime-base-digest>
    ```
 
 2. Confirm the effect locally, without changing the registry:

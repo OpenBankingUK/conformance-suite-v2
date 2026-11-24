@@ -34,13 +34,15 @@ import logging
 import os
 import tempfile
 import threading
+import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, TextIO, cast
 
+from conformance.cli_console import Tone, colour_label, supports_colour
 from conformance.json_types import JsonObject, JsonValue
 from conformance.masking import MASKED_VALUE, SENSITIVE_JSON_KEYS, mask_headers, mask_json_value, mask_url_query
 
@@ -146,6 +148,10 @@ class ExecutionLogger:
     an optional atomic NDJSON write).
     """
 
+    def check_cancelled(self) -> None:
+        """Allow CLI workers to stop cooperatively; ordinary evidence sinks do not cancel."""
+        return
+
     def emit(
         self,
         event_type: EventType,
@@ -192,29 +198,54 @@ class NullExecutionLogger(ExecutionLogger):
 
 
 class PsuAuthorizationUrlConsoleLogger(ExecutionLogger):
-    """Decorator that mirrors PSU authorisation URLs to an interactive CLI.
+    """Decorator that mirrors manual PSU authorisation URLs to the CLI console.
 
     The wrapped logger remains the canonical execution-log sink. This
-    decorator only adds an operator-facing stderr line when the executor emits
-    a ``psu-authorization-url`` event and both console streams are attached to
-    a TTY, so non-interactive CI invocations and redirected log streams keep
-    their output quiet while the existing NDJSON log remains complete.
+    decorator adds an operator-facing stderr line whenever the executor emits
+    a manual-mode ``psu-authorization-url`` event, so the participant (or a
+    pipeline operator watching the job log) can open the URL and complete
+    consent. ANSI emphasis is only used when stderr is a TTY. Auto-approve-mode
+    events are not printed because no human action is needed.
+
+    With ``progress=True``, safe run/step lifecycle information and elapsed
+    time are also flushed to stderr. Request payloads and error messages are
+    never mirrored.
     """
 
-    def __init__(self, wrapped: ExecutionLogger, *, stdout: TextIO, stderr: TextIO) -> None:
+    def __init__(
+        self,
+        wrapped: ExecutionLogger,
+        *,
+        stdout: TextIO,
+        stderr: TextIO,
+        open_browser: Callable[[str], object] | None = None,
+        progress: bool = False,
+        cancellation_check: Callable[[], None] | None = None,
+    ) -> None:
         """Initialise the console mirroring decorator.
 
         Args:
             wrapped: Execution-log sink that receives every event unchanged.
-            stdout: Stream whose ``isatty()`` result contributes to the
-                interactive CLI decision.
-            stderr: Stream whose ``isatty()`` result contributes to the
-                interactive CLI decision and that receives the
-                participant-facing PSU URL line.
+            stdout: Standard output stream; retained for API compatibility.
+            stderr: Stream that receives the participant-facing PSU URL line.
+            open_browser: Optional best-effort callback (for example
+                :func:`webbrowser.open`) invoked with each manual PSU URL.
+                Failures are swallowed so a missing browser never fails a run.
+            progress: Whether to print safe run/step lifecycle progress.
+            cancellation_check: Optional CLI-owned check shared with execution workers.
         """
         self._wrapped = wrapped
         self._stdout = stdout
         self._stderr = stderr
+        self._open_browser = open_browser
+        self._progress = progress
+        self._started_at = time.perf_counter()
+        self._cancellation_check = cancellation_check
+
+    def check_cancelled(self) -> None:
+        """Raise CLI cancellation when signalled, including in executor threads."""
+        if self._cancellation_check is not None:
+            self._cancellation_check()
 
     def emit(
         self,
@@ -223,22 +254,74 @@ class PsuAuthorizationUrlConsoleLogger(ExecutionLogger):
         step_id: str | None = None,
         payload: Mapping[str, JsonValue] | None = None,
     ) -> None:
-        """Forward an event and mirror PSU authorisation URLs when interactive.
+        """Forward an event and mirror manual PSU authorisation URLs.
 
         Args:
             event_type: Event type from the closed taxonomy.
             step_id: Optional manifest step identifier.
             payload: Optional event-specific data. The wrapped logger applies
                 its normal masking policy; this decorator reads only the raw
-                ``url`` field needed for the browser hand-off line.
+                ``url`` and ``mode`` fields needed for the browser hand-off.
         """
+        self.check_cancelled()
         self._wrapped.emit(event_type, step_id=step_id, payload=payload)
-        if event_type != "psu-authorization-url" or not (self._stdout.isatty() and self._stderr.isatty()):
+        if self._progress:
+            self._write_progress(event_type, step_id=step_id, payload=payload)
+        if event_type != "psu-authorization-url":
             return
-        url = (payload or {}).get("url")
+        event_payload = payload or {}
+        if event_payload.get("mode") == "auto-approve":
+            return
+        url = event_payload.get("url")
         if not isinstance(url, str):
             return
-        self._stderr.write(f"\033[1m[PSU]\033[0m Open this URL to authorise: {url}\n")
+        label = colour_label("[PSU]", "info", enabled=supports_colour(self._stderr))
+        self._stderr.write(f"{label} Open this URL to authorise: {url}\n")
+        self._stderr.flush()
+        if self._open_browser is not None:
+            try:
+                self._open_browser(url)
+            except Exception:  # noqa: BLE001 - opening a browser is best-effort and must never fail the run.
+                logger.debug("Unable to open a browser for the PSU authorisation URL", exc_info=True)
+
+    def _write_progress(
+        self,
+        event_type: EventType,
+        *,
+        step_id: str | None,
+        payload: Mapping[str, JsonValue] | None,
+    ) -> None:
+        status = (payload or {}).get("status")
+        safe_status = status if status in ("passed", "failed", "warn", "skipped") else "completed"
+        if event_type == "run-started":
+            self._started_at = time.perf_counter()
+            message = "Run started"
+        elif event_type == "run-completed":
+            message = f"Run {safe_status}"
+        elif event_type in ("step-started", "step-completed") and step_id is not None:
+            # JSON quoting keeps identifiers on one line and escapes terminal controls.
+            identifier = json.dumps(step_id, ensure_ascii=True)
+            action = "started" if event_type == "step-started" else safe_status
+            message = f"Step {identifier} {action}"
+        elif event_type == "application-error":
+            message = "Execution error recorded; see the result and execution log for details"
+        else:
+            return
+        tone: Tone = "info"
+        if event_type in ("run-completed", "step-completed"):
+            status_tones: dict[str, Tone] = {
+                "passed": "passed",
+                "failed": "failed",
+                "warn": "warning",
+                "skipped": "skipped",
+            }
+            tone = status_tones.get(safe_status, "info")
+        elif event_type == "application-error":
+            tone = "failed"
+        label = colour_label(
+            f"[Run +{time.perf_counter() - self._started_at:.1f}s]", tone, enabled=supports_colour(self._stderr)
+        )
+        self._stderr.write(f"{label} {message}\n")
         self._stderr.flush()
 
     @property
@@ -354,16 +437,15 @@ class BufferedExecutionLogger(ExecutionLogger):
             delete=False,
         ) as tmp:
             tmp_path = Path(tmp.name)
-            for event in self.events():
-                tmp.write(json.dumps(event.to_json_object(), sort_keys=True))
-                tmp.write("\n")
-        try:
-            tmp_path.replace(path)
-        except Exception:
-            # Remove the temp file so a failed rename never leaves a
-            # potentially unmasked (developer-mode) artifact on disk.
-            tmp_path.unlink(missing_ok=True)
-            raise
+            try:
+                for event in self.events():
+                    tmp.write(json.dumps(event.to_json_object(), sort_keys=True))
+                    tmp.write("\n")
+                tmp.close()
+                tmp_path.replace(path)
+            finally:
+                tmp.close()
+                tmp_path.unlink(missing_ok=True)
 
     def to_ndjson_bytes(self) -> bytes:
         """Serialise the buffered events to NDJSON bytes.

@@ -51,6 +51,29 @@ _OPEN_BANKING_SIGNATURE_REGISTRY = JWSRegistry(
 """JWS registry accepting Open Banking critical protected headers."""
 
 
+_GENERATED_REQUEST_OBJECT_CLAIMS = frozenset(
+    {
+        "aud",
+        "claims",
+        "client_id",
+        "exp",
+        "iat",
+        "iss",
+        "jti",
+        "nbf",
+        "nonce",
+        "redirect_uri",
+        "request",
+        "request_uri",
+        "response_type",
+        "scope",
+        "state",
+        "sub",
+    }
+)
+"""Request-object claims owned by the signer; additional claims cannot replace them."""
+
+
 class JwtSigningError(ValueError):
     """Raised when the signing service cannot build a valid JWT."""
 
@@ -70,6 +93,11 @@ class RequestObjectSigningInput:
         nonce: OIDC nonce value bound to the authorisation request.
         openbanking_intent_id: Optional consent identifier copied into the
             Open Banking ``claims.id_token.openbanking_intent_id`` claim.
+        additional_claims: Participant-configured authorisation parameters
+            carried as top-level request-object claims. FAPI 1 Advanced Part 2
+            §5.2.2 requires authorisation servers to use only parameters inside
+            the signed request object. Names must not collide with claims the
+            signer generates.
     """
 
     issuer: str
@@ -81,6 +109,7 @@ class RequestObjectSigningInput:
     state: str
     nonce: str
     openbanking_intent_id: str | None = None
+    additional_claims: tuple[tuple[str, str | int | float | bool], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -202,6 +231,10 @@ class FapiSigningService:
                     }
                 }
             }
+        for claim_name, claim_value in request_object.additional_claims:
+            if claim_name in claims or claim_name.lower() in _GENERATED_REQUEST_OBJECT_CLAIMS:
+                raise JwtSigningError(f"request_object additional claim {claim_name!r} collides with a generated claim")
+            claims[claim_name] = claim_value
         token = _sign_ps256_jwt(
             self.signing_credentials.signing_private_key_pem,
             key_id=self.signing_config.key_id,

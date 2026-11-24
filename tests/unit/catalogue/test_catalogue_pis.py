@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from importlib.util import module_from_spec, spec_from_file_location
 from types import ModuleType
 from typing import cast
@@ -103,13 +104,14 @@ def _spec(
     specification_version: str | None = None,
 ) -> TestPlanSpec:
     merged_runtime_inputs = {**PIS_RUNTIME_INPUTS, **runtime_inputs}
+    effective_specification_version = specification_version or PIS_PAYMENT_CATALOGUE.key.specification_version
     return TestPlanSpec(
         schema_version="v1",
-        catalogue_key=PIS_PAYMENT_CATALOGUE.key,
+        catalogue_key=replace(PIS_PAYMENT_CATALOGUE.key, specification_version=effective_specification_version),
         security_profile="fapi1-advanced",
         implemented_endpoints=(endpoint,),
         runtime_inputs=merged_runtime_inputs,
-        specification_version=specification_version,
+        openapi_document_update={"4.0.0": "Update-5", "4.0.1": "Update-1"}.get(effective_specification_version),
     )
 
 
@@ -132,7 +134,9 @@ def _legacy_script_ids(manifest_name: str) -> tuple[str, ...]:
 
 
 def test_pis_payment_catalogue_key_and_version() -> None:
-    assert PIS_PAYMENT_CATALOGUE.key == CatalogueKey(standard="open-banking", version="v4.0", api="pis")
+    assert PIS_PAYMENT_CATALOGUE.key == CatalogueKey(
+        standard="open-banking", version="v4.0", api="pis", specification_version="4.0.0"
+    )
     assert PIS_PAYMENT_CATALOGUE.key == PIS_PAYMENT_CATALOGUE_KEY
     assert PIS_PAYMENT_CATALOGUE.catalogue_version == "2026.09.legacy-fcs-pis.2"
 
@@ -399,7 +403,6 @@ def test_compile_v4_filters_pis_v3_only_variants_and_keeps_schema_checks() -> No
                 resource_group="DomesticStandingOrders",
             ),
             runtime_inputs={"resourceBaseUrl": "https://rs.example.com"},
-            specification_version="4.0.1",
         ),
     )
 
@@ -409,7 +412,7 @@ def test_compile_v4_filters_pis_v3_only_variants_and_keeps_schema_checks() -> No
     assert "pis-v4-domestic-standing-order-read-with-number-and-final-date" not in selected_ids
     assert "pis-v4-domestic-standing-order-read-with-final-amount-only" not in selected_ids
     assert read_case.assertions[0].kind == "legacy_fcs"
-    assert read_case.assertions[0].rule["schemaDocument"] == "ob-read-write-v4.0-payment-initiation-openapi"
+    assert read_case.assertions[0].rule["schemaDocument"] == "ob-read-write/v4.0.0-Update-5/payment-initiation-openapi"
 
 
 def test_pis_v4_legacy_consent_scripts_map_to_consent_endpoints() -> None:

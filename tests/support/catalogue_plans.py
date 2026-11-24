@@ -27,7 +27,7 @@ from conformance.catalogue import (
     TestPlanSpec,
 )
 
-CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="ais")
+CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="ais", specification_version="4.0.1")
 """Catalogue key shared by the fixture catalogue and every fixture plan payload."""
 
 ACCOUNTS_ENDPOINT = EndpointRef(method="GET", path="/open-banking/v4.0/aisp/accounts")
@@ -153,6 +153,7 @@ def build_plan_spec(*, capabilities: tuple[str, ...] = ()) -> TestPlanSpec:
                 capability_ids=capabilities,
             ),
         ),
+        openapi_document_update="Update-1",
         runtime_inputs={
             "resourceBaseUrl": "https://rs.example.com",
             "accessToken": "secret-access-token",
@@ -178,7 +179,13 @@ def build_plan_spec_json(*, capabilities: tuple[str, ...] = ()) -> dict[str, obj
         endpoint["capabilities"] = list(capabilities)
     return {
         "schemaVersion": "v1",
-        "catalogue": {"standard": "open-banking", "version": "v4.0", "api": "ais"},
+        "catalogue": {
+            "standard": "open-banking",
+            "version": "v4.0",
+            "api": "ais",
+            "specificationVersion": "4.0.1",
+            "openApiDocumentUpdate": "Update-1",
+        },
         "securityProfile": "fapi1-advanced",
         "implementedEndpoints": [endpoint],
         "runtimeInputs": {
@@ -205,7 +212,12 @@ def build_canonical_plan_json(*, capabilities: tuple[str, ...] = ()) -> dict[str
         endpoint["capabilities"] = list(capabilities)
     return {
         "schemaVersion": "1.0",
-        "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI1_ADVANCED"},
+        "specification": {
+            "family": "OBL_READ_WRITE",
+            "version": "4.0.1",
+            "profile": "FAPI1_ADVANCED",
+            "openApiDocumentUpdate": "Update-1",
+        },
         "securityEnvironment": {
             "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
             "resourceBaseUrl": "https://rs.example.com",

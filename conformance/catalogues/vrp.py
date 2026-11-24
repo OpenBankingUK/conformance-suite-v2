@@ -24,6 +24,7 @@ from conformance.catalogue import (
 from conformance.catalogues.common import open_banking_request_headers_for
 from conformance.catalogues.read_write_v311 import build_v311_catalogue
 from conformance.json_types import JsonValue
+from conformance.openapi_documents import logical_read_write_document
 
 type _CatalogueFamily = Literal["vrp", "cvrp"]
 """Catalogue families represented in this module."""
@@ -61,7 +62,7 @@ _VRP_PRE_3111_SPECIFICATION_VERSIONS = ("3.1",)
 _VRP_3111_SPECIFICATION_VERSIONS = ("3.1.11",)
 """User-facing Read/Write versions represented by v3.1.11 VRP scripts."""
 
-_VRP_V40_SPECIFICATION_VERSIONS = ("4.0", "4.0.0", "4.0.1")
+_VRP_V40_SPECIFICATION_VERSIONS = ("4.0.0",)
 """User-facing Read/Write v4 versions represented by v4.0 VRP scripts."""
 
 _RESOURCE_BASE_URL = RuntimeInputRequirement(
@@ -989,7 +990,7 @@ def _build_vrp_schema_assertions(
                 description=f"Response body satisfies the legacy v4 VRP {expected_status} schema check.",
                 rule={
                     "source": "bundled_openapi",
-                    "document": "ob-read-write-v4.0-vrp-openapi",
+                    "document": logical_read_write_document("vrp-openapi"),
                     "schemaRef": schema_ref,
                     "legacyAssertionIds": ["legacy-schema-check"],
                 },
@@ -1304,7 +1305,7 @@ def _build_family_cases(family: _CatalogueFamily) -> tuple[CatalogueTestCase, ..
 
 
 VRP_LEGACY_FCS_CATALOGUE = TestCatalogue(
-    key=CatalogueKey(standard="open-banking", version="v4.0", api="vrp"),
+    key=CatalogueKey(standard="open-banking", version="v4.0", api="vrp", specification_version="4.0.0"),
     catalogue_version=_CATALOGUE_VERSION,
     test_cases=_build_family_cases("vrp"),
     capabilities=_build_family_capabilities("vrp"),
@@ -1315,7 +1316,7 @@ VRP_V31_LEGACY_FCS_CATALOGUE = build_v311_catalogue(VRP_LEGACY_FCS_CATALOGUE, ap
 """Dedicated Open Banking Read/Write v3.1.11 VRP catalogue."""
 
 CVRP_LEGACY_FCS_CATALOGUE = TestCatalogue(
-    key=CatalogueKey(standard="open-banking", version="v4.0", api="cvrp"),
+    key=CatalogueKey(standard="open-banking", version="v4.0", api="cvrp", specification_version="4.0.0"),
     catalogue_version=_CATALOGUE_VERSION,
     test_cases=_build_family_cases("cvrp"),
     capabilities=_build_family_capabilities("cvrp"),

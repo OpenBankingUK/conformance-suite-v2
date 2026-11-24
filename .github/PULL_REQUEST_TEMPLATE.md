@@ -8,3 +8,4 @@
 - [ ] `CHANGELOG.md` updated (feat / fix / hotfix / security changes only)
 - [ ] No hardcoded secrets or credentials
 - [ ] `uv.lock` regenerated if `pyproject.toml` changed
+- [ ] `[project].version` updated if this PR prepares a preview, beta, or GA image

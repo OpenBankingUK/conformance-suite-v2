@@ -21,50 +21,14 @@ from jsonschema import (  # type: ignore[import-untyped]  # jsonschema lacks bun
 )
 
 from conformance.json_types import JsonObject, JsonValue
+from conformance.openapi_documents import bundled_openapi_document_paths
 
 
 class SchemaValidationConfigurationError(Exception):
     """Raised when a configured response schema cannot be loaded or resolved."""
 
 
-_BUNDLED_OPENAPI_DOCUMENT_PATHS: dict[str, Path] = {
-    "ob-read-write-v3.1.11-account-info-openapi": (
-        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v3_1_11" / "account-info-openapi.json"
-    ),
-    "ob-read-write-v3.1.11-payment-initiation-openapi": (
-        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v3_1_11" / "payment-initiation-openapi.json"
-    ),
-    "ob-read-write-v3.1.11-confirmation-funds-openapi": (
-        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v3_1_11" / "confirmation-funds-openapi.json"
-    ),
-    "ob-read-write-v3.1.11-vrp-openapi": (
-        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v3_1_11" / "vrp-openapi.json"
-    ),
-    "ob-read-write-v4.0-account-info-openapi": (
-        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0" / "account-info-openapi.json"
-    ),
-    "ob-read-write-v4.0-payment-initiation-openapi": (
-        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0" / "payment-initiation-openapi.json"
-    ),
-    "ob-read-write-v4.0-confirmation-funds-openapi": (
-        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0" / "confirmation-funds-openapi.json"
-    ),
-    "ob-read-write-v4.0-vrp-openapi": (
-        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0" / "vrp-openapi.json"
-    ),
-    "ob-read-write-v4.0.1-account-info-openapi": (
-        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0_1" / "account-info-openapi.json"
-    ),
-    "ob-read-write-v4.0.1-payment-initiation-openapi": (
-        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0_1" / "payment-initiation-openapi.json"
-    ),
-    "ob-read-write-v4.0.1-confirmation-funds-openapi": (
-        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0_1" / "confirmation-funds-openapi.json"
-    ),
-    "ob-read-write-v4.0.1-vrp-openapi": (
-        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0_1" / "vrp-openapi.json"
-    ),
-}
+_BUNDLED_OPENAPI_DOCUMENT_PATHS: Mapping[str, Path] = bundled_openapi_document_paths()
 """Allowlisted bundled OpenAPI documents addressable by response schema assertions."""
 
 _REQUIRED_PROPERTY_MESSAGE_PATTERN = re.compile(r"'([^']+)' is a required property")

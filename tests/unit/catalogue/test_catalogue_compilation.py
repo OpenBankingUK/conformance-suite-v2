@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from conformance.catalogue import (
@@ -29,7 +31,7 @@ from conformance.json_types import JsonValue
 
 pytestmark = pytest.mark.unit
 
-CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="ais")
+CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="ais", specification_version="4.0.0")
 
 
 def _profile(*profiles: SecurityProfile) -> SecurityProfileApplicability:
@@ -111,13 +113,18 @@ def _spec(
     deselected: tuple[str, ...] = (),
     overrides: tuple[AssertionOverride, ...] = (),
 ) -> TestPlanSpec:
+    effective_specification_version = specification_version or CATALOGUE_KEY.specification_version
     return TestPlanSpec(
         schema_version="v1",
-        catalogue_key=CATALOGUE_KEY,
+        catalogue_key=replace(CATALOGUE_KEY, specification_version=effective_specification_version),
         security_profile="fapi1-advanced",
         implemented_endpoints=endpoints,
         runtime_inputs={} if runtime_inputs is None else runtime_inputs,
-        specification_version=specification_version,
+        openapi_document_update={
+            "3.1.11": "Release-5",
+            "4.0.0": "Update-5",
+            "4.0.1": "Update-1",
+        }.get(effective_specification_version),
         deselected_test_case_ids=deselected,
         assertion_overrides=overrides,
     )
@@ -214,7 +221,11 @@ def test_compile_filters_applicable_cases_by_specification_version() -> None:
     v31_case = _case("accounts-read-v31", endpoint_refs=(account_ref,), specification_versions=("3.1.11",))
     v40_case = _case("accounts-read-v40", endpoint_refs=(account_ref,), specification_versions=("4.0.1",))
 
-    compiled = compile_test_plan(_catalogue(v31_case, v40_case), _spec(specification_version="4.0.1"))
+    catalogue = _catalogue(v31_case, v40_case)
+    compiled = compile_test_plan(
+        replace(catalogue, key=replace(catalogue.key, specification_version="4.0.1")),
+        _spec(specification_version="4.0.1"),
+    )
 
     assert [case.test_case_id for case in compiled.test_cases] == ["accounts-read-v40"]
     decisions = {decision.test_case_id: decision for decision in compiled.traceability.applicability_decisions}
@@ -466,7 +477,7 @@ def test_canonical_resource_group_shorthand_expands_to_catalogue_endpoints() -> 
     )
     raw_spec: dict[str, JsonValue] = {
         "schemaVersion": "1.0",
-        "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1"},
+        "specification": {"family": "OBL_READ_WRITE", "version": "4.0.0", "openApiDocumentUpdate": "Update-5"},
         "securityEnvironment": {
             "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
             "resourceBaseUrl": "https://rs.example.com",
@@ -487,8 +498,8 @@ def test_canonical_resource_group_shorthand_expands_to_catalogue_endpoints() -> 
 
 
 def test_compile_test_plan_document_v2_spans_read_write_catalogue_areas() -> None:
-    ais_key = CatalogueKey(standard="open-banking", version="v4.0", api="ais")
-    pis_key = CatalogueKey(standard="open-banking", version="v4.0", api="pis")
+    ais_key = CatalogueKey(standard="open-banking", version="v4.0", api="ais", specification_version="4.0.0")
+    pis_key = CatalogueKey(standard="open-banking", version="v4.0", api="pis", specification_version="4.0.0")
     ais_ref = EndpointRef(method="GET", path="/open-banking/v4.0/aisp/accounts")
     pis_ref = EndpointRef(method="POST", path="/open-banking/v4.0/pisp/domestic-payments")
     ais_case = _case(
@@ -521,7 +532,8 @@ def test_compile_test_plan_document_v2_spans_read_write_catalogue_areas() -> Non
         "schemaVersion": "v2",
         "scheme": "open-banking-uk",
         "specification": "read-write",
-        "version": "4.0.1",
+        "version": "4.0.0",
+        "openApiDocumentUpdate": "Update-5",
         "securityProfile": "fapi1-advanced",
         "scope": {
             "resourceGroups": [
@@ -549,8 +561,9 @@ def test_compile_test_plan_document_v2_spans_read_write_catalogue_areas() -> Non
 
     assert compiled.catalogue_key == CatalogueKey(
         standard="open-banking-uk",
-        version="4.0.1",
+        version="4.0.0",
         api="read-write",
+        specification_version="4.0.0",
     )
     assert compiled.catalogue_version == "ais:ais.1; pis:pis.1"
     assert [case.test_case_id for case in compiled.test_cases] == [
@@ -574,12 +587,12 @@ def test_compile_test_plan_document_v2_spans_read_write_catalogue_areas() -> Non
 def test_compile_test_plan_document_v2_rejects_cvrp_resource_group_outside_open_banking_boundary() -> None:
     shared_ref = EndpointRef(method="POST", path="/domestic-vrp-consents")
     vrp_catalogue = _catalogue_with_key(
-        CatalogueKey(standard="open-banking", version="v4.0", api="vrp"),
+        CatalogueKey(standard="open-banking", version="v4.0", api="vrp", specification_version="4.0.0"),
         version="vrp.1",
         test_cases=(_case("vrp-consent-create", endpoint_refs=(shared_ref,)),),
     )
     cvrp_catalogue = _catalogue_with_key(
-        CatalogueKey(standard="open-banking", version="v4.0", api="cvrp"),
+        CatalogueKey(standard="open-banking", version="v4.0", api="cvrp", specification_version="4.0.0"),
         version="cvrp.1",
         test_cases=(_case("cvrp-consent-create", endpoint_refs=(shared_ref,)),),
     )
@@ -587,7 +600,8 @@ def test_compile_test_plan_document_v2_rejects_cvrp_resource_group_outside_open_
         "schemaVersion": "v2",
         "scheme": "open-banking-uk",
         "specification": "read-write",
-        "version": "4.0.1",
+        "version": "4.0.0",
+        "openApiDocumentUpdate": "Update-5",
         "securityProfile": "fapi1-advanced",
         "scope": {
             "resourceGroups": [
@@ -617,7 +631,8 @@ def test_compile_test_plan_document_v2_rejects_endpoint_outside_selected_boundar
         "schemaVersion": "v2",
         "scheme": "open-banking-uk",
         "specification": "read-write",
-        "version": "4.0.1",
+        "version": "4.0.0",
+        "openApiDocumentUpdate": "Update-5",
         "securityProfile": "fapi1-advanced",
         "scope": {
             "resourceGroups": [

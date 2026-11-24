@@ -4,16 +4,22 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import cast
+from typing import Literal, cast, get_args
 from uuid import uuid4
 
 from django.contrib.sessions.backends.base import SessionBase
 
 from conformance.catalogue import PlanExecutionMode, SecurityProfile
+from conformance.execution_settings import PsuAuthorizationModeSetting
 from conformance.json_types import JsonObject, JsonValue
-from conformance.specification_registry import derived_security_profile_for_boundary
+from conformance.specification_registry import (
+    derived_security_profile_for_boundary,
+    latest_openapi_document_update,
+    openapi_document_update_for_boundary,
+    specification_for_boundary,
+)
 
 _LOGGER = logging.getLogger(__name__)
 """Logger for malformed browser wizard draft state."""
@@ -26,6 +32,72 @@ _MAX_SESSION_DRAFTS = 5
 
 _DEFAULT_SECURITY_PROFILE: SecurityProfile = "fapi1-advanced"
 """Placeholder profile used only before a specification boundary is selected."""
+
+type PlanImportIssueKind = Literal["missing", "invalid", "unknown", "skipped", "notice"]
+"""Category of a field-level problem found while loading plan JSON into a draft."""
+
+_PLAN_IMPORT_ISSUE_KINDS: frozenset[str] = frozenset(get_args(PlanImportIssueKind.__value__))
+"""Accepted import-issue kinds when decoding session state."""
+
+type BuilderStepId = Literal["catalogue", "scope", "discovery", "security", "config"]
+"""Guided builder wizard step that the participant saves (review is not a saved step)."""
+
+BUILDER_STEP_IDS: tuple[BuilderStepId, ...] = get_args(BuilderStepId.__value__)
+"""Every saved builder step id, in declaration order."""
+
+
+@dataclass(frozen=True)
+class PlanImportIssue:
+    """One field-level problem found while loading test-plan JSON into a draft.
+
+    Attributes:
+        path: Human-readable JSON path, for example
+            ``securityEnvironment.discoveryUrl`` or ``resourceGroups[1]``.
+        ref: Object-key path used to match the issue against the draft's
+            unrepresented plan fields; empty for whole-plan notices.
+        kind: ``missing`` (required field absent), ``invalid`` (value kept but
+            fails validation), ``unknown`` (key not in the canonical schema),
+            ``skipped`` (value kept but could not be loaded into the builder),
+            or ``notice`` (whole-plan information).
+        message: Participant-facing explanation of the problem.
+    """
+
+    path: str
+    ref: tuple[str, ...]
+    kind: PlanImportIssueKind
+    message: str
+
+    def to_session_object(self) -> JsonObject:
+        """Serialise this issue into a Django-session-safe JSON object.
+
+        Returns:
+            JSON object stored with the draft.
+        """
+        return {"path": self.path, "ref": list(self.ref), "kind": self.kind, "message": self.message}
+
+    @classmethod
+    def from_session_object(cls, raw_value: object) -> PlanImportIssue | None:
+        """Decode an import issue from session state.
+
+        Args:
+            raw_value: Value read from the Django session.
+
+        Returns:
+            Parsed issue, or ``None`` when the value is malformed.
+        """
+        if not isinstance(raw_value, dict):
+            return None
+        path = raw_value.get("path")
+        kind = raw_value.get("kind")
+        message = raw_value.get("message")
+        if not (isinstance(path, str) and isinstance(message, str) and kind in _PLAN_IMPORT_ISSUE_KINDS):
+            return None
+        return cls(
+            path=path,
+            ref=_string_tuple(raw_value.get("ref")),
+            kind=cast(PlanImportIssueKind, kind),
+            message=message,
+        )
 
 
 @dataclass(frozen=True)
@@ -58,10 +130,30 @@ class BuilderDraft:
             across guided editing and import/export.
         metadata: Optional participant/export metadata retained with the plan.
         execution_mode: Canonical execution mode retained with the plan.
+        psu_authorization_mode: Manual or auto-approve PSU authorisation mode.
+        psu_authorization_headers: Header rows retained while editing, including in manual mode.
+        psu_authorization_parameters: Parameter rows applied in either PSU mode.
         discovery_metadata: Session-only non-secret discovery helper state used
             to prefill later config steps without exporting raw metadata.
         created_at: UTC ISO timestamp for draft creation.
         updated_at: UTC ISO timestamp for the latest draft write.
+        openapi_document_update: Selected Read/Write OpenAPI document update
+            (for example ``"Update-1"``), or ``None`` for specifications that
+            do not publish selectable updates or before step one is saved.
+        unrepresented_plan_fields: Canonical-shaped test-plan JSON overlay for
+            values the builder cannot represent (invalid values, unknown keys,
+            scope that could not be resolved). It is merged over the
+            builder-generated plan JSON so loaded values are never silently
+            replaced; normal launch validation fails until they are fixed.
+        import_issues: Field-level problems reported by the latest plan JSON
+            load, shown as review warnings.
+        invalid_field_values: Raw, non-secret values typed into a builder
+            step that failed format validation, keyed by step id then form
+            field name. They are kept so leaving a page never loses input,
+            shown again with their errors on that page, and listed on review.
+        saved_steps: Builder steps that have been saved (left) at least once,
+            or loaded from imported plan JSON. A saved step reports its issues
+            in the step bar even when it holds no data.
     """
 
     draft_id: str
@@ -81,6 +173,14 @@ class BuilderDraft:
     discovery_metadata: Mapping[str, JsonValue]
     created_at: str
     updated_at: str
+    psu_authorization_mode: PsuAuthorizationModeSetting = "manual"
+    psu_authorization_headers: tuple[tuple[str, str], ...] = ()
+    psu_authorization_parameters: tuple[tuple[str, JsonValue], ...] = ()
+    unrepresented_plan_fields: Mapping[str, JsonValue] = field(default_factory=dict)
+    import_issues: tuple[PlanImportIssue, ...] = ()
+    openapi_document_update: str | None = None
+    invalid_field_values: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    saved_steps: tuple[str, ...] = ()
 
     @classmethod
     def create(cls) -> BuilderDraft:
@@ -105,6 +205,9 @@ class BuilderDraft:
             dynamic_client_registration={},
             metadata={},
             execution_mode="certification",
+            psu_authorization_mode="manual",
+            psu_authorization_headers=(),
+            psu_authorization_parameters=(),
             discovery_metadata={},
             created_at=timestamp,
             updated_at=timestamp,
@@ -149,9 +252,17 @@ class BuilderDraft:
             dynamic_client_registration=_json_object(raw_value.get("dynamicClientRegistration")),
             metadata=_json_object(raw_value.get("metadata")),
             execution_mode=_execution_mode(raw_value.get("executionMode")),
+            psu_authorization_mode=_psu_authorization_mode(raw_value.get("psuAuthorizationMode")),
+            psu_authorization_headers=_string_pairs(raw_value.get("psuAuthorizationHeaders")),
+            psu_authorization_parameters=_scalar_pairs(raw_value.get("psuAuthorizationParameters")),
             discovery_metadata=_json_object(raw_value.get("discoveryMetadata")),
             created_at=created_at,
             updated_at=updated_at,
+            openapi_document_update=_optional_string(raw_value.get("openApiDocumentUpdate")),
+            unrepresented_plan_fields=_json_object(raw_value.get("unrepresentedPlanFields")),
+            import_issues=_import_issues(raw_value.get("importIssues")),
+            invalid_field_values=_invalid_field_values(raw_value.get("invalidFieldValues")),
+            saved_steps=_string_tuple(raw_value.get("savedSteps")),
         )
 
     def with_catalogue_boundary(
@@ -160,6 +271,7 @@ class BuilderDraft:
         scheme: str,
         specification: str,
         version: str,
+        openapi_document_update: str | None = None,
     ) -> BuilderDraft:
         """Return a copy with the specification boundary and derived profile saved.
 
@@ -167,6 +279,8 @@ class BuilderDraft:
             scheme: Selected standards scheme.
             specification: Selected standards specification family.
             version: Selected specification version.
+            openapi_document_update: Selected OpenAPI document update. When
+                omitted, the latest published update for the version is used.
 
         Returns:
             Updated draft with a refreshed ``updated_at`` timestamp.
@@ -176,24 +290,19 @@ class BuilderDraft:
                 exactly one security profile.
         """
         security_profile = derived_security_profile_for_boundary(scheme, specification, version)
-        return BuilderDraft(
-            draft_id=self.draft_id,
+        _definition, version_definition = specification_for_boundary(scheme, specification, version)
+        if openapi_document_update is None:
+            latest = latest_openapi_document_update(version_definition)
+            openapi_document_update = latest.update if latest is not None else None
+        selected_update = openapi_document_update_for_boundary(scheme, specification, version, openapi_document_update)
+        return replace(
+            self,
             scheme=scheme,
             specification=specification,
             version=version,
             security_profile=security_profile,
-            resource_group_ids=self.resource_group_ids,
-            endpoint_ids=self.endpoint_ids,
-            endpoint_capability_ids=self.endpoint_capability_ids,
-            config=self.config,
-            security_environment=self.security_environment,
-            business_test_data=self.business_test_data,
-            dynamic_client_registration=self.dynamic_client_registration,
-            metadata=self.metadata,
-            execution_mode=self.execution_mode,
-            discovery_metadata=self.discovery_metadata,
-            created_at=self.created_at,
             updated_at=_utc_timestamp(),
+            openapi_document_update=selected_update.update if selected_update is not None else None,
         )
 
     def with_scope_selection(
@@ -214,25 +323,13 @@ class BuilderDraft:
         Returns:
             Updated draft with a refreshed ``updated_at`` timestamp.
         """
-        return BuilderDraft(
-            draft_id=self.draft_id,
-            scheme=self.scheme,
-            specification=self.specification,
-            version=self.version,
-            security_profile=self.security_profile,
+        return replace(
+            self,
             resource_group_ids=resource_group_ids,
             endpoint_ids=endpoint_ids,
             endpoint_capability_ids={
                 endpoint_id: tuple(capability_ids) for endpoint_id, capability_ids in endpoint_capability_ids.items()
             },
-            config=self.config,
-            security_environment=self.security_environment,
-            business_test_data=self.business_test_data,
-            dynamic_client_registration=self.dynamic_client_registration,
-            metadata=self.metadata,
-            execution_mode=self.execution_mode,
-            discovery_metadata=self.discovery_metadata,
-            created_at=self.created_at,
             updated_at=_utc_timestamp(),
         )
 
@@ -246,23 +343,9 @@ class BuilderDraft:
         Returns:
             Updated draft with a refreshed ``updated_at`` timestamp.
         """
-        return BuilderDraft(
-            draft_id=self.draft_id,
-            scheme=self.scheme,
-            specification=self.specification,
-            version=self.version,
-            security_profile=self.security_profile,
-            resource_group_ids=self.resource_group_ids,
-            endpoint_ids=self.endpoint_ids,
-            endpoint_capability_ids=self.endpoint_capability_ids,
+        return replace(
+            self,
             config=_config_object(config),
-            security_environment=self.security_environment,
-            business_test_data=self.business_test_data,
-            dynamic_client_registration=self.dynamic_client_registration,
-            metadata=self.metadata,
-            execution_mode=self.execution_mode,
-            discovery_metadata=self.discovery_metadata,
-            created_at=self.created_at,
             updated_at=_utc_timestamp(),
         )
 
@@ -290,16 +373,8 @@ class BuilderDraft:
         Returns:
             Updated draft with a refreshed ``updated_at`` timestamp.
         """
-        return BuilderDraft(
-            draft_id=self.draft_id,
-            scheme=self.scheme,
-            specification=self.specification,
-            version=self.version,
-            security_profile=self.security_profile,
-            resource_group_ids=self.resource_group_ids,
-            endpoint_ids=self.endpoint_ids,
-            endpoint_capability_ids=self.endpoint_capability_ids,
-            config=self.config,
+        return replace(
+            self,
             security_environment=_json_object(security_environment),
             business_test_data=_json_object(business_test_data),
             dynamic_client_registration=(
@@ -309,8 +384,31 @@ class BuilderDraft:
             ),
             metadata=_json_object(metadata),
             execution_mode=execution_mode,
-            discovery_metadata=self.discovery_metadata,
-            created_at=self.created_at,
+            updated_at=_utc_timestamp(),
+        )
+
+    def with_psu_authorization_settings(
+        self,
+        *,
+        mode: PsuAuthorizationModeSetting,
+        headers: tuple[tuple[str, str], ...],
+        parameters: tuple[tuple[str, JsonValue], ...],
+    ) -> BuilderDraft:
+        """Return a copy with PSU authorisation settings saved.
+
+        Args:
+            mode: Manual or auto-approve authorisation mode.
+            headers: Header rows retained for later use, even in manual mode.
+            parameters: Typed authorisation parameter name/value pairs.
+
+        Returns:
+            Updated draft with a refreshed timestamp.
+        """
+        return replace(
+            self,
+            psu_authorization_mode=mode,
+            psu_authorization_headers=headers,
+            psu_authorization_parameters=parameters,
             updated_at=_utc_timestamp(),
         )
 
@@ -324,25 +422,66 @@ class BuilderDraft:
         Returns:
             Updated draft with a refreshed ``updated_at`` timestamp.
         """
-        return BuilderDraft(
-            draft_id=self.draft_id,
-            scheme=self.scheme,
-            specification=self.specification,
-            version=self.version,
-            security_profile=self.security_profile,
-            resource_group_ids=self.resource_group_ids,
-            endpoint_ids=self.endpoint_ids,
-            endpoint_capability_ids=self.endpoint_capability_ids,
-            config=self.config,
-            security_environment=self.security_environment,
-            business_test_data=self.business_test_data,
-            dynamic_client_registration=self.dynamic_client_registration,
-            metadata=self.metadata,
-            execution_mode=self.execution_mode,
+        return replace(
+            self,
             discovery_metadata=_json_object(discovery_metadata),
-            created_at=self.created_at,
             updated_at=_utc_timestamp(),
         )
+
+    def with_unrepresented_plan_fields(self, *, unrepresented_plan_fields: Mapping[str, JsonValue]) -> BuilderDraft:
+        """Return a copy with the unrepresented plan-JSON overlay replaced.
+
+        Args:
+            unrepresented_plan_fields: Canonical-shaped JSON overlay of values
+                the builder cannot represent.
+
+        Returns:
+            Updated draft with a refreshed ``updated_at`` timestamp.
+        """
+        return replace(
+            self,
+            unrepresented_plan_fields=_json_object(unrepresented_plan_fields),
+            updated_at=_utc_timestamp(),
+        )
+
+    def with_import_issues(self, *, import_issues: tuple[PlanImportIssue, ...]) -> BuilderDraft:
+        """Return a copy with plan-JSON import issues replaced.
+
+        Args:
+            import_issues: Field-level problems to show on review.
+
+        Returns:
+            Updated draft with a refreshed ``updated_at`` timestamp.
+        """
+        return replace(self, import_issues=tuple(import_issues), updated_at=_utc_timestamp())
+
+    def with_invalid_field_values(self, step: BuilderStepId, values: Mapping[str, str]) -> BuilderDraft:
+        """Return a copy with one step's retained invalid field values replaced.
+
+        Args:
+            step: Builder step whose values are replaced.
+            values: Raw typed values that failed format validation, keyed by
+                form field name; empty clears the step.
+
+        Returns:
+            Updated draft with a refreshed ``updated_at`` timestamp.
+        """
+        updated = {key: dict(value) for key, value in self.invalid_field_values.items() if key != step}
+        if values:
+            updated[step] = dict(values)
+        return replace(self, invalid_field_values=updated, updated_at=_utc_timestamp())
+
+    def with_steps_saved(self, *steps: BuilderStepId) -> BuilderDraft:
+        """Return a copy recording that ``steps`` have been saved.
+
+        Args:
+            steps: Builder steps to mark as saved.
+
+        Returns:
+            Updated draft; already-saved steps keep their position.
+        """
+        saved = tuple(dict.fromkeys((*self.saved_steps, *steps)))
+        return replace(self, saved_steps=saved)
 
     def to_session_object(self) -> JsonObject:
         """Serialise this draft into a Django-session-safe JSON object.
@@ -368,9 +507,17 @@ class BuilderDraft:
             "dynamicClientRegistration": _json_object(self.dynamic_client_registration),
             "metadata": _json_object(self.metadata),
             "executionMode": self.execution_mode,
+            "psuAuthorizationMode": self.psu_authorization_mode,
+            "psuAuthorizationHeaders": [[name, value] for name, value in self.psu_authorization_headers],
+            "psuAuthorizationParameters": [[name, value] for name, value in self.psu_authorization_parameters],
             "discoveryMetadata": _json_object(self.discovery_metadata),
+            "openApiDocumentUpdate": self.openapi_document_update,
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
+            "unrepresentedPlanFields": _json_object(self.unrepresented_plan_fields),
+            "importIssues": [issue.to_session_object() for issue in self.import_issues],
+            "invalidFieldValues": {step: dict(values) for step, values in self.invalid_field_values.items()},
+            "savedSteps": list(self.saved_steps),
         }
 
 
@@ -480,6 +627,28 @@ def _string_tuple(value: object) -> tuple[str, ...]:
     return tuple(values)
 
 
+def _invalid_field_values(value: object) -> dict[str, dict[str, str]]:
+    """Decode retained invalid field values from session state.
+
+    Args:
+        value: Session value.
+
+    Returns:
+        Mapping of known step id to field name to raw string; malformed
+        entries are dropped.
+    """
+    if not isinstance(value, dict):
+        return {}
+    decoded: dict[str, dict[str, str]] = {}
+    for step, fields in value.items():
+        if step not in BUILDER_STEP_IDS or not isinstance(fields, dict):
+            continue
+        strings = {name: raw for name, raw in fields.items() if isinstance(name, str) and isinstance(raw, str)}
+        if strings:
+            decoded[step] = strings
+    return decoded
+
+
 def _string_tuple_mapping(value: object) -> dict[str, tuple[str, ...]]:
     """Return a mapping of string tuples decoded from session JSON.
 
@@ -515,6 +684,20 @@ def _json_object(value: object) -> JsonObject:
     if not isinstance(value, Mapping):
         return {}
     return {key: _copy_json_value(item) for key, item in value.items() if isinstance(key, str) and _is_json_value(item)}
+
+
+def _import_issues(value: object) -> tuple[PlanImportIssue, ...]:
+    """Return import issues decoded from session JSON.
+
+    Args:
+        value: Raw value decoded from the Django session.
+
+    Returns:
+        Parsed issues; malformed entries are dropped.
+    """
+    if not isinstance(value, list):
+        return ()
+    return tuple(issue for issue in map(PlanImportIssue.from_session_object, value) if issue is not None)
 
 
 def _config_object(value: object) -> JsonObject:
@@ -585,3 +768,58 @@ def _utc_timestamp() -> str:
         UTC timestamp suitable for lexicographic ordering.
     """
     return datetime.now(UTC).isoformat()
+
+
+def _psu_authorization_mode(value: object) -> PsuAuthorizationModeSetting:
+    """Decode a PSU authorisation mode from session state.
+
+    Args:
+        value: Session value.
+
+    Returns:
+        Valid mode, defaulting to manual for malformed legacy state.
+    """
+    return value if value in ("manual", "auto-approve") else "manual"
+
+
+def _string_pairs(value: object) -> tuple[tuple[str, str], ...]:
+    """Decode ordered string pairs from session state.
+
+    Args:
+        value: Session value containing two-item lists.
+
+    Returns:
+        Valid string pairs, or an empty tuple for malformed state.
+    """
+    if not isinstance(value, list):
+        return ()
+    pairs: list[tuple[str, str]] = []
+    for item in value:
+        if not isinstance(item, list) or len(item) != 2 or not all(isinstance(part, str) for part in item):
+            return ()
+        pairs.append((item[0], item[1]))
+    return tuple(pairs)
+
+
+def _scalar_pairs(value: object) -> tuple[tuple[str, JsonValue], ...]:
+    """Decode ordered scalar name/value pairs from session state.
+
+    Args:
+        value: Session value containing two-item lists.
+
+    Returns:
+        Valid string-keyed JSON scalar pairs, or an empty tuple if malformed.
+    """
+    if not isinstance(value, list):
+        return ()
+    pairs: list[tuple[str, JsonValue]] = []
+    for item in value:
+        if (
+            not isinstance(item, list)
+            or len(item) != 2
+            or not isinstance(item[0], str)
+            or not isinstance(item[1], (str, int, float, bool))
+        ):
+            return ()
+        pairs.append((item[0], item[1]))
+    return tuple(pairs)

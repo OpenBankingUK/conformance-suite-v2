@@ -47,6 +47,7 @@ def test_compiled_pis_manifest_builds_signed_payment_bodies_and_authorisation_st
             ),
         ),
         runtime_inputs=runtime_inputs,
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(PIS_PAYMENT_CATALOGUE, spec)
 
@@ -176,6 +177,7 @@ def test_compiled_pis_manifest_builds_distinct_domestic_consent_parity_cases(tmp
             ),
         ),
         runtime_inputs=runtime_inputs,
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(PIS_PAYMENT_CATALOGUE, spec)
 
@@ -245,6 +247,7 @@ def test_compiled_pis_manifest_builds_legacy_scheduled_datetime_variant_bodies(t
             ),
         ),
         runtime_inputs=runtime_inputs,
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(PIS_PAYMENT_CATALOGUE, spec)
 
@@ -380,6 +383,7 @@ def test_compiled_pis_manifest_uses_per_flow_authorisation_code_tokens(tmp_path:
             ),
         ),
         runtime_inputs=runtime_inputs,
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(PIS_PAYMENT_CATALOGUE, spec)
 
@@ -475,6 +479,7 @@ def test_compiled_vrp_manifest_builds_split_signed_bodies_and_authorisation_step
             ),
         ),
         runtime_inputs=runtime_inputs,
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(VRP_LEGACY_FCS_CATALOGUE, spec)
 
@@ -487,11 +492,7 @@ def test_compiled_vrp_manifest_builds_split_signed_bodies_and_authorisation_step
 
     step_ids = [step.id for step in manifest.steps]
     assert "setup-token-vrp-payment-access" in step_ids
-    consent_flow_ids = (
-        "vrp-consent-create-awaiting-authorisation-v31-pre-3111",
-        "vrp-consent-create-awaiting-authorisation-v31-3111",
-        "vrp-consent-create-awaiting-authorisation-v4",
-    )
+    consent_flow_ids = ("vrp-consent-create-awaiting-authorisation-v4",)
     for consent_flow_id in consent_flow_ids:
         consent_step_id = f"{consent_flow_id}-request"
         authorisation_step_id = f"{consent_flow_id}-authorisation"
@@ -499,12 +500,6 @@ def test_compiled_vrp_manifest_builds_split_signed_bodies_and_authorisation_step
         assert step_ids.index(consent_step_id) < step_ids.index(authorisation_step_id)
         assert step_ids.index(authorisation_step_id) < step_ids.index(token_step_id)
 
-    assert step_ids.index("vrp-consent-create-awaiting-authorisation-v31-pre-3111-psu-payment-token") < step_ids.index(
-        "vrp-payment-create-initial-v31-pre-3111-request"
-    )
-    assert step_ids.index("vrp-consent-create-awaiting-authorisation-v31-3111-psu-payment-token") < step_ids.index(
-        "vrp-payment-create-initial-v31-3111-request"
-    )
     assert step_ids.index("vrp-consent-create-awaiting-authorisation-v4-psu-payment-token") < step_ids.index(
         "vrp-payment-create-initial-v4-request"
     )
@@ -529,49 +524,19 @@ def test_compiled_vrp_manifest_builds_split_signed_bodies_and_authorisation_step
     assert token_step.token_endpoint_auth_policy is not None
     assert isinstance(token_step.request.body, FormBody)
 
-    pre_3111_payment_step = next(
-        step for step in manifest.steps if step.id == "vrp-payment-create-initial-v31-pre-3111-request"
-    )
-    post_3111_payment_step = next(
-        step for step in manifest.steps if step.id == "vrp-payment-create-initial-v31-3111-request"
-    )
     v4_payment_step = next(step for step in manifest.steps if step.id == "vrp-payment-create-initial-v4-request")
-    assert isinstance(pre_3111_payment_step, ManifestStep)
-    assert isinstance(post_3111_payment_step, ManifestStep)
     assert isinstance(v4_payment_step, ManifestStep)
-    assert pre_3111_payment_step.request.url == "https://resource.example.com/open-banking/v3.1/pisp/domestic-vrps"
-    assert post_3111_payment_step.request.url == "https://resource.example.com/open-banking/v3.1/pisp/domestic-vrps"
     assert v4_payment_step.request.url == "https://resource.example.com/open-banking/v4.0/pisp/domestic-vrps"
-    assert pre_3111_payment_step.required_token_id == (
-        "vrp-consent-create-awaiting-authorisation-v31-pre-3111-psu-payment-access"  # noqa: S105
-    )
-    assert post_3111_payment_step.required_token_id == (
-        "vrp-consent-create-awaiting-authorisation-v31-3111-psu-payment-access"  # noqa: S105
-    )
     assert v4_payment_step.required_token_id == (
         "vrp-consent-create-awaiting-authorisation-v4-psu-payment-access"  # noqa: S105
     )
-    for payment_step in (pre_3111_payment_step, post_3111_payment_step, v4_payment_step):
-        assert payment_step.request.detached_jws == DetachedJwsPolicy(source="fapi-signing")
-        assert isinstance(payment_step.request.body, JsonBody)
+    assert v4_payment_step.request.detached_jws == DetachedJwsPolicy(source="fapi-signing")
 
-    assert isinstance(pre_3111_payment_step.request.body, JsonBody)
-    assert isinstance(post_3111_payment_step.request.body, JsonBody)
     assert isinstance(v4_payment_step.request.body, JsonBody)
-    pre_3111_body = pre_3111_payment_step.request.body.value
-    post_3111_body = post_3111_payment_step.request.body.value
     v4_body = v4_payment_step.request.body.value
-    assert isinstance(pre_3111_body, dict)
-    assert isinstance(post_3111_body, dict)
     assert isinstance(v4_body, dict)
-    pre_3111_data = pre_3111_body["Data"]
-    post_3111_data = post_3111_body["Data"]
     v4_data = v4_body["Data"]
-    assert isinstance(pre_3111_data, dict)
-    assert isinstance(post_3111_data, dict)
     assert isinstance(v4_data, dict)
-    assert "VRPType" not in pre_3111_data
-    assert post_3111_data["VRPType"] == "UK.OBIE.VRPType.Sweeping"
     assert v4_data["VRPType"] == "UK.OBIE.VRPType.Sweeping"
     v4_initiation = v4_data["Initiation"]
     assert isinstance(v4_initiation, dict)
@@ -613,7 +578,7 @@ def test_compiled_vrp_v4_manifest_excludes_v31_variants(tmp_path: Path) -> None:
             ),
         ),
         runtime_inputs=runtime_inputs,
-        specification_version="4.0.1",
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(VRP_LEGACY_FCS_CATALOGUE, spec)
 
@@ -667,7 +632,12 @@ def test_compiled_vrp_v4_manifest_keeps_single_psu_authorisation_and_one_of_asse
     document = parse_test_plan_document(
         {
             "schemaVersion": "1.0",
-            "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI1_ADVANCED"},
+            "specification": {
+                "family": "OBL_READ_WRITE",
+                "version": "4.0.1",
+                "profile": "FAPI1_ADVANCED",
+                "openApiDocumentUpdate": "Update-1",
+            },
             "securityEnvironment": {"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"},
             "resourceGroups": [
                 {

@@ -20,8 +20,9 @@ from conformance.catalogue import (
 from conformance.catalogues.common import with_open_banking_request_metadata
 from conformance.catalogues.read_write_v311 import build_v311_catalogue
 from conformance.json_types import JsonObject
+from conformance.openapi_documents import logical_read_write_document
 
-CBPII_CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="cbpii")
+CBPII_CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="cbpii", specification_version="4.0.0")
 """Canonical key for the Open Banking v4.0 CBPII catalogue."""
 
 CBPII_CATALOGUE_VERSION = "2026.7.23"
@@ -418,7 +419,7 @@ def _cbpii_schema_assertions(test_case: CatalogueTestCase) -> tuple[CatalogueAss
                 description=f"Response body satisfies the legacy v4 CBPII {expected_status} schema check.",
                 rule={
                     "source": "bundled_openapi",
-                    "document": "ob-read-write-v4.0-confirmation-funds-openapi",
+                    "document": logical_read_write_document("confirmation-funds-openapi"),
                     "schemaRef": schema_ref,
                     "legacyAssertionIds": ["legacy-schema-check"],
                 },

@@ -150,6 +150,7 @@ def test_dcr_full_endpoint_selection_compiles_all_cases_in_contract_order() -> N
         standard="open-banking-uk",
         version="3.4",
         api="dynamic-client-registration",
+        specification_version="3.4",
     )
     assert compiled.traceability.generated_test_case_ids == tuple(
         case.test_case_id for case in DCR_3_4_CATALOGUE.test_cases
@@ -267,7 +268,9 @@ def test_dcr_catalogue_pins_provenance_gates_and_sensitive_requirements() -> Non
 
 def test_read_write_catalogue_defaults_have_no_dcr_trace_metadata() -> None:
     """Generic DCR metadata additions leave existing catalogue defaults empty."""
-    empty_catalogue = TestCatalogue(key=CatalogueKey("example", "v1", "api"), catalogue_version="1", test_cases=())
+    empty_catalogue = TestCatalogue(
+        key=CatalogueKey("example", "v1", "api", "1.0"), catalogue_version="1", test_cases=()
+    )
 
     assert empty_catalogue.configuration_requirements == ()
     assert empty_catalogue.runtime_capabilities == ()
