@@ -31,3 +31,6 @@ local-config/
 
 # Local AI agent workspace (project context, decision log, plans, handover, dev log)
 ai/
+
+# Django collectstatic output (built inside the Docker image)
+staticfiles/

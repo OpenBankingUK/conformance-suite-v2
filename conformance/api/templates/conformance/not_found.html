@@ -5,6 +5,7 @@
     <title>Page not found</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
+    {% include "conformance/partials/htmx_script.html" %}
     <style>
         :root {
             color-scheme: light;
@@ -72,6 +73,7 @@
     </style>
 </head>
 <body>
+{% include "conformance/partials/beta_notice.html" %}
 <main>
     <section class="panel" aria-labelledby="not-found-heading">
         <h1 id="not-found-heading">Page not found</h1>

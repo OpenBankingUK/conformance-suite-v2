@@ -17,21 +17,20 @@ concurrency:
 jobs:
   resolve:
     name: Resolve candidate promotion
-    # GA publication from main is paused while the 2.0.0 MVP is in beta: main
-    # carries no approval gate, so its placeholder version would otherwise be
-    # published as GA on every push. Only beta and preview branches qualify.
+    # Main publishes betas; the resolver explicitly skips GA until it is enabled
+    # by a separate release decision. Preview branches retain their own channel.
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
-      (startsWith(github.event.workflow_run.head_branch, 'release/') ||
+      (github.event.workflow_run.head_branch == 'main' ||
        startsWith(github.event.workflow_run.head_branch, 'preview/'))
     runs-on: ubuntu-latest
     # Only cancel redundant *resolution* attempts for the same branch: once a
     # run has decided should_promote=true and handed off to `promote`, an
     # image publish can already be underway/complete, so the workflow must
     # not be cancellable past this point or a published image could be left
-    # without its Git tag, GitHub Release, or (GA) merge-back PR (see
+    # without its Git tag or GitHub Release (see
     # _finalize-release for the idempotent recovery this relies on).
     concurrency:
       group: auto-promote-resolve-${{ github.event.workflow_run.head_branch }}
@@ -72,7 +71,7 @@ jobs:
           fi
           git check-ref-format --branch "$SOURCE_BRANCH" >/dev/null
           case "$SOURCE_BRANCH" in
-            release/*|preview/*) ;;
+            main|preview/*) ;;
             *) echo "::error::Branch is not eligible for automatic publication." >&2; exit 1 ;;
           esac
           run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID")"
@@ -160,24 +159,6 @@ jobs:
             --published-versions-file published-versions.txt
           )
           decision="$(uv run python -m scripts.resolve_auto_promotion "${args[@]}")"
-          tag="$(jq -r '.tag // empty' <<<"$decision")"
-
-          if [[ -n "$tag" ]]; then
-            tag_refs="$(git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}")"
-            tag_target_sha="$(
-              awk -v ref="refs/tags/$tag" \
-                '$2 == ref "^{}" { peeled = $1 } $2 == ref { direct = $1 }
-                 END { if (peeled != "") print peeled; else if (direct != "") print direct }' \
-                <<<"$tag_refs"
-            )"
-            if [[ -n "$tag_target_sha" ]]; then
-              decision="$(
-                uv run python -m scripts.resolve_auto_promotion \
-                  "${args[@]}" --tag-target-sha "$tag_target_sha"
-              )"
-            fi
-          fi
-
           should_promote="$(jq -r '.should_promote' <<<"$decision")"
           channel="$(jq -r '.channel // empty' <<<"$decision")"
           environment_name="$(jq -r '.environment_name // empty' <<<"$decision")"
@@ -224,7 +205,7 @@ jobs:
     needs: [resolve, promote]
     if: >-
       needs.resolve.outputs.should_promote == 'true' &&
-      (needs.resolve.outputs.channel == 'ga' || needs.resolve.outputs.channel == 'beta')
+      needs.resolve.outputs.channel == 'beta'
     uses: ./.github/workflows/_finalize-release.yml
     with:
       channel: ${{ needs.resolve.outputs.channel }}

@@ -31,7 +31,7 @@
 
     <section aria-labelledby="resource-groups-heading">
         <h3 id="resource-groups-heading">Resource groups</h3>
-        <p class="helper">Select one or more groups that use the security environment from the previous step.</p>
+        <p class="helper">Select one or more groups to test. The selected groups decide which connection and security values are required to run.</p>
         <div class="resource-grid">
             {% for group in hierarchy.resource_groups %}
                 <label class="resource-card{% if group.selected %} selected{% endif %}">
@@ -52,8 +52,8 @@
 
     {% if selected_resource_groups %}
         <div class="scope-bulk-actions" aria-label="Endpoint bulk actions">
-            <button type="button" class="secondary" data-endpoint-bulk-action="select">Select all endpoints</button>
-            <button type="button" class="secondary" data-endpoint-bulk-action="deselect">Deselect all endpoints</button>
+            <button type="button" class="secondary" data-endpoint-bulk-action="select">Select all endpoints and features</button>
+            <button type="button" class="secondary" data-endpoint-bulk-action="deselect">Deselect conditional and optional endpoints and features</button>
         </div>
     {% endif %}
 
@@ -67,14 +67,27 @@
                         <article class="endpoint-card{% if endpoint.selected %} selected{% endif %}">
                             <div class="endpoint-heading">
                                 <label>
+                                    {% if endpoint.required %}
+                                        <input type="hidden" name="endpoints" value="{{ endpoint.id }}" data-requirement-kind="{{ endpoint.implementation_requirement.kind }}">
+                                    {% endif %}
                                     <input type="checkbox"
-                                           name="endpoints"
+                                           name="{% if endpoint.required %}locked_endpoint{% else %}endpoints{% endif %}"
                                            value="{{ endpoint.id }}"
-                                           {% if endpoint.selected %}checked{% endif %}>
+                                           {% if endpoint.selected %}checked{% endif %}
+                                           {% if endpoint.required %}disabled aria-disabled="true"{% endif %}>
                                     <strong>{{ endpoint.method }} {{ endpoint.display_path }}</strong>
                                 </label>
-                                <span class="chip">{% if endpoint.baseline %}Baseline{% else %}Optional endpoint{% endif %}</span>
+                                <span class="chip">{% if endpoint.implementation_requirement %}{{ endpoint.implementation_requirement.label }}{% else %}Not classified in endpoint tables{% endif %}{% if endpoint.required %} &middot; locked{% endif %}</span>
                             </div>
+                            {% if endpoint.implementation_requirement %}
+                                {% if endpoint.implementation_requirement.condition %}
+                                    <p class="helper">{{ endpoint.implementation_requirement.condition }}</p>
+                                {% endif %}
+                                <a class="helper" href="{{ endpoint.implementation_requirement.source_url }}" target="_blank" rel="noopener noreferrer">Specification endpoint table</a>
+                                {% if endpoint.implementation_requirement.disputed %}
+                                    <p class="helper">Other specification text differs; this label follows the individual endpoint table.</p>
+                                {% endif %}
+                            {% endif %}
 
                             {% if endpoint.selected %}
                                 <div class="features">

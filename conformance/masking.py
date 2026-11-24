@@ -22,7 +22,19 @@ from collections.abc import Collection, Mapping
 from typing import Final
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from conformance.credentials import scrub_pem
 from conformance.json_types import JsonObject, JsonValue
+
+__all__ = [
+    "MASKED_VALUE",
+    "SENSITIVE_HEADER_NAMES",
+    "SENSITIVE_JSON_KEYS",
+    "mask_form_fields",
+    "mask_free_text",
+    "mask_headers",
+    "mask_json_value",
+    "mask_url_query",
+]
 
 MASKED_VALUE: Final[str] = "***"
 """Literal placeholder written in place of any masked value."""
@@ -52,6 +64,14 @@ SENSITIVE_JSON_KEYS: Final[frozenset[str]] = frozenset(
         "password",
         "private_key",
         "privatekeys",
+        # Inline PEM/JWS credential material pasted or uploaded in the wizard
+        "cabundlepem",
+        "certificatepem",
+        "clientcertificatepem",
+        "clientprivatekeypem",
+        "privatekeypem",
+        "signingcertificatepem",
+        "signingprivatekeypem",
     }
 )
 """JSON object keys whose values must be masked, compared case-insensitively."""
@@ -93,7 +113,26 @@ def mask_json_value(value: JsonValue) -> JsonValue:
         return _mask_object(value)
     if isinstance(value, list):
         return [mask_json_value(item) for item in value]
+    if isinstance(value, str):
+        return mask_free_text(value)
     return value
+
+
+def mask_free_text(text: str) -> str:
+    """Remove inline credential material from an arbitrary free-text value.
+
+    Inline PEM credentials pasted in the browser wizard are not bound to a
+    known field name once they reach an error message or a log line, so key
+    matching alone cannot protect them. This strips any PEM block from the text
+    as defence in depth before it is persisted or displayed.
+
+    Args:
+        text: Free text that may embed inline credential material.
+
+    Returns:
+        The text with each PEM block replaced by a redaction placeholder.
+    """
+    return scrub_pem(text)
 
 
 def _mask_object(obj: Mapping[str, JsonValue]) -> JsonObject:
@@ -148,39 +187,60 @@ def mask_form_fields(fields: Mapping[str, str]) -> dict[str, str]:
 
 
 def mask_url_query(url: str, sensitive_params: Collection[str]) -> str:
-    """Return a URL with selected query-parameter values masked.
+    """Return a URL with selected query- and fragment-parameter values masked.
 
     OAuth 2.0 authorisation URLs can carry credential-bearing parameters,
-    notably FAPI/JAR ``request`` JWTs and ``client_assertion`` values. This
-    helper preserves the URL target and non-sensitive query parameters while
-    replacing selected values with :data:`MASKED_VALUE` so result-file evidence
-    can remain useful without exposing live credentials.
+    notably FAPI/JAR ``request`` JWTs and ``client_assertion`` values, and
+    OIDC hybrid-flow redirects (``response_type=code id_token``) return
+    ``code`` and ``id_token`` in the URL fragment. This helper preserves the
+    URL target and non-sensitive parameters while replacing selected values
+    with :data:`MASKED_VALUE` so result-file evidence can remain useful
+    without exposing live credentials.
 
     Args:
-        url: URL whose query string should be inspected.
-        sensitive_params: Lowercase query-parameter names whose values must be
+        url: URL whose query string and fragment should be inspected.
+        sensitive_params: Lowercase parameter names whose values must be
             replaced. Comparison is case-insensitive.
 
     Returns:
-        The original URL when no sensitive query parameters are present;
-        otherwise, a URL with sensitive query values replaced by
-        :data:`MASKED_VALUE`.
+        The original URL when no sensitive parameters are present; otherwise,
+        a URL with sensitive values replaced by :data:`MASKED_VALUE`.
     """
     parts = urlsplit(url)
-    if not parts.query:
+    if not parts.query and not parts.fragment:
         return url
 
     sensitive_names = {name.lower() for name in sensitive_params}
-    query_items = parse_qsl(parts.query, keep_blank_values=True)
+    masked_query, query_masked = _mask_parameter_string(parts.query, sensitive_names)
+    masked_fragment, fragment_masked = _mask_parameter_string(parts.fragment, sensitive_names)
+    if not query_masked and not fragment_masked:
+        return url
+    return urlunsplit(
+        parts._replace(
+            query=masked_query if query_masked else parts.query,
+            fragment=masked_fragment if fragment_masked else parts.fragment,
+        )
+    )
+
+
+def _mask_parameter_string(encoded: str, sensitive_names: Collection[str]) -> tuple[str, bool]:
+    """Mask sensitive values in a ``name=value&...`` string.
+
+    Args:
+        encoded: URL query or fragment text.
+        sensitive_names: Lower-case parameter names to mask.
+
+    Returns:
+        The re-encoded string and whether any value was masked.
+    """
+    if not encoded:
+        return encoded, False
     masked_items: list[tuple[str, str]] = []
     masked_any = False
-    for name, value in query_items:
+    for name, value in parse_qsl(encoded, keep_blank_values=True):
         if name.lower() in sensitive_names:
             masked_items.append((name, MASKED_VALUE))
             masked_any = True
         else:
             masked_items.append((name, value))
-
-    if not masked_any:
-        return url
-    return urlunsplit(parts._replace(query=urlencode(masked_items, safe="*")))
+    return urlencode(masked_items, safe="*"), masked_any

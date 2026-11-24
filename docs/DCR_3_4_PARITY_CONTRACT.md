@@ -124,11 +124,15 @@ curl --fail-with-body -H 'Content-Type: application/json' \
 ```
 
 The REST API is loopback-only by default. DCR file references name files already
-provisioned inside the running host/container; the API never accepts inline PEM,
-SSA, client-secret, registration-token, grant-token, assertion, authorization,
-or token-response material.
+provisioned inside the running host/container. The shared canonical credential
+contract also accepts supported inline PEM/SSA fields, one source per credential;
+requests or exports containing these secrets must be protected. See the
+[Usage guide](USAGE_GUIDE.md#browser-and-rest-launch) for local server transport,
+REST lifecycle and evidence retrieval. The HTTP example above assumes
+`make serve`; Docker and `make dev` use HTTPS.
 
-Required shared configuration:
+Required shared configuration (path keys shown; supported inline alternatives
+are listed below):
 
 - `securityEnvironment.discoveryUrl`;
 - `securityEnvironment.clientAuthMethod`;
@@ -142,6 +146,10 @@ Required shared configuration:
 signing-certificate, transport subject-DN, numeric-OID, and disable-keepalive
 values are optional explicit overrides; derivation is preferred.
 Every path is absolute and must reference an existing local file before launch.
+Supported inline alternatives include `securityEnvironment.signingPrivateKeyPem`,
+`securityEnvironment.mtls.certificatePem` / `privateKeyPem` / `caBundlePem`,
+and `dynamicClientRegistration.softwareStatementAssertion` /
+`signingCertificatePem`. Use either a path or its inline alternative, never both.
 
 Endpoint combinations are POST alone or POST plus any combination of GET, PUT,
 and DELETE. POST cannot be unchecked. GET/PUT/DELETE gates are independent, but
@@ -167,10 +175,10 @@ DCR-only values live under `dynamicClientRegistration`.
 | `spec_version` | `specification.version` | Must be `3.4` |
 | `wellknown_endpoint` | `securityEnvironment.discoveryUrl` | Reuse global discovery |
 | `kid` | `securityEnvironment.signingKeyId` | Reuse global signing metadata |
-| `private_key` | `securityEnvironment.signingPrivateKeyPath` | File reference; never inline |
-| `transport_cert` | `securityEnvironment.mtls.certificatePath` | Reuse global mTLS material |
-| `transport_key` | `securityEnvironment.mtls.privateKeyPath` | File reference; never inline |
-| `transport_root_cas` | `securityEnvironment.mtls.caBundlePath` | Convert the PEM array to a bundle reference |
+| `private_key` | `securityEnvironment.signingPrivateKeyPath` or `signingPrivateKeyPem` | File reference, or inline PEM supplied by paste or upload; exactly one |
+| `transport_cert` | `securityEnvironment.mtls.certificatePath` or `certificatePem` | Reuse global mTLS material, as a path or inline PEM |
+| `transport_key` | `securityEnvironment.mtls.privateKeyPath` or `privateKeyPem` | File reference, or inline PEM supplied by paste or upload; exactly one |
+| `transport_root_cas` | `securityEnvironment.mtls.caBundlePath` or `caBundlePem` | Convert the PEM array to a bundle reference, or supply the concatenated PEM inline |
 | Discovery auth methods/algorithms | `securityEnvironment.clientAuthMethod` / `clientAuthSigningAlgorithm` | Select an advertised executable method |
 | `brand`, `environment` | `metadata.brandName`, `metadata.environmentName` | Reuse reporting metadata |
 | `get_implemented`, `put_implemented`, `delete_implemented` | Top-level endpoint selections | Replace booleans with shared endpoint scope |

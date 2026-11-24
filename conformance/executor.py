@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import re
 import secrets
@@ -13,8 +14,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import cast
-from urllib.parse import urlencode, urlsplit
+from typing import Final, cast
+from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 
 import httpx
 
@@ -51,6 +52,7 @@ from conformance.context import (
 from conformance.dcr_execution import DcrCatalogueExecutionAdapter
 from conformance.execution_log import ExecutionLogger, NullExecutionLogger, is_developer_mode_enabled, new_run_id
 from conformance.execution_schedule import ExecutionGroup, build_execution_schedule
+from conformance.execution_settings import PlanExecutionSettings, PsuParameterValue, parameter_query_value
 from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
@@ -78,7 +80,14 @@ from conformance.manifest import (
     V1Step,
     validate_header_value,
 )
-from conformance.masking import SENSITIVE_JSON_KEYS, mask_form_fields, mask_headers, mask_json_value, mask_url_query
+from conformance.masking import (
+    MASKED_VALUE,
+    SENSITIVE_JSON_KEYS,
+    mask_form_fields,
+    mask_headers,
+    mask_json_value,
+    mask_url_query,
+)
 from conformance.model_bank_config import FapiSigningConfig
 from conformance.plan_configuration import parse_dcr_execution_runtime_inputs
 from conformance.psu_authorization import (
@@ -89,6 +98,7 @@ from conformance.psu_authorization import (
 )
 from conformance.response_signature import ResponseSignatureValidationError, validate_ob_response_signature
 from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
+from conformance.run_config_requirements import RunConfigRequirement
 from conformance.signing_credentials import SigningCredentialError, load_signing_credentials
 from conformance.signing_service import (
     ClientAssertionSigningInput,
@@ -542,6 +552,12 @@ def run_compiled_test_plan(
                 "standard": compiled_plan.catalogue_key.standard,
                 "version": compiled_plan.catalogue_key.version,
                 "api": compiled_plan.catalogue_key.api,
+                "specificationVersion": compiled_plan.catalogue_key.specification_version,
+                **(
+                    {"openApiDocumentUpdate": compiled_plan.traceability.openapi_document_update.update}
+                    if compiled_plan.traceability.openapi_document_update is not None
+                    else {}
+                ),
                 "catalogueVersion": compiled_plan.catalogue_version,
             },
         },
@@ -654,8 +670,69 @@ def _compiled_plan_to_manifest(
         schema_version="v1",
         name=catalogue_name,
         certification_coverage="complete",
-        steps=tuple(steps),
+        steps=_apply_psu_execution_settings(tuple(steps), compiled_plan.execution_settings),
     )
+
+
+def _apply_psu_execution_settings(
+    steps: tuple[V1Step, ...],
+    settings: PlanExecutionSettings,
+) -> tuple[V1Step, ...]:
+    """Apply plan-level PSU authorisation settings to every PSU step.
+
+    Custom headers are attached only in auto-approve mode, so manual-mode browser
+    redirects never carry them, and no other step type is changed.
+
+    Args:
+        steps: Synthetic manifest steps built from the compiled plan.
+        settings: Plan ``execution`` settings.
+
+    Returns:
+        Steps with PSU authorisation mode, headers, and parameters applied.
+    """
+    psu_settings = settings.psu_authorization
+    if psu_settings.is_default:
+        return steps
+    headers = psu_settings.headers if psu_settings.mode == "auto-approve" else ()
+    return tuple(
+        replace(
+            step,
+            mode=psu_settings.mode,
+            custom_headers=headers,
+            custom_parameters=psu_settings.parameters,
+        )
+        if isinstance(step, PsuAuthorizationStep)
+        else step
+        for step in steps
+    )
+
+
+def compiled_plan_requires_psu_callback(compiled_plan: CompiledTestPlan) -> bool:
+    """Return whether a compiled plan will wait for a manual PSU callback.
+
+    Used by the CLI to decide whether to start its HTTPS callback listener
+    before execution. Auto-approve PSU authorisation captures the redirect
+    directly and never needs the listener.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to inspect.
+
+    Returns:
+        ``True`` when the plan contains PSU authorisation steps and the plan's
+        PSU authorisation mode is ``manual``.
+    """
+    if compiled_plan.execution_settings.psu_authorization.mode != "manual":
+        return False
+    for test_case in compiled_plan.test_cases:
+        for request_step in test_case.request_steps:
+            if request_step.step_id == _AIS_CONSENT_CREATE_STEP_ID:
+                return True
+            if any(
+                isinstance(step, PsuAuthorizationStep)
+                for step in compiled_plan_synthetic_inline_steps(compiled_plan, request_step)
+            ):
+                return True
+    return False
 
 
 def compiled_plan_synthetic_setup_steps(compiled_plan: CompiledTestPlan) -> tuple[ManifestStep, ...]:
@@ -686,6 +763,102 @@ def compiled_plan_synthetic_inline_steps(
         Synthetic runtime steps inserted immediately after ``request_step``.
     """
     return _catalogue_inline_authorization_steps(compiled_plan, request_step)
+
+
+_CONFIG_OAUTH_PLACEHOLDER_PATTERN = re.compile(r"\$\{config\.oauth\.([A-Za-z]+)\}")
+"""``${config.oauth.<field>}`` placeholder in generated runtime steps."""
+
+_CONFIG_OAUTH_REQUIREMENTS: Mapping[str, RunConfigRequirement] = {
+    "clientId": "oauth.clientId",
+    "redirectUri": "oauth.redirectUri",
+    "authorizationEndpoint": "oauth.authorizationEndpoint",
+    "issuer": "oauth.issuer",
+    "tokenEndpoint": "oauth.tokenEndpoint",
+}
+"""OAuth placeholders that have no runner default; responseType and the
+request-object alg fall back to defaults, so they are never required."""
+
+
+def compiled_plan_run_config_requirements(compiled_plan: CompiledTestPlan) -> frozenset[RunConfigRequirement]:
+    """Return the participant config a compiled Read/Write plan needs to execute.
+
+    Mirrors :func:`_compiled_plan_to_manifest` without resolving runtime
+    inputs: OAuth 2.0 client-credentials and authorisation-code token steps,
+    PSU authorisation steps (FAPI JAR request objects), detached JWS
+    (``x-jws-signature``) on write requests, protected-resource URLs, OpenID
+    discovery fetches, and response-signature checks.
+
+    Args:
+        compiled_plan: Compiled catalogue plan.
+
+    Returns:
+        Runner dependencies the plan's generated steps read from config.
+    """
+    requirements: set[RunConfigRequirement] = set()
+    runtime_steps: list[V1Step] = list(_catalogue_synthetic_token_steps(compiled_plan))
+    for test_case in compiled_plan.test_cases:
+        if test_case.response_signature_required:
+            requirements.add("discoveryUrl")
+        for request_step in test_case.request_steps:
+            if request_step.step_id == _AIS_ACCOUNT_ACCESS_TOKEN_STEP_ID:
+                runtime_steps.extend(
+                    _ais_authorization_code_token_step(profile=profile)
+                    for profile in _compiled_plan_ais_permission_profiles(compiled_plan)
+                )
+                continue
+            if request_step.path == "/.well-known/openid-configuration":
+                requirements.add("discoveryUrl")
+            else:
+                requirements.add("resourceBaseUrl")
+            if _catalogue_detached_jws_policy(request_step) is not None:
+                requirements.add("fapiSigning")
+            if _catalogue_token_endpoint_auth_policy(request_step) is not None:
+                requirements.add("tokenEndpointAuth")
+            if request_step.step_id == _AIS_CONSENT_CREATE_STEP_ID:
+                runtime_steps.extend(
+                    _ais_psu_authorization_step(profile=profile)
+                    for profile in _compiled_plan_ais_permission_profiles(compiled_plan)
+                )
+                continue
+            runtime_steps.extend(compiled_plan_synthetic_inline_steps(compiled_plan, request_step))
+    for step in runtime_steps:
+        requirements.update(_runtime_step_config_requirements(step))
+    return frozenset(requirements)
+
+
+def _runtime_step_config_requirements(step: V1Step) -> set[RunConfigRequirement]:
+    """Return config dependencies of one generated token or PSU step.
+
+    Args:
+        step: Synthetic runtime step generated for a compiled plan.
+
+    Returns:
+        OAuth placeholders it references, plus the FAPI signing group when it
+        signs a client assertion, request object, or detached JWS.
+    """
+    requirements: set[RunConfigRequirement] = set()
+    if isinstance(step, PsuAuthorizationStep):
+        texts: list[str | None] = [step.authorization_endpoint, step.client_id, step.redirect_uri]
+        if step.request_object is not None:
+            requirements.add("requestObjectSigning")
+            if isinstance(step.request_object, GeneratedRequestObject):
+                texts.append(step.request_object.audience)
+    else:
+        texts = [step.request.url]
+        if isinstance(step.request.body, FormBody):
+            texts.extend(step.request.body.fields.values())
+        if step.token_endpoint_auth_policy is not None:
+            requirements.add("tokenEndpointAuth")
+        if step.request.detached_jws is not None:
+            requirements.add("fapiSigning")
+    for text in texts:
+        if text is None:
+            continue
+        for field_name in _CONFIG_OAUTH_PLACEHOLDER_PATTERN.findall(text):
+            requirement = _CONFIG_OAUTH_REQUIREMENTS.get(field_name)
+            if requirement is not None:
+                requirements.add(requirement)
+    return requirements
 
 
 def _catalogue_synthetic_token_steps(compiled_plan: CompiledTestPlan) -> tuple[ManifestStep, ...]:
@@ -2813,23 +2986,30 @@ def _execute_v1_execution_groups_concurrently(
 
     max_workers = min(len(schedule_execution_groups), _MAX_EXECUTION_GROUP_WORKERS)
     ordered_futures: list[Future[list[StepResult]]] = []
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for execution_group in schedule_execution_groups:
-            ordered_futures.append(
-                executor.submit(
-                    _execute_v1_group,
-                    execution_group.steps,
-                    setup_context,
-                    client,
-                    execution_logger,
-                    run_id,
-                    auth_session_store,
-                    fapi_signing_config,
-                    fapi_signing_service,
-                    mtls_client_configured,
-                    response_signature_jwks_cache,
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    try:
+        with executor:
+            for execution_group in schedule_execution_groups:
+                ordered_futures.append(
+                    executor.submit(
+                        _execute_v1_group,
+                        execution_group.steps,
+                        setup_context,
+                        client,
+                        execution_logger,
+                        run_id,
+                        auth_session_store,
+                        fapi_signing_config,
+                        fapi_signing_service,
+                        mtls_client_configured,
+                        response_signature_jwks_cache,
+                    )
                 )
-            )
+    except BaseException:
+        # A signal can interrupt the context manager's join. Finish worker
+        # cleanup before the caller closes their shared HTTP client.
+        executor.shutdown(wait=True, cancel_futures=True)
+        raise
 
     completed_steps: list[StepResult] = []
     for future in ordered_futures:
@@ -2960,6 +3140,7 @@ def _apply_token_endpoint_auth_policy(
     fapi_signing_service: _LazyFapiSigningService | None,
     resolved_url: str,
     mtls_client_configured: bool,
+    resolved_headers: Mapping[str, str] | None = None,
 ) -> dict[str, str] | None:
     """Apply runtime FAPI token-endpoint auth to a resolved form request.
 
@@ -2972,6 +3153,7 @@ def _apply_token_endpoint_auth_policy(
         resolved_url: Placeholder-resolved token endpoint URL.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured.
+        resolved_headers: Resolved headers checked for conflicting authentication.
 
     Returns:
         Final form field mapping to dispatch, or ``None`` when the step has no
@@ -2997,7 +3179,7 @@ def _apply_token_endpoint_auth_policy(
     if (
         fapi_signing_config.token_endpoint_auth_method == "private_key_jwt"  # noqa: S105 - FAPI auth-method enum, not a secret
     ):
-        conflicting_fields = [
+        conflicting_fields: list[str] = [
             field_name
             for field_name in ("client_assertion", "client_assertion_type")
             if field_name in resolved_form_body
@@ -3019,6 +3201,17 @@ def _apply_token_endpoint_auth_policy(
         return authenticated_form_body
 
     if fapi_signing_config.token_endpoint_auth_method == "tls_client_auth":  # noqa: S105 - FAPI auth-method enum, not a secret
+        if any(name.lower() == "authorization" for name in (resolved_headers or {})):
+            raise ValueError("TLS client authentication forbids an Authorization header")
+        conflicting_fields = sorted(
+            {"client_assertion", "client_assertion_type", "client_secret"} & resolved_form_body.keys()
+        )
+        if conflicting_fields:
+            raise ValueError("TLS client authentication forbids form fields: " + ", ".join(conflicting_fields))
+        if not resolved_form_body.get("client_id", "").strip():
+            raise ValueError("TLS client authentication requires client_id")
+        if urlsplit(resolved_url).scheme != "https":
+            raise ValueError("TLS client authentication requires an HTTPS token endpoint")
         if not mtls_client_configured:
             raise ValueError("Token endpoint auth policy requires a configured TLS client certificate and private key")
         return dict(resolved_form_body)
@@ -3044,7 +3237,7 @@ def _execute_v1_psu_step(
     Args:
         manifest_step: Parsed PSU authorisation step to execute.
         context: Current execution context with earlier step records.
-        client: Preconfigured synchronous HTTP client. Used by headless mode
+        client: Preconfigured synchronous HTTP client. Used by auto-approve mode
             to issue the authorisation request with redirect following disabled.
         run_id: Run identifier used to scope the auth-session registration.
         auth_session_store: Store used to register and poll the session.
@@ -3100,12 +3293,12 @@ def _execute_v1_psu_step_inner(
     clock: Callable[[], float],
     sleep: Callable[[float], None],
 ) -> tuple[StepResult, ExecutionContext]:
-    """Run the PSU authorisation flow (manual or headless) without lifecycle wrapper events.
+    """Run the PSU authorisation flow (manual or auto-approve) without lifecycle wrapper events.
 
     Args:
         manifest_step: Parsed PSU authorisation step to execute.
         context: Current execution context with earlier step records.
-        client: Preconfigured synchronous HTTP client. Used by headless mode
+        client: Preconfigured synchronous HTTP client. Used by auto-approve mode
             to issue the authorisation request with redirect following disabled.
         run_id: Run identifier used to scope the auth-session registration.
         auth_session_store: Store used to register and poll the session.
@@ -3281,6 +3474,7 @@ def _execute_v1_psu_step_inner(
         state=session.state,
         nonce=resolved_nonce,
         request_object=resolved_request_object,
+        extra_query_parameters=_psu_query_parameters(manifest_step),
     )
     result_url = _mask_result_url_query(authorization_url)
     request_record = RequestRecord(method="GET", url=result_url)
@@ -3301,8 +3495,8 @@ def _execute_v1_psu_step_inner(
         },
     )
 
-    if manifest_step.mode == "headless":
-        return _execute_headless_psu_authorization(
+    if manifest_step.mode == "auto-approve":
+        return _execute_auto_approve_psu_authorization(
             manifest_step,
             context=context,
             client=client,
@@ -3319,7 +3513,9 @@ def _execute_v1_psu_step_inner(
 
     deadline = clock() + PSU_AUTHORIZATION_TIMEOUT_SECONDS
     while clock() < deadline:
+        execution_logger.check_cancelled()
         sleep(0.5)
+        execution_logger.check_cancelled()
         current_session = auth_session_store.get(run_id, session.state)
         if current_session is None or current_session.status == "awaiting":
             continue
@@ -3347,6 +3543,26 @@ def _execute_v1_psu_step_inner(
         ),
         record_step(context, manifest_step.id, request_record, None),
     )
+
+
+def _psu_query_parameters(manifest_step: PsuAuthorizationStep) -> tuple[tuple[str, str], ...]:
+    """Return custom PSU parameters that must travel as unsigned query values.
+
+    FAPI 1 Advanced Part 2 §5.2.2 requires the authorisation server to use only
+    parameters from the signed request object, so runtime-generated request
+    objects carry custom parameters as signed claims instead. Steps without a
+    generated request object (no request object, or a pre-signed literal JWT
+    the tool cannot amend) fall back to query parameters.
+
+    Args:
+        manifest_step: PSU authorisation step carrying plan-configured parameters.
+
+    Returns:
+        Name/value pairs to append to the authorisation URL query.
+    """
+    if isinstance(manifest_step.request_object, GeneratedRequestObject):
+        return ()
+    return tuple((name, parameter_query_value(value)) for name, value in manifest_step.custom_parameters)
 
 
 def _resolve_psu_request_object(
@@ -3420,6 +3636,7 @@ def _resolve_psu_request_object(
         scope=manifest_step.scope,
         state=state,
         nonce=nonce,
+        additional_claims=manifest_step.custom_parameters,
     )
 
 
@@ -3437,6 +3654,7 @@ def _generate_psu_request_object(
     scope: str,
     state: str,
     nonce: str,
+    additional_claims: tuple[tuple[str, PsuParameterValue], ...] = (),
 ) -> str:
     """Generate a signed PSU request-object JWT from validated runtime config.
 
@@ -3457,6 +3675,9 @@ def _generate_psu_request_object(
         state: Registered auth-session state that must be embedded into the
             request object.
         nonce: OIDC nonce that must be embedded into the request object.
+        additional_claims: Plan-configured PSU authorisation parameters
+            carried as signed top-level claims (FAPI 1 Advanced Part 2
+            §5.2.2).
 
     Returns:
         Compact PS256 JWT ready for the OAuth ``request`` query parameter.
@@ -3488,12 +3709,228 @@ def _generate_psu_request_object(
             state=state,
             nonce=nonce,
             openbanking_intent_id=openbanking_intent_id,
+            additional_claims=additional_claims,
         )
     )
     return signed_request_object.token
 
 
-def _execute_headless_psu_authorization(
+def _auto_approve_non_redirect_message(status_code: int, content_type: str | None) -> str:
+    """Describe why an auto-approve PSU authorisation response was not usable.
+
+    Args:
+        status_code: HTTP status returned by the authorisation endpoint.
+        content_type: Response ``Content-Type`` header, if present.
+
+    Returns:
+        Actionable failure message for the step result.
+    """
+    if content_type is not None and "html" in content_type.lower():
+        return (
+            f"Auto-approve PSU authorisation did not complete with a redirect: the ASPSP returned an HTML page "
+            f"(HTTP {status_code}). See the step's response evidence for what was returned"
+        )
+    return (
+        f"Auto-approve PSU authorisation did not complete with a redirect (got HTTP {status_code}). "
+        "See the step's response evidence for what was returned"
+    )
+
+
+_HTML_TITLE_PATTERN: Final = re.compile(r"<title[^>]*>(.*?)</title\s*>", re.IGNORECASE | re.DOTALL)
+_MAX_HTML_TITLE_LENGTH: Final = 200
+_MAX_AUTO_APPROVE_JSON_BODY_BYTES: Final = 16384
+
+
+def _redirect_target_without_parameters(location: str) -> str:
+    """Return a redirect ``Location`` reduced to scheme, host and path.
+
+    Off-target redirects (for example an ASPSP login or error page) are useful
+    diagnostics, but their query and fragment can carry session handles or
+    authorisation artefacts, so only the origin and path are kept.
+
+    Args:
+        location: Raw ``Location`` header value.
+
+    Returns:
+        ``scheme://host/path`` with query, fragment and userinfo removed.
+    """
+    parts = urlsplit(location)
+    host = parts.hostname or ""
+    netloc = f"{host}:{parts.port}" if parts.port is not None else host
+    return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+
+
+def _auto_approve_response_evidence(response: httpx.Response, *, redirect_uri: str) -> dict[str, JsonValue]:
+    """Build masked diagnostic evidence for an auto-approve PSU authorisation response.
+
+    The OAuth 2.0 authorisation endpoint is expected to answer an auto-approve
+    request with a redirect to ``redirectUri``. When it does not, the evidence
+    gives enough to tell why: an HTML login/consent page (by its ``<title>``)
+    or a JSON error body. ``Location`` is recorded only when it targets the
+    configured ``redirectUri``, with ``code``/``id_token`` values masked.
+    Redirects elsewhere are reported as ``redirectTarget`` with the query and
+    fragment stripped.
+
+    Args:
+        response: Authorisation-endpoint response (redirects not followed).
+        redirect_uri: Configured redirect URI the ASPSP should return to.
+
+    Returns:
+        Masked response evidence for the step result.
+    """
+    evidence: dict[str, JsonValue] = {"statusCode": response.status_code}
+    content_type = response.headers.get("Content-Type")
+    if content_type is not None:
+        evidence["contentType"] = content_type
+    headers = {name: value for name, value in response.headers.items() if name.lower() != "location"}
+    if headers:
+        evidence["headers"] = _mask_result_headers(headers)
+    location = response.headers.get("Location")
+    if location is not None:
+        matches = redirect_matches_registered_uri(location=location, redirect_uri=redirect_uri)
+        evidence["redirectsToRedirectUri"] = matches
+        if matches:
+            evidence["location"] = _mask_result_url_query(location)
+        else:
+            evidence["redirectTarget"] = _redirect_target_without_parameters(urljoin(str(response.url), location))
+    media_type = (content_type or "").split(";", 1)[0].strip().lower()
+    if "html" in media_type:
+        title_match = _HTML_TITLE_PATTERN.search(response.text)
+        if title_match is not None:
+            title = " ".join(html.unescape(title_match.group(1)).split())
+            evidence["htmlTitle"] = title[:_MAX_HTML_TITLE_LENGTH]
+    elif media_type.endswith("json") and len(response.content) <= _MAX_AUTO_APPROVE_JSON_BODY_BYTES:
+        try:
+            body = cast("JsonValue", response.json())
+        except ValueError:
+            pass
+        else:
+            evidence["body"] = _mask_result_json_value(body)
+    return evidence
+
+
+_MAX_AUTO_APPROVE_FOLLOW_HOPS: Final = 3
+_MAX_ERROR_PAGE_TEXT_LENGTH: Final = 2048
+_MAX_ERROR_PAGE_MESSAGE_LENGTH: Final = 500
+_NON_CONTENT_ELEMENT_PATTERN: Final = re.compile(
+    r"<(script|style|noscript|template|head)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL
+)
+_HTML_COMMENT_PATTERN: Final = re.compile(r"<!--.*?-->", re.DOTALL)
+_HTML_TAG_PATTERN: Final = re.compile(r"<[^>]+>")
+
+
+def _html_text_excerpt(markup: str) -> str:
+    """Return the visible text of an HTML page, whitespace-collapsed and capped.
+
+    Scripts, styles, comments and all tag markup (including hidden form
+    inputs and their values) are removed, so only rendered text is kept.
+
+    Args:
+        markup: HTML document text.
+
+    Returns:
+        Visible text, at most ``_MAX_ERROR_PAGE_TEXT_LENGTH`` characters.
+    """
+    without_blocks = _NON_CONTENT_ELEMENT_PATTERN.sub(" ", _HTML_COMMENT_PATTERN.sub(" ", markup))
+    text = " ".join(html.unescape(_HTML_TAG_PATTERN.sub(" ", without_blocks)).split())
+    return text[:_MAX_ERROR_PAGE_TEXT_LENGTH]
+
+
+def _same_origin(first: str, second: str) -> bool:
+    """Return whether two absolute URLs share scheme, host and effective port."""
+    left, right = urlsplit(first), urlsplit(second)
+    default_ports = {"https": 443, "http": 80}
+    return (
+        left.scheme.lower() == right.scheme.lower()
+        and (left.hostname or "").lower() == (right.hostname or "").lower()
+        and (left.port or default_ports.get(left.scheme.lower()))
+        == (right.port or default_ports.get(right.scheme.lower()))
+    )
+
+
+def _follow_authorization_error_redirects(
+    response: httpx.Response,
+    *,
+    client: httpx.Client,
+    authorization_url: str,
+    step_id: str,
+    execution_logger: ExecutionLogger,
+) -> dict[str, JsonValue] | None:
+    """Follow same-origin redirects from the authorisation endpoint to read its error page.
+
+    Many ASPSPs answer an invalid OAuth 2.0 authorisation request (RFC 6749
+    section 4.1.2.1: a request that cannot safely be returned to the client)
+    by redirecting to an error page on their own authorisation server, and
+    render the reason only for that browser session. Auto-approve mode has no
+    browser, so up to ``_MAX_AUTO_APPROVE_FOLLOW_HOPS`` same-origin redirects are
+    followed, carrying only the cookies the ASPSP set along the way. Custom
+    auto-approve headers are deliberately not re-sent. Cross-origin redirects are
+    never followed.
+
+    Args:
+        response: Off-target redirect response from the authorisation endpoint.
+        client: HTTP client used for the authorisation request.
+        authorization_url: Authorisation URL the redirect chain started from.
+        step_id: PSU step identifier for execution-log events.
+        execution_logger: Structured execution-log sink.
+
+    Returns:
+        ``errorPage`` evidence (final target, status, title, text excerpt and
+        hop list), or ``None`` when the first hop is not same-origin.
+    """
+    current = response
+    hops: list[JsonValue] = []
+    cookies: dict[str, str] = {}
+    for _ in range(_MAX_AUTO_APPROVE_FOLLOW_HOPS):
+        location = current.headers.get("Location")
+        if not 300 <= current.status_code < 400 or location is None:
+            break
+        target = urljoin(str(current.url), location)
+        if not _same_origin(target, authorization_url):
+            break
+        cookies.update({cookie.name: cookie.value or "" for cookie in current.cookies.jar})
+        stripped_target = _redirect_target_without_parameters(target)
+        execution_logger.emit(
+            "request-sent", step_id=step_id, payload={"method": "GET", "url": stripped_target, "followedRedirect": True}
+        )
+        headers = {"Cookie": "; ".join(f"{name}={value}" for name, value in cookies.items())} if cookies else None
+        try:
+            current = client.get(target, headers=headers, follow_redirects=False)
+        except httpx.HTTPError as error:
+            hops.append({"url": stripped_target, "error": str(error)})
+            break
+        hops.append({"url": stripped_target, "statusCode": current.status_code})
+        execution_logger.emit(
+            "response-received",
+            step_id=step_id,
+            payload={"statusCode": current.status_code, "url": stripped_target, "followedRedirect": True},
+        )
+    if not hops:
+        return None
+    evidence: dict[str, JsonValue] = {"followedRedirects": hops}
+    last = hops[-1]
+    if isinstance(last, dict) and "statusCode" in last:
+        evidence["url"] = last["url"]
+        evidence["statusCode"] = current.status_code
+        content_type = current.headers.get("Content-Type", "")
+        if "html" in content_type.lower():
+            title_match = _HTML_TITLE_PATTERN.search(current.text)
+            if title_match is not None:
+                evidence["htmlTitle"] = " ".join(html.unescape(title_match.group(1)).split())[:_MAX_HTML_TITLE_LENGTH]
+            text = _html_text_excerpt(current.text)
+            if text:
+                evidence["text"] = text
+        elif content_type.lower().split(";", 1)[0].strip().endswith("json") and (
+            len(current.content) <= _MAX_AUTO_APPROVE_JSON_BODY_BYTES
+        ):
+            try:
+                evidence["body"] = _mask_result_json_value(cast("JsonValue", current.json()))
+            except ValueError:
+                pass
+    return evidence
+
+
+def _execute_auto_approve_psu_authorization(
     manifest_step: PsuAuthorizationStep,
     *,
     context: ExecutionContext,
@@ -3508,7 +3945,7 @@ def _execute_headless_psu_authorization(
     registered_state: str,
     redirect_uri: str,
 ) -> tuple[StepResult, ExecutionContext]:
-    """Execute a headless PSU authorisation redirect exchange.
+    """Execute an auto-approve PSU authorisation redirect exchange.
 
     Args:
         manifest_step: Parsed PSU authorisation step being executed.
@@ -3529,15 +3966,26 @@ def _execute_headless_psu_authorization(
     Returns:
         A tuple of the PSU step result and updated execution context.
     """
+    custom_headers = dict(manifest_step.custom_headers)
+    if custom_headers:
+        # Custom header values are participant-defined and may be credentials;
+        # result evidence records the names only.
+        request_evidence["headers"] = cast("JsonObject", dict.fromkeys(custom_headers, MASKED_VALUE))
+    execution_logger.emit("request-sent", step_id=manifest_step.id, payload=dict(request_evidence))
     try:
-        response = client.get(authorization_url, follow_redirects=False)
+        response = client.get(authorization_url, headers=custom_headers or None, follow_redirects=False)
     except httpx.HTTPError as error:
+        execution_logger.emit(
+            "application-error",
+            step_id=manifest_step.id,
+            payload={"message": f"Auto-approve PSU authorisation request failed: {error}"},
+        )
         return (
             _attach_evidence(
                 StepResult(
                     name=manifest_step.id,
                     status="failed",
-                    message=f"PSU authorisation headless request failed: {error}",
+                    message=f"Auto-approve PSU authorisation request failed: {error}",
                     url=result_url,
                 ),
                 request_evidence=request_evidence,
@@ -3546,17 +3994,24 @@ def _execute_headless_psu_authorization(
             record_step(context, manifest_step.id, request_record, None),
         )
 
-    response_evidence: dict[str, JsonValue] = {"statusCode": response.status_code}
+    content_type = response.headers.get("Content-Type")
+    response_evidence = _auto_approve_response_evidence(response, redirect_uri=redirect_uri)
+    execution_logger.emit(
+        "response-received",
+        step_id=manifest_step.id,
+        payload={
+            "statusCode": response.status_code,
+            "url": result_url,
+            **({"contentType": content_type} if content_type is not None else {}),
+        },
+    )
     if not 300 <= response.status_code < 400:
         return (
             _attach_evidence(
                 StepResult(
                     name=manifest_step.id,
                     status="failed",
-                    message=(
-                        "PSU authorisation headless request did not return a redirect "
-                        f"(got HTTP {response.status_code})"
-                    ),
+                    message=_auto_approve_non_redirect_message(response.status_code, content_type),
                     url=result_url,
                     status_code=response.status_code,
                 ),
@@ -3573,7 +4028,7 @@ def _execute_headless_psu_authorization(
                 StepResult(
                     name=manifest_step.id,
                     status="failed",
-                    message="PSU authorisation headless redirect was missing a Location header",
+                    message="Auto-approve PSU authorisation redirect was missing a Location header",
                     url=result_url,
                     status_code=response.status_code,
                 ),
@@ -3584,12 +4039,29 @@ def _execute_headless_psu_authorization(
         )
 
     if not redirect_matches_registered_uri(location=location, redirect_uri=redirect_uri):
+        redirect_target = _redirect_target_without_parameters(urljoin(str(response.url), location))
+        message = (
+            f"PSU authorisation redirected to {redirect_target}, not the configured redirectUri; auto-approve mode "
+            "expects the ASPSP to auto-approve and redirect straight back to redirectUri"
+        )
+        error_page = _follow_authorization_error_redirects(
+            response,
+            client=client,
+            authorization_url=authorization_url,
+            step_id=manifest_step.id,
+            execution_logger=execution_logger,
+        )
+        if error_page is not None:
+            response_evidence["errorPage"] = error_page
+            page_text = error_page.get("text")
+            if isinstance(page_text, str):
+                message = f"{message}. ASPSP page says: {page_text[:_MAX_ERROR_PAGE_MESSAGE_LENGTH]}"
         return (
             _attach_evidence(
                 StepResult(
                     name=manifest_step.id,
                     status="failed",
-                    message="PSU authorisation redirect target did not match the configured redirectUri",
+                    message=message,
                     url=result_url,
                     status_code=response.status_code,
                 ),
@@ -3688,6 +4160,7 @@ def _execute_headless_psu_authorization(
         authorization_url=authorization_url,
         result_url=result_url,
         current_session=current_session,
+        response_evidence=response_evidence,
     )
 
 
@@ -3700,6 +4173,7 @@ def _complete_psu_step_from_session(
     authorization_url: str,
     result_url: str,
     current_session: AuthSession,
+    response_evidence: dict[str, JsonValue] | None = None,
 ) -> tuple[StepResult, ExecutionContext]:
     """Convert a terminal auth session into a PSU step result.
 
@@ -3711,7 +4185,10 @@ def _complete_psu_step_from_session(
         authorization_url: Fully built authorisation URL.
         result_url: Masked authorisation URL safe to embed in result files.
         current_session: Terminal auth session captured by manual callback
-            polling or by the headless redirect parser.
+            polling or by the auto-approve redirect parser.
+        response_evidence: Masked authorisation-endpoint response evidence.
+            Only auto-approve mode has one; when present it is attached to the
+            result on success as well as failure.
 
     Returns:
         A tuple of the PSU step result and updated execution context.
@@ -3720,16 +4197,16 @@ def _complete_psu_step_from_session(
     if current_session.status == "captured" and current_session.code is not None:
         response_record = synthesize_psu_response(code=current_session.code, state=current_session.state)
         new_context = record_step(context, manifest_step.id, request_record, response_record)
-        return (
-            StepResult(
-                name=manifest_step.id,
-                status="passed",
-                message=f"{manifest_step.name} captured authorization code",
-                url=result_url,
-                status_code=response_record.status_code,
-            ),
-            new_context,
+        passed = StepResult(
+            name=manifest_step.id,
+            status="passed",
+            message=f"{manifest_step.name} captured authorization code",
+            url=result_url,
+            status_code=response_record.status_code,
         )
+        if response_evidence is not None:
+            passed = _attach_evidence(passed, request_evidence=request_evidence, response_evidence=response_evidence)
+        return passed, new_context
 
     error_details: dict[str, JsonValue] = {"error": current_session.error or "authorization_error"}
     if current_session.error_description is not None:
@@ -3744,7 +4221,7 @@ def _complete_psu_step_from_session(
                 details=error_details,
             ),
             request_evidence=request_evidence,
-            response_evidence=None,
+            response_evidence=response_evidence,
         ),
         record_step(context, manifest_step.id, request_record, None),
     )
@@ -4103,6 +4580,7 @@ def _execute_v1_step_inner(
             fapi_signing_service=fapi_signing_service,
             resolved_url=resolved_url,
             mtls_client_configured=mtls_client_configured,
+            resolved_headers=resolved_headers,
         )
     except (SigningCredentialError, JwtSigningError, ValueError) as error:
         request_record = RequestRecord(method=method, url=resolved_url)

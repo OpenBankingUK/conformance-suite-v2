@@ -48,6 +48,7 @@ auto-escaped by the Django template engine.
     {% endif %}
 </head>
 <body>
+    {% include "conformance/partials/beta_notice.html" %}
     {% if outcome == "fragment_bridge" %}
         <h1>Completing authorization</h1>
         <p>The conformance suite is completing the callback.</p>

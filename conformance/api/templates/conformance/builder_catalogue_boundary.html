@@ -5,6 +5,8 @@
     <title>Choose test plan catalogue</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
+    {% include "conformance/partials/htmx_script.html" %}
+    {% include "conformance/partials/builder_select_styles.html" %}
     <style>
         :root {
             color-scheme: light;
@@ -31,7 +33,7 @@
         }
 
         main {
-            width: min(880px, calc(100% - 32px));
+            width: min(1180px, calc(100% - 32px));
             margin: 0 auto;
             padding: 32px 0 48px;
         }
@@ -91,17 +93,6 @@
             margin-bottom: 8px;
         }
 
-        select {
-            width: 100%;
-            min-height: 42px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 10px 12px;
-            font: inherit;
-            color: var(--text);
-            background: #fbfcfe;
-        }
-
         .field-grid {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -150,6 +141,12 @@
             border: 1px solid #bfdbfe;
             background: #eff6ff;
             color: var(--accent);
+        }
+
+        .message.warning {
+            border: 1px solid #fedf89;
+            background: #fffcf5;
+            color: #a15c07;
         }
 
         .errorlist {
@@ -209,29 +206,30 @@
     </style>
 </head>
 <body>
-<main>
+{% include "conformance/partials/beta_notice.html" %}
+{# hx-boost: wizard links and form posts swap the page body over AJAX instead of a full reload. #}
+<main hx-boost="true">
     <header>
         <div>
             <h1>Choose specification</h1>
-            <div class="muted">Step 1: specification</div>
         </div>
-        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+        {% include "conformance/partials/builder_header_actions.html" with from_step="catalogue" %}
     </header>
+    {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 
     <section class="panel" aria-labelledby="catalogue-boundary-heading">
         <h2 id="catalogue-boundary-heading">Scheme, specification, and version</h2>
-        <p class="helper">Select the Open Banking catalogue boundary first. You will enter the security environment before choosing resource groups.</p>
-        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
+        <p class="helper">Select the Open Banking catalogue boundary first. Once a supported specification is chosen you can move between every step in any order; anything you enter is saved when you leave a page, and review lists whatever still needs completing before launch.</p>
 
         {% if saved %}
             <div class="message success">Specification saved.</div>
         {% endif %}
-        <div class="message info">Next you will define the single security environment used by this executable test plan.</div>
         {% if catalogue_boundary_blocker %}
             <div class="message info">{{ catalogue_boundary_blocker }}</div>
         {% endif %}
 
         <form method="post"
+              id="builder-step-form"
               action="{% url 'builder-catalogue-boundary' draft.draft_id %}"
               data-boundary-form>
             {% csrf_token %}
@@ -241,7 +239,7 @@
                 <div>
                     <label for="{{ form.scheme.id_for_label }}">Scheme</label>
                     {{ form.scheme.errors }}
-                    <select id="{{ form.scheme.id_for_label }}" name="scheme" data-scheme-select>
+                    <select id="{{ form.scheme.id_for_label }}" name="scheme" class="builder-select" data-scheme-select>
                         {% for value,label in form.scheme.field.choices %}
                             <option value="{{ value }}" {% if form.scheme.value == value %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
@@ -251,7 +249,7 @@
                 <div>
                     <label for="{{ form.specification.id_for_label }}">Specification</label>
                     {{ form.specification.errors }}
-                    <select id="{{ form.specification.id_for_label }}" name="specification" data-specification-select>
+                    <select id="{{ form.specification.id_for_label }}" name="specification" class="builder-select" data-specification-select>
                         {% for option in specification_options %}
                             <option value="{{ option.value }}"
                                     data-scheme="{{ option.scheme }}"
@@ -263,7 +261,7 @@
                 <div>
                     <label for="{{ form.version.id_for_label }}">Version</label>
                     {{ form.version.errors }}
-                    <select id="{{ form.version.id_for_label }}" name="version" data-version-select>
+                    <select id="{{ form.version.id_for_label }}" name="version" class="builder-select" data-version-select>
                         {% for option in version_options %}
                             <option value="{{ option.value }}"
                                     data-scheme="{{ option.scheme }}"
@@ -273,13 +271,52 @@
                     </select>
                 </div>
 
+                <div data-openapi-document-update-field>
+                    <label for="{{ form.openapi_document_update.id_for_label }}">OpenAPI document update</label>
+                    {{ form.openapi_document_update.errors }}
+                    <select id="{{ form.openapi_document_update.id_for_label }}" name="openapi_document_update" class="builder-select" data-openapi-document-update-select>
+                        {% for option in openapi_document_update_options %}
+                            <option value="{{ option.value }}"
+                                    data-scheme="{{ option.scheme }}"
+                                    data-specification="{{ option.specification }}"
+                                    data-version="{{ option.version }}"
+                                    {% if option.latest %}data-latest="true"{% endif %}
+                                    {% if form.openapi_document_update.value %}{% if form.version.value == option.version and form.openapi_document_update.value == option.value %}selected{% endif %}{% elif option.latest and form.version.value == option.version %}selected{% endif %}>{{ option.label }}{% if option.latest %} (latest){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="helper">Published OpenAPI (swagger) revision used for schema validation. Core specification behaviour is unchanged between updates.</p>
+                </div>
+
             </div>
+
+            {% if specification_change_effects %}
+                <div class="message warning" role="alert" data-specification-change>
+                    <strong>Changing the specification affects data you have entered</strong>
+                    <ul>{% for effect in specification_change_effects %}<li>{{ effect }}</li>{% endfor %}</ul>
+                    <p>Confirm to change the specification, or choose the previous specification again to keep everything as it is.</p>
+                    <input type="hidden" name="confirm_specification_change" value="{{ specification_change_token }}">
+                </div>
+            {% endif %}
 
             <div class="actions">
                 <a class="button secondary" href="{% url 'home' %}">Cancel</a>
-                <button type="submit" data-continue-button>Continue to discovery</button>
+                {% if specification_change_effects %}
+                    <button type="submit" {% if pending_next %}name="next" value="{{ pending_next }}"{% endif %} data-continue-button>Confirm specification change</button>
+                {% else %}
+                    <button type="submit" data-continue-button>Continue to scope</button>
+                {% endif %}
             </div>
         </form>
+        {% if imported_without_specification %}
+            {% include "conformance/partials/builder_import_issues.html" %}
+            <div class="message info" data-start-new-plan>
+                <p>The imported plan did not name a supported specification. Choose one above to load the rest of the imported plan against it, or start again from a blank plan.</p>
+                <form method="post" action="{% url 'builder-new' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="secondary">Start a new plan instead</button>
+                </form>
+            </div>
+        {% endif %}
     </section>
 </main>
 
@@ -292,7 +329,13 @@
         const scheme = form.querySelector("[data-scheme-select]");
         const specification = form.querySelector("[data-specification-select]");
         const version = form.querySelector("[data-version-select]");
+        const openApiDocumentUpdate = form.querySelector("[data-openapi-document-update-select]");
+        const openApiDocumentUpdateField = form.querySelector("[data-openapi-document-update-field]");
         const continueButton = form.querySelector("[data-continue-button]");
+        let openApiDocumentUpdateChosen = false;
+        openApiDocumentUpdate.addEventListener("change", () => {
+            openApiDocumentUpdateChosen = true;
+        });
 
         const selectFirstVisible = (select) => {
             const selected = select.selectedOptions[0];
@@ -328,6 +371,29 @@
                 option.disabled = !available;
             });
             selectFirstVisible(version);
+            syncOpenApiDocumentUpdates();
+        };
+
+        const syncOpenApiDocumentUpdates = () => {
+            const options = Array.from(openApiDocumentUpdate.options);
+            options.forEach((option) => {
+                const available = option.dataset.scheme === scheme.value
+                    && option.dataset.specification === specification.value
+                    && option.dataset.version === version.value;
+                option.hidden = !available;
+                option.disabled = !available;
+            });
+            const visible = options.filter((option) => !option.disabled);
+            openApiDocumentUpdateField.hidden = visible.length === 0;
+            openApiDocumentUpdate.disabled = visible.length === 0;
+            const selected = openApiDocumentUpdate.selectedOptions[0];
+            if (selected && !selected.disabled && (selected.defaultSelected || openApiDocumentUpdateChosen)) {
+                return;
+            }
+            const latest = visible.find((option) => option.dataset.latest === "true") || visible[visible.length - 1];
+            if (latest) {
+                latest.selected = true;
+            }
         };
 
         const syncBoundary = () => {
@@ -337,7 +403,10 @@
 
         scheme.addEventListener("change", syncBoundary);
         specification.addEventListener("change", syncBoundary);
-        version.addEventListener("change", updateContinueState);
+        version.addEventListener("change", () => {
+            syncOpenApiDocumentUpdates();
+            updateContinueState();
+        });
         syncOptions();
         updateContinueState();
     })();

@@ -4,18 +4,31 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import ClassVar, Literal, cast
 
+from conformance.execution_settings import (
+    DEFAULT_EXECUTION_SETTINGS,
+    ExecutionSettingsError,
+    PlanExecutionSettings,
+    parse_execution_settings,
+)
 from conformance.json_types import JsonObject, JsonValue
+from conformance.openapi_documents import (
+    bind_read_write_document,
+    is_logical_read_write_document,
+)
 from conformance.specification_registry import (
+    OpenApiDocumentUpdate,
     SpecificationDefinition,
     SpecificationVersionDefinition,
     derived_security_profile_for_boundary,
+    openapi_document_update_for_boundary,
     security_profiles_for_boundary,
     specification_for_boundary,
     specification_for_family,
+    specification_version_for_catalogue,
     supported_specifications,
 )
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
@@ -156,14 +169,31 @@ class CatalogueKey:
 
     Attributes:
         standard: Standards namespace, for example ``"open-banking"``.
-        version: Standards version, for example ``"v4.0"``.
+        version: Endpoint (API path) version, for example ``"v4.0"``. Several
+            participant-facing specification versions can share one endpoint
+            version, such as Read/Write 4.0.0 and 4.0.1.
         api: API family inside the standard/version boundary, for example
             ``"ais"`` or ``"pis"``.
+        specification_version: Participant-facing specification version the
+            catalogue implements, for example ``"4.0.1"``.
     """
 
     standard: str
     version: str
     api: str
+    specification_version: str
+
+
+def format_catalogue_key(key: CatalogueKey) -> str:
+    """Return a human-readable catalogue boundary label for messages.
+
+    Args:
+        key: Catalogue boundary.
+
+    Returns:
+        Label such as ``open-banking/v4.0/ais (specification 4.0.1)``.
+    """
+    return f"{key.standard}/{key.version}/{key.api} (specification {key.specification_version})"
 
 
 @dataclass(frozen=True)
@@ -627,9 +657,9 @@ class TestPlanSpec:
             participant.
         runtime_inputs: Runtime values or references keyed by
             :class:`RuntimeInputRequirement.input_id`.
-        specification_version: Optional user-facing specification version from
-            a shared v2 plan document. Legacy v1 specs omit this and use the
-            catalogue key alone.
+        openapi_document_update: Selected OpenAPI document update, for example
+            ``"Update-1"``. Required when the catalogue's specification version
+            publishes selectable OpenAPI document updates.
         deselected_test_case_ids: Optional non-mandatory applicable cases the
             participant chose not to run. Mandatory applicable cases cannot be
             deselected.
@@ -645,7 +675,7 @@ class TestPlanSpec:
     security_profile: SecurityProfile
     implemented_endpoints: tuple[ImplementedEndpoint, ...]
     runtime_inputs: Mapping[str, JsonValue]
-    specification_version: str | None = None
+    openapi_document_update: str | None = None
     deselected_test_case_ids: tuple[str, ...] = ()
     assertion_overrides: tuple[AssertionOverride, ...] = ()
 
@@ -719,6 +749,12 @@ class PlanDocumentV2:
             groups, such as Open Banking DCR.
         dynamic_client_registration: DCR-owned configuration preserved at the
             shared plan boundary for later runtime validation.
+        openapi_document_update: Selected Read/Write OpenAPI document update,
+            for example ``"Update-1"``; ``None`` for specifications that do not
+            publish selectable updates.
+        execution_settings: Optional plan-level ``execution`` settings such as
+            the PSU authorisation mode and custom authorisation headers and
+            parameters.
     """
 
     # Class starts with "Plan" and is production code, but keep pytest explicit.
@@ -738,6 +774,8 @@ class PlanDocumentV2:
     execution_mode: PlanExecutionMode = "certification"
     endpoints: tuple[PlanDocumentEndpoint, ...] = ()
     dynamic_client_registration: Mapping[str, JsonValue] = field(default_factory=lambda: MappingProxyType({}))
+    openapi_document_update: str | None = None
+    execution_settings: PlanExecutionSettings = DEFAULT_EXECUTION_SETTINGS
 
 
 @dataclass(frozen=True)
@@ -837,6 +875,10 @@ class CompilerTraceability:
         non_certifying_reasons: Reasons the compiled plan cannot be used for
             certification.
         provenance: Optional pinned source provenance carried from the catalogue.
+        openapi_document_update: OpenAPI document update whose bundled
+            snapshot backs response schema assertions, when applicable.
+        endpoint_version: Endpoint (API path) version of the compiled
+            catalogue areas, for example ``"v4.0"``.
     """
 
     catalogue_key: CatalogueKey
@@ -849,6 +891,8 @@ class CompilerTraceability:
     runtime_input_snapshot: tuple[RuntimeInputTrace, ...]
     non_certifying_reasons: tuple[str, ...]
     provenance: CatalogueProvenance | None = None
+    openapi_document_update: OpenApiDocumentUpdate | None = None
+    endpoint_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -866,6 +910,8 @@ class CompiledTestPlan:
             planning perspective.
         skipped_test_cases: Endpoint-gated cases retained solely for explicit
             skipped traceability and never scheduled for execution.
+        execution_settings: Plan-level execution settings (for example the
+            PSU authorisation mode) applied when generating runtime steps.
     """
 
     catalogue_key: CatalogueKey
@@ -875,6 +921,7 @@ class CompiledTestPlan:
     traceability: CompilerTraceability
     certifying: bool
     skipped_test_cases: tuple[CatalogueTestCase, ...] = ()
+    execution_settings: PlanExecutionSettings = DEFAULT_EXECUTION_SETTINGS
 
 
 def parse_test_plan_spec(raw_spec: object) -> TestPlanSpec:
@@ -907,9 +954,11 @@ def parse_test_plan_spec(raw_spec: object) -> TestPlanSpec:
     if schema_version != "v1":
         raise CatalogueError("planSpec.schemaVersion must be v1")
 
+    raw_catalogue = _required_object(spec, "catalogue", location="planSpec")
     return TestPlanSpec(
         schema_version="v1",
-        catalogue_key=_parse_catalogue_key(_required_object(spec, "catalogue", location="planSpec")),
+        catalogue_key=_parse_catalogue_key(raw_catalogue),
+        openapi_document_update=_optional_string(raw_catalogue, "openApiDocumentUpdate", location="planSpec.catalogue"),
         security_profile=_parse_security_profile(
             _required_string(spec, "securityProfile", location="planSpec"),
             location="planSpec.securityProfile",
@@ -968,6 +1017,8 @@ def plan_document_to_json_object(document: PlanDocumentV2) -> JsonObject:
     }
     if document.specification == _V2_READ_WRITE_SPECIFICATION:
         specification["profile"] = _canonical_security_profile(document.security_profile)
+        if document.openapi_document_update is not None:
+            specification["openApiDocumentUpdate"] = document.openapi_document_update
     else:
         specification["scheme"] = document.scheme
         specification["name"] = document.specification
@@ -978,6 +1029,8 @@ def plan_document_to_json_object(document: PlanDocumentV2) -> JsonObject:
         "securityEnvironment": _security_environment_for_export(document),
         "metadata": {key: _copy_json_value(value) for key, value in document.metadata.items()},
     }
+    if not document.execution_settings.is_default:
+        exported["execution"] = document.execution_settings.to_json_object()
     if document.specification == _V2_READ_WRITE_SPECIFICATION:
         exported["resourceGroups"] = [
             _canonical_resource_group_for_export(resource_group) for resource_group in document.resource_groups
@@ -1051,6 +1104,7 @@ def supported_plan_document_boundaries(catalogues: Iterable[TestCatalogue]) -> t
                     standard=version.catalogue_standard,
                     version=version.catalogue_version,
                     api=api,
+                    specification_version=version.version,
                 )
                 in available_keys
                 for api in version.catalogue_apis
@@ -1089,6 +1143,7 @@ def catalogue_areas_for_plan_document_boundary(
         for catalogue in catalogues
         if catalogue.key.standard == version_definition.catalogue_standard
         and catalogue.key.version == version_definition.catalogue_version
+        and catalogue.key.specification_version == version_definition.version
         and catalogue.key.api in version_definition.catalogue_apis
     )
     if not candidates:
@@ -1118,7 +1173,10 @@ def compile_test_plan_document(document: ParsedPlanDocument, catalogues: Iterabl
         return compile_test_plan(
             _resolve_catalogue_from_collection(document.catalogue_key, available_catalogues), document
         )
-    return _compile_plan_document_v2(document, available_catalogues)
+    compiled = _compile_plan_document_v2(document, available_catalogues)
+    if document.execution_settings.is_default:
+        return compiled
+    return replace(compiled, execution_settings=document.execution_settings)
 
 
 def compile_test_plan(catalogue: TestCatalogue, spec: TestPlanSpec) -> CompiledTestPlan:
@@ -1138,6 +1196,8 @@ def compile_test_plan(catalogue: TestCatalogue, spec: TestPlanSpec) -> CompiledT
     """
     if catalogue.key != spec.catalogue_key:
         raise CatalogueError("planSpec.catalogue does not match the supplied catalogue")
+    openapi_document_update = _resolve_openapi_document_update(catalogue.key, spec.openapi_document_update)
+    catalogue = _bind_openapi_documents(catalogue, openapi_document_update)
 
     implemented_endpoints = tuple(_canonical_implemented_endpoint(endpoint) for endpoint in spec.implemented_endpoints)
     cases_by_id = _catalogue_cases_by_id(catalogue)
@@ -1194,6 +1254,8 @@ def compile_test_plan(catalogue: TestCatalogue, spec: TestPlanSpec) -> CompiledT
         runtime_input_snapshot=runtime_snapshot,
         non_certifying_reasons=non_certifying_reasons,
         provenance=catalogue.provenance,
+        openapi_document_update=openapi_document_update,
+        endpoint_version=catalogue.key.version,
     )
     return CompiledTestPlan(
         catalogue_key=catalogue.key,
@@ -1204,6 +1266,123 @@ def compile_test_plan(catalogue: TestCatalogue, spec: TestPlanSpec) -> CompiledT
         certifying=not non_certifying_reasons,
         skipped_test_cases=skipped_cases,
     )
+
+
+def _resolve_openapi_document_update(key: CatalogueKey, update: str | None) -> OpenApiDocumentUpdate | None:
+    """Validate the OpenAPI document update selected for a catalogue.
+
+    Open Banking Read/Write publishes several OpenAPI ("swagger") document
+    updates per specification version; response schema assertions validate
+    against the participant-selected update snapshot.
+
+    Args:
+        key: Catalogue boundary being compiled.
+        update: Plan-selected OpenAPI document update, if any.
+
+    Returns:
+        The registry update definition, or ``None`` when the catalogue's
+        specification version publishes no selectable updates.
+
+    Raises:
+        CatalogueError: If the update is missing, unknown, or unsupported.
+    """
+    version_definition = specification_version_for_catalogue(
+        standard=key.standard,
+        endpoint_version=key.version,
+        specification_version=key.specification_version,
+        api=key.api,
+    ) or specification_version_for_catalogue(
+        standard=key.standard,
+        endpoint_version=key.version,
+        specification_version=key.specification_version,
+        api=None,
+    )
+    if version_definition is None:
+        if update is not None:
+            raise CatalogueError(
+                f"openApiDocumentUpdate is not supported for catalogue {key.standard}/{key.version}/{key.api}"
+            )
+        return None
+    supported = version_definition.openapi_document_updates
+    if not supported:
+        if update is not None:
+            raise CatalogueError(f"openApiDocumentUpdate is not supported for {key.api} {key.specification_version}")
+        return None
+    choices = ", ".join(item.update for item in supported)
+    if update is None:
+        raise CatalogueError(
+            f"openApiDocumentUpdate is required for {key.specification_version}; must be one of: {choices}"
+        )
+    for item in supported:
+        if item.update == update:
+            return item
+    raise CatalogueError(f"openApiDocumentUpdate must be one of: {choices} for {key.specification_version}")
+
+
+_SCHEMA_DOCUMENT_RULE_KEYS = ("document", "schemaDocument")
+"""Assertion rule keys that name a bundled OpenAPI schema document."""
+
+
+def _bind_openapi_documents(catalogue: TestCatalogue, update: OpenApiDocumentUpdate | None) -> TestCatalogue:
+    """Bind logical Read/Write schema documents to the selected update snapshot.
+
+    Args:
+        catalogue: Catalogue whose assertions may reference logical documents.
+        update: Selected OpenAPI document update, if any.
+
+    Returns:
+        Catalogue whose assertions name concrete bundled documents.
+
+    Raises:
+        CatalogueError: If a logical document remains unbound because no update
+            was selected, or a document belongs to a different update.
+    """
+    bound_cases: list[CatalogueTestCase] = []
+    changed = False
+    for test_case in catalogue.test_cases:
+        bound_assertions: list[CatalogueAssertion] = []
+        case_changed = False
+        for assertion in test_case.assertions:
+            rule = dict(assertion.rule)
+            for rule_key in _SCHEMA_DOCUMENT_RULE_KEYS:
+                document = rule.get(rule_key)
+                if not isinstance(document, str):
+                    continue
+                if update is None:
+                    if is_logical_read_write_document(document):
+                        raise CatalogueError(
+                            f"Test case {test_case.test_case_id} requires an openApiDocumentUpdate selection"
+                        )
+                    continue
+                try:
+                    bound = bind_read_write_document(document, update)
+                except ValueError as exc:
+                    raise CatalogueError(f"Test case {test_case.test_case_id}: {exc}") from exc
+                if bound != document:
+                    rule[rule_key] = bound
+                    case_changed = True
+            if "schemaRefsByUpdate" in rule:
+                schema_refs_by_update = rule.pop("schemaRefsByUpdate")
+                if update is None:
+                    raise CatalogueError(
+                        f"Test case {test_case.test_case_id} requires an openApiDocumentUpdate selection"
+                    )
+                if not isinstance(schema_refs_by_update, dict):
+                    raise CatalogueError(f"Test case {test_case.test_case_id} has invalid update-specific schema refs")
+                schema_refs = schema_refs_by_update.get(update.catalogue_id)
+                if not isinstance(schema_refs, dict):
+                    raise CatalogueError(
+                        f"Test case {test_case.test_case_id} has no schema refs for {update.catalogue_id}"
+                    )
+                rule["schemaRefs"] = schema_refs
+                case_changed = True
+            bound_assertions.append(replace(assertion, rule=rule) if rule != dict(assertion.rule) else assertion)
+        if case_changed:
+            changed = True
+            bound_cases.append(replace(test_case, assertions=tuple(bound_assertions)))
+        else:
+            bound_cases.append(test_case)
+    return replace(catalogue, test_cases=tuple(bound_cases)) if changed else catalogue
 
 
 def _resolve_catalogue_from_collection(key: CatalogueKey, catalogues: Iterable[TestCatalogue]) -> TestCatalogue:
@@ -1223,10 +1402,8 @@ def _resolve_catalogue_from_collection(key: CatalogueKey, catalogues: Iterable[T
     for catalogue in available_catalogues:
         if catalogue.key == key:
             return catalogue
-    supported = ", ".join(
-        f"{catalogue.key.standard}/{catalogue.key.version}/{catalogue.key.api}" for catalogue in available_catalogues
-    )
-    requested = f"{key.standard}/{key.version}/{key.api}"
+    supported = ", ".join(format_catalogue_key(catalogue.key) for catalogue in available_catalogues)
+    requested = format_catalogue_key(key)
     raise CatalogueError(f"Unsupported catalogue: {requested}. Supported catalogues: {supported}")
 
 
@@ -1260,7 +1437,7 @@ def _compile_plan_document_v2(document: PlanDocumentV2, catalogues: Iterable[Tes
             security_profile=document.security_profile,
             implemented_endpoints=endpoints,
             runtime_inputs=document.runtime_inputs,
-            specification_version=document.version,
+            openapi_document_update=document.openapi_document_update,
         )
         compiled_plans.append(compile_test_plan(catalogue, area_spec))
 
@@ -1650,7 +1827,12 @@ def _merge_compiled_plan_documents_v2(
     Raises:
         CatalogueError: If compiled plans cannot be merged safely.
     """
-    aggregate_key = CatalogueKey(standard=document.scheme, version=document.version, api=document.specification)
+    aggregate_key = CatalogueKey(
+        standard=document.scheme,
+        version=document.version,
+        api=document.specification,
+        specification_version=document.version,
+    )
     test_cases = _merge_compiled_test_cases(compiled_plans)
     skipped_test_cases = tuple(
         test_case for compiled_plan in compiled_plans for test_case in compiled_plan.skipped_test_cases
@@ -1679,6 +1861,14 @@ def _merge_compiled_plan_documents_v2(
         runtime_input_snapshot=runtime_snapshot,
         non_certifying_reasons=non_certifying_reasons,
         provenance=_aggregate_catalogue_provenance(compiled_plans),
+        openapi_document_update=_aggregate_single_value(
+            tuple(plan.traceability.openapi_document_update for plan in compiled_plans),
+            label="OpenAPI document update",
+        ),
+        endpoint_version=_aggregate_single_value(
+            tuple(plan.traceability.endpoint_version for plan in compiled_plans),
+            label="endpoint version",
+        ),
     )
     return CompiledTestPlan(
         catalogue_key=aggregate_key,
@@ -1741,6 +1931,27 @@ def _merge_compiled_test_cases(compiled_plans: tuple[CompiledTestPlan, ...]) -> 
             seen_case_ids.add(test_case.test_case_id)
             merged_cases.append(test_case)
     return tuple(merged_cases)
+
+
+def _aggregate_single_value[T](values: tuple[T | None, ...], *, label: str) -> T | None:
+    """Return the single value shared by every compiled catalogue area.
+
+    Args:
+        values: Per-area values, where ``None`` means the area has no value.
+        label: Human-readable value name used in error messages.
+
+    Returns:
+        The shared value, or ``None`` when no area carries one.
+
+    Raises:
+        CatalogueError: If catalogue areas disagree.
+    """
+    distinct = {value for value in values if value is not None}
+    if len(distinct) > 1:
+        raise CatalogueError(f"Compiled catalogue areas disagree on {label}")
+    if distinct and None in values:
+        raise CatalogueError(f"Compiled catalogue areas disagree on {label}")
+    return next(iter(distinct), None)
 
 
 def _aggregate_catalogue_version(compiled_plans: tuple[CompiledTestPlan, ...]) -> str:
@@ -2026,12 +2237,100 @@ def _parse_catalogue_key(raw_key: Mapping[str, JsonValue]) -> CatalogueKey:
     Raises:
         CatalogueError: If required key fields are missing or unsupported.
     """
-    _reject_unknown_keys(raw_key, allowed_keys={"standard", "version", "api"}, location="planSpec.catalogue")
-    return CatalogueKey(
-        standard=_required_string(raw_key, "standard", location="planSpec.catalogue"),
-        version=_required_string(raw_key, "version", location="planSpec.catalogue"),
-        api=_required_string(raw_key, "api", location="planSpec.catalogue"),
+    _reject_unknown_keys(
+        raw_key,
+        allowed_keys={"standard", "version", "api", "specificationVersion", "openApiDocumentUpdate"},
+        location="planSpec.catalogue",
     )
+    standard = _required_string(raw_key, "standard", location="planSpec.catalogue")
+    api = _required_string(raw_key, "api", location="planSpec.catalogue")
+    specification_version = _required_string(raw_key, "specificationVersion", location="planSpec.catalogue")
+    declared_endpoint_version = _optional_string(raw_key, "version", location="planSpec.catalogue")
+    registered_endpoint_versions = {
+        version_definition.catalogue_version
+        for definition in supported_specifications()
+        for version_definition in definition.versions
+        if version_definition.catalogue_standard == standard
+        and version_definition.version == specification_version
+        and api in version_definition.catalogue_apis
+    }
+    if declared_endpoint_version is None:
+        if len(registered_endpoint_versions) != 1:
+            raise CatalogueError(
+                "planSpec.catalogue.version is required when the endpoint version cannot be resolved from "
+                "planSpec.catalogue.specificationVersion"
+            )
+        endpoint_version = next(iter(registered_endpoint_versions))
+    else:
+        if registered_endpoint_versions and declared_endpoint_version not in registered_endpoint_versions:
+            expected = ", ".join(sorted(registered_endpoint_versions))
+            raise CatalogueError(
+                f"planSpec.catalogue.version must be {expected} for specification version {specification_version}"
+            )
+        endpoint_version = declared_endpoint_version
+    return CatalogueKey(
+        standard=standard,
+        version=endpoint_version,
+        api=api,
+        specification_version=specification_version,
+    )
+
+
+def parse_canonical_specification(
+    raw_specification: Mapping[str, JsonValue],
+) -> tuple[PlanDocumentBoundary, bool, SecurityProfile]:
+    """Parse a canonical ``testPlan.specification`` section on its own.
+
+    Used by lenient browser import to recover the specification boundary from
+    a test plan whose other sections may be invalid.
+
+    Args:
+        raw_specification: Raw ``testPlan.specification`` object.
+
+    Returns:
+        Compiler boundary, whether the family uses resource groups
+        (``OBL_READ_WRITE``) rather than direct endpoints (``OBL_DCR``), and the
+        security profile.
+
+    Raises:
+        CatalogueError: If the specification family, profile, or version is not
+            supported.
+    """
+    boundary, definition, security_profile = _parse_canonical_specification(raw_specification)
+    return boundary, definition.uses_resource_groups, security_profile
+
+
+def validate_canonical_security_environment(raw_environment: Mapping[str, JsonValue]) -> None:
+    """Validate a (possibly partial) canonical ``securityEnvironment`` object.
+
+    Args:
+        raw_environment: Raw security environment object or a subset of it.
+
+    Raises:
+        CatalogueError: If keys are unknown or known fields are malformed, for
+            example a non-HTTPS ``discoveryUrl``.
+    """
+    _parse_canonical_security_environment(raw_environment)
+
+
+def canonical_plan_config(
+    *,
+    security_environment: Mapping[str, JsonValue],
+    business_test_data: Mapping[str, JsonValue],
+) -> JsonObject:
+    """Build executable model-bank config from canonical plan sections.
+
+    Args:
+        security_environment: Canonical security environment.
+        business_test_data: Canonical resource-group business data.
+
+    Returns:
+        Config object accepted by the existing model-bank runner.
+
+    Raises:
+        CatalogueError: If a business-data section has the wrong shape.
+    """
+    return _canonical_plan_config(security_environment=security_environment, business_test_data=business_test_data)
 
 
 def _parse_canonical_plan_document(spec: Mapping[str, JsonValue]) -> PlanDocumentV2:
@@ -2060,22 +2359,46 @@ def _parse_canonical_plan_document(spec: Mapping[str, JsonValue]) -> PlanDocumen
             "dynamicClientRegistration",
             "metadata",
             "executionMode",
+            "execution",
         },
         location="testPlan",
     )
     raw_specification = _required_object(spec, "specification", location="testPlan")
     boundary, definition, security_profile = _parse_canonical_specification(raw_specification)
+    openapi_document_update = _parse_openapi_document_update(
+        boundary,
+        _optional_string(raw_specification, "openApiDocumentUpdate", location="testPlan.specification"),
+        location="testPlan.specification.openApiDocumentUpdate",
+    )
     _validate_canonical_scope_shape(spec, definition=definition)
     execution_mode = _parse_execution_mode(spec)
+    execution_settings = DEFAULT_EXECUTION_SETTINGS
+    if "execution" in spec:
+        try:
+            execution_settings = parse_execution_settings(spec["execution"])
+        except ExecutionSettingsError as error:
+            raise CatalogueError(str(error)) from error
     security_environment = _parse_canonical_security_environment(
         _required_object(spec, "securityEnvironment", location="testPlan")
     )
+    if definition.family == "OBL_READ_WRITE" and security_environment.get("clientAuthMethod") not in {
+        None,
+        "private_key_jwt",
+        "tls_client_auth",
+    }:
+        raise CatalogueError(
+            "Read/Write securityEnvironment.clientAuthMethod must be one of: private_key_jwt, tls_client_auth"
+        )
     business_test_data = _parse_canonical_business_test_data(spec) if definition.uses_resource_groups else {}
     metadata = _parse_canonical_metadata(spec)
     config = _canonical_plan_config(
         security_environment=security_environment,
         business_test_data=business_test_data,
     )
+    if definition.family == "OBL_DCR":
+        # DCR has independent JOSE/auth configuration, including secret methods
+        # and registration signing without a signing-certificate requirement.
+        config.pop("fapiSigning", None)
     return PlanDocumentV2(
         schema_version=_CANONICAL_PLAN_SCHEMA_VERSION,
         scheme=boundary.scheme,
@@ -2099,7 +2422,40 @@ def _parse_canonical_plan_document(spec: Mapping[str, JsonValue]) -> PlanDocumen
             if "dynamicClientRegistration" in spec
             else {}
         ),
+        openapi_document_update=openapi_document_update,
+        execution_settings=execution_settings,
     )
+
+
+def _parse_openapi_document_update(
+    boundary: PlanDocumentBoundary,
+    update: str | None,
+    *,
+    location: str,
+) -> str | None:
+    """Validate a plan-declared OpenAPI document update against the registry.
+
+    Args:
+        boundary: Parsed specification boundary.
+        update: Declared update value, if any.
+        location: Dot-path location used in error messages.
+
+    Returns:
+        The validated update value, or ``None`` when the version publishes no
+        selectable OpenAPI document updates.
+
+    Raises:
+        CatalogueError: If the update is required but missing, or not
+            published for the specification version.
+    """
+    try:
+        resolved = openapi_document_update_for_boundary(
+            boundary.scheme, boundary.specification, boundary.version, update
+        )
+    except ValueError as error:
+        message = str(error).replace("specification.openApiDocumentUpdate", location)
+        raise CatalogueError(message) from error
+    return None if resolved is None else resolved.update
 
 
 def _parse_canonical_specification(
@@ -2122,7 +2478,7 @@ def _parse_canonical_specification(
         definition = specification_for_family(family)
     except ValueError as error:
         raise CatalogueError(f"testPlan.{error}") from error
-    allowed_keys = {"family", "version", "profile", "securityProfile"}
+    allowed_keys = {"family", "version", "profile", "securityProfile", "openApiDocumentUpdate"}
     if not definition.uses_resource_groups:
         allowed_keys = {"family", "scheme", "name", "version"}
     _reject_unknown_keys(raw_specification, allowed_keys=allowed_keys, location="testPlan.specification")
@@ -2304,7 +2660,9 @@ def _parse_canonical_security_environment(raw_environment: Mapping[str, JsonValu
             "resourceBaseUrl",
             "responseType",
             "signingCertificatePath",
+            "signingCertificatePem",
             "signingPrivateKeyPath",
+            "signingPrivateKeyPem",
             "signingKeyId",
             "clientAssertionIssuer",
             "clientAssertionSubject",
@@ -2339,13 +2697,28 @@ def _parse_canonical_mtls(raw_mtls: Mapping[str, JsonValue]) -> None:
     """
     _reject_unknown_keys(
         raw_mtls,
-        allowed_keys={"enabled", "certificatePath", "privateKeyPath", "caBundlePath"},
+        allowed_keys={
+            "enabled",
+            "certificatePath",
+            "certificatePem",
+            "privateKeyPath",
+            "privateKeyPem",
+            "caBundlePath",
+            "caBundlePem",
+        },
         location="testPlan.securityEnvironment.mtls",
     )
     enabled = raw_mtls.get("enabled")
     if enabled is not None and not isinstance(enabled, bool):
         raise CatalogueError("testPlan.securityEnvironment.mtls.enabled must be a JSON boolean")
-    for key in ("certificatePath", "privateKeyPath", "caBundlePath"):
+    for key in (
+        "certificatePath",
+        "certificatePem",
+        "privateKeyPath",
+        "privateKeyPem",
+        "caBundlePath",
+        "caBundlePem",
+    ):
         value = raw_mtls.get(key)
         if value is not None and (not isinstance(value, str) or not value.strip()):
             raise CatalogueError(f"testPlan.securityEnvironment.mtls.{key} must be a non-empty string when present")
@@ -2708,8 +3081,6 @@ def _oauth_config_from_security_environment(security_environment: Mapping[str, J
         source_key="signingAlgorithm",
         target_key="requestObjectSigningAlg",
     )
-    if oauth and ("clientId" not in oauth or "redirectUri" not in oauth):
-        return {}
     return oauth
 
 
@@ -2724,18 +3095,13 @@ def _fapi_signing_config_from_security_environment(security_environment: Mapping
         fields are supplied.
     """
     signing: JsonObject = {}
-    _copy_optional_top_level_value(
-        signing,
-        security_environment,
-        source_key="signingCertificatePath",
-        target_key="signingCertificatePath",
-    )
-    _copy_optional_top_level_value(
-        signing,
-        security_environment,
-        source_key="signingPrivateKeyPath",
-        target_key="signingPrivateKeyPath",
-    )
+    for key in (
+        "signingCertificatePath",
+        "signingCertificatePem",
+        "signingPrivateKeyPath",
+        "signingPrivateKeyPem",
+    ):
+        _copy_optional_top_level_value(signing, security_environment, source_key=key, target_key=key)
     _copy_optional_top_level_value(signing, security_environment, source_key="signingKeyId", target_key="kid")
     _copy_optional_top_level_value(
         signing,
@@ -2755,15 +3121,7 @@ def _fapi_signing_config_from_security_environment(security_environment: Mapping
         source_key="clientAuthMethod",
         target_key="tokenEndpointAuthMethod",
     )
-    required_fields = {
-        "signingCertificatePath",
-        "signingPrivateKeyPath",
-        "kid",
-        "clientAssertionIssuer",
-        "clientAssertionSubject",
-        "tokenEndpointAuthMethod",
-    }
-    return signing if required_fields.issubset(signing) else {}
+    return signing
 
 
 def _tls_config_from_security_environment(security_environment: Mapping[str, JsonValue]) -> JsonObject:
@@ -2778,9 +3136,15 @@ def _tls_config_from_security_environment(security_environment: Mapping[str, Jso
     raw_mtls = security_environment.get("mtls")
     mtls = raw_mtls if isinstance(raw_mtls, dict) else {}
     tls: JsonObject = {}
-    _copy_optional_top_level_value(tls, mtls, source_key="caBundlePath", target_key="caBundlePath")
-    _copy_optional_top_level_value(tls, mtls, source_key="certificatePath", target_key="clientCertificatePath")
-    _copy_optional_top_level_value(tls, mtls, source_key="privateKeyPath", target_key="clientPrivateKeyPath")
+    for source_key, target_key in (
+        ("caBundlePath", "caBundlePath"),
+        ("caBundlePem", "caBundlePem"),
+        ("certificatePath", "clientCertificatePath"),
+        ("certificatePem", "clientCertificatePem"),
+        ("privateKeyPath", "clientPrivateKeyPath"),
+        ("privateKeyPem", "clientPrivateKeyPem"),
+    ):
+        _copy_optional_top_level_value(tls, mtls, source_key=source_key, target_key=target_key)
     return tls
 
 
@@ -2926,7 +3290,16 @@ def _parse_plan_document_v2(spec: Mapping[str, JsonValue]) -> PlanDocumentV2:
     """
     _reject_unknown_keys(
         spec,
-        allowed_keys={"schemaVersion", "scheme", "specification", "version", "securityProfile", "scope", "config"},
+        allowed_keys={
+            "schemaVersion",
+            "scheme",
+            "specification",
+            "version",
+            "openApiDocumentUpdate",
+            "securityProfile",
+            "scope",
+            "config",
+        },
         location="planSpec",
     )
     raw_config = _required_object(spec, "config", location="planSpec")
@@ -2950,6 +3323,7 @@ def _parse_plan_document_v2(spec: Mapping[str, JsonValue]) -> PlanDocumentV2:
         business_test_data=MappingProxyType(_business_test_data_from_plan_config(config)),
         metadata=MappingProxyType({}),
         execution_mode="certification",
+        openapi_document_update=_optional_string(spec, "openApiDocumentUpdate", location="planSpec"),
     )
 
 
@@ -3225,18 +3599,13 @@ def _security_environment_from_plan_config(config: Mapping[str, JsonValue]) -> J
             source_key="tokenEndpointAuthMethod",
             target_key="clientAuthMethod",
         )
-        _copy_optional_top_level_value(
-            security_environment,
-            fapi_signing,
-            source_key="signingCertificatePath",
-            target_key="signingCertificatePath",
-        )
-        _copy_optional_top_level_value(
-            security_environment,
-            fapi_signing,
-            source_key="signingPrivateKeyPath",
-            target_key="signingPrivateKeyPath",
-        )
+        for key in (
+            "signingCertificatePath",
+            "signingCertificatePem",
+            "signingPrivateKeyPath",
+            "signingPrivateKeyPem",
+        ):
+            _copy_optional_top_level_value(security_environment, fapi_signing, source_key=key, target_key=key)
         _copy_optional_top_level_value(security_environment, fapi_signing, source_key="kid", target_key="signingKeyId")
         _copy_optional_top_level_value(
             security_environment,
@@ -3301,11 +3670,19 @@ def _merge_mtls_export(security_environment: JsonObject, config: Mapping[str, Js
     if not isinstance(tls, dict):
         return
     mtls: JsonObject = {}
-    _copy_optional_top_level_value(mtls, tls, source_key="caBundlePath", target_key="caBundlePath")
-    _copy_optional_top_level_value(mtls, tls, source_key="clientCertificatePath", target_key="certificatePath")
-    _copy_optional_top_level_value(mtls, tls, source_key="clientPrivateKeyPath", target_key="privateKeyPath")
+    for source_key, target_key in (
+        ("caBundlePath", "caBundlePath"),
+        ("caBundlePem", "caBundlePem"),
+        ("clientCertificatePath", "certificatePath"),
+        ("clientCertificatePem", "certificatePem"),
+        ("clientPrivateKeyPath", "privateKeyPath"),
+        ("clientPrivateKeyPem", "privateKeyPem"),
+    ):
+        _copy_optional_top_level_value(mtls, tls, source_key=source_key, target_key=target_key)
     if mtls:
-        mtls["enabled"] = "certificatePath" in mtls and "privateKeyPath" in mtls
+        mtls["enabled"] = ("certificatePath" in mtls or "certificatePem" in mtls) and (
+            "privateKeyPath" in mtls or "privateKeyPem" in mtls
+        )
         security_environment["mtls"] = mtls
 
 
@@ -4210,11 +4587,11 @@ def _directly_applicable_case_ids(
                 reason=f"not applicable to security profile {spec.security_profile}",
             )
             continue
-        if not _test_case_applies_to_specification_version(test_case, spec.specification_version):
+        if not _test_case_applies_to_specification_version(test_case, catalogue.key.specification_version):
             decisions[test_case.test_case_id] = ApplicabilityDecision(
                 test_case_id=test_case.test_case_id,
                 selected=False,
-                reason=f"not applicable to specification version {spec.specification_version}",
+                reason=f"not applicable to specification version {catalogue.key.specification_version}",
             )
             continue
         endpoint_refs = set(test_case.applicability.endpoint_refs)
@@ -4260,21 +4637,19 @@ def _directly_applicable_case_ids(
 
 def _test_case_applies_to_specification_version(
     test_case: CatalogueTestCase,
-    specification_version: str | None,
+    specification_version: str,
 ) -> bool:
-    """Return whether a case may execute for a plan specification version.
+    """Return whether a case may execute for a catalogue specification version.
 
     Args:
         test_case: Catalogue case whose applicability should be checked.
-        specification_version: User-facing plan specification version, or
-            ``None`` when compiling a legacy v1 plan spec.
+        specification_version: Participant-facing specification version of the
+            catalogue being compiled.
 
     Returns:
-        True when no version-specific plan boundary is being compiled, the case
-        has no version filter, or the selected version is explicitly included.
+        True when the case has no version filter or the version is explicitly
+        included.
     """
-    if specification_version is None:
-        return True
     applicable_versions = test_case.applicability.specification_versions
     return not applicable_versions or specification_version in applicable_versions
 

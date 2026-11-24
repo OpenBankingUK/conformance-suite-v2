@@ -11,108 +11,198 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Use `main` for v2 development and beta publication instead of maintaining a
+  separate active release branch. New beta versions publish after successful
+  CI; already-published versions are not overwritten. Dependency and security
+  updates target main once. GA publication remains disabled.
+
+## [2.0.0-beta.26] - 2026-11-24
+
+### Changed
+
+- Switch the Python 3.14 builder and runtime from Debian 13 to Alpine for
+  amd64 and arm64. The runtime ships without pip; native dependencies use
+  locked musllinux wheels.
+- Refresh the pinned uv container digest. The uv version remains 0.13.8.
+
+## [2.0.0-beta.25] - 2026-11-24
+
+### Changed
+
+- Refresh the DHI Python runtime base image. The builder base image is unchanged
+  from 2.0.0-beta.24.
+- Update Ruff, the development linter and formatter, from 0.17.5 to 0.17.6
+  to match `main`.
+
+## [2.0.0-beta.24] - 2026-11-23
+
+### Changed
+
+- Republish the beta image so Docker Hub can re-evaluate its vulnerability
+  status after Docker Hub service updates. There are no application,
+  dependency or base image changes since 2.0.0-beta.23.
+
+## [2.0.0-beta.23] - 2026-11-20
+
+### Changed
+
+- Refresh the DHI Python builder base image to the latest reviewed digest. The
+  runtime base image is unchanged.
+
+## [2.0.0-beta.22] - 2026-11-18
+
+### Changed
+
 - Build candidate images with BuildKit's default SLSA provenance version
   instead of pinning v0.2. Limit publication evidence verification to artifact
   integrity, image identity and attached SLSA provenance (v0.2 or v1) and SPDX
   SBOMs bound to the exact image. Stop enforcing BuildKit's internal build
   graph, provenance build arguments and base materials, and SBOM contents;
   retain source-revision labels and separate Dockerfile base validation.
+- Add a non-blocking Docker Scout impact report to candidate image CI. It
+  compares the candidate with the published `2.0.0-beta-latest` image and
+  states whether the runtime base digest changed.
+- Upgrade the Ruff development dependency from 0.17.4 to 0.17.5, matching
+  main.
+- Document that the CLI prints each manual-step PSU authorisation URL to
+  standard error, including in CI jobs and redirected logs, and that log access
+  should be restricted accordingly.
+
+### Security
+
+- Prevent canonical test-plan schema errors from echoing submitted values,
+  including credentials, while preserving field paths and safe validation
+  guidance. Browser plan import issues use the same safe guidance.
+- Make DCR `tls_client_auth_subject_dn` syntax validation linear-time so a
+  crafted subject DN, including one returned in an ASPSP registration response,
+  can no longer stall a run through exponential regular-expression
+  backtracking, while preserving escape-aware RFC 2253 delimiter handling and
+  valid trailing escaped-backslash pairs.
+- Normalize unknown and malformed display timezones to the same helpful API
+  validation message without returning library exception text or submitted
+  values.
+- Stop echoing OAuth state values in duplicate auth-session API errors while
+  preserving the HTTP 409 conflict response.
+
+### Known issues
+
+- The runtime base image is unchanged from 2.0.0-beta.21. Docker Hub and
+  Docker Scout may continue to report the known `libexpat1` High findings
+  (CVE-2026-117610 and CVE-2026-118370), despite Docker's signed VEX marking
+  them `not_affected` for the DHI runtime base. This beta does not introduce a
+  runtime CVE remediation.
+
+## [2.0.0-beta.21] - 2026-11-17
+
+### Changed
+
+- Upgrade the locked runtime dependencies Django from 6.0.8 to 6.1.3 and
+  joserfc from 1.7.7 to 1.8.0, matching main. Upgrade development tooling to
+  django-stubs 6.1.2, mypy 2.4.1, packaging 26.3, pytest 9.2.0,
+  pytest-django 4.14.0 and Ruff 0.17.4, and type uploaded files as binary for
+  the now-generic Django `UploadedFile` stubs.
+
+### Removed
+
+- Remove the unused `security/vulnerability-exceptions.toml`. No release check
+  has read it since the custom vulnerability gate was retired in
+  2.0.0-beta.18.
+
+### Security
+
+- Require TLS 1.2 or later on the offline DCR test service's local TLS server.
+  The test service is not included in the published image.
+
+### Known issues
+
+- The runtime base image is unchanged from 2.0.0-beta.20. Docker Hub and
+  Docker Scout may continue to report the known `libexpat1` High findings
+  (CVE-2026-117610 and CVE-2026-118370), despite Docker's signed VEX marking
+  them `not_affected` for the DHI runtime base. This beta does not introduce a
+  runtime CVE remediation.
+
+## [2.0.0-beta.20] - 2026-11-17
+
+### Changed
+
+- Align release finalization with main's pinned GitHub Actions versions and
+  add regression coverage for DHI Dependabot update rules.
+
+### Security
+
+- Upgrade the locked urllib3 development dependency from 2.7.0 to 2.8.0,
+  fixing GHSA-8988-9cw3-xx77 (High), GHSA-vxq7-64xx-v4gw (High) and
+  GHSA-gh4c-6fx4-qh6g (Medium). urllib3 is not installed in the published
+  image.
+- Exclude local-only configuration, generated output and agent workspace
+  directories (`local-config/`, `out/`, `ai/`) from the Docker build context
+  so they cannot be copied into the image.
+
+### Known issues
+
+- The runtime base and locked runtime dependencies are unchanged from
+  2.0.0-beta.19. Docker Hub and Docker Scout may continue to report the known
+  `libexpat1` High findings (CVE-2026-117610 and CVE-2026-118370), despite
+  Docker's signed VEX marking them `not_affected` for the DHI runtime base.
+  This beta does not introduce a runtime CVE remediation.
+
+## [2.0.0-beta.19] - 2026-11-17
+
+### Changed
 
 - Refresh the digest-pinned DHI Debian 13 builder and upgrade uv from 0.10.4
   to 0.13.8 for frozen-lockfile Docker builds. The runtime base and locked
   application dependencies are unchanged; this does not remediate the
   published runtime CVEs.
 
-- Remove custom image/dependency security scans, scheduled rescans, and
-  security-risk and release-publishing approvals. Promote eligible candidates
-  directly after successful CI while preserving artifact integrity and release
-  validation. Keep the external Snyk PR check, CodeQL, secret scanning, Ruff
-  security lint, and normal CI/review requirements. Custom multi-platform
-  vulnerability surveillance and automatic vulnerability-issue updates stop.
+### Known issues
 
-- Pause GA image publication while 2.0.0 is in beta. Automatic promotion no
-  longer publishes from `main`, whose placeholder version would otherwise be
-  released as GA on every push now that publication approvals are removed.
+- The runtime base is unchanged from 2.0.0-beta.18, so Docker Hub and Docker
+  Scout may continue to report Debian OS-package findings from the Docker
+  Hardened Images (DHI) Python runtime, including two High findings in
+  `libexpat1` (CVE-2026-117610 and CVE-2026-118370). Docker's signed VEX for the
+  DHI Python runtime base marks both `not_affected` because DHI backported the
+  upstream expat fixes, but Docker Scout still lists them on derived images.
+  Docker Scout reported no fixed package version for either finding when
+  2.0.0-beta.18 was scanned on 2026-11-17.
+
+## [2.0.0-beta.18] - 2026-11-16
+
+### Changed
+
+- Remove custom image vulnerability assessments, rescans and publication
+  approval gates. Automatically publish eligible beta and preview candidates
+  after CI; pause GA publication while 2.0.0 remains in beta. Retain the
+  external Snyk PR check, CodeQL, artifact integrity checks and release
+  validation.
+
+### Known issues
+
+- Docker Hub displayed two High findings in Debian's `libexpat1` package
+  (CVE-2026-117610 and CVE-2026-118370) on 2.0.0-beta.17 and the 2.0.0-dev.1
+  preview on 2026-11-11. At the time, the assessed package had no
+  scanner-reported fixed version. Docker's signed VEX for the Docker Hardened
+  Images (DHI) Python runtime base marks both `not_affected` because DHI
+  backported the upstream expat fixes. The historical assessment applied this
+  verified VEX; the findings remained in Docker Hub's summary for the preview
+  despite its preserved max-mode provenance and SBOM. Custom image
+  vulnerability scans have since been retired, so these findings are no
+  longer re-assessed or used as a publication gate. The 2.0.0-beta.18 runtime
+  keeps the same DHI Expat package, so Docker Hub may report the same findings.
 
 ### Security
 
-- Prevent canonical test-plan schema errors from echoing submitted values,
-  including credentials, while preserving field paths and safe validation guidance.
-
-- Make DCR `tls_client_auth_subject_dn` syntax validation linear-time so a
-  crafted subject DN, including one returned in an ASPSP registration response,
-  can no longer stall a run through exponential regular-expression
-  backtracking, while preserving escape-aware RFC 2253 delimiter handling and
-  valid trailing escaped-backslash pairs.
-
-- Normalize unknown and malformed display timezones to the same helpful API
-  validation message without returning library exception text or submitted values.
-
-- Refresh the digest-pinned DHI Python 3.14 / Debian 13 builder and runtime
-  multi-architecture indexes. The runtime updates gcc-14, libgcc-s1 and
-  libstdc++6; the Expat High findings remain unchanged and are not resolved by
-  this refresh.
-
-- Require fresh candidate-bound risk approval for unfixed Docker Scout
-  high/critical findings even when signed DHI VEX assesses them as fixed or
-  not affected; reported fixes remain hard blockers. Show per-platform blockers,
-  raw Scout severity counts and VEX context on the PR check and promotion
-  summaries, including after approval. Include missing DHI provenance roles
-  and platform in those summaries and keep all report decisions consistent.
-
+- Refresh the pinned Debian 13 DHI builder and runtime indexes for amd64 and
+  arm64, updating gcc-14, libgcc-s1 and libstdc++6. The two existing Expat
+  High findings remain unchanged.
 - Preserve per-platform BuildKit max-mode provenance and SPDX SBOMs in the
-  candidate OCI archives through approved Docker Hub publication, while
-  continuing to scan and promote the exact runnable image manifest digests.
-  Keep trusted assessment and promotion compatible with legacy Docker and
-  unattested OCI candidate archives until release branches adopt the new build.
-  Include a Docker import view of the same OCI blobs so the existing trusted
-  assessor can load the new archive during rollout without a check bypass.
-  Pass the validated published version through the step environment instead of
-  expanding it inline in the publication shell.
+  candidate OCI archives through Docker Hub publication, while continuing to
+  promote the exact runnable image manifest digests. Keep promotion compatible
+  with legacy Docker and unattested OCI candidate archives. Pass the validated
+  published version through the step environment instead of expanding it
+  inline in the publication shell.
 
-- Add daily grouped Dependabot refreshes for digest-pinned DHI builder/runtime
-  images and a trusted, candidate-bound security assessment workflow. The
-  assessment verifies signed DHI provenance, reports both supported platforms,
-  and uses a protected GitHub Environment for eligible risk acceptance; fixable
-  findings and invalid evidence remain blocking. Promotion requires the trusted
-  receipt and performs a fresh scan before its existing publication gate.
-- Migrate the digest-pinned DHI Python 3.14 builder and distroless runtime
-  from Alpine 3.24 to Debian 13 for amd64 and arm64, removing musl and the
-  temporary Expat/zlib APK overlay. Remove unused Debian system pip with
-  fail-closed layout checks, require locked binary wheels, and verify
-  pip absence, glibc/manylinux and OpenSSL package inventory in per-platform
-  CI smoke tests. Preserve the non-root runtime and existing vulnerability
-  gates without adding exceptions or suppressions. Remove the stale Alpine
-  `sqlite` acceptance for CVE-2026-119586 after both Debian platform scans
-  report no matching finding; this is not evidence that the SQLite flaw is fixed.
-- Approve the exact DHI Python 3.14 / Debian 13 multi-architecture index
-  (`4491196f...`) for staged runtime migration, retaining all Alpine approvals
-  and rejecting standalone platform manifests. This is policy-only: the
-  Dockerfile pin, baseline default, vulnerability gates and exceptions remain
-  unchanged; runtime migration follows after approval reaches main and release.
-- Forward-port the temporary Expat/zlib overlay and approved DHI Python 3.14 /
-  Alpine 3.24 base pair to main. Install signed, pinned Alpine v3.24/main
-  `expat`/`libexpat` `2.10.0-r0` and `zlib` `1.4-r0`, replacing only their
-  runtime files and APK inventory records. This addresses CVE-2026-4738,
-  CVE-2026-113351, CVE-2026-115506, CVE-2026-117610, and CVE-2026-118370
-  while retaining the distroless non-root runtime and existing scan gates.
-- Record a self-approved, 90-day risk acceptance for CVE-2026-119586 in
-  `sqlite`, expiring 2027-02-07. The assessment concerns SQLite CLI `.recover`
-  command injection and the inspected runtime's absence of the CLI, not a
-  vendor-confirmed not-affected determination; fix-available and stale-entry
-  rejection remain enforced.
-- Refresh the digest-pinned DHI Python 3.14 / Alpine 3.24 builder and runtime
-  for amd64 and arm64 to the reviewed beta.13 pair, including Expat/libexpat
-  `2.9.0-r1`, zlib `1.3.2-r1`, and refreshed musl packages, addressing
-  CVE-2026-102633, CVE-2026-77214, and CVE-2026-85091 while preserving the
-  distroless non-root runtime and existing vulnerability gates.
-- Upgrade locked certifi from `2026.5.20` to `2026.10.23` to remove compromised
-  emSign trust roots identified by GHSA-6q48-6c7w-9gw2.
-- Raise the joserfc minimum requirement to `1.7.6` and upgrade its lock from
-  `1.7.1` to `1.7.7`, addressing CVE-2026-119283 (GHSA-jpxq-7h8p-2q76) and
-  CVE-2026-119284 (GHSA-9pg5-8c7x-5hfx).
-- Stop echoing OAuth state values in duplicate auth-session API errors while
-  preserving the HTTP 409 conflict response.
+## [2.0.0-beta.17] - 2026-11-10
 
 ### Fixed
 
@@ -126,57 +216,352 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `artifacts/candidate-context.json` archive path and explicitly use GET when
   fetching source files from the exact verified commit, fixing the post-CI
   identity/input handoff without changing trust or vulnerability gates.
-- Scheduled published-image rescans fetch signed OpenVEX from the approved
-  runtime base in the matching release git tag, including digest-matched aliases,
-  rather than from derived images. Scan the newest beta, rc and GA versions
-  plus unknown tags, deduplicated by immutable digest; list superseded versions
-  as skipped and close old-only vulnerability issues only after exact current
-  target report coverage. Historical tags and Releases remain unchanged.
-- Accept HTTPS IP-literal OAuth callbacks, such as
-  `https://127.0.0.1:8443/conformancesuite/callback`, by validating browser
-  redirect URIs separately from outbound HTTPS targets. The FCS v1 `0.0.0.0`
-  callback keeps working, and outbound HTTPS target validation still requires
-  DNS hostnames. The Docker smoke test checks both local callback hosts.
-- Trusted runtime-base validation permits the reviewed DHI Python 3.14 Alpine
-  3.24 multi-architecture index (`3d7fbfac...`) alongside the existing approved
-  indexes, returning the selected reference for digest-bound VEX retrieval.
-  Dockerfile defaults, scanner policy and runtime dependencies are unchanged.
-- Automatic and manual preview, beta, and GA promotions share a caller-level
-  concurrency lock through publication and Git tag/GitHub Release finalization,
-  preventing overlapping release boundaries without nested reusable-workflow locks.
+
+### Security
+
+- Add daily grouped DHI digest refreshes and a trusted candidate-bound security
+  assessment with signed provenance verification and protected risk approvals.
+  Promotion requires an assessment receipt and a fresh vulnerability scan.
+- Scan current published image digests using their validated runtime base for
+  VEX, and require complete scan coverage before closing vulnerability issues.
+
+## [2.0.0-beta.16] - 2026-11-09
+
+### Security
+
+- Migrate the digest-pinned DHI builder and distroless runtime to Debian 13 /
+  glibc for amd64 and arm64 using the separately approved runtime index.
+  Remove the obsolete Alpine Expat/zlib APK overlay and its helper.
+  Require locked binary wheels and remove unused system pip with fail-closed
+  layout checks, preserving UID/GID `65532` and all scan gates.
+- Remove the stale CVE-2026-119586 / Alpine `sqlite` acceptance after both
+  Debian platform scans reported no matching finding. This is not a SQLite
+  fix or a vendor not-affected determination; no new exceptions are added.
+
+### Fixed
+
+- Retry transient pinned Docker Scout downloads with bounded retries while
+  retaining checksum verification; clarify that signed VEX comes from the
+  assessed runtime base, not its derived published images.
+
+## [2.0.0-beta.15] - 2026-11-09
 
 ### Changed
 
-- Group daily Dependabot updates for the DHI Python builder and runtime into
-  one reviewed pull request on `main` and the active `release/2.0.0` branch,
-  keeping the pinned pair together during routine refreshes.
-- The shared vulnerability scan action retries transient Docker Scout CLI
-  download failures within a bounded window, while retaining the pinned release
-  and architecture-specific checksum verification.
 - Apply one OAuth redirect URI policy, aligned with Open Banking DCR 3.4,
-  RFC 6749 and FAPI 1, across configuration, manifests, DCR, the DCR builder
-  and PSU execution. HTTPS DNS hostnames and unicast IPv4/IPv6 literals are
-  accepted, together with the FCS v1
-  `https://0.0.0.0:8443/conformancesuite/callback`. Reject `localhost`
-  (previously accepted), `.localhost` names, fragments, backslashes,
-  non-canonical IPv4 spellings and non-unicast addresses. Preserve registered
-  redirect values, ports and paths exactly. Include `[::1]` in the container's
-  default `DJANGO_ALLOWED_HOSTS` for IPv6 loopback callbacks.
+  RFC 6749 and FAPI 1, across the configuration, manifest, DCR, DCR builder,
+  PSU execution and CLI callback listener validators. HTTPS DNS hostnames and
+  unicast IPv4/IPv6 literals are accepted, together with the FCS v1
+  `https://0.0.0.0:8443/conformancesuite/callback`. `localhost` (which was
+  previously accepted), `.localhost` names, fragments, backslashes,
+  non-canonical IPv4 spellings such as `127.1` or `2130706433`, and
+  non-unicast addresses are rejected. Registered redirect values, ports and
+  paths are preserved exactly.
+- Bind the CLI callback listener to `::1` for an `https://[::1]:…` redirect URI
+  when run outside a container.
+- Include `[::1]` in the container's default `DJANGO_ALLOWED_HOSTS`, so a
+  callback published on the IPv6 loopback is not rejected by Django's
+  host-header validation.
 - Allow the same named GitHub user to own and approve a documented,
   time-limited vulnerability exception. Both identity fields and the reason
   remain required; scans, expiry, fix-available rejection, trusted-main
   promotion, and GitHub PR/review restrictions are unchanged.
-- `.github/workflows/_finalize-ga-release.yml` is replaced by
-  `.github/workflows/_finalize-release.yml`, which handles both beta and GA
-  publications. The manual **Promote beta image** recovery workflow now also
-  creates the tag and GitHub prerelease.
-- Renamed the temporary MVP beta pointer from `beta-latest` to
-  `2.0.0-beta-latest`, selecting only the highest published 2.0.0 beta and
-  freezing updates once formal `2.0.0` is published. The old registry tag is
-  no longer maintained and is not deleted automatically.
+
+### Fixed
+
+- Accept HTTPS IP-literal OAuth callbacks, such as
+  `https://127.0.0.1:8443/conformancesuite/callback`, by validating browser
+  redirect URIs separately from outbound HTTPS targets. The FCS v1 `0.0.0.0`
+  callback keeps working, and outbound HTTPS target validation, which still
+  requires DNS hostnames, is unchanged.
+
+### Security
+
+- Temporarily replace the pinned DHI runtime's zlib `1.3.2-r1` with the
+  signature-verified Alpine v3.24/main package `1.4-r0` to address
+  CVE-2026-4738.
+- Record a self-approved, 90-day risk acceptance for CVE-2026-119586 in
+  `sqlite`, expiring 2027-02-07. The assessment concerns SQLite CLI `.recover`
+  command injection and the inspected runtime's absence of the CLI, not a
+  vendor-confirmed not-affected determination; fix-available and stale-entry
+  rejection remain enforced.
+
+## [2.0.0-beta.14] - 2026-11-02
+
+### Changed
+
+- Refresh the digest-pinned DHI Python 3.14 / Alpine 3.24 builder and runtime,
+  aligning Python and bytecode packages at `3.14.10-r1`. The runtime index
+  includes the selected amd64 image and its arm64 counterpart, preserving
+  both supported architectures and the existing distroless non-root runtime.
+
+### Security
+
+- Require joserfc `>=1.7.6` and upgrade the locked version to `1.7.7` to
+  address CVE-2026-119283 (GHSA-jpxq-7h8p-2q76) and
+  CVE-2026-119284 (GHSA-9pg5-8c7x-5hfx).
+- Temporarily replace the pinned DHI runtime's Expat `2.9.0-r1` packages with
+  signature-verified Alpine v3.24 `main` packages `2.10.0-r0` to address
+  CVE-2026-115506, CVE-2026-113351, CVE-2026-117610 and CVE-2026-118370.
+  The overlay replaces the runtime shared library, CLI and APK inventory
+  records; remove it after both approved DHI indexes include fixed Expat
+  packages.
+
+### Fixed
+
+- Add the next DHI Python 3.14 / Alpine 3.24 runtime index to the exact-reference
+  approval set for amd64 and arm64 while retaining both existing approvals.
+  This policy-only prerequisite leaves Dockerfile pins, scanner policy, and
+  vulnerability exceptions unchanged so it can land in the trusted branches
+  before the image refresh.
+
+## [2.0.0-beta.13] - 2026-10-28
+
+### Security
+
+- Upgrade locked certifi to `2026.10.23` to remove compromised emSign trust
+  roots identified by GHSA-6q48-6c7w-9gw2.
+- Refresh the digest-pinned community DHI Python 3.14 / Alpine 3.24 builder
+  and runtime for amd64 and arm64. Upstream Expat/libexpat `2.9.0-r1` and
+  zlib `1.3.2-r1` replace the temporary Alpine package overlay for
+  CVE-2026-102633, CVE-2026-77214, and CVE-2026-85091, preserving the
+  distroless non-root runtime and existing vulnerability gates.
+- Align the trusted runtime-base approval with the reviewed prerequisite
+  tooling, accepting only the exact existing and refreshed Alpine indexes.
+
+### Fixed
+
+- Allow the reviewed Alpine DHI runtime index refresh through the trusted
+  base-image validator while retaining the existing baseline digest. Approval
+  remains limited to exact immutable image references; the prerequisite
+  tooling change leaves runtime images, scanner policy and vulnerability
+  exceptions unchanged.
+
+## [2.0.0-beta.12] - 2026-10-09
+
+### Fixed
+
+- Read/Write 3.1.11, 4.0.0 and 4.0.1 now support OAuth `tls_client_auth` with an already registered client without requiring private-key JWT signing credentials for token-only flows. Signing requirements remain scope-dependent for authorization request objects and API payloads. Builder validation and canonical import/export preserve the independent authentication choice, and TLS-authenticated token requests reject mixed JWT/secret authentication. DCR registration and subject-DN validation remain independent.
+
+## [2.0.0-beta.11] - 2026-10-09
 
 ### Added
 
+- Dedicated installation and usage guides, with prominent README links to all
+  three documentation categories and a lightweight, evidence-backed design
+  decision log.
+- Live CI, image-promotion and security re-scan badges, plus README deployment
+  and vulnerability highlights linking to images, releases, scan evidence and
+  security findings. Workflow status is explicitly not a zero-vulnerability or
+  certification guarantee.
+
+### Changed
+
+- Consolidated participant workflows into the usage guide and improved
+  developer navigation while preserving the quick start, existing README
+  section anchors and beta safety warnings.
+
+### Fixed
+
+- Corrected operational documentation for source HTTP/HTTPS, Docker reload
+  behaviour, DCR inline credential support, persisted versus process-local run
+  state, and JSON versus NDJSON execution logs.
+- Corrected the CI/CD guide's outdated CI badge repository URL.
+
+## [2.0.0-beta.10] - 2026-10-09
+
+### Added
+
+- The CLI prints the MVP beta notice and Standards Team feedback email at startup. Its standalone HTTPS callback pages reuse the UI's yellow beta banner with matching colours, badge and spacing, plus a pre-filled email link and copyable feedback template without automatically including callback values or run evidence.
+- Flushed stderr progress now identifies CLI preparation, callback-listener and HTTP/TLS setup, running steps, elapsed execution time, and result writing. Step progress does not include request/response payloads or credentials; the final stdout summary and structured evidence are unchanged.
+- CLI status labels use terminal-only colours for progress, beta notices and outcomes. Redirected output stays plain, and `NO_COLOR` disables ANSI styling.
+- Ctrl+C/SIGINT and SIGTERM now cancel CLI runs cleanly with exit codes `130` and `143`, without a traceback or partial run results. Executor workers stop PSU polling and dispatching further steps; in-flight HTTP requests finish or reach their existing timeout before cleanup completes. HTTP clients and callback listeners are closed, previous signal handlers are restored, and a startup hint identifies the Python PID for machine cancellation.
+
+### Changed
+
+- The CLI entry point announces loading before importing the execution engine, so initial application loading no longer appears completely silent.
+
+### Fixed
+
+- The CLI HTTPS callback listener no longer performs an unused reverse DNS lookup during binding, avoiding resolver-related stalls after `Starting HTTPS callback listener...`.
+- Interrupted CLI result/log writes clean up staging files and preserve complete published evidence; callback sockets are also released if cancellation interrupts TLS wrapping or listener thread startup.
+
+## [2.0.0-beta.9] - 2026-10-08
+
+### Added
+
+- The CLI now supports unattended pipeline runs. A plan can include an optional `execution.psuAuthorization` block:
+  - `mode` is `manual` (the default) or `auto-approve`.
+  - `headers` are custom headers sent on the auto-approve authorisation request only, for example a sandbox auto-approve header.
+  - `parameters` are custom authorisation parameters. They are added as signed request-object claims, for example `"headless": true`.
+  - Protocol-generated OAuth/OIDC names and HTTP framing headers are rejected.
+  - Results record the mode and the header and parameter names, never their values. Certification eligibility does not change.
+- In manual mode, the CLI starts a built-in HTTPS callback listener for the plan's `redirectUri` and always prints the PSU authorisation URL.
+  - New `--open-browser` option opens the URL automatically.
+  - New `--callback-listen HOST:PORT` option overrides the bind address.
+  - If the listener can't bind, the CLI exits with code `2` and an actionable message.
+- At the end of each run, the CLI prints a summary to stdout. It shows the overall result, step counts, the PSU authorisation mode, any certification-eligibility reasons, and failed steps with HTTP status and message. It ends with the paths of the result file and execution log and the `result_gate` command.
+- The browser builder's connection & security step can set the PSU authorisation mode, custom headers and custom parameters.
+- When auto-approve authorisation does not complete with a redirect, the failure message reports the HTTP status, and whether the ASPSP returned an HTML page, and points to the step's response evidence.
+- The auto-approve authorisation request and response now appear in the execution log (`request-sent` / `response-received`) and in the run page's step evidence. Evidence includes:
+  - status, content type and masked headers;
+  - the HTML page title, for login or consent pages;
+  - a masked JSON error body, when the response is JSON;
+  - whether the redirect targeted `redirectUri`. If it did, the redirect location is recorded with the code masked. If it went elsewhere (for example an ASPSP error page), `redirectTarget` records the scheme, host and path only, and the step message names that target.
+- When an auto-approve authorisation request is redirected to a page on the ASPSP's own authorisation server rather than to `redirectUri`, the runner follows up to three same-origin redirects. It sends only the cookies the ASPSP set, and never the custom headers. The page's visible text (scripts, markup and hidden fields removed, at most 2 KB), its title and a masked JSON body are recorded as `errorPage` evidence, and the start of the text is added to the step message. For example, Ozone shows the reason for a rejected request only on its `/perry/error` page. Cross-origin redirects are never followed.
+- Auto-approve authorisation now reads `code`, `state` and `error` from the redirect URL fragment as well as from the query string. OIDC hybrid-flow (`code id_token`) redirects return these in the fragment by default. URL masking in evidence now covers fragment parameters too, so a fragment `code` or `id_token` is never recorded.
+
+### Changed
+
+- The PSU authorisation mode `headless` is renamed `auto-approve`, in both manifest PSU steps and the plan's `execution.psuAuthorization.mode`. The name now describes who completes authorisation: the PSU in a browser (`manual`) or the sandbox (`auto-approve`). It avoids confusion with vendor-specific "headless" APIs. Auto-approval is a sandbox facility, not an Open Banking UK or FAPI concept; Ozone and the legacy FCS call it "headless". A plan that still uses `"mode": "headless"` is rejected with a message asking you to change it to `auto-approve`.
+- Manual PSU authorisation URLs are now always printed to stderr, not only on an interactive terminal.
+
+## [2.0.0-beta.8] - 2026-10-06
+
+### Added
+
+- Every builder page now has an **Import plan** button beside **Main menu**. It imports a test plan JSON file or pasted JSON into the current draft, so switching from building to importing no longer needs a trip through the main menu. If the draft already has values, a **Replace current plan?** confirmation is shown first. **Cancel** returns to the page you came from.
+- The review page's plan JSON box is now clearly marked as editable and has a **Load from file…** button. Pasted, typed or loaded JSON is applied automatically after a short pause, using the same rules as import. The summary, generated tests and step bar refresh without replacing the text box or moving the caret.
+  - A status line shows **Updating…**, **Applied** or an error.
+  - Incomplete or invalid JSON leaves the last applied plan untouched.
+  - Older responses never overwrite newer edits.
+  - Launch, export and step navigation still validate the current text.
+- The review page's plan JSON box is larger and has JSON syntax highlighting. It is still a plain text box underneath, so typing, undo, paste and live apply behave as before. JSON syntax errors give the line number in the status message and get a red wavy underline on that line. A missing comma is marked on the line that needs the comma.
+
+### Changed
+
+- The README, Docker guide and Developer guide now describe the current builder:
+  the step order (specification, scope, connection & security, business data,
+  review), free step-bar navigation with review as the launch gate,
+  **Fetch and fill**, **Import plan** on every builder page, and the live,
+  highlighted plan JSON editor.
+- Builder dropdowns on the specification and connection & security pages are
+  restyled, with a consistent chevron, hover and focus states. Browsers that
+  support customisable selects (`appearance: base-select`) also get a styled
+  option list. The controls stay native, so keyboard and screen-reader
+  behaviour is unchanged.
+- The Read/Write builder now asks for scope before connection and security:
+  specification → scope → connection & security → business data → review. The
+  discovery URL moved onto the connection and security page, with an inline
+  **Fetch and fill** action that fills empty OAuth fields from discovery
+  metadata, summarises what was filled or kept, tags filled fields **From
+  discovery**, and offers **Replace with discovery values** when typed values
+  differ. DCR's discovery button is now **Preview discovery**. Each field
+  shows **Required to run** (with the reason), **Optional**, or **Depends on
+  scope** based on the selected endpoints, and the step shows needing attention
+  (!) when a value the selected tests need is missing.
+- Test plan validation now reports a missing OAuth client, OAuth endpoint, FAPI
+  signing, discovery or resource-server value that the selected tests need to
+  run, naming the `securityEnvironment` key and the reason. This applies to
+  builder, import, REST and CLI plans. The mTLS client certificate and key are
+  required only when the token endpoint auth method is `tls_client_auth`.
+
+- Builder endpoint labels now use a codified, source-linked Read/Write
+  Mandatory/Conditional/Optional matrix for 4.0.1, 4.0.0 and 3.1.11 rather than
+  catalogue "Baseline" coverage. Mandatory covered endpoints and selected
+  resource-POST dependencies are locked and restored server-side. Bulk deselection
+  retains mandatory endpoints and required features. Specification conditions
+  and conflicting source text remain explicit.
+- The builder shows a step bar at the top of every step and the review page.
+  Choosing a supported specification is the only gate: after that, new and
+  imported plans can move freely between any steps, and the step bar marks each
+  step complete (✓), needing attention (!), or not started from the saved data.
+  Step targets come from a fixed allow-list, and typed URLs for later steps
+  return to the specification step until one is chosen.
+- Leaving a builder page by **Back**, **Continue**, or the step bar always saves
+  what was entered. Missing values are left empty; a badly formatted value is
+  kept as typed and flagged on its page and at review instead of blocking the
+  page. Pasted or uploaded credential material that fails validation is never
+  kept; a message says it was not saved and why.
+- Builder step bar polish: steps keep the same position on every page (one
+  shared page width and header), pills are smaller with a fixed height in every
+  state, a divider sets **Review** apart, and **Main menu** is a compact
+  secondary button. Stale "Next you will…" banners are removed, the draft id is
+  shown on review only, Business data shows requirement badges beside labels and
+  a styled empty state when no scope is selected, and review shows each blocker
+  once (an empty scope no longer also shows the raw `resourceGroups` error).
+- Locked builder steps on a new plan show a tooltip on hover and keyboard focus
+  explaining that a specification must be selected first.
+- A builder step that has been saved, or loaded from an imported plan, now shows
+  needing attention (!) in the step bar when it still has issues, even if it is
+  empty. For example, leaving Scope with no resource group, or Business data
+  with required fields empty. Steps that have never been opened still show as
+  not started.
+- Review is the single validation gate: it lists each step's issues with a
+  **Fix** button for that step, and launch stays blocked until they are
+  resolved. Business data is empty until scope is selected and follows the
+  saved scope; an empty or incomplete scope is reported at review.
+- Changing the specification now lists the scope and data it would affect and
+  asks for confirmation before saving; reselecting the same specification
+  needs none.
+- Importing a plan without a supported specification opens the specification
+  step with the import warnings and later steps locked; the rest of the plan is
+  loaded once a specification is chosen. An unusable import, or one without a
+  specification, offers **Start a new plan instead**.
+- Ticking a resource group on the builder scope step now selects all of its
+  endpoints and optional features by default; ticking a single endpoint selects
+  its optional features. **Select all endpoints and features** does the same for
+  every selected group, and the deselect action only removes conditional and
+  optional endpoints and features.
+
+### Fixed
+
+- The builder's OpenAPI document update dropdown now lists only the updates for
+  the selected specification version in browsers that support the customisable
+  select picker; previously hidden options for other versions were still shown.
+- Builder business data no longer shows every resource group's fields when the
+  selected scope cannot be resolved; it shows no fields and links to the scope
+  step.
+- Malformed advanced JSON on the builder business data step is now reported
+  against its own field rather than rejecting the whole page.
+- Builder business data labels for Confirmation of Funds debtor-account and VRP
+  fields keep their **Required** badge when the page is saved incomplete; the
+  badge reflects the selected scope's specification requirements rather than
+  whether the builder blocks leaving the page.
+- The run screen's **New plan** button is now a **Main menu** link, so
+  participants choose between creating and importing a plan.
+- The builder's specification step now preselects the latest OpenAPI document
+  update for the chosen version instead of the earliest. A saved or imported
+  update is still kept.
+
+### Security
+
+- Temporarily patch the pinned DHI runtime with signature-verified Alpine edge
+  `expat` and `libexpat` 2.9.0-r0 for CVE-2026-102633 and CVE-2026-77214,
+  as approved by Security. Remove the patch when the DHI Alpine 3.24 image
+  ships Expat 2.9.0 or later.
+- Temporarily patch the pinned DHI runtime with signature-verified Alpine
+  v3.24 `zlib` 1.3.2-r1 for CVE-2026-85091, as approved by Security. Remove
+  the patch when the DHI Alpine 3.24 image ships zlib 1.3.2-r1 or later.
+
+## [2.0.0-beta.7] - 2026-10-05
+
+### Fixed
+
+- Automatic and manual preview, beta, and GA promotions share a caller-level
+  concurrency lock through publication and Git tag/GitHub Release finalization,
+  preventing overlapping release boundaries without nested reusable-workflow locks.
+
+### Added
+
+- Selectable Open Banking Read/Write OpenAPI ("swagger") document updates.
+  Plans choose one with `specification.openApiDocumentUpdate`. Response-schema
+  checks then validate against that update's pinned upstream snapshot from
+  `OpenBankingUK/read-write-api-specs`. Every historical update is bundled
+  using upstream terminology:
+  - `3.1.11`: `Baseline`, `Release-2` to `Release-5`
+  - `4.0.0`: `Baseline`, `Release-2`, `Update-3` to `Update-5`
+  - `4.0.1`: `Baseline`, `Update-1`
+- The builder wizard has an **OpenAPI document update** selector under
+  Version. It preselects the latest update.
+- Result JSON `catalogue` now records `specificationVersion`,
+  `endpointVersion` and `openApiDocumentUpdate` (update, label, catalogue ID,
+  upstream tag and commit). The run page shows the selected update.
+- Independent Read/Write `4.0.1` catalogues, copied from `4.0.0`, so the two
+  versions' coverage can diverge.
+- Automatic and manual image promotion run summaries now show the exact release
+  version, proposed Docker tags and source commit before approval, including
+  conditional `2.0.0-beta-latest` eligibility.
 - Every approved beta and GA image publication now ends with a Git tag
   (`vX.Y.Z-beta.N` or `vX.Y.Z`) at the published commit and an immutable
   GitHub Release (a prerelease for betas). The release notes contain the
@@ -188,28 +573,233 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `[project].version` to a GA version without a `CHANGELOG.md` section, and
   warns when a changed beta version has none. Pull requests that leave the
   version unchanged are not checked.
-- Automatic and manual image promotion run summaries now show the exact release
-  version, proposed Docker tags and source commit before approval, including
-  conditional `2.0.0-beta-latest` eligibility.
-- Automatic Docker Hub `2.0.0-beta-latest` pointer updates after approved beta
+- Compare links for each released version at the end of `CHANGELOG.md`.
+
+### Changed
+
+- `.github/workflows/_finalize-ga-release.yml` is replaced by
+  `.github/workflows/_finalize-release.yml`, which handles both beta and GA
+  publications. The manual **Promote beta image** recovery workflow now also
+  creates the tag and GitHub prerelease.
+- **Breaking:** Read/Write plans must declare `specification.openApiDocumentUpdate`.
+  Existing plans keep their previous schema behaviour by selecting the latest
+  update: `3.1.11` → `Release-5`, `4.0.0` → `Update-5`. For `4.0.1`, use
+  `Update-1`; the previously bundled 4.0.1 documents match `Baseline`.
+  **Import test plan** still loads plans without it, selecting the latest
+  update and showing an import warning; REST and CLI runs reject them.
+- **Breaking:** `4.0.1` plans now validate against the `4.0.1` OpenAPI
+  documents. Previously they used the shared `v4.0` (`4.0.0`) snapshot.
+- **Breaking:** Read/Write specification version `4.0` was removed. Use `4.0.0`.
+- **Breaking:** Bundled schema document IDs are now
+  `ob-read-write/<catalogue-id>/<document>`, for example
+  `ob-read-write/v4.0.0-Update-5/account-info-openapi`. The old
+  `ob-read-write-v3.1.11-*`, `ob-read-write-v4.0-*` and
+  `ob-read-write-v4.0.1-*` IDs no longer resolve.
+- **Breaking:** Internal v1 plan specs require `catalogue.specificationVersion`
+  and now always filter cases by specification version.
+
+## [2.0.0-beta.6] - 2026-10-05
+
+### Changed
+
+- Participant Docker instructions now recommend `2.0.0-beta-latest` across
+  browser, persistent, certificate-mounted, CLI, and Compose examples, with
+  pull-on-launch options to avoid stale cached images. Exact-version guidance
+  for reproducible runs and beta non-certification warnings remain in place.
+
+## [2.0.0-beta.5] - 2026-10-03
+
+### Added
+
+- Lenient browser test-plan import. **Import test plan** now accepts an uploaded
+  `.json` file as well as pasted JSON, and loads as much of an incomplete or
+  partly invalid plan as possible into an editable builder draft instead of
+  rejecting it. The review page lists import warnings for missing, invalid,
+  unrecognised, and skipped fields. Fix them in the builder steps or in the review
+  page's **Plan JSON** editor, now the single, unmasked and editable view of
+  the plan (with a secrets notice). Launch, export, and the Edit-step buttons
+  use the editor's contents directly, with no separate save. Launch still
+  requires the plan to pass normal validation. The "Masked test plan summary" box and the "Edit raw JSON
+  as new draft" form are replaced by this editor.
+
+### Changed
+
+- Renamed the temporary MVP beta pointer from `beta-latest` to
+  `2.0.0-beta-latest`, selecting only the highest published 2.0.0 beta and
+  freezing updates once formal `2.0.0` is published. The old registry tag is
+  no longer maintained and is not deleted automatically.
+
+## [2.0.0-beta.4] - 2026-10-02
+
+### Added
+
+- **Give beta feedback** across the browser UI, preparing a local, credential-
+  and certificate-masked diagnostic ZIP, structured email text and an optional
+  email-client link for `standardsteam@openbanking.org.uk`. Run logs/results and
+  launch-time plans, or saved builder draft evidence, are captured when available.
+  Nothing is sent automatically; secured-network and no-mail-client workflows
+  use downloads and manual copying.
+- Automatic Docker Hub `beta-latest` pointer updates after approved beta
   publication and provenance/SBOM attestations, with manifest-digest
-  verification. Only the highest published 2.0.0 beta is eligible; older
-  backfills, other release series, and GA releases leave it unchanged.
-- Automatic, Environment-gated preview, beta, and GA image promotions after
-  successful candidate CI runs, with manual promotion dispatch retained for
-  recovery and backfill.
-- Trusted Docker candidate and Docker Hub promotion infrastructure for preview,
-  beta, and GA channels, including exact-SHA multi-architecture artifacts,
-  blocking Snyk and VEX-aware Docker Scout scans, immutable version tags,
-  Environment approval gates, and SBOM/provenance attestations without
-  importing MVP application behaviour.
-- Docker Scout v1.24.0 candidate scanning with verified architecture-specific
-  checksums, Docker-signed OpenVEX handling for the pinned DHI base, and a
-  narrowly scoped Snyk policy expiring 2026-12-28 for the two assessed base
-  image CVEs.
-- Docker Hub publication to `openbanking/conformance-suite-v2`, with Docker
-  Hub tag discovery and Docker Hub write credentials passed only to the gated
-  promotion workflow.
+  verification. Docker Hub's highest published beta across release branches
+  determines eligibility; older backfills and GA releases leave it unchanged.
+
+## [2.0.0-beta.3] - 2026-10-01
+
+### Changed
+
+- The run page now updates its status, steps, log and result panels in place
+  while a run is active and stops polling once it finishes, instead of
+  reloading the whole page every 2 seconds.
+- Builder wizard steps now navigate and submit without full page reloads, and
+  validation errors re-render in place. The scope step refreshes endpoints and
+  features through HTMX, replacing its hand-written fetch code.
+
+### Added
+
+- **Check discovery URL** on the builder discovery step, which fetches and
+  shows OpenID discovery metadata inline without saving it.
+- Vendored, pinned HTMX 2.0.11 and its `head-support` extension, served from
+  the application with no CDN.
+- WhiteNoise static file serving, with `collectstatic` run during the Docker
+  image build.
+
+## [2.0.0-beta.2] - 2026-09-30
+
+### Changed
+
+- Suppressed successful local `/health/` access-log entries in the Docker
+  container while retaining recurring health checks and all other request logs.
+- Added a consistent beta notice to every browser UI page to clarify that the
+  conformance suite is an MVP beta and features and behaviour may change.
+- Removed the standalone runtime-input page from the browser plan builder.
+  Security and business configuration now continue directly to the generated
+  plan review; canonical plan, REST, and CLI runtime-input support is unchanged.
+- Synced the trusted release pipeline with `main`: candidate image scanning
+  now gates on Snyk and Docker Scout VEX assessments, and approved promotion
+  publishes to Docker Hub instead of GHCR.
+- Clarified in the README that certification submissions continue to come from
+  the legacy FCS v1 while this release is an evaluation beta, and documented
+  how to run the browser UI from a source checkout as an alternative to the
+  published Docker image.
+
+### Fixed
+
+- Business-default values edited in the plan builder after importing a test plan
+  are no longer discarded. The collapsed "advanced JSON" textarea is pre-filled
+  from the imported plan and is resubmitted by the browser even when never
+  opened, and it previously overrode the friendly fields — so a participant who
+  corrected, for example, a CBPII debtor account could unknowingly certify
+  against the original imported value and record a false pass. Friendly fields
+  the participant actually changed now take precedence, overlaid on the JSON so
+  keys the friendly fields cannot express (such as `secondaryIdentification`)
+  are still preserved.
+- Docker Scout VEX fetch and candidate scan steps now authenticate via
+  `DOCKER_SCOUT_HUB_USER`/`DOCKER_SCOUT_HUB_PASSWORD` using the existing
+  organisation credentials; the `dhi.io` registry login alone does not
+  authenticate the Scout CLI.
+- Candidate-image `dhi.io` login now uses the existing read-only repository
+  `DOCKER_ORG_ACCESS_TOKEN` instead of the never-provisioned
+  `DOCKER_DHI_PULL_TOKEN`; promotion receives the write-capable token as a
+  release Environment secret.
+- The `Docker Build` job now detects the hardened Docker contract and, when
+  present, logs in to `dhi.io` and runs `scripts/docker_smoke_test.sh` plus
+  Compose validation instead of the legacy plain-HTTP health probe, which
+  cannot reach the HTTPS-only hardened image.
+- Docker Scout credentials are now scoped to the pinned Scout CLI steps only;
+  the runtime-base lookup runs repository Python without Docker credentials.
+  Documented the read-only Dependabot secrets needed for hardened Dependabot
+  PRs to pass `dhi.io` authentication.
+- CI now logs out of `dhi.io` immediately after each image build and
+  re-authenticates only around the pinned Docker Scout steps, so
+  branch-controlled scripts never run while the organisation token is stored
+  in the runner's Docker config.
+- Docker Hub tag discovery now fails closed on 404 responses, which can indicate
+  a private or inaccessible repository rather than a repository that has not
+  been created.
+- Image promotion no longer fails when the source pull request was merged by
+  an administrator without a recorded approval; a merged pull request is still
+  mandatory, and an unapproved (bypassed) merge is recorded as a workflow
+  warning and job-summary audit entry. The Environment reviewer gate remains
+  blocking.
+- Image promotion now pushes the candidate OCI archives to Docker Hub by
+  digest with `skopeo copy --preserve-digests` instead of `docker load`/`docker
+  push`, which re-serialised manifests and published different digests from the
+  scanned ones, and no longer leaves `promote-*` staging tags behind.
+- Image attestations now use `actions/attest` instead of the deprecated
+  `actions/attest-build-provenance`/`actions/attest-sbom` wrappers, use the
+  documented `docker.io` subject name, and grant `artifact-metadata: write` so
+  the provenance attestation can create its Artifact Metadata storage record.
+
+### Security
+
+- Migrated the pinned Docker Hardened Image builder and distroless runtime
+  from Debian 13 to Alpine 3.24, eliminating the unfixed OpenSSL
+  CVE-2026-84782 finding. The Alpine runtime ships without system pip, so the
+  Debian-specific pip-removal layer is no longer needed.
+- Vulnerability scans now continue without VEX suppressions only when Docker
+  Scout explicitly reports that the assessed DHI publishes no OpenVEX
+  attestations; authentication, signature and all other fetch failures remain
+  blocking.
+- Docker-signed OpenVEX is verified against Docker's DHI signing key, now
+  checked into the repository and pinned by SHA-256 rather than downloaded,
+  without a Rekor transparency-log lookup, which DHI VEX attestations do not
+  have; previously every hardened-image scan failed at VEX verification.
+- A required `Vulnerability Scan` status check now builds and scans the image
+  for both platforms on **every pull request** (Docker Scout, Snyk Container
+  with application packages, and pip-audit of `uv.lock`). It fails on any
+  fixable vulnerability of any severity and on unfixed critical/high findings,
+  applies Docker-signed OpenVEX only to DHI base-image packages, and lists
+  every finding in the job summary, annotations and code scanning.
+- Vulnerability exceptions now live only in
+  `security/vulnerability-exceptions.toml`, with owner, distinct approver and
+  a maximum 90-day expiry; expired, stale or now-fixable exceptions fail the
+  gate. The `.snyk` policy file has been removed (its two entries are covered
+  by Docker's signed VEX).
+- Promotion re-scans the exact candidate archives with current data before
+  the Environment approval gate, and a daily `security-rescan.yml` re-scans
+  `main`, `release/*` and published Docker Hub images, tracking one issue per
+  vulnerability.
+- Dependabot now updates `uv.lock`, Dockerfile base-image digests and GitHub
+  Actions.
+- Upgraded Django to 6.0.8 (fixes vulnerabilities in 6.0.5) and refreshed
+  cryptography 50.0.1, sqlparse 0.6.0 and anyio 4.15.1.
+- Candidate image scans and trusted promotion now require the runtime base to
+  match the exact DHI digest covered by the signed VEX assessment.
+- Bumped vulnerable Python dependencies so the candidate container image carries
+  no known HIGH or CRITICAL advisories:
+  - `anyio` 4.13.0 → 4.15.1 (CVE-2026-63374, CRITICAL) — transitive via `httpx`
+    and `uvicorn[standard]`'s `watchfiles`.
+  - `cryptography` 48.0.0 → 50.0.1 (three HIGH advisories) — direct dependency;
+    the `pyproject.toml` floor is raised to `>=50.0.0` so the fixed version
+    cannot be resolved away. Used for FAPI signing, JWS/JWKS, and mTLS
+    certificate handling; no API breakage across the major bump.
+  - `sqlparse` 0.5.5 → 0.6.0 (three HIGH advisories) — transitive via `django`.
+
+## [2.0.0-beta.1] - 2026-09-28
+
+First public beta of the MVP: the Open Banking UK Read/Write v3.1.11 and v4.0.x
+catalogue-backed conformance engine (AIS, PIS, CBPII, VRP) and DCR 3.4 support,
+the canonical JSON-first test-plan schema and guided browser builder, the
+hardened non-root Docker distribution, and the trusted candidate-image build
+and preview/beta/GA promotion pipeline, as detailed below.
+
+### Added
+
+
+- Browser wizard and configuration support for supplying PEM credentials as
+  pasted text or an uploaded file, in addition to an absolute file path. Every
+  credential (FAPI signing certificate and private key, TLS CA bundle, mTLS
+  client certificate and private key, DCR software statement assertion, and DCR
+  signing certificate) now accepts an inline sibling key in canonical plans and
+  model-bank config (`signingCertificatePem`, `signingPrivateKeyPem`,
+  `caBundlePem`, `clientCertificatePem`, `clientPrivateKeyPem`, `certificatePem`,
+  `privateKeyPem`, and `softwareStatementAssertion`). A credential must be
+  supplied exactly once, as either a path or inline material. Inline material is
+  held in memory, is redacted from logs, results, and safe plan exports, and is
+  never re-rendered into the wizard once stored. The read-only `/certs` container
+  mount is therefore now optional for participants who paste credentials.
+
 - First-class Open Banking UK Read/Write v3.1.11 support for AIS, PIS, CBPII,
   and VRP, with dedicated v3.1 catalogue boundaries, pinned v3.1.11 OpenAPI
   schemas, explicit request-signing metadata, and a machine-checkable strict
@@ -231,17 +821,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Run-detail catalogue evidence summary for selected endpoint/capability counts, generated test-case counts, catalogue version, and non-certifying reasons.
 - Hand-maintained legacy mapping documentation in `docs/FCS_LEGACY_BENCHMARK_MAPPING.md`.
 - Regression coverage for bundled catalogue registration, legacy FCS provenance, restored guided builder capability selection, safe v2 plan-document export, API/CLI capability parity, run-detail catalogue evidence, compiled-plan execution traceability, and result JSON omission of legacy suite metadata.
+- `scripts/release_metadata.py` and its CI-facing `scripts/validate_release.py` CLI, providing strict raw-version parsing, preview/beta/GA channel classification, branch/tag compatibility checks, version-increase and duplicate-publish guards, and a promotion-manifest builder for the Docker release process.
+- `.github/dependabot.yml`, scheduling weekly update PRs for the pinned Docker base image digests, Python (`uv`) dependencies, and GitHub Actions, each gated by the full check suite, hardened runtime smoke test, and vulnerability scan.
+- `scripts/build_promotion_manifest.py`, a CI-facing CLI that validates branch/channel compatibility and writes the candidate promotion manifest (source SHA, raw version/channel, per-platform image digests, OCI labels) as JSON.
+- `scripts/docker_smoke_test.sh`, the canonical hardened-profile smoke test run against every built candidate image: non-root UID/GID 65532, no shell, immutable root filesystem, `/health/` and `/` endpoints, secret-key persistence across restart, writable `/data/sessions`/`/data/results`/`/data/logs`, a readable-but-non-writable `/certs` mount, and a working CLI command override.
+- `.github/workflows/ci.yml` gained a `plan` job that classifies every run by target branch and fork origin, a `candidate-image` job matrix building native `linux/amd64` and `linux/arm64` images for `main`, `release/**`, and `preview/**` branches, running the full hardened smoke test and a zero-exception Snyk container scan, generating an SPDX SBOM, and uploading the built image plus its metadata as a workflow artifact without publishing anywhere; a `candidate-manifest` job that assembles and uploads the checksummed promotion manifest from those artifacts; and a `reject-fork-candidate` job that fails fork-originated pull requests targeting a candidate-bearing branch with an actionable message.
+- `scripts/validate_promotion.py`, a CI-facing CLI that revalidates a candidate promotion manifest against the exact source SHA, branch, tag (GA), platform set, and previously published version tags before publication, printing the manifest's expected image tags for the promotion workflow to consume.
+- Dedicated preview/beta/GA promotion workflows: `.github/workflows/_promote-image.yml` (a shared, `workflow_call`-only implementation) locates the successful candidate-image CI run for a given commit, downloads its already-scanned platform image artifacts and promotion manifest, verifies their checksums, cross-checks the exact commit's own `pyproject.toml` version against the manifest, requires the commit belong to a merged pull request with at least one recorded approval, refuses to republish an already-published version tag, republishes the exact already-scanned platform digests as a multi-arch manifest list via `docker buildx imagetools create` (never rebuilding), attaches build-provenance and SBOM attestations, and removes its temporary per-run staging tags; `.github/workflows/promote-preview.yml`, `promote-beta.yml`, and `promote-ga.yml` trigger it via `workflow_dispatch` behind the `preview-release`, `beta-release`, and `ga-release` GitHub Environments respectively, each validating its own branch pattern first. GA promotion additionally opens (but never auto-merges) a pull request merging `main` back into `develop`. Docker Hub is never configured as a target.
 
 ### Changed
 
-- Main's Docker image now uses the assessed, digest-pinned DHI Alpine 3.24
-  builder and distroless runtime instead of the vulnerable Alpine 3.22 base.
-  The non-root HTTPS entrypoint, persistent local identity, exec-form
-  healthcheck, and hardened Compose/local-run profile are carried over from
-  the approved release implementation without changing release trust gates.
-- Docker build contexts exclude local participant configuration, development
-  certificates, and generated output so these files cannot be copied into
-  distributed images.
+- Dockerfile rewritten as a hardened, digest-pinned multi-stage build on Docker Hardened Images (`dhi.io/python`, Debian 13), running as non-root UID/GID 65532 with no shell or package manager in the runtime stage. `docker/entrypoint.py` prepares the `/data` volume, generates and persists a mode-0600 Django secret key, and supplies safe host/session-path defaults before exec'ing into the application; `docker/healthcheck.py` provides an exec-form container health check. `make docker` now runs the image under the full hardened profile (read-only root filesystem, all capabilities dropped, `no-new-privileges`, tmpfs `/tmp`, named `/data` volume) without requiring manually supplied secrets.
+- `docs/CICD_STRATEGY.md` corrected to match the implemented candidate/promotion pipeline: the version-tag format is `X.Y.Z-dev.N` (preview) / `X.Y.Z-beta.N` (beta) / `X.Y.Z` (GA) rather than PEP 440 `.devN`/`bN`/`rcN` suffixes, there is no release-candidate (RC) channel, GA publishes only the exact version plus `latest` (no `X.Y`/`X` aliases), the workflow-file references now name the actual `ci.yml` jobs and `_promote-image.yml`/`promote-preview.yml`/`promote-beta.yml`/`promote-ga.yml` files instead of the never-implemented `image-candidate.yml`/`image-promote.yml`, the hotfix process is rewritten to describe shipping an expedited `release/X.Y.Z` patch cut from `main` through the normal beta/GA gate (there is no separate automated hotfix-tag publish path), and the required-secrets table now lists `DOCKER_ORG_USERNAME`/`DOCKER_ORG_ACCESS_TOKEN`. `docs/settings/ACTIONS_GENERAL.md` now allowlists `anchore/sbom-action` and documents that "Allow Actions to create and approve PRs" must be enabled solely so `promote-ga.yml` can open its `main`-to-`develop` merge-back pull request. `.github/PULL_REQUEST_TEMPLATE.md` and `docs/settings/GENERAL.md` no longer reference the RC channel.
+- `docs/DOCKER_GUIDE.md`, `compose.yaml`, and `compose.certs.yaml` document and provide the canonical hardened `docker run`/Compose launch commands, GHCR pull instructions, the `/data` persistence layout, and the optional read-only `/certs` mount contract; `README.md` and `docs/DEVELOPER_GUIDE.md` now point participants at the Docker image as the primary supported way to run the suite.
+
+- CI/CD strategy now documents the stable-`main`, `develop`, feature-preview,
+  release-branch, and digest-promotion model for participant-facing Docker
+  preview, beta, and GA images, including the human approval points and
+  source-controlled image tag metadata.
+- `.github/workflows/ci.yml`'s `docker-build` job now authenticates to `dhi.io` before building (Docker Hardened Images require registry login even to pull), no longer sets a hardcoded `DJANGO_SECRET_KEY`/`DJANGO_ALLOWED_HOSTS` for its smoke test since the entrypoint now generates and persists these itself, and additionally validates both `compose.yaml` and the `compose.certs.yaml` override.
 - Pull request CI now invokes the canonical `make check` gate with a full
   tracked-file secret scan while Docker image build, startup, and `/health/`
   validation run independently in parallel. The duplicated lint/test command
@@ -271,49 +869,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The trusted image-promotion vulnerability re-scan on `main` now accepts the
-  pinned DHI Python 3.14 Alpine 3.24 runtime base used by release candidates,
-  and continues without VEX suppressions only when Docker Scout explicitly
-  reports that no OpenVEX attestations exist for that image.
-- Image promotion now pushes each scanned platform image to Docker Hub by
-  digest, so it no longer leaves `promote-*` staging tags on the repository.
-- Image attestations now use `actions/attest` instead of the deprecated
-  `actions/attest-build-provenance`/`actions/attest-sbom` wrappers, use the
-  documented `docker.io` subject name, and grant `artifact-metadata: write` so
-  the provenance attestation can create its Artifact Metadata storage record.
-- Image promotion now stages the candidate OCI archives with
-  `skopeo copy --preserve-digests` instead of `docker load`/`docker push`,
-  which re-serialised manifests and published different digests from the
-  scanned ones, causing the multi-architecture manifest step to fail with
-  `not found`.
-- Image promotion no longer fails when the source pull request was merged by
-  an administrator without a recorded approval; a merged pull request is still
-  mandatory, and an unapproved (bypassed) merge is recorded as a workflow
-  warning and job-summary audit entry. The Environment reviewer gate remains
-  blocking.
-- Docker Scout VEX fetch and candidate scan steps now authenticate via
-  `DOCKER_SCOUT_HUB_USER`/`DOCKER_SCOUT_HUB_PASSWORD` using the existing
-  read-only org credentials; the `dhi.io` registry login alone does not
-  authenticate the Scout CLI.
-- Candidate-image `dhi.io` login now uses the existing read-only repository
-  `DOCKER_ORG_ACCESS_TOKEN` instead of the never-provisioned
-  `DOCKER_DHI_PULL_TOKEN`; promotion receives the write-capable token as a
-  release Environment secret.
-- The `Docker Build` job now detects the hardened Docker contract and, when
-  present, logs in to `dhi.io` and runs `scripts/docker_smoke_test.sh` plus
-  Compose validation instead of the legacy plain-HTTP health probe, which
-  cannot reach the HTTPS-only hardened image.
-- Docker Scout credentials are now scoped to the pinned Scout CLI steps only;
-  the runtime-base lookup runs repository Python without Docker credentials.
-  Documented the read-only Dependabot secrets needed for hardened Dependabot
-  PRs to pass `dhi.io` authentication.
-- CI now runs `docker logout dhi.io` immediately after each image build and
-  re-authenticates only around the pinned Docker Scout steps, so
-  branch-controlled scripts never run while the organisation token is stored
-  in the runner's Docker config.
-- Docker Hub tag discovery now fails closed on 404 responses, which can indicate
-  a private or inaccessible repository rather than a repository that has not
-  been created.
+- Docker browser runs now terminate local HTTPS and accept the legacy
+  `0.0.0.0` host, allowing PSU authorization redirects registered as
+  `https://0.0.0.0:8443/conformancesuite/callback` to reach the callback while
+  the host port remains published only on `127.0.0.1`. The generated local
+  certificate is persisted in the `/data` volume and no private key is baked
+  into the image. Browser/API result and execution-log artifacts are also
+  written under the writable `/data` volume rather than the read-only `/app`
+  filesystem.
+
 - PIS v4 strict parity now executes all 29 legacy FCS v1.10.0 rows as
   independent cases with exact `asserts`/`asserts_one_of` error-code checks,
   response schemas and signature flags, including separate domestic consent
@@ -361,32 +925,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Docker-signed OpenVEX is verified against Docker's DHI signing key, now
-  checked into the repository and pinned by SHA-256 rather than downloaded,
-  without a Rekor transparency-log lookup, which DHI VEX attestations do not
-  have; previously every hardened-image scan failed at VEX verification.
-- A required `Vulnerability Scan` status check now builds and scans the image
-  for both platforms on **every pull request** (Docker Scout, Snyk Container
-  with application packages, and pip-audit of `uv.lock`). It fails on any
-  fixable vulnerability of any severity and on unfixed critical/high findings,
-  applies Docker-signed OpenVEX only to DHI base-image packages, and lists
-  every finding in the job summary, annotations and code scanning.
-- Vulnerability exceptions now live only in
-  `security/vulnerability-exceptions.toml`, with owner, distinct approver and
-  a maximum 90-day expiry; expired, stale or now-fixable exceptions fail the
-  gate. The `.snyk` policy file has been removed (its two entries are covered
-  by Docker's signed VEX).
-- Promotion re-scans the exact candidate archives with current data before
-  the Environment approval gate, and a daily `security-rescan.yml` re-scans
-  `main`, `release/*` and published Docker Hub images, tracking one issue per
-  vulnerability.
-- Dependabot now updates `uv.lock`, Dockerfile base-image digests and GitHub
-  Actions.
-- Upgraded Django to 6.0.8 (fixes vulnerabilities in 6.0.5) and refreshed
-  cryptography 50.0.1, sqlparse 0.6.0 and anyio 4.15.1.
-- Candidate image scans and trusted promotion now require the runtime base to
-  match the exact DHI digest covered by the signed VEX assessment.
 - Exported plan documents and result traceability avoid inline secret material; sensitive runtime inputs are recorded as provided without serializing their values.
 - Browser safe exports for v2 plan documents preserve reusable structure while emptying secret-bearing runtime/config strings by default.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
+
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.26...HEAD
+[2.0.0-beta.26]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.25...v2.0.0-beta.26
+[2.0.0-beta.25]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.24...v2.0.0-beta.25
+[2.0.0-beta.24]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.23...v2.0.0-beta.24
+[2.0.0-beta.23]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.22...v2.0.0-beta.23
+[2.0.0-beta.22]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.21...v2.0.0-beta.22
+[2.0.0-beta.21]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.20...v2.0.0-beta.21
+[2.0.0-beta.20]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.19...v2.0.0-beta.20
+[2.0.0-beta.19]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.18...v2.0.0-beta.19
+[2.0.0-beta.18]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.17...v2.0.0-beta.18
+[2.0.0-beta.17]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.16...v2.0.0-beta.17
+[2.0.0-beta.16]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.15...v2.0.0-beta.16
+[2.0.0-beta.15]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.14...v2.0.0-beta.15
+[2.0.0-beta.9]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.8...v2.0.0-beta.9
+[2.0.0-beta.8]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.7...v2.0.0-beta.8
+[2.0.0-beta.7]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.6...v2.0.0-beta.7
+[2.0.0-beta.6]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.5...v2.0.0-beta.6
+[2.0.0-beta.5]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.4...v2.0.0-beta.5
+[2.0.0-beta.4]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.3...v2.0.0-beta.4
+[2.0.0-beta.3]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.2...v2.0.0-beta.3
+[2.0.0-beta.2]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.1...v2.0.0-beta.2
+[2.0.0-beta.1]: https://github.com/OpenBankingUK/conformance-suite-v2/releases/tag/v2.0.0-beta.1

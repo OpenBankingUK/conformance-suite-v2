@@ -532,7 +532,7 @@ def _compiled_capability_plan() -> CompiledTestPlan:
     """
     endpoint = EndpointRef(method="GET", path="/open-banking/v4.0/aisp/accounts")
     catalogue = TestCatalogue(
-        key=CatalogueKey(standard="open-banking", version="v4.0", api="ais"),
+        key=CatalogueKey(standard="open-banking", version="v4.0", api="ais", specification_version="4.0.0"),
         catalogue_version="test.capabilities.1",
         capabilities=(
             EndpointCapability(
@@ -604,6 +604,7 @@ def _compiled_capability_plan() -> CompiledTestPlan:
                     reason="diagnostic import",
                 ),
             ),
+            openapi_document_update="Update-5",
         ),
     )
 

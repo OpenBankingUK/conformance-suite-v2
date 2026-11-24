@@ -23,13 +23,16 @@ from conformance.catalogue import (
     plan_document_to_json_object,
 )
 from conformance.catalogue_registry import supported_catalogues
+from conformance.executor import compiled_plan_run_config_requirements
 from conformance.json_types import JsonObject, JsonValue
+from conformance.masking import SENSITIVE_HEADER_NAMES
 from conformance.model_bank_config import ConfigError, ModelBankConfig, parse_model_bank_config
 from conformance.plan_configuration import (
     dcr_execution_runtime_inputs,
     parse_dcr_plan_configuration,
     validate_dcr_file_references,
 )
+from conformance.run_config_requirements import RunConfigKey, missing_run_config
 
 ValidationLayer = Literal["schema", "semantic", "security", "business", "execution"]
 """Validation layers reported for JSON-first test-plan checks."""
@@ -52,15 +55,39 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
     "properties": {
         "schemaVersion": {"const": "1.0"},
         "executionMode": {"enum": ["certification", "development"]},
+        "execution": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "psuAuthorization": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "mode": {"enum": ["manual", "auto-approve"]},
+                        "headers": {
+                            "type": "object",
+                            "maxProperties": 32,
+                            "additionalProperties": {"type": "string"},
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "maxProperties": 32,
+                            "additionalProperties": {"type": ["string", "number", "boolean"]},
+                        },
+                    },
+                },
+            },
+        },
         "specification": {
             "oneOf": [
                 {
                     "type": "object",
-                    "required": ["family", "version"],
+                    "required": ["family", "version", "openApiDocumentUpdate"],
                     "additionalProperties": False,
                     "properties": {
                         "family": {"const": "OBL_READ_WRITE"},
                         "version": {"type": "string", "minLength": 1},
+                        "openApiDocumentUpdate": {"type": "string", "minLength": 1},
                         "profile": {"enum": ["FAPI1_ADVANCED", "FAPI2", "ALL", "fapi1-advanced", "fapi2", "all"]},
                         "securityProfile": {
                             "enum": ["FAPI1_ADVANCED", "FAPI2", "ALL", "fapi1-advanced", "fapi2", "all"]
@@ -105,20 +132,34 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
                     "properties": {
                         "enabled": {"type": "boolean"},
                         "certificatePath": {"type": "string", "minLength": 1},
+                        "certificatePem": {"type": "string", "minLength": 1},
                         "privateKeyPath": {"type": "string", "minLength": 1},
+                        "privateKeyPem": {"type": "string", "minLength": 1},
                         "caBundlePath": {"type": "string", "minLength": 1},
+                        "caBundlePem": {"type": "string", "minLength": 1},
                     },
+                    "allOf": [
+                        {"not": {"required": ["certificatePath", "certificatePem"]}},
+                        {"not": {"required": ["privateKeyPath", "privateKeyPem"]}},
+                        {"not": {"required": ["caBundlePath", "caBundlePem"]}},
+                    ],
                 },
                 "clientId": {"type": "string", "minLength": 1},
                 "redirectUri": {"type": "string", "minLength": 1},
                 "resourceBaseUrl": {"type": "string", "minLength": 1},
                 "responseType": {"type": "string", "minLength": 1},
                 "signingCertificatePath": {"type": "string", "minLength": 1},
+                "signingCertificatePem": {"type": "string", "minLength": 1},
                 "signingPrivateKeyPath": {"type": "string", "minLength": 1},
+                "signingPrivateKeyPem": {"type": "string", "minLength": 1},
                 "signingKeyId": {"type": "string", "minLength": 1},
                 "clientAssertionIssuer": {"type": "string", "minLength": 1},
                 "clientAssertionSubject": {"type": "string", "minLength": 1},
             },
+            "allOf": [
+                {"not": {"required": ["signingCertificatePath", "signingCertificatePem"]}},
+                {"not": {"required": ["signingPrivateKeyPath", "signingPrivateKeyPem"]}},
+            ],
         },
         "resourceGroups": {
             "type": "array",
@@ -203,10 +244,11 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
         "businessTestData": {"type": "object"},
         "dynamicClientRegistration": {
             "type": "object",
-            "required": ["softwareStatementAssertionPath", "registrationAudience"],
+            "required": ["registrationAudience"],
             "additionalProperties": False,
             "properties": {
                 "softwareStatementAssertionPath": {"type": "string", "minLength": 1},
+                "softwareStatementAssertion": {"type": "string", "minLength": 1},
                 "registrationAudience": {
                     "type": "string",
                     "minLength": 1,
@@ -219,6 +261,7 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
                     "items": {"type": "string", "minLength": 1},
                 },
                 "signingCertificatePath": {"type": "string", "minLength": 1},
+                "signingCertificatePem": {"type": "string", "minLength": 1},
                 "transportCertificateSubjectDnOverride": {
                     "type": "string",
                     "minLength": 1,
@@ -227,6 +270,16 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
                 "useNumericOidSubjectDn": {"type": "boolean"},
                 "disableKeepAlive": {"type": "boolean"},
             },
+            "allOf": [
+                {
+                    "anyOf": [
+                        {"required": ["softwareStatementAssertionPath"]},
+                        {"required": ["softwareStatementAssertion"]},
+                    ]
+                },
+                {"not": {"required": ["softwareStatementAssertionPath", "softwareStatementAssertion"]}},
+                {"not": {"required": ["signingCertificatePath", "signingCertificatePem"]}},
+            ],
         },
         "metadata": {
             "type": "object",
@@ -474,12 +527,6 @@ def prepare_test_plan_for_run(
     if any(issue.blocking for issue in issues):
         raise TestPlanValidationError(_validation_result(parsed, issues))
     try:
-        config = parse_model_bank_config(model_bank_config_from_plan_document(parsed), base_dir=base_dir)
-    except ConfigError as error:
-        issues.append(TestPlanValidationIssue("security", "error", f"Security environment validation failed: {error}"))
-        raise TestPlanValidationError(_validation_result(parsed, issues)) from error
-
-    try:
         compiled_plan = compile_test_plan_document(parsed, available_catalogues)
     except CatalogueError as error:
         issues.append(TestPlanValidationIssue(_catalogue_error_layer(str(error)), "error", str(error)))
@@ -489,6 +536,11 @@ def prepare_test_plan_for_run(
     validation = _validation_result(parsed, issues)
     if not validation.valid:
         raise TestPlanValidationError(validation)
+    try:
+        config = parse_model_bank_config(model_bank_config_from_plan_document(parsed), base_dir=base_dir)
+    except ConfigError as error:
+        issues.append(TestPlanValidationIssue("security", "error", f"Security environment validation failed: {error}"))
+        raise TestPlanValidationError(_validation_result(parsed, issues)) from error
     runtime_inputs = dict(parsed.runtime_inputs)
     if parsed.specification == "dynamic-client-registration":
         runtime_inputs.update(
@@ -601,7 +653,32 @@ def safe_test_plan_snapshot(
     snapshot = _safe_json_object(plan_document_to_json_object(document), sensitive_input_ids)
     _restore_ais_business_account_ids(snapshot, document)
     _restore_dcr_file_references(snapshot, document)
+    _redact_sensitive_psu_headers(snapshot)
     return snapshot
+
+
+def _redact_sensitive_psu_headers(snapshot: JsonObject) -> None:
+    """Blank custom PSU authorisation header values that use sensitive names.
+
+    Custom header names are participant defined; values for names in
+    :data:`conformance.masking.SENSITIVE_HEADER_NAMES` (for example
+    ``Authorization``) are removed from persisted snapshots and safe exports.
+
+    Args:
+        snapshot: Mutable safe-export snapshot.
+    """
+    execution = snapshot.get("execution")
+    if not isinstance(execution, dict):
+        return
+    psu_authorization = execution.get("psuAuthorization")
+    if not isinstance(psu_authorization, dict):
+        return
+    headers = psu_authorization.get("headers")
+    if not isinstance(headers, dict):
+        return
+    for name in headers:
+        if name.lower() in SENSITIVE_HEADER_NAMES:
+            headers[name] = ""
 
 
 def _restore_ais_business_account_ids(snapshot: JsonObject, document: PlanDocumentV2) -> None:
@@ -625,6 +702,10 @@ def _restore_ais_business_account_ids(snapshot: JsonObject, document: PlanDocume
 
 def _restore_dcr_file_references(snapshot: JsonObject, document: PlanDocumentV2) -> None:
     """Restore DCR file references that contain no inline credential material.
+
+    Only ``*Path`` keys are restored: a path is a reference an operator already
+    controls, whereas a ``*Pem`` key carries the credential itself and must stay
+    stripped from the safe export.
 
     Args:
         snapshot: Mutable safe-export snapshot.
@@ -959,9 +1040,11 @@ def _compiled_plan_issues(
         issues.append(TestPlanValidationIssue("semantic", severity, reason))
     if not compiled_plan.test_cases:
         issues.append(TestPlanValidationIssue("semantic", "error", "Test plan does not select any executable tests."))
+    already_reported: set[RunConfigKey] = set()
     if any(test_case.response_signature_required for test_case in compiled_plan.test_cases) and not _has_discovery_url(
         document
     ):
+        already_reported.add("discoveryUrl")
         issues.append(
             TestPlanValidationIssue(
                 "security",
@@ -969,7 +1052,41 @@ def _compiled_plan_issues(
                 "securityEnvironment.discoveryUrl is required because the selected run validates response signatures.",
             )
         )
+    issues.extend(_run_config_issues(document, compiled_plan, already_reported=already_reported))
     return tuple(issues)
+
+
+def _run_config_issues(
+    document: PlanDocumentV2,
+    compiled_plan: CompiledTestPlan,
+    *,
+    already_reported: set[RunConfigKey],
+) -> tuple[TestPlanValidationIssue, ...]:
+    """Return blocking issues for connection/security config the run cannot start without.
+
+    The executor reads OAuth 2.0 client values, the FAPI signing group, and the
+    discovery URL from config while it runs, so a plan missing them would only
+    fail part-way through. Checking here makes builder review, API, and CLI
+    launches reject such plans up front.
+
+    Args:
+        document: Parsed test-plan document.
+        compiled_plan: Compiled catalogue plan.
+        already_reported: Config values another check has already reported.
+
+    Returns:
+        One ``security`` error per missing value. The resource base URL is left
+        to the compiler's required-runtime-input check.
+    """
+    if document.specification == "dynamic-client-registration":
+        return ()
+    missing = missing_run_config(
+        compiled_plan_run_config_requirements(compiled_plan),
+        document.config,
+        security_environment=document.security_environment,
+        ignore={*already_reported, "resourceBaseUrl"},
+    )
+    return tuple(TestPlanValidationIssue("security", "error", item.message) for item in missing)
 
 
 def _has_discovery_url(document: PlanDocumentV2) -> bool:
@@ -1002,6 +1119,67 @@ def _catalogue_error_layer(message: str) -> ValidationLayer:
     if "schemaversion" in normalized:
         return "schema"
     return "semantic"
+
+
+def json_schema_error(schema: Mapping[str, JsonValue], value: JsonValue) -> str | None:
+    """Return the first JSON Schema error for a value against a canonical sub-schema.
+
+    Used by lenient browser import to check individual test-plan fields against
+    :data:`CANONICAL_TEST_PLAN_JSON_SCHEMA` property definitions. The detail is
+    derived from the schema constraint rather than ``jsonschema``'s message, so
+    imported values, including credentials, are never echoed back.
+
+    Args:
+        schema: JSON Schema (draft 2020-12) object.
+        value: Value to validate.
+
+    Returns:
+        Safe error detail, or ``None`` when the value is valid.
+    """
+    for error in Draft202012Validator(schema).iter_errors(value):
+        return _json_schema_error_detail(error)
+    return None
+
+
+def redact_sensitive_plan_json(value: Mapping[str, JsonValue]) -> JsonObject:
+    """Return a copy of raw plan JSON with secret-bearing values blanked.
+
+    Applies the same key-name heuristics as safe test-plan snapshots, for plan
+    JSON that cannot be parsed into a document (for example unrepresented
+    fields kept from a lenient browser import). Because such JSON has not been
+    validated, any value under a sensitive key is blanked whatever its type,
+    except ``{"value": ...}`` runtime-input objects, which keep their shape.
+
+    Args:
+        value: Raw test-plan JSON object or fragment.
+
+    Returns:
+        Redacted JSON object.
+    """
+    return {key: _redact_unvalidated_value(key, item) for key, item in value.items()}
+
+
+def _redact_unvalidated_value(key: str, value: JsonValue) -> JsonValue:
+    """Return one unvalidated JSON value with sensitive content blanked.
+
+    Args:
+        key: Field key associated with ``value``.
+        value: JSON value to redact.
+
+    Returns:
+        Redacted JSON value.
+    """
+    if _is_sensitive_key(key):
+        if isinstance(value, dict) and "value" in value:
+            redacted = redact_sensitive_plan_json(value)
+            redacted["value"] = ""
+            return redacted
+        return ""
+    if isinstance(value, dict):
+        return redact_sensitive_plan_json(value)
+    if isinstance(value, list):
+        return [_redact_unvalidated_value(key, item) for item in value]
+    return value
 
 
 def _safe_json_object(value: Mapping[str, JsonValue], sensitive_input_ids: set[str]) -> JsonObject:
@@ -1054,6 +1232,9 @@ def _is_sensitive_key(key: str) -> bool:
     normalized = key.replace("-", "").replace("_", "").lower()
     return (
         normalized.endswith("token")
+        # Inline credential material pasted in the wizard is always carried on a
+        # ``*Pem`` key, so the whole family is stripped from safe exports.
+        or normalized.endswith("pem")
         or "secret" in normalized
         or "password" in normalized
         or "privatekey" in normalized
@@ -1062,6 +1243,7 @@ def _is_sensitive_key(key: str) -> bool:
             "accountid",
             "accountids",
             "identification",
+            "softwarestatementassertion",
             "xfapicustomeripaddress",
             "xfapifinancialid",
         }

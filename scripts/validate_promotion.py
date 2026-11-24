@@ -15,7 +15,7 @@ Usage::
     uv run python -m scripts.validate_promotion \\
         --manifest promotion-manifest.json \\
         --source-sha "$GITHUB_SHA" \\
-        --branch release/2.0.0 \\
+        --branch main \\
         --tag v2.0.0 \\
         --published-versions-file published-versions.txt
 """

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, cast
@@ -13,8 +14,25 @@ from conformance.approved_releases import (
     ApprovedReleasePolicyError,
     load_approved_release_policy,
 )
+from conformance.credentials import CredentialError, CredentialMaterial, parse_credential_material
 from conformance.json_types import JsonObject, JsonValue
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
+
+DATA_DIR_ENV = "CONFORMANCE_DATA_DIR"
+"""Container data-root override.
+
+Shared, by env var name only, with ``docker/entrypoint.py``'s
+``CONFORMANCE_DATA_DIR``, which pre-creates writable ``results``/``logs``
+subdirectories under this root. When set, CLI runs default their structured
+result and execution-log output under this root instead of the process
+working directory, so the hardened container's read-only ``/app`` never needs
+to be written to.
+"""
+
+DEFAULT_RESULT_OUTPUT_PATH = Path("out/test-results.json")
+DEFAULT_EXECUTION_LOG_PATH = Path("out/execution-log.ndjson")
+CONTAINER_RESULT_OUTPUT_PATH = Path("results/test-results.json")
+CONTAINER_EXECUTION_LOG_PATH = Path("logs/execution-log.ndjson")
 
 
 class ConfigError(ValueError):
@@ -88,40 +106,52 @@ class ResourceServerConfig:
 
 @dataclass(frozen=True)
 class TlsConfig:
-    """Transport TLS file paths for outbound model-bank requests.
+    """Transport TLS credentials for outbound model-bank requests.
+
+    Each credential is either a path reference or inline PEM material supplied
+    through the browser wizard. Path references are typically absolute paths
+    under the optional read-only ``/certs`` mount (see ``docs/DOCKER_GUIDE.md``
+    for the full mount contract). Certificate material is never copied into the
+    image or into ``/data``; it is either read from the operator-supplied mount
+    or held in memory for the life of the process.
 
     Attributes:
-        ca_bundle_path: Optional CA bundle used to verify the model bank.
-        client_certificate_path: Optional client certificate for mTLS.
-        client_private_key_path: Optional private key paired with the client certificate.
+        ca_bundle: Optional CA bundle used to verify the model bank.
+        client_certificate: Optional client certificate for mTLS.
+        client_private_key: Optional private key paired with the client certificate.
     """
 
-    ca_bundle_path: Path | None = None
-    client_certificate_path: Path | None = None
-    client_private_key_path: Path | None = None
+    ca_bundle: CredentialMaterial | None = None
+    client_certificate: CredentialMaterial | None = None
+    client_private_key: CredentialMaterial | None = None
 
 
 @dataclass(frozen=True)
 class FapiSigningConfig:
     """FAPI signing and token client-auth configuration kept out of placeholders.
 
+    ``signing_certificate``/``signing_private_key`` are either path references
+    under the same optional read-only ``/certs`` mount described on
+    :class:`TlsConfig`, or inline PEM material supplied through the wizard.
+    RFC 8705 ``tls_client_auth`` may omit both: token authentication uses
+    ``TlsConfig`` instead. JOSE operations validate signing material on use.
+
     Attributes:
-        signing_certificate_path: X.509 certificate path used for PS256 JOSE
-            signing operations such as request objects and private-key JWT
-            client assertions.
-        signing_private_key_path: Private key path paired with
-            ``signing_certificate_path``.
+        signing_certificate: X.509 certificate used for PS256 JOSE signing
+            operations such as request objects and private-key JWT client
+            assertions, or ``None`` for TLS-authenticated token-only flows.
+        signing_private_key: Private key paired with ``signing_certificate``.
         key_id: JOSE ``kid`` header value associated with the signing key.
         client_assertion_issuer: ``iss`` claim value for token-endpoint
-            client assertions.
+            client assertions, JARs and payload signatures; empty when unused.
         client_assertion_subject: ``sub`` claim value for token-endpoint
-            client assertions.
+            client assertions; empty when unused.
         token_endpoint_auth_method: Declared client-authentication method for
             the token endpoint.
     """
 
-    signing_certificate_path: Path
-    signing_private_key_path: Path
+    signing_certificate: CredentialMaterial | None
+    signing_private_key: CredentialMaterial | None
     key_id: str
     client_assertion_issuer: str
     client_assertion_subject: str
@@ -159,9 +189,15 @@ class ModelBankConfig:
         follow_up_mode: Whether to fetch JWKS after discovery succeeds.
         tls: Transport TLS settings for the HTTP client.
         result_output_path: Path where the structured JSON result should be written.
+            Defaults to ``out/test-results.json`` resolved under the output
+            base directory (typically the process CWD), or
+            ``results/test-results.json`` under ``CONFORMANCE_DATA_DIR`` when
+            that environment variable is set (see
+            :func:`load_model_bank_config`).
         execution_log_path: Path where the NDJSON execution log should be
             written. Defaults to ``out/execution-log.ndjson`` resolved under
-            the output base directory (typically the process CWD),
+            the output base directory (typically the process CWD), or
+            ``logs/execution-log.ndjson`` under ``CONFORMANCE_DATA_DIR``,
             independently of ``result_output_path``.
         approved_release_policy: Optional approved-release policy used for
             participant-side report eligibility self-assessment. When absent,
@@ -185,8 +221,8 @@ class ModelBankConfig:
     discovery_url: str | None = None
     follow_up_mode: FollowUpMode = "jwks"
     tls: TlsConfig = field(default_factory=TlsConfig)
-    result_output_path: Path = Path("out/test-results.json")
-    execution_log_path: Path = Path("out/execution-log.ndjson")
+    result_output_path: Path = DEFAULT_RESULT_OUTPUT_PATH
+    execution_log_path: Path = DEFAULT_EXECUTION_LOG_PATH
     approved_release_policy: ApprovedReleasePolicy | None = None
     oauth: OAuthConfig | None = None
     fapi_signing: FapiSigningConfig | None = None
@@ -196,6 +232,13 @@ class ModelBankConfig:
 
 def load_model_bank_config(config_path: Path) -> ModelBankConfig:
     """Load a model-bank JSON config file from disk.
+
+    When ``CONFORMANCE_DATA_DIR`` is set (as ``docker/entrypoint.py`` does in
+    the hardened container), unspecified result/execution-log paths default
+    under that root's ``results``/``logs`` subdirectories instead of the
+    process working directory, so the read-only container image is never
+    written to. Explicit ``resultOutputPath``/``executionLogPath`` values in
+    the config file always take precedence over this default.
 
     Args:
         config_path: Path to the JSON config file.
@@ -217,10 +260,22 @@ def load_model_bank_config(config_path: Path) -> ModelBankConfig:
     if not isinstance(raw_config, dict):
         raise ConfigError("Config root must be a JSON object")
 
+    data_dir = os.environ.get(DATA_DIR_ENV)
+    if data_dir:
+        output_base_dir = Path(data_dir)
+        result_output_default = CONTAINER_RESULT_OUTPUT_PATH
+        execution_log_default = CONTAINER_EXECUTION_LOG_PATH
+    else:
+        output_base_dir = Path.cwd()
+        result_output_default = DEFAULT_RESULT_OUTPUT_PATH
+        execution_log_default = DEFAULT_EXECUTION_LOG_PATH
+
     return parse_model_bank_config(
         raw_config,
         base_dir=resolved_config_path.parent,
-        output_base_dir=Path.cwd(),
+        output_base_dir=output_base_dir,
+        result_output_default=result_output_default,
+        execution_log_default=execution_log_default,
     )
 
 
@@ -229,6 +284,8 @@ def parse_model_bank_config(
     *,
     base_dir: Path,
     output_base_dir: Path | None = None,
+    result_output_default: Path = DEFAULT_RESULT_OUTPUT_PATH,
+    execution_log_default: Path = DEFAULT_EXECUTION_LOG_PATH,
 ) -> ModelBankConfig:
     """Validate raw JSON config data into a typed model-bank config.
 
@@ -237,6 +294,10 @@ def parse_model_bank_config(
         base_dir: Directory used to resolve certificate and approved-release
             policy paths.
         output_base_dir: Directory used to resolve result output paths.
+        result_output_default: Default relative structured-result path, used
+            when the config omits ``resultOutputPath``.
+        execution_log_default: Default relative execution-log path, used when
+            the config omits ``executionLogPath``.
 
     Returns:
         Typed model-bank config ready for execution.
@@ -245,6 +306,17 @@ def parse_model_bank_config(
         ConfigError: If required fields are missing, unknown fields are present,
             paths are unsafe, or values have invalid types.
     """
+    if output_base_dir is None:
+        data_dir = os.environ.get(DATA_DIR_ENV)
+        if data_dir:
+            output_base_dir = Path(data_dir)
+            if result_output_default == DEFAULT_RESULT_OUTPUT_PATH:
+                result_output_default = CONTAINER_RESULT_OUTPUT_PATH
+            if execution_log_default == DEFAULT_EXECUTION_LOG_PATH:
+                execution_log_default = CONTAINER_EXECUTION_LOG_PATH
+        else:
+            output_base_dir = Path.cwd()
+
     _reject_unknown_keys(
         raw_config,
         allowed_keys={
@@ -272,14 +344,14 @@ def parse_model_bank_config(
     result_output_path = _optional_path(
         raw_config,
         "resultOutputPath",
-        base_dir=output_base_dir or Path.cwd(),
-        default=Path("out/test-results.json"),
+        base_dir=output_base_dir,
+        default=result_output_default,
     )
     execution_log_path = _optional_path(
         raw_config,
         "executionLogPath",
-        base_dir=output_base_dir or Path.cwd(),
-        default=Path("out/execution-log.ndjson"),
+        base_dir=output_base_dir,
+        default=execution_log_default,
     )
     approved_release_policy = _optional_approved_release_policy(raw_config, root=base_dir)
     oauth = _parse_oauth_config(raw_config)
@@ -496,7 +568,9 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue]) -> FapiSigningC
         raw_fapi_signing,
         allowed_keys={
             "signingCertificatePath",
+            "signingCertificatePem",
             "signingPrivateKeyPath",
+            "signingPrivateKeyPem",
             "kid",
             "clientAssertionIssuer",
             "clientAssertionSubject",
@@ -505,26 +579,43 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue]) -> FapiSigningC
         location="fapiSigning",
     )
 
-    signing_certificate_path = _optional_absolute_path(raw_fapi_signing, "signingCertificatePath")
-    signing_private_key_path = _optional_absolute_path(raw_fapi_signing, "signingPrivateKeyPath")
-    if signing_certificate_path is None or signing_private_key_path is None:
-        raise ConfigError(
-            "fapiSigning.signingCertificatePath and fapiSigning.signingPrivateKeyPath must be supplied together"
-        )
-
-    key_id = _required_string_at(raw_fapi_signing, "kid", location="fapiSigning")
-    client_assertion_issuer = _required_string_at(raw_fapi_signing, "clientAssertionIssuer", location="fapiSigning")
-    client_assertion_subject = _required_string_at(raw_fapi_signing, "clientAssertionSubject", location="fapiSigning")
-    token_endpoint_auth_method = _required_string_at(
+    signing_certificate = _parse_credential(
         raw_fapi_signing,
-        "tokenEndpointAuthMethod",
+        path_key="signingCertificatePath",
+        inline_key="signingCertificatePem",
         location="fapiSigning",
+    )
+    signing_private_key = _parse_credential(
+        raw_fapi_signing,
+        path_key="signingPrivateKeyPath",
+        inline_key="signingPrivateKeyPem",
+        location="fapiSigning",
+    )
+    token_endpoint_auth_method = _required_string_at(
+        raw_fapi_signing, "tokenEndpointAuthMethod", location="fapiSigning"
     )
     if token_endpoint_auth_method not in {"private_key_jwt", "tls_client_auth"}:
         raise ConfigError("fapiSigning.tokenEndpointAuthMethod must be one of: private_key_jwt, tls_client_auth")
+    jwt_auth = token_endpoint_auth_method == "private_key_jwt"  # noqa: S105 - protocol enum, not a secret
+    if (signing_certificate is None) != (signing_private_key is None) or (jwt_auth and signing_certificate is None):
+        raise ConfigError(
+            "fapiSigning signing certificate and private key must be supplied together, "
+            "each as either a path or inline PEM"
+        )
+
+    key_id = (
+        _required_string_at(raw_fapi_signing, "kid", location="fapiSigning")
+        if signing_certificate is not None
+        else _optional_string_at(raw_fapi_signing, "kid", location="fapiSigning") or ""
+    )
+    # Empty metadata is permitted only when unused; signing operations validate
+    # their own issuer/subject inputs before generating a JOSE artifact.
+    metadata_parser = _required_string_at if jwt_auth else _optional_string_at
+    client_assertion_issuer = metadata_parser(raw_fapi_signing, "clientAssertionIssuer", location="fapiSigning") or ""
+    client_assertion_subject = metadata_parser(raw_fapi_signing, "clientAssertionSubject", location="fapiSigning") or ""
     return FapiSigningConfig(
-        signing_certificate_path=signing_certificate_path,
-        signing_private_key_path=signing_private_key_path,
+        signing_certificate=signing_certificate,
+        signing_private_key=signing_private_key,
         key_id=key_id,
         client_assertion_issuer=client_assertion_issuer,
         client_assertion_subject=client_assertion_subject,
@@ -568,8 +659,10 @@ def _parse_tls_config(raw_config: dict[str, JsonValue]) -> TlsConfig:
     """Parse the optional ``tls`` section of a model bank config dict.
 
     If the key is absent a zero-value ``TlsConfig`` (no custom TLS) is
-    returned. ``clientCertificatePath`` and ``clientPrivateKeyPath`` must be
-    supplied together or not at all. All supplied paths must be absolute.
+    returned. Each credential is supplied either as an absolute path or as
+    inline PEM material, never both. The client certificate and private key
+    must be supplied together or not at all, though the two may use different
+    forms (for example a path certificate with an inline key).
 
     Args:
         raw_config: Top-level raw configuration dictionary.
@@ -579,6 +672,7 @@ def _parse_tls_config(raw_config: dict[str, JsonValue]) -> TlsConfig:
 
     Raises:
         ConfigError: If ``tls`` is not a JSON object, contains unknown keys,
+            supplies both the path and inline form of one credential,
             specifies non-absolute paths, specifies paths that do not exist, or
             supplies only one of the client certificate / private key pair.
     """
@@ -590,22 +684,82 @@ def _parse_tls_config(raw_config: dict[str, JsonValue]) -> TlsConfig:
 
     _reject_unknown_keys(
         raw_tls,
-        allowed_keys={"caBundlePath", "clientCertificatePath", "clientPrivateKeyPath"},
+        allowed_keys={
+            "caBundlePath",
+            "caBundlePem",
+            "clientCertificatePath",
+            "clientCertificatePem",
+            "clientPrivateKeyPath",
+            "clientPrivateKeyPem",
+        },
         location="tls",
     )
 
-    ca_bundle_path = _optional_existing_absolute_path(raw_tls, "caBundlePath")
-    client_certificate_path = _optional_existing_absolute_path(raw_tls, "clientCertificatePath")
-    client_private_key_path = _optional_existing_absolute_path(raw_tls, "clientPrivateKeyPath")
+    ca_bundle = _parse_credential(
+        raw_tls,
+        path_key="caBundlePath",
+        inline_key="caBundlePem",
+        location="tls",
+        require_existing=True,
+    )
+    client_certificate = _parse_credential(
+        raw_tls,
+        path_key="clientCertificatePath",
+        inline_key="clientCertificatePem",
+        location="tls",
+        require_existing=True,
+    )
+    client_private_key = _parse_credential(
+        raw_tls,
+        path_key="clientPrivateKeyPath",
+        inline_key="clientPrivateKeyPem",
+        location="tls",
+        require_existing=True,
+    )
 
-    if (client_certificate_path is None) != (client_private_key_path is None):
-        raise ConfigError("clientCertificatePath and clientPrivateKeyPath must be supplied together")
+    if (client_certificate is None) != (client_private_key is None):
+        raise ConfigError("tls client certificate and private key must be supplied together")
 
     return TlsConfig(
-        ca_bundle_path=ca_bundle_path,
-        client_certificate_path=client_certificate_path,
-        client_private_key_path=client_private_key_path,
+        ca_bundle=ca_bundle,
+        client_certificate=client_certificate,
+        client_private_key=client_private_key,
     )
+
+
+def _parse_credential(
+    raw_config: dict[str, JsonValue],
+    *,
+    path_key: str,
+    inline_key: str,
+    location: str,
+    require_existing: bool = False,
+) -> CredentialMaterial | None:
+    """Parse one credential supplied as either a path or inline PEM material.
+
+    Args:
+        raw_config: Raw configuration section containing the credential keys.
+        path_key: Key carrying an absolute path reference.
+        inline_key: Key carrying inline PEM material.
+        location: Parent configuration location used in error messages.
+        require_existing: Whether a path reference must already exist on disk.
+
+    Returns:
+        Parsed credential material, or ``None`` when neither key is present.
+
+    Raises:
+        ConfigError: If the credential is malformed or supplied in both forms.
+    """
+    try:
+        return parse_credential_material(
+            raw_config,
+            path_key=path_key,
+            inline_key=inline_key,
+            location=location,
+            require_existing=require_existing,
+        )
+    except CredentialError as error:
+        raise ConfigError(str(error)) from error
 
 
 def _required_string(raw_config: dict[str, JsonValue], key: str) -> str:

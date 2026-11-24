@@ -30,23 +30,38 @@ def _write_pyproject(tmp_path: Path, version: str) -> Path:
 class TestMain:
     """Behaviour of the ``validate_release`` CLI entrypoint."""
 
-    def test_valid_preview_candidate_succeeds(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """A preview version on a matching preview branch exits 0 and prints JSON metadata."""
-        pyproject_path = _write_pyproject(tmp_path, "2.0.0-dev.1")
+    @pytest.mark.parametrize(
+        ("branch", "version", "comparison", "channel"),
+        [
+            ("preview/new-cert-flow", "2.0.0-dev.1", "2.0.0.dev1", "preview"),
+            ("main", "2.0.0-beta.1", "2.0.0b1", "beta"),
+        ],
+    )
+    def test_valid_candidate_succeeds(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        branch: str,
+        version: str,
+        comparison: str,
+        channel: str,
+    ) -> None:
+        """Preview and main-beta candidate builds receive the correct structured metadata."""
+        pyproject_path = _write_pyproject(tmp_path, version)
         exit_code = main(
             [
                 "--pyproject",
                 str(pyproject_path),
                 "--branch",
-                "preview/new-cert-flow",
+                branch,
             ]
         )
         assert exit_code == 0
         payload = json.loads(capsys.readouterr().out)
         assert payload == {
-            "raw_version": "2.0.0-dev.1",
-            "comparison_version": "2.0.0.dev1",
-            "channel": "preview",
+            "raw_version": version,
+            "comparison_version": comparison,
+            "channel": channel,
             "base_release": "2.0.0",
         }
 
@@ -87,7 +102,7 @@ class TestMain:
             ]
         )
         assert exit_code == 1
-        assert "release/2.0.0" in capsys.readouterr().err
+        assert "from 'main'" in capsys.readouterr().err
 
     def test_non_increasing_previous_version_fails(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         """A candidate not strictly greater than the previous version fails."""
@@ -97,7 +112,7 @@ class TestMain:
                 "--pyproject",
                 str(pyproject_path),
                 "--branch",
-                "release/2.0.0",
+                "main",
                 "--previous-version",
                 "2.0.0-beta.1",
             ]

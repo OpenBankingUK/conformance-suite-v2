@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <title>Beta feedback - Open Banking conformance suite</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #f7f8fa; color: #1b1f24; font-family: system-ui, sans-serif; line-height: 1.5; }
+        main { width: min(960px, calc(100% - 32px)); margin: 32px auto; }
+        section { background: white; border: 1px solid #ccd3dc; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        label { display: block; font-weight: 650; margin-top: 16px; }
+        input, select, textarea { display: block; width: 100%; font: inherit; padding: 8px; border: 1px solid #667085; border-radius: 4px; }
+        textarea { min-height: 100px; }
+        #feedback-body { min-height: 480px; }
+        button, .button { display: inline-block; font: inherit; padding: 8px 14px; margin-top: 12px; border: 1px solid #0b6bcb; border-radius: 4px; background: #0b6bcb; color: white; text-decoration: none; cursor: pointer; }
+        .errorlist, .error { color: #a02020; }
+        .helptext { display: block; color: #505968; }
+        :focus-visible { outline: 3px solid #9a6700; outline-offset: 3px; }
+    </style>
+</head>
+<body>
+{% include "conformance/partials/beta_notice.html" %}
+<main>
+    <h1>Give beta feedback</h1>
+    {% if report_error or context_errors %}
+    <section role="alert">
+        <h2>Feedback unavailable</h2>
+        <p class="error">{{ report_error }}</p>{{ context_errors }}
+        <a href="{% url 'feedback-prepare' %}">Prepare new page-only feedback</a>
+    </section>
+    {% else %}
+    <p>Prepare feedback for <strong>{{ recipient }}</strong>. Nothing is uploaded or sent automatically.</p>
+    <section role="note" aria-label="Sharing precautions">
+        <p>{{ review_warning }}</p>
+        <p>Run evidence is captured once when you prepare the report. Active runs may have incomplete results.
+           Builder evidence includes <strong>saved state only</strong>; unsaved form edits are not included.
+           Exported test plans are diagnostic evidence, not a guarantee they can be executed.</p>
+    </section>
+    {% if report %}
+    <section>
+        <h2>Report ready - nothing has been sent</h2>
+        <p>Captured at {{ report.captured_at }}. Reports expire after 30 minutes, may be evicted when newer reports
+           are prepared, and are lost on server restart. Download now if you need to keep it.</p>
+        <a class="button" href="{% url 'feedback-download' report.report_id %}">Download diagnostic ZIP</a>
+        <p>Review the ZIP, then <strong>manually attach it</strong> to your email.
+           The email-client link below cannot attach files and contains only a short placeholder message.</p>
+        <h3>Included files</h3>
+        <ul>{% for name in report.files %}<li>{{ name }}</li>{% endfor %}</ul>
+        {% if report.unavailable %}
+        <h3>Unavailable evidence</h3>
+        <ul>{% for name, reason in report.unavailable %}<li><strong>{{ name }}</strong>: {{ reason }}</li>{% endfor %}</ul>
+        {% endif %}
+        <label for="feedback-recipient">Recipient</label>
+        <input id="feedback-recipient" readonly value="{{ recipient }}">
+        <label for="feedback-subject">Subject</label>
+        <input id="feedback-subject" readonly value="{{ report.subject }}">
+        <button type="button" data-copy="feedback-subject" hidden>Copy subject</button>
+        <label for="feedback-body">Complete email body (select and copy if clipboard access is unavailable)</label>
+        <textarea id="feedback-body" readonly>{{ report.body }}</textarea>
+        <button type="button" data-copy="feedback-body" hidden>Copy email body</button>
+        <p id="copy-status" role="status" aria-live="polite"></p>
+        <a class="button" href="{{ report.mailto }}">Open email client (optional)</a>
+        <p>No mail client, or using a VM/secured network? Use the selectable text or <code>feedback.txt</code> in the ZIP.
+           Transfer reviewed files through your organisation's approved process and send via webmail or another device.
+           Do not bypass network or data-sharing restrictions.</p>
+        <a href="{% url 'feedback-prepare' %}">Prepare another page-only report</a>
+    </section>
+    {% else %}
+    <section>
+        <h2>Describe your feedback</h2>
+        <p>Source page: <strong>{{ form.source.value }}</strong><br>
+           Evidence context: <strong>{{ form.kind.value }}</strong> {{ form.context_id.value }}</p>
+        <form method="post" action="{% url 'feedback-prepare' %}">
+            {% csrf_token %}
+            {{ form.non_field_errors }}
+            {% for field in form %}
+                {% if field.is_hidden %}{{ field }}{{ field.errors }}
+                {% else %}
+                    {{ field.label_tag }}{{ field.errors }}{{ field }}
+                    {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
+                {% endif %}
+            {% endfor %}
+            <button type="submit">Prepare message and diagnostic ZIP</button>
+        </form>
+    </section>
+    {% endif %}
+    {% endif %}
+</main>
+<script>
+    document.querySelectorAll("[data-copy]").forEach(function (button) {
+        button.hidden = false;
+        button.addEventListener("click", async function () {
+            const field = document.getElementById(button.dataset.copy);
+            const status = document.getElementById("copy-status");
+            try {
+                if (!navigator.clipboard || !window.isSecureContext) {
+                    throw new Error("Clipboard unavailable");
+                }
+                await navigator.clipboard.writeText(field.value);
+                status.textContent = "Copied. Nothing has been sent.";
+            } catch (error) {
+                field.focus();
+                field.select();
+                status.textContent = "Clipboard access failed. The text is selected; copy it manually.";
+            }
+        });
+    });
+</script>
+</body>
+</html>

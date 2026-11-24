@@ -112,6 +112,7 @@ class TestRunDetailUi:
         assert response.status_code == 200
         content = response.content.decode("utf-8")
         assert f"Run {record.run_id}" in content
+        assert 'aria-label="Beta release notice"' in content
         assert "List AIS accounts" in content
         assert "ais-at-accounts-list-200-request" in content
         assert "passed" in content
@@ -135,6 +136,21 @@ class TestRunDetailUi:
         assert "Participant callback timed out" in content
         assert 'href="/">Home page</a>' in content
         assert "New plan" not in content
+
+    @pytest.mark.parametrize("running", [False, True])
+    def test_active_run_detail_links_to_main_menu_instead_of_new_plan(self, running: bool) -> None:
+        """Active runs send participants to the main menu to create or import a plan."""
+        record = run_store.create_run()
+        if running:
+            run_store.mark_running(record.run_id)
+
+        response = Client().get(f"/runs/{record.run_id}/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert '<a class="button" href="/">Main menu</a>' in content
+        assert "New plan" not in content
+        assert 'action="/builder/new/"' not in content
 
     def test_run_detail_sizes_psu_popup_within_available_screen(self) -> None:
         """PSU authorisation popups target 900 square pixels without exceeding the available screen."""

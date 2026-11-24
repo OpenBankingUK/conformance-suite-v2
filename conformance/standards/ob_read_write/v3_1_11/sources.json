@@ -1,34 +1,7 @@
 {
   "retrievedAt": "2026-09-07",
+  "openApiDocumentsNote": "OpenAPI document snapshots for every selectable update live under ../openapi/<catalogue-id>/.",
   "sources": [
-    {
-      "file": "account-info-openapi.json",
-      "ref": "v3.1.11",
-      "repository": "OpenBankingUK/read-write-api-specs",
-      "sha256": "36afb5a9a76a79c74fe523e6a84ccfc002cf7f6b74f1c304ea22af27510c442f",
-      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.11/dist/openapi/account-info-openapi.json"
-    },
-    {
-      "file": "payment-initiation-openapi.json",
-      "ref": "v3.1.11",
-      "repository": "OpenBankingUK/read-write-api-specs",
-      "sha256": "86540bf84d2a17fd24d1ca0aab84839dde33704cf66a63d7763d093e10ac3e58",
-      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.11/dist/openapi/payment-initiation-openapi.json"
-    },
-    {
-      "file": "confirmation-funds-openapi.json",
-      "ref": "v3.1.11",
-      "repository": "OpenBankingUK/read-write-api-specs",
-      "sha256": "4f61a2971b248d6a4199d1191ee39f60b0b92ddc7ffb05a753c3107dc9b3dce9",
-      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.11/dist/openapi/confirmation-funds-openapi.json"
-    },
-    {
-      "file": "vrp-openapi.json",
-      "ref": "v3.1.11",
-      "repository": "OpenBankingUK/read-write-api-specs",
-      "sha256": "16a6231aacf10548ee8ba778295371d41ea02d26232867dd916eb3cafbc7db12",
-      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.11/dist/openapi/vrp-openapi.json"
-    },
     {
       "commit": "1908789b52e26e0a79fc5a565e411f771006c3ce",
       "file": "legacy/ob_3.1_accounts_transactions_fca.json",

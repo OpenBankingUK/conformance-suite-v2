@@ -16,6 +16,8 @@ def test_home_renders_browser_menu() -> None:
     assert response.status_code == 200
     content = response.content.decode("utf-8")
     assert "Open Banking conformance suite" in content
+    assert 'aria-label="Beta release notice"' in content
+    assert "This tool is currently in beta as part of the MVP release." in content
     assert "Create new test plan with builder" in content
     assert "Import test plan" in content
     assert "View health" not in content
@@ -36,6 +38,7 @@ def test_unknown_browser_route_renders_friendly_404() -> None:
     assert response.status_code == 404
     content = response.content.decode("utf-8")
     assert "Page not found" in content
+    assert 'aria-label="Beta release notice"' in content
     assert "/not-a-real-page/" in content
     assert "Open main menu" in content
 

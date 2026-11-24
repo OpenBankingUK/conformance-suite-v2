@@ -1,0 +1,45 @@
+{% comment %}
+Generated test rows. Re-rendered out of band by live plan JSON apply.
+{% endcomment %}
+<div id="review-generated-tests"{% if oob %} hx-swap-oob="true"{% endif %}>
+    <div class="table-wrap">
+        <table>
+            <thead>
+            <tr>
+                <th scope="col">Test case</th>
+                <th scope="col">Source</th>
+                <th scope="col">Phase</th>
+                <th scope="col">Requests</th>
+                <th scope="col">Assertions</th>
+                <th scope="col">Runtime/auth</th>
+                <th scope="col">Certification</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in review.rows %}
+                <tr>
+                    <td><strong>{{ row.name }}</strong><br><span class="step-id">{{ row.id }}</span></td>
+                    <td><span class="badge">{{ row.source }}</span><br><span class="muted">{{ row.source_detail }}</span></td>
+                    <td><span class="badge">{{ row.phase }}</span><br><span class="muted">{{ row.role }}</span></td>
+                    <td>{{ row.request_count }}</td>
+                    <td>{{ row.assertion_count }}</td>
+                    <td>
+                        {% for requirement in row.runtime_requirements %}
+                            <div>
+                                <span class="step-id">{{ requirement.input_id }}</span>
+                                {% if requirement.required %}<span class="badge">Required</span>{% endif %}
+                                {% if requirement.sensitive %}<span class="badge">Sensitive</span>{% endif %}
+                            </div>
+                        {% empty %}
+                            <span class="muted">No runtime input</span>
+                        {% endfor %}
+                    </td>
+                    <td>{% if row.mandatory %}<span class="badge">Mandatory</span>{% else %}<span class="badge">Optional</span>{% endif %}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7">No generated tests. Select endpoints before launch.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>

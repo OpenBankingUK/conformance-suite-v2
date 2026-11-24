@@ -1,0 +1,8 @@
+{% comment %}
+Builder page header actions. "Import plan" opens the in-builder import page,
+which replaces this draft; ``from_step`` lets Cancel return here.
+{% endcomment %}
+<div class="builder-header-actions">
+    <a class="button secondary builder-menu-link" href="{% url 'builder-draft-import' draft.draft_id %}?from={{ from_step }}" data-builder-import-link>Import plan</a>
+    <a class="button secondary builder-menu-link" href="{% url 'home' %}">Main menu</a>
+</div>

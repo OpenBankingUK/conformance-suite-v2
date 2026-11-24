@@ -49,3 +49,6 @@ ai/
 trusted/
 .scan-input/
 security/
+
+# ─── Local collectstatic output (rebuilt in the image) ──────────────────────
+staticfiles/

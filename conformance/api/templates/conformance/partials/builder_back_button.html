@@ -1,0 +1,7 @@
+{% comment %}
+Back submits the page form with ``next=back`` so valid edits are saved before
+going back. Invalid edits re-render the page with the discard dialog.
+{% endcomment %}
+{% if back_step %}
+    <button class="secondary" type="submit" name="next" value="back" formnovalidate data-back-button>Back to {{ back_step.label|lower }}</button>
+{% endif %}

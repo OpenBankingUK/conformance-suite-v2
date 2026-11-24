@@ -1,6 +1,6 @@
 .PHONY: check lint test unit component secrets audit dev dev-unmasked serve docker help
 
-SECRET_SCAN_EXCLUDE_PATHSPEC ?= :(exclude,top,glob)conformance/standards/ob_read_write/v*/*-openapi.json
+SECRET_SCAN_EXCLUDE_PATHSPEC ?= :(exclude,top,glob)conformance/standards/ob_read_write/openapi/*/*-openapi.json
 
 check: secrets lint test ## Run all local checks (secrets + lint + complete offline test suite)
 
@@ -51,15 +51,12 @@ dev-unmasked: ## Run local dev server with unmasked execution logs
 serve: ## Run local prod server (uvicorn, no reload)
 	DJANGO_ALLOWED_HOSTS="localhost,127.0.0.1,0.0.0.0" uv run uvicorn config.asgi:application --host 0.0.0.0 --port 8443
 
-docker: ## Build and run the hardened local Docker container (requires dhi.io login)
+docker: ## Build and run the hardened container with a persistent volume (run `docker login dhi.io` first)
 	docker build -t conformance-suite .
-	docker volume create conformance-suite-data
 	docker run --rm -p 127.0.0.1:8443:8443 \
 		--read-only --cap-drop=ALL --security-opt=no-new-privileges \
 		--tmpfs /tmp:size=64m,mode=1777 \
 		-v conformance-suite-data:/data \
-		$(if $(DJANGO_SECRET_KEY),-e DJANGO_SECRET_KEY) \
-		$(if $(DJANGO_ALLOWED_HOSTS),-e DJANGO_ALLOWED_HOSTS) \
 		conformance-suite
 
 help: ## Show available targets

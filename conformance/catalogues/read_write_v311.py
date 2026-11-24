@@ -26,6 +26,8 @@ from conformance.catalogue import (
     TestCatalogue,
 )
 from conformance.json_types import JsonObject, JsonValue
+from conformance.openapi_documents import logical_read_write_document, read_write_openapi_document_path
+from conformance.specification_registry import OpenApiDocumentUpdate, specification_version_for_catalogue
 
 _STANDARDS_ROOT = Path(__file__).resolve().parents[1] / "standards" / "ob_read_write" / "v3_1_11"
 """Directory containing the pinned v3.1.11 standards and parity artifacts."""
@@ -45,9 +47,9 @@ _SCHEMA_FILES = {
 """Bundled OpenAPI document filenames keyed by catalogue API."""
 
 _SCHEMA_DOCUMENTS = {
-    api: f"ob-read-write-v3.1.11-{filename.removesuffix('.json')}" for api, filename in _SCHEMA_FILES.items()
+    api: logical_read_write_document(filename.removesuffix(".json")) for api, filename in _SCHEMA_FILES.items()
 }
-"""Schema-validation document identifiers keyed by catalogue API."""
+"""Logical schema-validation document identifiers keyed by catalogue API, bound at compile time."""
 
 _API_PATH_PREFIXES = {
     "ais": "/open-banking/v3.1/aisp",
@@ -120,7 +122,7 @@ def build_v311_catalogue(source: TestCatalogue, *, api: str) -> TestCatalogue:
             raise ValueError(f"{api} v3.1.11 case {test_case.test_case_id} has missing dependencies: {missing}")
 
     return TestCatalogue(
-        key=CatalogueKey(standard="open-banking", version="v3.1", api=api),
+        key=CatalogueKey(standard="open-banking", version="v3.1", api=api, specification_version="3.1.11"),
         catalogue_version=f"{source.catalogue_version}.v3.1.11",
         test_cases=selected_cases,
         capabilities=capabilities,
@@ -1045,7 +1047,7 @@ def _legacy_fcs_assertion(
     }
     if normalized_row.get("schemaCheck") is True:
         rule["schemaDocument"] = _SCHEMA_DOCUMENTS[api]
-        rule["schemaRefs"] = _response_schema_refs(
+        rule["schemaRefsByUpdate"] = _response_schema_refs_by_update(
             api=api,
             method=request_step.method,
             path=request_step.path,
@@ -1348,19 +1350,48 @@ def _included_script_ids(api: str) -> frozenset[str]:
 
 
 @cache
-def _openapi_document(api: str) -> JsonObject:
-    """Load a pinned v3.1.11 OpenAPI document.
+def _openapi_document(api: str, update: OpenApiDocumentUpdate) -> JsonObject:
+    """Load a pinned v3.1.11 OpenAPI document snapshot.
 
     Args:
         api: Open Banking API family.
+        update: Participant-selected OpenAPI document update.
 
     Returns:
         Parsed OpenAPI document.
     """
-    return cast("JsonObject", json.loads((_STANDARDS_ROOT / _SCHEMA_FILES[api]).read_text(encoding="utf-8")))
+    path = read_write_openapi_document_path(update, _SCHEMA_FILES[api].removesuffix(".json"))
+    return cast("JsonObject", json.loads(path.read_text(encoding="utf-8")))
 
 
-def _response_schema_ref(*, api: str, method: HttpMethod, path: str, status: int) -> str | None:
+def _response_schema_refs_by_update(*, api: str, method: HttpMethod, path: str) -> JsonObject:
+    """Return each v3.1.11 update's response schemas for one operation.
+
+    Args:
+        api: Open Banking API family.
+        method: HTTP operation method.
+        path: Versioned executable request path.
+
+    Returns:
+        Update catalogue ids mapped to their status-to-schema references.
+    """
+    version_definition = specification_version_for_catalogue(
+        standard="open-banking",
+        endpoint_version="v3.1",
+        specification_version="3.1.11",
+        api=api,
+    )
+    if version_definition is None:
+        raise ValueError(f"No v3.1.11 specification binding exists for API {api!r}")
+    return {
+        update.catalogue_id: _response_schema_refs(api=api, method=method, path=path, update=update)
+        for update in version_definition.openapi_document_updates
+    }
+
+
+def _response_schema_ref(
+    *, api: str, method: HttpMethod, path: str, status: int, update: OpenApiDocumentUpdate
+) -> str | None:
     """Resolve a response schema reference for a v3.1.11 operation.
 
     Args:
@@ -1368,13 +1399,14 @@ def _response_schema_ref(*, api: str, method: HttpMethod, path: str, status: int
         method: HTTP operation method.
         path: Versioned executable request path.
         status: Expected HTTP response status.
+        update: Participant-selected OpenAPI document update.
 
     Returns:
         Local component schema reference when the response has a JSON schema,
         otherwise ``None``.
     """
-    document = _openapi_document(api)
-    operation_path = _match_openapi_path(api=api, request_path=path)
+    document = _openapi_document(api, update)
+    operation_path = _match_openapi_path(api=api, request_path=path, update=update)
     paths = cast("JsonObject", document["paths"])
     operation = cast("JsonObject", cast("JsonObject", paths[operation_path])[method.lower()])
     responses = cast("JsonObject", operation["responses"])
@@ -1395,19 +1427,20 @@ def _response_schema_ref(*, api: str, method: HttpMethod, path: str, status: int
     return None
 
 
-def _response_schema_refs(*, api: str, method: HttpMethod, path: str) -> JsonObject:
+def _response_schema_refs(*, api: str, method: HttpMethod, path: str, update: OpenApiDocumentUpdate) -> JsonObject:
     """Return all JSON response schemas declared for one operation.
 
     Args:
         api: Open Banking API family.
         method: HTTP operation method.
         path: Versioned executable request path.
+        update: Participant-selected OpenAPI document update.
 
     Returns:
         Mapping from HTTP status strings to local component schema references.
     """
-    document = _openapi_document(api)
-    operation_path = _match_openapi_path(api=api, request_path=path)
+    document = _openapi_document(api, update)
+    operation_path = _match_openapi_path(api=api, request_path=path, update=update)
     paths = cast("JsonObject", document["paths"])
     operation = cast("JsonObject", cast("JsonObject", paths[operation_path])[method.lower()])
     responses = cast("JsonObject", operation["responses"])
@@ -1420,19 +1453,21 @@ def _response_schema_refs(*, api: str, method: HttpMethod, path: str) -> JsonObj
             method=method,
             path=path,
             status=int(raw_status),
+            update=update,
         )
         if schema_ref is not None:
             schema_refs[raw_status] = schema_ref
     return schema_refs
 
 
-def _match_openapi_path(*, api: str, request_path: str) -> str:
+def _match_openapi_path(*, api: str, request_path: str, update: OpenApiDocumentUpdate) -> str:
     """Match an executable path to a path template in a bundled OpenAPI file.
 
     Args:
         api: Open Banking API family.
         request_path: Versioned request path, possibly containing captured
             execution placeholders.
+        update: Participant-selected OpenAPI document update.
 
     Returns:
         Matching OpenAPI path template.
@@ -1443,7 +1478,7 @@ def _match_openapi_path(*, api: str, request_path: str) -> str:
     relative_path = request_path.removeprefix(_API_PATH_PREFIXES[api])
     request_segments = relative_path.strip("/").split("/")
     candidates = []
-    for candidate in cast("JsonObject", _openapi_document(api)["paths"]):
+    for candidate in cast("JsonObject", _openapi_document(api, update)["paths"]):
         candidate_segments = candidate.strip("/").split("/")
         if len(candidate_segments) != len(request_segments):
             continue

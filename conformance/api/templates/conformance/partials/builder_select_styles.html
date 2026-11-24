@@ -1,0 +1,112 @@
+{% comment %}
+Shared builder dropdown styling. Native <select> semantics are kept; the closed
+control is restyled everywhere, and browsers that support the customisable
+select (``appearance: base-select``) also get a styled option list.
+{% endcomment %}
+<style>
+    select.builder-select {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid var(--border, #ccd3dc);
+        border-radius: 6px;
+        padding: 10px 40px 10px 12px;
+        font: inherit;
+        color: var(--text, #1b1f24);
+        background-color: #ffffff;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%235d6b7a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 14px center;
+        background-size: 12px 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: pointer;
+        transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    select.builder-select:hover:not(:disabled) {
+        border-color: #8a99ab;
+    }
+
+    select.builder-select:focus {
+        outline: none;
+    }
+
+    select.builder-select:focus-visible {
+        border-color: var(--accent, #0b6bcb);
+        box-shadow: 0 0 0 3px rgba(11, 107, 203, 0.2);
+    }
+
+    select.builder-select:disabled {
+        cursor: not-allowed;
+        color: #8a96a3;
+        background-color: #f3f5f8;
+    }
+
+    @supports (appearance: base-select) {
+        select.builder-select,
+        select.builder-select::picker(select) {
+            appearance: base-select;
+        }
+
+        select.builder-select {
+            display: flex;
+            align-items: center;
+            transition: border-color 120ms ease, box-shadow 120ms ease, background-position 120ms ease;
+        }
+
+        select.builder-select::picker-icon {
+            display: none;
+        }
+
+        select.builder-select:open {
+            border-color: var(--accent, #0b6bcb);
+            box-shadow: 0 0 0 3px rgba(11, 107, 203, 0.2);
+        }
+
+        select.builder-select::picker(select) {
+            margin-top: 4px;
+            padding: 4px;
+            border: 1px solid var(--border, #ccd3dc);
+            border-radius: 8px;
+            background: #ffffff;
+            box-shadow: 0 8px 24px rgba(23, 32, 42, 0.14);
+            max-height: 320px;
+            overflow-y: auto;
+        }
+
+        select.builder-select option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: 5px;
+            color: var(--text, #1b1f24);
+            cursor: pointer;
+        }
+
+        /* The display rule above overrides the UA [hidden] style; keep cascade-filtered options hidden. */
+        select.builder-select option[hidden] {
+            display: none;
+        }
+
+        select.builder-select option:hover,
+        select.builder-select option:focus-visible {
+            outline: none;
+            background: #eef4fb;
+        }
+
+        select.builder-select option:checked {
+            font-weight: 650;
+            color: var(--accent, #0b6bcb);
+        }
+
+        select.builder-select option::checkmark {
+            order: 1;
+            margin-left: auto;
+            color: var(--accent, #0b6bcb);
+        }
+    }
+</style>

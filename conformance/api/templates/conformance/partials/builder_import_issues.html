@@ -1,0 +1,12 @@
+{# Import diagnostics for a draft loaded from plan JSON; shared by the specification and review steps. #}
+{% if import_issues %}
+    <div class="message warning" role="status" aria-labelledby="import-warnings-heading">
+        <strong id="import-warnings-heading">Import warnings</strong>
+        <p>Some imported fields could not be loaded into the builder. Complete or fix them in the builder steps or in the plan JSON editor on the review step; launch stays blocked until the plan is valid.</p>
+        <ul>
+            {% for issue in import_issues %}
+                <li><span class="badge">{{ issue.kind|capfirst }}</span>{% if issue.path %} <code>{{ issue.path }}</code>{% endif %} {{ issue.message }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+{% endif %}

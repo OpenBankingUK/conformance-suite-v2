@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from conformance.context import ResponseRecord
@@ -18,6 +19,7 @@ def build_authorization_url(
     state: str,
     nonce: str,
     request_object: str | None = None,
+    extra_query_parameters: Sequence[tuple[str, str]] = (),
 ) -> str:
     """Build an OAuth 2.0 authorisation URL with encoded query parameters.
 
@@ -38,17 +40,24 @@ def build_authorization_url(
         nonce: OIDC nonce value bound to the authorisation request.
         request_object: Optional JAR request object JWT, sent as the
             ``request`` query parameter when present.
+        extra_query_parameters: Plan-configured authorisation parameters to
+            append as unsigned query parameters. Callers only pass these when
+            they cannot be carried as signed request-object claims. Names that
+            collide with executor-owned OAuth parameters are ignored, and an
+            existing endpoint query parameter of the same name is replaced.
 
     Returns:
         Complete authorisation URL ready to surface to the participant or
-        issue in headless mode.
+        issue in auto-approve mode.
     """
     parts = urlsplit(endpoint)
     reserved_query_keys = {"client_id", "redirect_uri", "response_type", "scope", "state", "nonce", "request"}
+    extra_items = [(name, value) for name, value in extra_query_parameters if name.lower() not in reserved_query_keys]
+    extra_names = {name for name, _ in extra_items}
     query_items = [
         (name, value)
         for name, value in parse_qsl(parts.query, keep_blank_values=True)
-        if name.lower() not in reserved_query_keys
+        if name.lower() not in reserved_query_keys and name not in extra_names
     ]
     if request_object is not None:
         query_items.extend(
@@ -72,6 +81,7 @@ def build_authorization_url(
                 ("nonce", nonce),
             ]
         )
+    query_items.extend(extra_items)
     return urlunsplit(parts._replace(query=urlencode(query_items)))
 
 
@@ -105,7 +115,7 @@ def redirect_matches_registered_uri(*, location: str, redirect_uri: str) -> bool
     is normalised by :func:`urllib.parse.urlsplit`.
 
     Args:
-        location: Redirect URL received in the headless authorisation response.
+        location: Redirect URL received in the auto-approve authorisation response.
         redirect_uri: Manifest-configured callback URI for this PSU step.
 
     Returns:
@@ -145,16 +155,23 @@ def _effective_port(scheme: str, parsed_port: int | None) -> int | None:
 
 
 def extract_redirect_parameters(location: str) -> dict[str, str]:
-    """Extract query parameters from an ASPSP redirect URL.
+    """Extract authorisation response parameters from an ASPSP redirect URL.
 
     OAuth 2.0 authorisation responses carry ``state`` and either ``code`` or
-    ``error`` in the redirect query string. Duplicate keys are collapsed using
-    the last value so callers get a simple mapping for validation.
+    ``error``. With the OIDC hybrid flow (``response_type=code id_token``, as
+    used by FAPI 1 Advanced) the default response mode is ``fragment``, so the
+    parameters arrive after ``#``; with ``response_mode=query`` they arrive in
+    the query string. Both are read, with
+    fragment values taking precedence. Duplicate keys collapse to the last
+    value so callers get a simple mapping for validation.
 
     Args:
-        location: Redirect URL received in the headless authorisation response.
+        location: Redirect URL received in the auto-approve authorisation response.
 
     Returns:
-        Query parameter mapping with blank values preserved.
+        Parameter mapping with blank values preserved.
     """
-    return dict(parse_qsl(urlsplit(location).query, keep_blank_values=True))
+    parts = urlsplit(location)
+    parameters = dict(parse_qsl(parts.query, keep_blank_values=True))
+    parameters.update(parse_qsl(parts.fragment, keep_blank_values=True))
+    return parameters

@@ -45,6 +45,7 @@ def test_compiled_ais_manifest_maps_present_fapi_header_assertions(tmp_path: Pat
             ),
         ),
         runtime_inputs=runtime_inputs,
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE, spec)
 
@@ -96,6 +97,7 @@ def test_compiled_ais_manifest_maps_legacy_one_of_status_assertions(tmp_path: Pa
             ),
         ),
         runtime_inputs=runtime_inputs,
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE, spec)
 
@@ -155,6 +157,7 @@ def test_compiled_ais_manifest_builds_authorised_account_access_setup(tmp_path: 
             ),
         ),
         runtime_inputs=runtime_inputs,
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE, spec)
 
@@ -315,6 +318,7 @@ def test_compiled_cbpii_manifest_uses_configured_debtor_account(tmp_path: Path) 
             ),
         ),
         runtime_inputs=runtime_inputs,
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(CBPII_FCS_CATALOGUE, spec)
 
@@ -373,6 +377,7 @@ def test_compiled_cbpii_manifest_adds_access_token_setup_step(tmp_path: Path) ->
             ),
         ),
         runtime_inputs=runtime_inputs,
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(CBPII_FCS_CATALOGUE, spec)
 
@@ -437,6 +442,7 @@ def test_compiled_cbpii_manifest_uses_v4_status_codes(tmp_path: Path) -> None:
             ),
         ),
         runtime_inputs=runtime_inputs,
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(CBPII_FCS_CATALOGUE, spec)
 
@@ -503,6 +509,7 @@ def test_compiled_cbpii_manifest_adds_authorisation_code_setup(tmp_path: Path) -
             ),
         ),
         runtime_inputs=runtime_inputs,
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(CBPII_FCS_CATALOGUE, spec)
 
@@ -581,6 +588,7 @@ def test_compiled_cbpii_manifest_preserves_captured_consent_id_url(tmp_path: Pat
             ),
         ),
         runtime_inputs=runtime_inputs,
+        openapi_document_update="Update-5",
     )
     compiled_plan = compile_test_plan(CBPII_FCS_CATALOGUE, spec)
 

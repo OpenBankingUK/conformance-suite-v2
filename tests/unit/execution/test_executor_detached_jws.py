@@ -7,6 +7,7 @@ import httpx
 import pytest
 from joserfc import jwk, jws
 
+from conformance.credentials import credential_bytes
 from conformance.execution_log import BufferedExecutionLogger
 from conformance.executor import run_manifest
 from conformance.json_types import JsonValue
@@ -62,9 +63,12 @@ def test_run_manifest_v1_account_access_consent_adds_masked_detached_jws_header(
 
     observed_request = observed_requests[0]
     detached_signature = observed_request.headers["x-jws-signature"]
+    assert signing_config.signing_certificate is not None
     verified = jws.deserialize_compact(
         detached_signature,
-        jwk.import_key(signing_config.signing_certificate_path.read_bytes(), key_type="RSA"),
+        jwk.import_key(
+            credential_bytes(signing_config.signing_certificate, label="FAPI signing certificate"), key_type="RSA"
+        ),
         algorithms=["PS256"],
         payload=observed_request.content,
     )
@@ -242,9 +246,12 @@ def test_run_manifest_v1_pis_write_request_uses_ob_v4_detached_jws_profile(tmp_p
 
     observed_request = observed_requests[0]
     detached_signature = observed_request.headers["x-jws-signature"]
+    assert signing_config.signing_certificate is not None
     verified = jws.deserialize_compact(
         detached_signature,
-        jwk.import_key(signing_config.signing_certificate_path.read_bytes(), key_type="RSA"),
+        jwk.import_key(
+            credential_bytes(signing_config.signing_certificate, label="FAPI signing certificate"), key_type="RSA"
+        ),
         algorithms=["PS256"],
         payload=observed_request.content,
         registry=response_signature_registry(),
@@ -306,9 +313,12 @@ def test_run_manifest_v1_pis_write_request_can_omit_ob_v4_detached_jws_iss_claim
 
     observed_request = observed_requests[0]
     detached_signature = observed_request.headers["x-jws-signature"]
+    assert signing_config.signing_certificate is not None
     verified = jws.deserialize_compact(
         detached_signature,
-        jwk.import_key(signing_config.signing_certificate_path.read_bytes(), key_type="RSA"),
+        jwk.import_key(
+            credential_bytes(signing_config.signing_certificate, label="FAPI signing certificate"), key_type="RSA"
+        ),
         algorithms=["PS256"],
         payload=observed_request.content,
         registry=response_signature_registry(),
@@ -384,9 +394,12 @@ def test_run_manifest_v1_vrp_consent_request_uses_ob_v4_detached_jws_profile(tmp
 
     observed_request = observed_requests[0]
     detached_signature = observed_request.headers["x-jws-signature"]
+    assert signing_config.signing_certificate is not None
     verified = jws.deserialize_compact(
         detached_signature,
-        jwk.import_key(signing_config.signing_certificate_path.read_bytes(), key_type="RSA"),
+        jwk.import_key(
+            credential_bytes(signing_config.signing_certificate, label="FAPI signing certificate"), key_type="RSA"
+        ),
         algorithms=["PS256"],
         payload=observed_request.content,
         registry=response_signature_registry(),

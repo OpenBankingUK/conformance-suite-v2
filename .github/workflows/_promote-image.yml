@@ -334,7 +334,7 @@ jobs:
             scripts/verify_build_evidence.py \
             scripts/verify_loaded_image.py \
             .github/workflows/auto-promote.yml; then
-            echo "::error::Candidate pipeline files differ from trusted main. Merge main into $INPUT_BRANCH and rebuild." >&2
+            echo "::error::Candidate pipeline files on $INPUT_BRANCH differ from trusted main. Rebuild with the current main pipeline." >&2
             exit 1
           fi
           committed_version="$(git show "$INPUT_SOURCE_SHA:pyproject.toml" | grep -m1 '^version = ' | sed -E 's/version = "(.*)"/\1/')"

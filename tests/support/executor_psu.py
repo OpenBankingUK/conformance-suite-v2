@@ -1,7 +1,7 @@
 """PSU authorisation step builders and the deterministic clock the executor uses.
 
 PSU authorisation is the redirect handoff in the OAuth 2.0 / OIDC hybrid flow
-the Open Banking UK profile requires, so the manual and headless executor test
+the Open Banking UK profile requires, so the manual and auto-approve executor test
 modules share the same parsed-step builders and a fake clock that removes real
 sleeping from timeout assertions.
 """
@@ -74,13 +74,13 @@ def psu_manual_step(**overrides: Any) -> PsuAuthorizationStep:
     return PsuAuthorizationStep(**data)
 
 
-def psu_headless_step(**overrides: Any) -> PsuAuthorizationStep:
-    """Build a parsed PSU headless step for executor unit tests.
+def psu_auto_approve_step(**overrides: Any) -> PsuAuthorizationStep:
+    """Build a parsed PSU auto-approve step for executor unit tests.
 
     Args:
         overrides: Dataclass field overrides applied to the default step.
 
     Returns:
-        Parsed :class:`PsuAuthorizationStep` instance in headless mode.
+        Parsed :class:`PsuAuthorizationStep` instance in auto-approve mode.
     """
-    return psu_manual_step(mode="headless", **overrides)
+    return psu_manual_step(mode="auto-approve", **overrides)

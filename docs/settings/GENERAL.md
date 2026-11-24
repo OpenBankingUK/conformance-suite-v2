@@ -22,7 +22,11 @@
 |---------|-------|
 | Default branch | `main` |
 
-**Rationale**: `main` is the production-ready branch in our Git Flow model. All pull requests and commits target `main` by default. The `develop` branch is used for integration but is not the default because releases are cut from `main`.
+**Rationale**: `main` is the single active v2 development and beta-publication
+branch (see [CICD_STRATEGY.md](../CICD_STRATEGY.md)). All normal PRs target main,
+including security and dependency updates. Optional participant-facing previews
+use `preview/**`. Develop and release/2.0.0 remain historical references.
+GA publication stays disabled until a separate release decision.
 
 ---
 
@@ -32,10 +36,12 @@
 |---------|-------|
 | Release immutability | On |
 
-**Rationale**: Enabled for the release lifecycle so newly published Releases and
-their tags cannot be edited or deleted. The finalizer creates each Release in
-one call and leaves an existing Release unchanged during recovery. This setting
-does not retroactively make previously published Releases immutable.
+**Rationale**: Stable GitHub releases and Docker image version tags are
+intended to be immutable audit records. If a bad release is published, issue a
+new hotfix version rather than deleting or re-tagging the old one.
+The release finalizer creates each GitHub Release in one call and leaves an
+existing Release unchanged during recovery. This setting does not
+retroactively make previously published Releases immutable.
 
 ---
 
@@ -67,7 +73,8 @@ Enabled for lightweight documentation that doesn't belong in the main codebase (
 
 ### Issues — On
 
-Primary mechanism for tracking work. Used with labels and milestones aligned to our Git Flow branching strategy (`feature/`, `bugfix/`, `release/`, `hotfix/`).
+Primary mechanism for tracking work. Used with labels and milestones aligned to
+the repository branching strategy (`feature/`, `bugfix/`, `preview/`, `hotfix/`).
 
 ### Sponsorships — Off
 
@@ -102,10 +109,17 @@ Project management is handled at the organisation level, not per-repository. Dis
 | Setting | Value |
 |---------|-------|
 | Allow merge commits | On (Default message) |
-| Allow squash merging | On (Default message) |
+| Allow squash merging | Off |
 | Allow rebase merging | Off |
 
-**Rationale**: Both merge commits and squash merging are enabled at the repository level, but branch rulesets further restrict the allowed methods per branch. The `main` branch ruleset enforces **squash-only** merges (see [BRANCH_RULESETS.md](BRANCH_RULESETS.md)), giving a clean linear history where each commit represents one release or hotfix. Merge commits remain available for branches not covered by restrictive rulesets (e.g. `release/` or `hotfix/` merges back into `develop`). Rebase merging is disabled to avoid rewriting commit history, which can cause problems with our Git Flow model and signed commits.
+**Rationale**: Merge commits are the only allowed method for all PRs, including
+feature, Dependabot, release and branch-synchronisation PRs. This preserves
+ancestry between long-lived branches without requiring maintainers to select a
+different method for each source branch. The trade-off is retaining intermediate
+commits rather than squashing each PR into one commit. The main/develop and
+release [branch rulesets](BRANCH_RULESETS.md) also allow only `merge`; required
+linear history must remain disabled. Existing review and CI requirements still
+apply. This is the permanent policy, not a temporary release exception.
 
 ---
 
@@ -172,7 +186,10 @@ Left at default. Allows inline discussion on individual commits, which is useful
 |---------|-------|
 | Limit pushes | On — **5** branches/tags per push |
 
-**Rationale**: Safety net against accidental bulk operations (e.g. a misconfigured script deleting or force-pushing many branches). The limit of 5 is generous enough for normal Git Flow work (pushing a feature branch + tag) while blocking potentially destructive bulk pushes.
+**Rationale**: Safety net against accidental bulk operations (e.g. a
+misconfigured script deleting or force-pushing many branches). The limit of 5
+is generous enough for normal branch and tag pushes while blocking potentially
+destructive bulk pushes.
 
 ---
 

@@ -24,7 +24,7 @@ from scripts.release_metadata import (
 )
 
 _BRANCH_CHANNELS: dict[str, tuple[ReleaseChannel, str]] = {
-    "main": (ReleaseChannel.GA, "ga-release"),
+    "main": (ReleaseChannel.BETA, "beta-release"),
 }
 _SOURCE_SHA_LENGTH = 40
 
@@ -46,8 +46,6 @@ def _branch_channel(branch: str) -> tuple[ReleaseChannel, str] | None:
         return _BRANCH_CHANNELS[branch]
     if branch.startswith("preview/"):
         return ReleaseChannel.PREVIEW, "preview-release"
-    if branch.startswith("release/"):
-        return ReleaseChannel.BETA, "beta-release"
     return None
 
 
@@ -58,7 +56,6 @@ def resolve_auto_promotion(
     source_sha: str,
     manifest_available: bool,
     published_versions: set[str],
-    tag_target_sha: str | None = None,
 ) -> AutoPromotionResolution:
     """Decide whether an eligible CI candidate should proceed to publication.
 
@@ -68,15 +65,13 @@ def resolve_auto_promotion(
         source_sha: Full commit SHA the candidate was built from.
         manifest_available: Whether that CI run uploaded ``promotion-manifest``.
         published_versions: Immutable version tags already present in Docker Hub.
-        tag_target_sha: Commit targeted by the existing GA Git tag, if any.
 
     Returns:
         The automatic promotion decision and, if eligible, its reusable
         workflow inputs.
 
     Raises:
-        ReleaseMetadataError: If the source SHA is malformed or an existing GA
-            release tag points at a different commit.
+        ReleaseMetadataError: If the source SHA is malformed.
     """
     if not manifest_available:
         return AutoPromotionResolution(False, None, None, None, "CI run did not produce a promotion-manifest artifact.")
@@ -103,13 +98,13 @@ def resolve_auto_promotion(
             f"Version {raw_version!r} is not eligible for promotion from {branch!r}: {error}",
         )
 
-    if metadata.channel is not expected_channel:
+    if metadata.channel is ReleaseChannel.GA:
         return AutoPromotionResolution(
             False,
-            expected_channel,
-            environment_name,
+            metadata.channel,
             None,
-            f"Version channel {metadata.channel.value!r} does not match branch {branch!r}; promotion skipped.",
+            None,
+            "GA publication is paused; a stable version does not enable automatic publication.",
         )
 
     try:
@@ -117,15 +112,7 @@ def resolve_auto_promotion(
     except ReleaseMetadataError as error:
         return AutoPromotionResolution(False, expected_channel, environment_name, None, str(error))
 
-    tag: str | None = None
-    if metadata.channel is ReleaseChannel.GA:
-        tag = f"v{metadata.raw_version}"
-        if tag_target_sha is not None and tag_target_sha != source_sha:
-            raise ReleaseMetadataError(
-                f"Git tag {tag!r} already points to {tag_target_sha}, not source commit {source_sha}."
-            )
-
-    return AutoPromotionResolution(True, metadata.channel, environment_name, tag, None)
+    return AutoPromotionResolution(True, metadata.channel, environment_name, None, None)
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -145,7 +132,6 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         required=True,
         help="Newline-delimited Docker Hub version tags.",
     )
-    parser.add_argument("--tag-target-sha", default=None, help="Resolved commit SHA of an existing GA Git tag.")
     return parser.parse_args(argv)
 
 
@@ -166,7 +152,6 @@ def main(argv: list[str] | None = None) -> int:
             source_sha=args.source_sha,
             manifest_available=args.manifest_available,
             published_versions=published_versions,
-            tag_target_sha=args.tag_target_sha,
         )
     except (OSError, ReleaseMetadataError) as error:
         sys.stderr.write(f"error: {error}\n")

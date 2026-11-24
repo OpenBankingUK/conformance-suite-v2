@@ -2,14 +2,16 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>OAuth and security configuration</title>
+    <title>{% if dcr_mode %}OAuth and security configuration{% else %}Connection and security{% endif %}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
+    {% include "conformance/partials/htmx_script.html" %}
+    {% include "conformance/partials/builder_select_styles.html" %}
     <style>
         :root { color-scheme: light; --bg: #f7f8fa; --panel: #ffffff; --border: #ccd3dc; --text: #1b1f24; --muted: #667085; --accent: #0b6bcb; --danger: #b42318; --warning: #a15c07; }
         * { box-sizing: border-box; }
         body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.5; }
-        main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+        main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
         header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
         h1, h2, h3 { margin: 0; line-height: 1.2; }
         h1 { font-size: 1.75rem; }
@@ -28,35 +30,71 @@
         .requirement-badge.required { border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
         .requirement-badge.optional { border: 1px solid var(--border); background: #f2f4f7; color: var(--muted); }
         .requirement-badge.conditional { border: 1px solid #fedf89; background: #fffcf5; color: var(--warning); }
-        input, select, textarea { width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }
+        .requirement-badge.depends_on_scope { border: 1px dashed var(--border); background: #ffffff; color: var(--muted); }
+        .inline-action { display: flex; gap: 8px; align-items: stretch; }
+        .inline-action input { flex: 1 1 auto; }
+        .inline-action button { flex: none; }
+        input, textarea { width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }
         input[type="checkbox"] { width: auto; min-height: auto; margin-right: 8px; }
         textarea { min-height: 120px; resize: vertical; font: 0.9rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        .grid { align-items: start; }
+        .grid > * { min-width: 0; }
+        .grid > .grid-solo { grid-column: 1 / -1; width: calc(50% - 6px); }
+        .credential-field { min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px 16px; background: #ffffff; overflow-wrap: anywhere; }
+        .credential-field > label { margin-bottom: 4px; }
+        .credential-field fieldset { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; border: 0; margin: 12px 0 0; padding: 0; min-width: 0; }
+        .credential-field legend { padding: 0; margin-bottom: 2px; font-size: 0.85rem; }
+        .credential-field .field-row > label { margin-bottom: 4px; }
+        .credential-field > .helper:last-child { margin-top: 10px; }
+        .credential-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 6px 0 0; }
+        .credential-status .helper { flex: 1 1 16rem; min-width: 0; }
+        .credential-badge { flex: none; display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid #abefc6; background: #f6fef9; color: #067647; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; }
+        .inline-choice { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; margin: 0; }
+        .inline-choice input[type="radio"] { width: auto; min-height: auto; }
         .message, .errorlist { border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; }
         .message.warning { border: 1px solid #fedf89; background: #fffcf5; color: var(--warning); }
         .errorlist { list-style: none; border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
         .metadata-list { display: grid; grid-template-columns: minmax(180px, 0.5fr) 1fr; gap: 8px 12px; margin-top: 12px; }
         .metadata-list dt { font-weight: 650; }
         .metadata-list dd { margin: 0; overflow-wrap: anywhere; }
+        .discovery-tag { display: inline-flex; align-items: center; margin-left: 6px; border-radius: 999px; border: 1px solid #b2ddff; background: #f5faff; color: #175cd3; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; vertical-align: middle; }
+        .discovery-tag[hidden] { display: none; }
+        .discovery-intro { margin: 0 0 8px; }
+        .discovery-result { margin-top: 12px; }
+        .discovery-summary { margin: 0 0 8px; padding-left: 20px; }
+        .discovery-conflicts p { margin: 0; }
+        .discovery-conflicts button { margin-top: 12px; }
+        .discovery-document { margin-top: 8px; }
+        .discovery-document summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+        button .busy-label, button.htmx-request .idle-label { display: none; }
+        button.htmx-request .busy-label { display: inline; }
         .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
         button, .button { min-height: 38px; border: 1px solid var(--accent); border-radius: 6px; padding: 8px 14px; background: var(--accent); color: #ffffff; font: inherit; font-weight: 650; text-decoration: none; cursor: pointer; }
         .button.secondary, button.secondary { background: #ffffff; color: var(--accent); }
-        @media (max-width: 840px) { header, .grid, .grid.three, .metadata-list { display: block; } .grid > div + div, .metadata-list dd + dt { margin-top: 12px; } }
+        @media (max-width: 840px) { header, .grid, .grid.three, .metadata-list { display: block; } .grid > div + div, .metadata-list dd + dt { margin-top: 12px; } .grid > .grid-solo { width: auto; } }
     </style>
 </head>
 <body>
-<main>
+{% include "conformance/partials/beta_notice.html" %}
+{# hx-boost: wizard links and form posts swap the page body over AJAX instead of a full reload. #}
+<main hx-boost="true">
     <header>
         <div>
-            <h1>OAuth and security configuration</h1>
-            <div class="muted">Step 3: security details and validation</div>
+            <h1>{% if dcr_mode %}OAuth and security configuration{% else %}Connection and security{% endif %}</h1>
         </div>
-        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+        {% include "conformance/partials/builder_header_actions.html" with from_step="security" %}
     </header>
+    {% include "conformance/partials/builder_step_bar.html" with step_form_id="builder-step-form" %}
 
     <section class="panel" aria-labelledby="security-heading">
         <h2 id="security-heading">OAuth/FAPI and communication settings</h2>
+        {% if dcr_mode %}
         <p class="helper">These fields are included only when they can affect execution. Requirement badges describe run impact; discovery metadata may prefill values, but it does not make a field required.</p>
-        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
+        {% elif draft_has_scope %}
+        <p class="helper">Badges show what the tests selected on the scope step need: <strong>Required to run</strong> values must be filled in before the plan can be launched. Discovery metadata can fill the OAuth endpoints for you.</p>
+        {% else %}
+        <p class="helper">Select a scope first to see which values the selected tests need to run. You can still fill these in now.</p>
+        {% endif %}
 
         {% if discovery_metadata.fetch_error %}
             <div class="message warning">Discovery metadata is unavailable for {{ discovery_metadata.source_url }}: {{ discovery_metadata.fetch_error }}. Continue manually.</div>
@@ -74,9 +112,31 @@
         {% endif %}
         {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
 
-        <form method="post" action="{% url 'builder-security-config' draft.draft_id %}">
+        <form method="post" id="builder-step-form" enctype="multipart/form-data" action="{% url 'builder-security-config' draft.draft_id %}">
             {% csrf_token %}
             {% if not dcr_mode %}
+            <section class="config-card" aria-labelledby="discovery-heading">
+                <h3 id="discovery-heading">OpenID discovery</h3>
+                <div class="field-row">
+                    <label for="{{ discovery_form.discovery_url.id_for_label }}">Discovery URL {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.discovery_url.status label=security_requirements.discovery_url.label only %}</label>
+                    {{ discovery_form.discovery_url.errors }}
+                    <p class="helper discovery-intro">Enter your provider's <code>.well-known/openid-configuration</code> URL, then choose <strong>Fetch and fill</strong>. Empty OAuth fields below are filled from it; values you've already typed are kept.</p>
+                    <div class="inline-action">
+                        <input id="{{ discovery_form.discovery_url.id_for_label }}" name="discovery_url" type="url" value="{{ discovery_form.discovery_url.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
+                        <button type="button"
+                                class="secondary"
+                                hx-post="{% url 'builder-discovery-preview' draft.draft_id %}"
+                                hx-include="closest form"
+                                hx-target="#discovery-preview"
+                                hx-swap="outerHTML"
+                                hx-sync="this:replace"
+                                hx-disabled-elt="this"><span class="idle-label">Fetch and fill</span><span class="busy-label">Fetching…</span></button>
+                    </div>
+                    <div class="helper">{{ security_requirements.discovery_url.description }} Type: {{ security_requirements.discovery_url.type_hint }}. {{ security_requirements.discovery_url.requirement }}</div>
+                </div>
+                {% include "conformance/partials/builder_discovery_preview.html" %}
+            </section>
+
             <section class="config-card" aria-labelledby="oauth-heading">
                 <h3 id="oauth-heading">OAuth/client</h3>
                 <div class="grid field-row">
@@ -93,31 +153,31 @@
                         <div class="helper">{{ security_requirements.oauth_redirect_uri.description }} Type: {{ security_requirements.oauth_redirect_uri.type_hint }}. {{ security_requirements.oauth_redirect_uri.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_authorization_endpoint.id_for_label }}">Authorization endpoint {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_authorization_endpoint.status label=security_requirements.oauth_authorization_endpoint.label only %}</label>
+                        <label for="{{ form.oauth_authorization_endpoint.id_for_label }}">Authorization endpoint {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_authorization_endpoint.status label=security_requirements.oauth_authorization_endpoint.label only %} <span id="discovery-tag-oauth_authorization_endpoint" class="discovery-tag" hidden>From discovery</span></label>
                         {{ form.oauth_authorization_endpoint.errors }}
                         <input id="{{ form.oauth_authorization_endpoint.id_for_label }}" name="oauth_authorization_endpoint" type="url" value="{{ form.oauth_authorization_endpoint.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
                         <div class="helper">{{ security_requirements.oauth_authorization_endpoint.description }} Type: {{ security_requirements.oauth_authorization_endpoint.type_hint }}. {{ security_requirements.oauth_authorization_endpoint.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_issuer.id_for_label }}">Issuer {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_issuer.status label=security_requirements.oauth_issuer.label only %}</label>
+                        <label for="{{ form.oauth_issuer.id_for_label }}">Issuer {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_issuer.status label=security_requirements.oauth_issuer.label only %} <span id="discovery-tag-oauth_issuer" class="discovery-tag" hidden>From discovery</span></label>
                         {{ form.oauth_issuer.errors }}
                         <input id="{{ form.oauth_issuer.id_for_label }}" name="oauth_issuer" type="url" value="{{ form.oauth_issuer.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
                         <div class="helper">{{ security_requirements.oauth_issuer.description }} Type: {{ security_requirements.oauth_issuer.type_hint }}. {{ security_requirements.oauth_issuer.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_token_endpoint.id_for_label }}">Token endpoint {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_token_endpoint.status label=security_requirements.oauth_token_endpoint.label only %}</label>
+                        <label for="{{ form.oauth_token_endpoint.id_for_label }}">Token endpoint {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_token_endpoint.status label=security_requirements.oauth_token_endpoint.label only %} <span id="discovery-tag-oauth_token_endpoint" class="discovery-tag" hidden>From discovery</span></label>
                         {{ form.oauth_token_endpoint.errors }}
                         <input id="{{ form.oauth_token_endpoint.id_for_label }}" name="oauth_token_endpoint" type="url" value="{{ form.oauth_token_endpoint.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
                         <div class="helper">{{ security_requirements.oauth_token_endpoint.description }} Type: {{ security_requirements.oauth_token_endpoint.type_hint }}. {{ security_requirements.oauth_token_endpoint.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_response_type.id_for_label }}">Response type {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_response_type.status label=security_requirements.oauth_response_type.label only %}</label>
+                        <label for="{{ form.oauth_response_type.id_for_label }}">Response type {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_response_type.status label=security_requirements.oauth_response_type.label only %} <span id="discovery-tag-oauth_response_type" class="discovery-tag" hidden>From discovery</span></label>
                         {{ form.oauth_response_type.errors }}
                         <input id="{{ form.oauth_response_type.id_for_label }}" name="oauth_response_type" type="text" value="{{ form.oauth_response_type.value|default_if_none:'' }}" autocomplete="off">
                         <div class="helper">{{ security_requirements.oauth_response_type.description }} Type: {{ security_requirements.oauth_response_type.type_hint }}. {{ security_requirements.oauth_response_type.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_request_object_signing_alg.id_for_label }}">Request object signing algorithm {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_request_object_signing_alg.status label=security_requirements.oauth_request_object_signing_alg.label only %}</label>
+                        <label for="{{ form.oauth_request_object_signing_alg.id_for_label }}">Request object signing algorithm {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_request_object_signing_alg.status label=security_requirements.oauth_request_object_signing_alg.label only %} <span id="discovery-tag-oauth_request_object_signing_alg" class="discovery-tag" hidden>From discovery</span></label>
                         {{ form.oauth_request_object_signing_alg.errors }}
                         <input id="{{ form.oauth_request_object_signing_alg.id_for_label }}" name="oauth_request_object_signing_alg" type="text" value="{{ form.oauth_request_object_signing_alg.value|default_if_none:'' }}" autocomplete="off">
                         <div class="helper">{{ security_requirements.oauth_request_object_signing_alg.description }} Type: {{ security_requirements.oauth_request_object_signing_alg.type_hint }}. {{ security_requirements.oauth_request_object_signing_alg.requirement }}</div>
@@ -125,7 +185,7 @@
                     <div>
                         <label for="{{ form.signing_token_endpoint_auth_method.id_for_label }}">Token endpoint auth method {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_token_endpoint_auth_method.status label=security_requirements.signing_token_endpoint_auth_method.label only %}</label>
                         {{ form.signing_token_endpoint_auth_method.errors }}
-                        <select id="{{ form.signing_token_endpoint_auth_method.id_for_label }}" name="signing_token_endpoint_auth_method">
+                        <select id="{{ form.signing_token_endpoint_auth_method.id_for_label }}" name="signing_token_endpoint_auth_method" class="builder-select">
                             {% for value,label in form.signing_token_endpoint_auth_method.field.choices %}
                                 <option value="{{ value }}" {% if form.signing_token_endpoint_auth_method.value == value %}selected{% endif %}>{{ label }}</option>
                             {% endfor %}
@@ -153,25 +213,13 @@
             {% if not dcr_mode %}
             <section class="config-card" aria-labelledby="signing-heading">
                 <h3 id="signing-heading">FAPI signing and Open Banking signatures</h3>
-                <p class="helper">FAPI signing fields are conditional: if you configure signing, complete every signing field in this section.</p>
+                <p class="helper">The runner uses these to sign client assertions, PSU request objects and detached JWS payloads. Complete every signing field together, along with the token endpoint auth method above.</p>
                 <div class="grid field-row">
-                    <div>
+                    <div class="grid-solo">
                         <label for="{{ form.signing_kid.id_for_label }}">Signing key ID {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_kid.status label=security_requirements.signing_kid.label only %}</label>
                         {{ form.signing_kid.errors }}
                         <input id="{{ form.signing_kid.id_for_label }}" name="signing_kid" type="text" value="{{ form.signing_kid.value|default_if_none:'' }}" autocomplete="off">
                         <div class="helper">{{ security_requirements.signing_kid.description }} Type: {{ security_requirements.signing_kid.type_hint }}. {{ security_requirements.signing_kid.requirement }}</div>
-                    </div>
-                    <div>
-                        <label for="{{ form.signing_certificate_path.id_for_label }}">Signing certificate absolute path {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_certificate_path.status label=security_requirements.signing_certificate_path.label only %}</label>
-                        {{ form.signing_certificate_path.errors }}
-                        <input id="{{ form.signing_certificate_path.id_for_label }}" name="signing_certificate_path" type="text" value="{{ form.signing_certificate_path.value|default_if_none:'' }}" autocomplete="off">
-                        <div class="helper">{{ security_requirements.signing_certificate_path.description }} Type: {{ security_requirements.signing_certificate_path.type_hint }}. {{ security_requirements.signing_certificate_path.requirement }}</div>
-                    </div>
-                    <div>
-                        <label for="{{ form.signing_private_key_path.id_for_label }}">Signing private key absolute path {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_private_key_path.status label=security_requirements.signing_private_key_path.label only %}</label>
-                        {{ form.signing_private_key_path.errors }}
-                        <input id="{{ form.signing_private_key_path.id_for_label }}" name="signing_private_key_path" type="text" value="{{ form.signing_private_key_path.value|default_if_none:'' }}" autocomplete="off">
-                        <div class="helper">{{ security_requirements.signing_private_key_path.description }} Type: {{ security_requirements.signing_private_key_path.type_hint }}. {{ security_requirements.signing_private_key_path.requirement }}</div>
                     </div>
                     <div>
                         <label for="{{ form.signing_client_assertion_issuer.id_for_label }}">Client assertion issuer {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_client_assertion_issuer.status label=security_requirements.signing_client_assertion_issuer.label only %}</label>
@@ -185,6 +233,12 @@
                         <input id="{{ form.signing_client_assertion_subject.id_for_label }}" name="signing_client_assertion_subject" type="text" value="{{ form.signing_client_assertion_subject.value|default_if_none:'' }}" autocomplete="off">
                         <div class="helper">{{ security_requirements.signing_client_assertion_subject.description }} Type: {{ security_requirements.signing_client_assertion_subject.type_hint }}. {{ security_requirements.signing_client_assertion_subject.requirement }}</div>
                     </div>
+                    <div>
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.signing_certificate title="Signing certificate" only %}
+                    </div>
+                    <div>
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.signing_private_key title="Signing private key" only %}
+                    </div>
                 </div>
             </section>
             {% else %}
@@ -195,7 +249,7 @@
                     <div>
                         <label for="{{ form.dcr_execution_mode.id_for_label }}">Execution mode <span class="requirement-badge required">Required</span></label>
                         {{ form.dcr_execution_mode.errors }}
-                        <select id="{{ form.dcr_execution_mode.id_for_label }}" name="dcr_execution_mode">
+                        <select id="{{ form.dcr_execution_mode.id_for_label }}" name="dcr_execution_mode" class="builder-select">
                             {% for value,label in form.dcr_execution_mode.field.choices %}
                                 <option value="{{ value }}" {% if form.dcr_execution_mode.value == value %}selected{% endif %}>{{ label }}</option>
                             {% endfor %}
@@ -208,14 +262,12 @@
                         <input id="{{ form.signing_kid.id_for_label }}" name="signing_kid" type="text" value="{{ form.signing_kid.value|default_if_none:'' }}" autocomplete="off">
                     </div>
                     <div>
-                        <label for="{{ form.signing_private_key_path.id_for_label }}">Signing private key absolute path <span class="requirement-badge required">Required</span></label>
-                        {{ form.signing_private_key_path.errors }}
-                        <input id="{{ form.signing_private_key_path.id_for_label }}" name="signing_private_key_path" type="text" value="{{ form.signing_private_key_path.value|default_if_none:'' }}" autocomplete="off">
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.signing_private_key title="Signing private key" only %}
                     </div>
                     <div>
                         <label for="{{ form.signing_token_endpoint_auth_method.id_for_label }}">Client authentication method <span class="requirement-badge required">Required</span></label>
                         {{ form.signing_token_endpoint_auth_method.errors }}
-                        <select id="{{ form.signing_token_endpoint_auth_method.id_for_label }}" name="signing_token_endpoint_auth_method">
+                        <select id="{{ form.signing_token_endpoint_auth_method.id_for_label }}" name="signing_token_endpoint_auth_method" class="builder-select">
                             {% for value,label in form.signing_token_endpoint_auth_method.field.choices %}
                                 <option value="{{ value }}" {% if form.signing_token_endpoint_auth_method.value == value %}selected{% endif %}>{{ label }}</option>
                             {% endfor %}
@@ -227,9 +279,7 @@
                         <div class="helper">Prefer the algorithm advertised by discovery.</div>
                     </div>
                     <div>
-                        <label for="{{ form.dcr_software_statement_assertion_path.id_for_label }}">Software Statement Assertion absolute path <span class="requirement-badge required">Required</span></label>
-                        {{ form.dcr_software_statement_assertion_path.errors }}
-                        <input id="{{ form.dcr_software_statement_assertion_path.id_for_label }}" name="dcr_software_statement_assertion_path" type="text" value="{{ form.dcr_software_statement_assertion_path.value|default_if_none:'' }}" autocomplete="off">
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.dcr_software_statement_assertion title="Software Statement Assertion" only %}
                     </div>
                     <div>
                         <label for="{{ form.dcr_registration_audience.id_for_label }}">Registration audience <span class="requirement-badge required">Required</span></label>
@@ -249,9 +299,7 @@
                         <div class="helper">One HTTPS URI per line.</div>
                     </div>
                     <div>
-                        <label for="{{ form.dcr_signing_certificate_path.id_for_label }}">DCR signing certificate absolute path <span class="requirement-badge optional">Optional</span></label>
-                        {{ form.dcr_signing_certificate_path.errors }}
-                        <input id="{{ form.dcr_signing_certificate_path.id_for_label }}" name="dcr_signing_certificate_path" type="text" value="{{ form.dcr_signing_certificate_path.value|default_if_none:'' }}" autocomplete="off">
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.dcr_signing_certificate title="DCR signing certificate" only %}
                     </div>
                     <div>
                         <label for="{{ form.dcr_transport_subject_dn_override.id_for_label }}">Transport certificate subject-DN override <span class="requirement-badge optional">Optional</span></label>
@@ -281,37 +329,149 @@
             </section>
             {% endif %}
 
+            <section class="config-card" aria-labelledby="psu-authorization-heading">
+                <h3 id="psu-authorization-heading">PSU authorisation</h3>
+                <p class="helper">The mode sets who completes PSU authorisation. <strong>Manual</strong>: the PSU completes it in a browser. <strong>Auto-approve</strong>: the sandbox completes it. The runner sends the authorisation request with an HTTP client, not a browser, so the sandbox must auto-approve and redirect straight back to the redirect URI. Login and consent pages are not automated. Ozone and the legacy FCS call this &ldquo;headless&rdquo;. Custom headers apply in auto-approve mode only. Parameter values equal to <code>true</code> or <code>false</code> (case-insensitive) become JSON booleans; all other values remain strings, including numbers.</p>
+                <fieldset class="field-row" style="border:0;padding:0;margin:12px 0 0">
+                    <legend><strong>Authorisation mode</strong></legend>
+                    {{ form.psu_authorization_mode.errors }}
+                    <label class="inline-choice"><input type="radio" name="psu_authorization_mode" value="manual" {% if form.psu_authorization_mode.value != "auto-approve" %}checked{% endif %}> Manual</label>
+                    <label class="inline-choice"><input type="radio" name="psu_authorization_mode" value="auto-approve" {% if form.psu_authorization_mode.value == "auto-approve" %}checked{% endif %}> Auto-approve</label>
+                </fieldset>
+                <div class="field-row">
+                    <h3>Parameters</h3>
+                    <p class="helper">Added to the signed request object when one is used. These parameters apply in both modes.</p>
+                    <div id="psu-parameter-rows" data-kind="parameter">
+                        {% for row in psu_parameter_rows %}
+                            <div class="grid field-row psu-pair-row" data-index="{{ forloop.counter0 }}">
+                                <div><label for="{{ row.name.id_for_label }}">Name</label>{{ row.name.errors }}{{ row.name }}</div>
+                                <div class="inline-action"><div style="flex:1"><label for="{{ row.value.id_for_label }}">Value</label>{{ row.value.errors }}{{ row.value }}</div><button type="button" class="secondary psu-remove-row" aria-label="Remove parameter row">Remove</button></div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <button type="button" class="secondary psu-add-row" data-kind="parameter">Add parameter</button>
+                </div>
+                <div class="field-row" id="psu-header-section" {% if form.psu_authorization_mode.value != "auto-approve" %}hidden{% endif %}>
+                    <h3>Auto-approve authorisation headers</h3>
+                    <p class="helper">Headers are sent only on the auto-approve PSU authorisation GET. They are retained when switching to Manual but are not applied or exported in that mode.</p>
+                    <div id="psu-header-rows" data-kind="header">
+                        {% for row in psu_header_rows %}
+                            <div class="grid field-row psu-pair-row" data-index="{{ forloop.counter0 }}">
+                                <div><label for="{{ row.name.id_for_label }}">Name</label>{{ row.name.errors }}{{ row.name }}</div>
+                                <div class="inline-action"><div style="flex:1"><label for="{{ row.value.id_for_label }}">Value</label>{{ row.value.errors }}{{ row.value }}</div><button type="button" class="secondary psu-remove-row" aria-label="Remove header row">Remove</button></div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <button type="button" class="secondary psu-add-row" data-kind="header">Add header</button>
+                </div>
+            </section>
+
             <section class="config-card" aria-labelledby="tls-heading">
                 <h3 id="tls-heading">TLS/certificates</h3>
-                <p class="helper">{% if dcr_mode %}mTLS client certificate and private key references are required for DCR. The CA bundle is optional.{% else %}mTLS client certificate and private key are conditional: provide both paths together, or leave both blank.{% endif %}</p>
+                <p class="helper">{% if dcr_mode %}mTLS client certificate and private key references are required for DCR. The CA bundle is optional.{% else %}Provide the mTLS client certificate and private key together; they are required to run when the token endpoint auth method is tls_client_auth.{% endif %}</p>
                 <div class="grid field-row">
                     <div>
-                        <label for="{{ form.tls_ca_bundle_path.id_for_label }}">CA bundle absolute path {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.tls_ca_bundle_path.status label=security_requirements.tls_ca_bundle_path.label only %}</label>
-                        {{ form.tls_ca_bundle_path.errors }}
-                        <input id="{{ form.tls_ca_bundle_path.id_for_label }}" name="tls_ca_bundle_path" type="text" value="{{ form.tls_ca_bundle_path.value|default_if_none:'' }}" autocomplete="off">
-                        <div class="helper">{{ security_requirements.tls_ca_bundle_path.description }} Type: {{ security_requirements.tls_ca_bundle_path.type_hint }}. {{ security_requirements.tls_ca_bundle_path.requirement }}</div>
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.tls_ca_bundle title="CA bundle" only %}
                     </div>
                     <div>
-                        <label for="{{ form.tls_client_certificate_path.id_for_label }}">mTLS client certificate absolute path {% if dcr_mode %}<span class="requirement-badge required">Required</span>{% else %}{% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.tls_client_certificate_path.status label=security_requirements.tls_client_certificate_path.label only %}{% endif %}</label>
-                        {{ form.tls_client_certificate_path.errors }}
-                        <input id="{{ form.tls_client_certificate_path.id_for_label }}" name="tls_client_certificate_path" type="text" value="{{ form.tls_client_certificate_path.value|default_if_none:'' }}" autocomplete="off">
-                        <div class="helper">{{ security_requirements.tls_client_certificate_path.description }} Type: {{ security_requirements.tls_client_certificate_path.type_hint }}. {{ security_requirements.tls_client_certificate_path.requirement }}</div>
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.tls_client_certificate title="mTLS client certificate" only %}
                     </div>
                     <div>
-                        <label for="{{ form.tls_client_private_key_path.id_for_label }}">mTLS client private key absolute path {% if dcr_mode %}<span class="requirement-badge required">Required</span>{% else %}{% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.tls_client_private_key_path.status label=security_requirements.tls_client_private_key_path.label only %}{% endif %}</label>
-                        {{ form.tls_client_private_key_path.errors }}
-                        <input id="{{ form.tls_client_private_key_path.id_for_label }}" name="tls_client_private_key_path" type="text" value="{{ form.tls_client_private_key_path.value|default_if_none:'' }}" autocomplete="off">
-                        <div class="helper">{{ security_requirements.tls_client_private_key_path.description }} Type: {{ security_requirements.tls_client_private_key_path.type_hint }}. {{ security_requirements.tls_client_private_key_path.requirement }}</div>
+                        {% include "conformance/partials/builder_credential_field.html" with credential=credentials.tls_client_private_key title="mTLS client private key" only %}
                     </div>
                 </div>
             </section>
 
             <div class="actions">
-                <a class="button secondary" href="{% url 'builder-discovery-config' draft.draft_id %}">Back to discovery</a>
-                <button type="submit">{% if dcr_mode %}Continue to review{% else %}Continue to resource groups{% endif %}</button>
+                {% include "conformance/partials/builder_back_button.html" %}
+                <button type="submit">{% if dcr_mode %}Continue to review{% else %}Continue to business data{% endif %}</button>
             </div>
         </form>
     </section>
 </main>
+<script>
+    (() => {
+        if (window.builderPsuSettingsListener) return;
+        window.builderPsuSettingsListener = true;
+        const updateHeaderVisibility = () => {
+            const section = document.getElementById("psu-header-section");
+            const selected = document.querySelector('input[name="psu_authorization_mode"]:checked');
+            if (section) section.hidden = !selected || selected.value !== "auto-approve";
+        };
+        const addRow = (button) => {
+            const kind = button.dataset.kind;
+            const prefix = kind === "header" ? "psu_header" : "psu_parameter";
+            const container = document.getElementById(`psu-${kind}-rows`);
+            if (!container || container.querySelectorAll(".psu-pair-row").length >= 32) return;
+            const used = new Set(Array.from(container.querySelectorAll(".psu-pair-row"), (row) => Number(row.dataset.index)));
+            let index = 0;
+            while (used.has(index) && index < 32) index += 1;
+            if (index >= 32) return;
+            const row = document.createElement("div");
+            row.className = "grid field-row psu-pair-row";
+            row.dataset.index = String(index);
+            ["name", "value"].forEach((part) => {
+                const cell = document.createElement("div");
+                const label = document.createElement("label");
+                const input = document.createElement("input");
+                const fieldName = `${prefix}_${part}_${index}`;
+                label.htmlFor = `id_${fieldName}`;
+                label.textContent = part === "name" ? "Name" : "Value";
+                input.id = `id_${fieldName}`;
+                input.name = fieldName;
+                input.type = "text";
+                input.autocomplete = "off";
+                cell.append(label, input);
+                row.append(cell);
+            });
+            const valueCell = row.lastElementChild;
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "secondary psu-remove-row";
+            remove.setAttribute("aria-label", `Remove ${kind} row`);
+            remove.textContent = "Remove";
+            valueCell.classList.add("inline-action");
+            valueCell.append(remove);
+            container.append(row);
+        };
+        document.addEventListener("change", (event) => {
+            const target = event.target;
+            if (target instanceof HTMLInputElement && target.name === "psu_authorization_mode") updateHeaderVisibility();
+        });
+        document.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            const addButton = target.closest(".psu-add-row");
+            if (addButton instanceof HTMLButtonElement) {
+                addRow(addButton);
+                return;
+            }
+            const removeButton = target.closest(".psu-remove-row");
+            if (!(removeButton instanceof HTMLButtonElement)) return;
+            const container = removeButton.closest("[data-kind]");
+            const row = removeButton.closest(".psu-pair-row");
+            if (!container || !row || container.querySelectorAll(".psu-pair-row").length <= 1) return;
+            row.remove();
+        });
+        updateHeaderVisibility();
+    })();
+    (() => {
+        if (window.builderDiscoveryTagListener) {
+            return;
+        }
+        window.builderDiscoveryTagListener = true;
+        // A field the participant edits no longer holds the discovery value, so drop its tag.
+        document.addEventListener("input", (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLInputElement)) {
+                return;
+            }
+            const tag = document.getElementById(`discovery-tag-${target.name}`);
+            if (tag) {
+                tag.hidden = true;
+            }
+        });
+    })();
+</script>
 </body>
 </html>
