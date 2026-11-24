@@ -25,7 +25,7 @@ updates:
 
   - package-ecosystem: docker
     # Builder and runtime digests are refreshed together. New digests within
-    # the fixed Python 3.14 / Debian 13 DHI family need no allowlist update;
+    # the selected DHI Python 3.14 image family need no allowlist update;
     # CI validates the image contract and smoke-tests both platforms.
     directory: /
     registries: [dhi]

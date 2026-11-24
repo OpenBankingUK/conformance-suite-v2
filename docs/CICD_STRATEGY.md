@@ -208,8 +208,8 @@ candidate code with publishing credentials. Archive checksums, BuildKit
 provenance/SBOM identity, DHI family/digest syntax and release metadata are
 still validated; these are integrity checks, not vulnerability assessments.
 
-Keep the hardened Debian 13 runtime, locked binary-wheel installation, non-root
-UID/GID `65532`, and existing platform smoke tests unchanged. Dependabot still
+Keep the hardened DHI runtime, locked binary-wheel installation, non-root
+UID/GID `65532`, and per-platform smoke tests. Dependabot still
 proposes dependency and DHI digest updates. Ordinary PR reviews, GitHub secret
 scanning/push protection and Code Owners remain in force.
 
@@ -294,8 +294,8 @@ from `main`, a second Docker entry sets `target-branch` to the active
 update that entry when a new release branch is cut. Both Docker entries group
 the `dhi.io/python` builder and runtime references so Dependabot proposes the
 pair together for review each day. A DHI candidate update is admitted only for
-the fixed Python 3.14 / Debian 13
-builder/runtime image families with digest-pinned references. No advance
+a matching pair of digest-pinned DHI Python 3.14 builder/runtime images:
+both Debian 13 or both Alpine. No advance
 allowlist update or security-risk approval is required for new candidate
 digests. The validator's historical reference API remains separate from this
 candidate build contract.

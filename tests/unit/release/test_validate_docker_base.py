@@ -19,11 +19,12 @@ from scripts.validate_docker_base import (
 pytestmark = pytest.mark.unit
 
 
-def test_candidate_base_pair_is_validated_by_family_and_digest() -> None:
+@pytest.mark.parametrize("family", ["debian13", "alpine"])
+def test_candidate_base_pair_is_validated_by_family_and_digest(family: str) -> None:
     """New digest pins need provenance verification, not a preliminary allowlist update."""
     dockerfile = (
-        "FROM dhi.io/python:3.14-debian13-dev@sha256:" + "1" * 64 + " AS builder\n"
-        "FROM dhi.io/python:3.14-debian13@sha256:" + "2" * 64 + " AS runtime\n"
+        f"FROM dhi.io/python:3.14-{family}-dev@sha256:" + "1" * 64 + " AS builder\n"
+        f"FROM dhi.io/python:3.14-{family}@sha256:" + "2" * 64 + " AS runtime\n"
     )
 
     bases = get_candidate_dhi_bases(dockerfile)
@@ -45,6 +46,8 @@ def test_candidate_base_pair_is_validated_by_family_and_digest() -> None:
         "FROM dhi.io/python:3.14-debian13@sha256:" + "2" * 64 + " AS runtime\n"
         "FROM ubuntu:latest AS final\n",
         "FROM dhi.io/python:3.14-debian13-dev@sha256:" + "1" * 64 + " AS builder\n",
+        "FROM dhi.io/python:3.14-alpine-dev@sha256:" + "1" * 64 + " AS builder\n"
+        "FROM dhi.io/python:3.14-debian13@sha256:" + "2" * 64 + " AS runtime\n",
     ],
 )
 def test_candidate_base_pair_rejects_unexpected_references_or_stage_layout(dockerfile: str) -> None:
