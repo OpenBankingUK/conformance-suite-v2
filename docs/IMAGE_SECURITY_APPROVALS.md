@@ -26,10 +26,12 @@ removed multi-platform OS/container scans or surveillance of published images.
 Existing vulnerability issues and historical reports are not marked fixed or
 deleted; automatic updates stop.
 
-`Image (linux/amd64)` also writes an informational **Docker Scout impact**
-job summary. It compares the candidate with the published `2.0.0-beta-latest`
-and states whether the runtime base digest changed. It is not a required check
-and never blocks. See
+For PRs into `main`, **Checks → Docker Scout preview** shows the final
+`linux/amd64` and `linux/arm64` images' findings by severity. An unavailable
+scan is labelled separately from a successful scan with no findings.
+`Image (linux/amd64)` still shows the **Docker Scout impact** comparison with
+the published `2.0.0-beta-latest` and whether the runtime base digest changed.
+Neither Scout report is a merge or publication requirement. See
 [CI/CD Strategy §3.2](CICD_STRATEGY.md#docker-scout-results-on-published-images)
 for why published Scout results often stay the same between betas.
 

@@ -22,6 +22,7 @@ AUTOMATIC = "auto-promote.yml"
 PROMOTION = "_promote-image.yml"
 IDENTITY = "Validate the triggering CI run"
 LOCATE = "Locate and verify the successful candidate-image run"
+SCOUT_STEP = "Report Docker Scout findings"
 
 BOUNDARIES = r"""
 gh() {
@@ -384,7 +385,7 @@ while (( $# )); do
 done
 exit 1
 """,
-        "sha256sum": "#!/bin/bash\nexit 0\n",
+        "sha256sum": '#!/bin/bash\ncat > "$RUNNER_TEMP/checksum-input"\n',
         "tar": r"""#!/bin/bash
 target=""
 last=""
@@ -404,6 +405,7 @@ fi
         "docker": r"""#!/bin/bash
 case "$*" in
   "buildx imagetools inspect "*)
+    [[ "${TEST_SCOUT_FAIL:-}" != manifest ]] || exit 41
     if [[ "$*" == *"{{.Manifest.Digest}}"* ]]; then
       printf 'sha256:%064d\n' 1
     else
@@ -422,6 +424,13 @@ case "$*" in
     exit 1
     ;;
   "scout cves "*)
+    if [[ "$*" == *"--format gitlab"* ]]; then
+      [[ "$*" == "scout cves oci-dir://$RUNNER_TEMP/scout-impact/oci --platform $PLATFORM --format gitlab --output "* ]] || exit 45
+      cp "$TEST_REPORT" "$9" || exit 46
+      # Simulate a scanner leaving output on disk before reporting a failure.
+      [[ "${TEST_SCOUT_FAIL:-}" != cves ]]
+      exit
+    fi
     [[ "${TEST_SCOUT_FAIL:-}" != cves ]] || exit 43
     printf 'fixture-package 1.0.0\n'
     ;;
@@ -459,6 +468,9 @@ esac
         "RUNNER_ARCH": "X64",
         "SCOUT_CLI_VERSION": "1.29.0",
         "SCOUT_CLI_SHA256_AMD64": "0" * 64,
+        "SCOUT_CLI_SHA256_ARM64": "1" * 64,
+        "PR_SCOUT_PREVIEW": "false",
+        "COMPARE_BETA": "true",
         "PUBLISHED_IMAGE": "openbanking/conformance-suite-v2:2.0.0-beta-latest",
         "RUNTIME_BASE": "dhi.io/python:3.14@sha256:" + "a" * 64,
         "PLATFORM": "linux/amd64",
@@ -488,7 +500,7 @@ def test_scout_report_summarizes_published_base_provenance_and_cleans_state(
         else []
     )
     env = _scout_environment(tmp_path, {"linux/amd64": {"SLSA": {"materials": materials}}})
-    result = _run_script(_shell("ci.yml", "Report Docker Scout impact against the published beta"), env)
+    result = _run_script(_shell("ci.yml", SCOUT_STEP), env)
 
     assert result.returncode == 0, result.stderr
     summary = Path(env["GITHUB_STEP_SUMMARY"]).read_text()
@@ -509,9 +521,84 @@ def test_failed_scout_command_warns_and_cleans_both_state_directories(tmp_path: 
         }
     }
     env = _scout_environment(tmp_path, provenance, failure="compare")
-    result = _run_script(_shell("ci.yml", "Report Docker Scout impact against the published beta"), env)
+    result = _run_script(_shell("ci.yml", SCOUT_STEP), env)
 
     assert result.returncode == 42
     assert "::warning title=Scout impact report incomplete::" in result.stdout
     assert not (Path(env["RUNNER_TEMP"]) / "scout-impact").exists()
     assert not (Path(env["HOME"]) / ".docker" / "scout").exists()
+
+
+def _preview_summary(tmp_path: Path) -> str:
+    path = tmp_path / "summary.md"
+    env = {
+        "PATH": os.environ["PATH"],
+        "GITHUB_STEP_SUMMARY": str(path),
+        "GITHUB_SHA": SOURCE_SHA,
+        "GITHUB_REPOSITORY": REPOSITORY,
+        "GITHUB_RUN_ID": "123",
+        "GITHUB_SERVER_URL": "https://github.com",
+    }
+    result = _run_script(_shell("ci.yml", "Summarize final image findings"), env, cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
+    return path.read_text()
+
+
+def test_pr_scout_preview_reports_both_final_images_without_a_published_baseline(tmp_path: Path) -> None:
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    for arch, severities in (("amd64", ["Critical", "High", "High", "Medium", "Low", "Unknown"]), ("arm64", [])):
+        platform_dir = tmp_path / arch
+        platform_dir.mkdir()
+        env = _scout_environment(platform_dir, {}, failure="manifest")
+        fixture = platform_dir / "input.json"
+        fixture.write_text(
+            json.dumps({"scan": {"status": "success"}, "vulnerabilities": [{"severity": s} for s in severities]})
+        )
+        env.update(
+            PR_SCOUT_PREVIEW="true",
+            COMPARE_BETA="true" if arch == "amd64" else "false",
+            PLATFORM=f"linux/{arch}",
+            RUNNER_ARCH="X64" if arch == "amd64" else "ARM64",
+            TEST_REPORT=str(fixture),
+        )
+        result = _run_script(_shell("ci.yml", SCOUT_STEP), env)
+        assert result.returncode == 0, result.stderr
+        assert ("Could not resolve the published beta" in result.stdout) == (arch == "amd64")
+        temp = Path(env["RUNNER_TEMP"])
+        assert (temp / "checksum-input").read_text().split() == [
+            env[f"SCOUT_CLI_SHA256_{arch.upper()}"],
+            str(temp / f"scout-impact/docker-scout_1.29.0_linux_{arch}.tar.gz"),
+        ]
+        report = temp / "scout-preview"
+        assert [p.name for p in report.iterdir()] == ["cves.json"]
+        report.rename(reports / f"scout-preview-linux-{arch}")
+
+    summary = _preview_summary(tmp_path)
+    assert SOURCE_SHA in summary
+    assert "| linux/amd64 | 1 | 2 | 1 | 1 | 1 | Scanned |" in summary
+    assert "| linux/arm64 | 0 | 0 | 0 | 0 | 0 | Scanned |" in summary
+
+
+@pytest.mark.parametrize("cause", ["credentials", "cves", "invalid-report"])
+def test_pr_scout_preview_distinguishes_unavailable_scans_from_zero_findings(tmp_path: Path, cause: str) -> None:
+    env = _scout_environment(tmp_path, {}, failure=cause)
+    fixture = tmp_path / "input.json"
+    fixture.write_text('{"scan":{"status":"success"},"vulnerabilities":null}')
+    env.update(PR_SCOUT_PREVIEW="true", COMPARE_BETA="false", TEST_REPORT=str(fixture))
+    if cause == "credentials":
+        env["DOCKER_SCOUT_HUB_PASSWORD"] = ""
+    result = _run_script(_shell("ci.yml", SCOUT_STEP), env)
+    assert result.returncode == 0, result.stderr
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    report = Path(env["RUNNER_TEMP"]) / "scout-preview"
+    if cause != "invalid-report":
+        assert not (report / "cves.json").exists()
+    report.rename(reports / "scout-preview-linux-amd64")
+    (reports / "scout-preview-linux-arm64").mkdir()
+    (reports / "scout-preview-linux-arm64/cves.json").write_text('{"scan":{"status":"success"},"vulnerabilities":[]}')
+    summary = _preview_summary(tmp_path)
+    reason = "no Docker Hub credentials" if cause == "credentials" else "see the Image job"
+    assert f"| linux/amd64 | - | - | - | - | - | Unavailable: {reason} |" in summary
+    assert "| linux/arm64 | 0 | 0 | 0 | 0 | 0 | Scanned |" in summary
