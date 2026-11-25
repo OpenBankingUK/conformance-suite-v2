@@ -194,6 +194,7 @@ Neither scanner is invoked or awaited again by the release workflows.
 | GitHub CodeQL | GitHub default setup | Required CodeQL results on main; historical branch rules remain unchanged |
 | Secret scanning and Ruff security lint | `make check` in CI | Part of the required `Check` job |
 | Image contract and evidence | Both platform builds and publication | Exact tested artifact, digest, platform and source identity |
+| Docker Scout preview | PRs into `main`, both final runtime images | Informational only; no findings threshold |
 | Docker Scout impact summary | `Image (linux/amd64)` on every hardened build | Informational job summary only; never blocks (see below) |
 
 The blocking custom Docker Scout, Snyk Container and pip-audit pipeline, signed DHI
@@ -234,13 +235,30 @@ unchanged findings over time: Scout advisories, package matching and VEX
 assessments can evolve independently of the image digest. A DHI digest update
 can also change the shipped base contents and findings.
 
-The `Image (linux/amd64)` job adds a non-blocking **Docker Scout impact**
-section to its job summary for every hardened build, including PRs. It compares
-the candidate archive with the published `2.0.0-beta-latest`, reports whether
-the runtime base digest differs from the one in the published image's
-provenance, and lists the candidate's vulnerable packages. Check it before
-publishing a beta to test a security change. The step uses the read-only Docker
-Hub credentials already used for DHI pulls, runs a checksum-pinned Scout CLI
+On a PR into `main`, open **Docker Scout preview** from the PR checks, then
+expand **View vulnerability report (packages and CVEs)**. The job log lists
+severity totals and affected packages, installed versions and advisories for
+each final image (`linux/amd64` and `linux/arm64`); no download is needed.
+The workflow run's **Summary** also shows the totals. Each row counts affected
+package/advisory pairs on that platform, not distinct CVE IDs across packages
+or platforms.
+The check scans the PR merge build's attested OCI archives without pushing an
+image, applying Docker's signature-verified, platform-specific VEX for the
+exact pinned DHI runtime base. Download `scout-preview-linux-amd64` or
+`scout-preview-linux-arm64` from the workflow run's artifacts for the full
+Scout JSON, including packages and CVEs (retained seven days). **Unavailable**
+means the build, credentials, signed base VEX or report was unavailable, not
+that there were zero findings. The scan is a snapshot: Scout's CLI, advisory
+database, or base VEX may change, and the published image may therefore show
+different results later. Neither findings nor a missing report block the PR
+or promotion.
+
+For the delta rather than the totals, the `Image (linux/amd64)` job also adds
+a **Docker Scout impact** summary for every hardened build. It compares the
+candidate with the published `2.0.0-beta-latest` and reports whether the runtime
+base digest differs. The PR preview does not need that baseline to succeed.
+The step uses the read-only Docker Hub credentials already used for DHI
+pulls, runs a checksum-pinned Scout CLI
 rather than repository code, never pushes, and is skipped with a notice when
 the credentials are unavailable. Scout reports DHI findings that Docker's own
 VEX statements mark as not affecting the base; see

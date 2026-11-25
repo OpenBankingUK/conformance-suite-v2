@@ -198,6 +198,8 @@ jobs:
             slug: linux-arm64
             runs-on: ubuntu-24.04-arm
     runs-on: ${{ matrix.runs-on }}
+    env:
+      PR_SCOUT_PREVIEW: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' }}
 
     permissions:
       contents: read
@@ -220,7 +222,8 @@ jobs:
 
       - name: Resolve runtime base for the Scout impact report
         id: runtime_base
-        if: matrix.slug == 'linux-amd64' && needs.plan.outputs.is_hardened == 'true'
+        if: needs.plan.outputs.is_hardened == 'true'
+        continue-on-error: true
         run: |
           set -euo pipefail
           runtime_base="$(uv run python -m scripts.validate_docker_base --candidate-dhi --print-runtime-base --dockerfile Dockerfile)"
@@ -274,19 +277,17 @@ jobs:
             --cache-to type=gha,mode=max,scope=candidate-${{ matrix.slug }} \
             .
 
-      - name: Report Docker Scout impact against the published beta
-        # Informational, never blocking: shows reviewers how this candidate
-        # differs from what Docker Hub's Scout reports for the published beta.
-        # Scout only sees shipped runtime contents, so builder-stage, tooling,
-        # CI and dev-dependency changes are expected to show no difference.
-        # Runs before any further repository scripts; Scout's Docker Hub
-        # credentials exist only in this step's environment.
-        if: matrix.slug == 'linux-amd64' && needs.plan.outputs.is_hardened == 'true'
+      - name: Report Docker Scout findings
+        # Run before further repository scripts, with read-only Hub credentials.
+        # Save the PR result independently of the optional published-beta comparison.
+        if: env.PR_SCOUT_PREVIEW == 'true' || (matrix.slug == 'linux-amd64' && needs.plan.outputs.is_hardened == 'true')
         continue-on-error: true
         timeout-minutes: 10
         env:
           SCOUT_CLI_VERSION: "1.29.0"
           SCOUT_CLI_SHA256_AMD64: 9157cdc9372b478a8cd51dd53f5e9c74a7e34056ea291c65520bf76016fa72f4 # pragma: allowlist secret
+          SCOUT_CLI_SHA256_ARM64: bcb16a65b7266413fea05e9dc352159485609e62a6cbd049207118b0aa7d8611 # pragma: allowlist secret
+          COMPARE_BETA: ${{ matrix.slug == 'linux-amd64' && needs.plan.outputs.is_hardened == 'true' }}
           PUBLISHED_IMAGE: openbanking/conformance-suite-v2:2.0.0-beta-latest
           RUNTIME_BASE: ${{ steps.runtime_base.outputs.ref }}
           PLATFORM: ${{ matrix.platform }}
@@ -301,24 +302,55 @@ jobs:
           export DOCKER_SCOUT_CACHE_DIR="$work/cache"
           trap 'rm -rf "$work" "$HOME/.docker/scout"' EXIT
           trap 'echo "::warning title=Scout impact report incomplete::This informational report failed; see the step log. CI is not blocked."' ERR
+          report="$RUNNER_TEMP/scout-preview"
+          if [[ "$PR_SCOUT_PREVIEW" == "true" ]]; then
+            mkdir -p "$report"
+          fi
           if [[ -z "$DOCKER_SCOUT_HUB_USER" || -z "$DOCKER_SCOUT_HUB_PASSWORD" ]]; then
             echo "::notice title=Scout impact report skipped::Docker Hub credentials are unavailable to this run."
+            if [[ "$PR_SCOUT_PREVIEW" == "true" ]]; then
+              touch "$report/no-credentials"
+            fi
             exit 0
           fi
-          [[ "$RUNNER_ARCH" == "X64" ]]
+          case "$RUNNER_ARCH" in
+            X64) arch=amd64; checksum="$SCOUT_CLI_SHA256_AMD64" ;;
+            ARM64) arch=arm64; checksum="$SCOUT_CLI_SHA256_ARM64" ;;
+            *) echo "::warning::Unsupported Scout runner: $RUNNER_ARCH"; exit 1 ;;
+          esac
 
           rm -rf "$work"
           mkdir -p "$work/oci" ~/.docker/cli-plugins
-          cli="docker-scout_${SCOUT_CLI_VERSION}_linux_amd64.tar.gz"
+          cli="docker-scout_${SCOUT_CLI_VERSION}_linux_${arch}.tar.gz"
           curl --retry 5 --retry-delay 2 --retry-max-time 60 -fsSL -o "$work/$cli" \
             "https://github.com/docker/scout-cli/releases/download/v${SCOUT_CLI_VERSION}/${cli}"
-          echo "${SCOUT_CLI_SHA256_AMD64}  $work/$cli" | sha256sum --check --status
+          echo "$checksum  $work/$cli" | sha256sum --check --status
           tar -xzf "$work/$cli" -C ~/.docker/cli-plugins docker-scout
           chmod +x ~/.docker/cli-plugins/docker-scout
 
           # The archive is an OCI layout. oci-dir:// keeps BuildKit's
           # provenance and SBOM visible to Scout, as on Docker Hub.
           tar -xf "$ARCHIVE" -C "$work/oci"
+
+          if [[ "$PR_SCOUT_PREVIEW" == "true" ]]; then
+            if ! docker scout vex get --verify --platform "$PLATFORM" \
+                --output "$work/base.vex.json" "registry://$RUNTIME_BASE" \
+                || [[ ! -s "$work/base.vex.json" ]]; then
+              echo "::warning title=Scout preview unavailable::Could not retrieve and verify the signed runtime-base VEX for $PLATFORM."
+              touch "$report/vex-unavailable"
+              exit 0
+            fi
+            if docker scout cves "oci-dir://$work/oci" --platform "$PLATFORM" \
+                --vex-location "$work/base.vex.json" \
+                --format gitlab --output "$work/cves.json"; then
+              mv "$work/cves.json" "$report/cves.json"
+            else
+              echo "::warning::Docker Scout could not scan the $PLATFORM image."
+            fi
+          fi
+          if [[ "$COMPARE_BETA" != "true" ]]; then
+            exit 0
+          fi
 
           # Resolve the mutable beta tag once, then use the immutable manifest
           # reference for both provenance and Scout comparison.
@@ -373,8 +405,10 @@ jobs:
 
           docker scout compare "oci-dir://$work/oci" --to "registry://$immutable_image" \
             --platform "$PLATFORM" --ignore-unchanged --format markdown --output "$work/compare.md"
-          docker scout cves "oci-dir://$work/oci" --platform "$PLATFORM" \
-            --format only-packages --only-vuln-packages > "$work/cves.txt"
+          if [[ "$PR_SCOUT_PREVIEW" != "true" ]]; then
+            docker scout cves "oci-dir://$work/oci" --platform "$PLATFORM" \
+              --format only-packages --only-vuln-packages > "$work/cves.txt"
+          fi
 
           {
             echo "## Docker Scout impact (${PLATFORM})"
@@ -388,13 +422,17 @@ jobs:
             # shellcheck disable=SC2016
             sed -E 's#<img alt="([^"]*)" src="[^"]*"/>#`\1`#g' "$work/compare.md"
             echo
-            echo "<details><summary>Vulnerable packages in this candidate</summary>"
-            echo
-            echo '```text'
-            cat "$work/cves.txt"
-            echo '```'
-            echo
-            echo "</details>"
+            if [[ "$PR_SCOUT_PREVIEW" == "true" ]]; then
+              echo "See **Docker Scout preview** for absolute findings and package details on both platforms."
+            else
+              echo "<details><summary>Vulnerable packages in this candidate</summary>"
+              echo
+              echo '```text'
+              cat "$work/cves.txt"
+              echo '```'
+              echo
+              echo "</details>"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Log out of dhi.io before running repository scripts
@@ -402,6 +440,19 @@ jobs:
         # post-job cleanup; remove it before any branch-controlled code runs.
         if: always() && needs.plan.outputs.is_hardened == 'true'
         run: docker logout dhi.io
+
+      - name: Upload PR Scout report
+        if: env.PR_SCOUT_PREVIEW == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scout-preview-${{ matrix.slug }}
+          path: |
+            ${{ runner.temp }}/scout-preview/cves.json
+            ${{ runner.temp }}/scout-preview/no-credentials
+            ${{ runner.temp }}/scout-preview/vex-unavailable
+          retention-days: 7
+          overwrite: true
 
       - name: Load image for local verification
         id: load
@@ -468,6 +519,76 @@ jobs:
             artifacts/evidence-${{ matrix.slug }}.json
             artifacts/sbom-${{ matrix.slug }}.spdx.json
           retention-days: 14
+
+  scout-preview:
+    name: Docker Scout preview
+    needs: image
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && github.base_ref == 'main' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Download PR Scout reports
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: scout-preview-linux-*
+          path: reports
+
+      - name: View vulnerability report (packages and CVEs)
+        run: |
+          set -euo pipefail
+          scanned=()
+          {
+            echo '## Docker Scout preview'
+            echo
+            echo "Final runtime images for PR merge commit \`$GITHUB_SHA\`. Findings are informational, not a merge gate."
+            echo
+            echo '| Platform | Critical | High | Medium | Low | Unspecified | Result |'
+            echo '| --- | ---: | ---: | ---: | ---: | ---: | --- |'
+            for arch in amd64 arm64; do
+              dir="reports/scout-preview-linux-$arch"
+              # GitLab-format Scout reports contain one entry per affected package/advisory.
+              # Only a complete, successful report with a known schema may produce zeros.
+              if [[ -f "$dir/cves.json" ]] && counts="$(jq -er '
+                select(.scan.status == "success") | .vulnerabilities | select(type == "array")
+                | map(.severity) as $found | ["Critical","High","Medium","Low","Unknown"] as $levels
+                | select(($found - $levels) == [])
+                | [$levels[] as $s | $found | map(select(. == $s)) | length] | join(" | ")
+              ' "$dir/cves.json")" && [[ -n "$counts" ]]; then
+                scanned+=("$arch")
+                echo "| linux/$arch | $counts | Scanned |"
+              elif [[ -f "$dir/no-credentials" ]]; then
+                echo "| linux/$arch | - | - | - | - | - | Unavailable: no Docker Hub credentials |"
+              elif [[ -f "$dir/vex-unavailable" ]]; then
+                echo "| linux/$arch | - | - | - | - | - | Unavailable: signed runtime-base VEX could not be verified |"
+              else
+                echo "| linux/$arch | - | - | - | - | - | Unavailable: see the Image job |"
+              fi
+            done
+            echo
+            echo 'These are package/advisory findings in the PR build. Docker Hub can apply registry-side VEX assessments after publication, so its counts may differ.'
+            echo
+            echo "Expand **View vulnerability report (packages and CVEs)** in the **Docker Scout preview** job for details, or download the \`scout-preview-linux-*\` [JSON artifacts]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"
+          if (( ${#scanned[@]} == 0 )); then exit 0; fi
+
+          # Package and advisory text comes from the PR image, not the workflow.
+          marker="$(uuidgen)"
+          echo "::stop-commands::$marker"
+          for arch in "${scanned[@]}"; do
+            printf '\nPackage findings for linux/%s\n' "$arch"
+            jq -r '
+              .vulnerabilities | if length == 0 then "No findings." else
+                (["Severity", "Advisory", "Package", "Installed version"],
+                 (sort_by(.severity as $s | ["Critical","High","Medium","Low","Unknown"] | index($s))[]
+                  | [.severity, (.identifiers[0].value // .cve // "Not reported"),
+                     (.location.dependency.package.name // "Not reported"),
+                     (.location.dependency.version // "Not reported")])) | @tsv
+              end
+            ' "reports/scout-preview-linux-$arch/cves.json"
+          done
+          echo "::$marker::"
 
   candidate-manifest:
     name: Assemble promotion manifest
