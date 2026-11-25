@@ -529,7 +529,7 @@ def test_failed_scout_command_warns_and_cleans_both_state_directories(tmp_path: 
     assert not (Path(env["HOME"]) / ".docker" / "scout").exists()
 
 
-def _preview_summary(tmp_path: Path) -> str:
+def _preview_report(tmp_path: Path) -> tuple[str, str]:
     path = tmp_path / "summary.md"
     env = {
         "PATH": os.environ["PATH"],
@@ -539,9 +539,9 @@ def _preview_summary(tmp_path: Path) -> str:
         "GITHUB_RUN_ID": "123",
         "GITHUB_SERVER_URL": "https://github.com",
     }
-    result = _run_script(_shell("ci.yml", "Summarize final image findings"), env, cwd=tmp_path)
+    result = _run_script(_shell("ci.yml", "View vulnerability report (packages and CVEs)"), env, cwd=tmp_path)
     assert result.returncode == 0, result.stderr
-    return path.read_text()
+    return path.read_text(), result.stdout
 
 
 def test_pr_scout_preview_reports_both_final_images_without_a_published_baseline(tmp_path: Path) -> None:
@@ -552,9 +552,15 @@ def test_pr_scout_preview_reports_both_final_images_without_a_published_baseline
         platform_dir.mkdir()
         env = _scout_environment(platform_dir, {}, failure="manifest")
         fixture = platform_dir / "input.json"
-        fixture.write_text(
-            json.dumps({"scan": {"status": "success"}, "vulnerabilities": [{"severity": s} for s in severities]})
-        )
+        vulnerabilities = [
+            {
+                "severity": s,
+                "identifiers": [{"value": f"CVE-2026-{1000 + index}"}],
+                "location": {"dependency": {"package": {"name": "fixture-package"}, "version": "1.0"}},
+            }
+            for index, s in enumerate(severities)
+        ]
+        fixture.write_text(json.dumps({"scan": {"status": "success"}, "vulnerabilities": vulnerabilities}))
         env.update(
             PR_SCOUT_PREVIEW="true",
             COMPARE_BETA="true" if arch == "amd64" else "false",
@@ -574,10 +580,14 @@ def test_pr_scout_preview_reports_both_final_images_without_a_published_baseline
         assert [p.name for p in report.iterdir()] == ["cves.json"]
         report.rename(reports / f"scout-preview-linux-{arch}")
 
-    summary = _preview_summary(tmp_path)
+    summary, log = _preview_report(tmp_path)
     assert SOURCE_SHA in summary
     assert "| linux/amd64 | 1 | 2 | 1 | 1 | 1 | Scanned |" in summary
     assert "| linux/arm64 | 0 | 0 | 0 | 0 | 0 | Scanned |" in summary
+    assert summary in log
+    assert "Package findings for linux/amd64\n" in log
+    assert "Critical\tCVE-2026-1000\tfixture-package\t1.0" in log
+    assert "Package findings for linux/arm64\nNo findings." in log
 
 
 @pytest.mark.parametrize("cause", ["credentials", "cves", "invalid-report"])
@@ -598,7 +608,16 @@ def test_pr_scout_preview_distinguishes_unavailable_scans_from_zero_findings(tmp
     report.rename(reports / "scout-preview-linux-amd64")
     (reports / "scout-preview-linux-arm64").mkdir()
     (reports / "scout-preview-linux-arm64/cves.json").write_text('{"scan":{"status":"success"},"vulnerabilities":[]}')
-    summary = _preview_summary(tmp_path)
+    summary, log = _preview_report(tmp_path)
     reason = "no Docker Hub credentials" if cause == "credentials" else "see the Image job"
     assert f"| linux/amd64 | - | - | - | - | - | Unavailable: {reason} |" in summary
     assert "| linux/arm64 | 0 | 0 | 0 | 0 | 0 | Scanned |" in summary
+    assert summary in log
+    assert "Package findings for linux/amd64" not in log
+
+
+def test_pr_scout_job_displays_unavailability_when_neither_report_exists(tmp_path: Path) -> None:
+    summary, log = _preview_report(tmp_path)
+    assert summary in log
+    assert log.count("Unavailable: see the Image job") == 2
+    assert "No findings." not in log

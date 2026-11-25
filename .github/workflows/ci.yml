@@ -525,9 +525,10 @@ jobs:
           pattern: scout-preview-linux-*
           path: reports
 
-      - name: Summarize final image findings
+      - name: View vulnerability report (packages and CVEs)
         run: |
           set -euo pipefail
+          scanned=()
           {
             echo '## Docker Scout preview'
             echo
@@ -545,6 +546,7 @@ jobs:
                 | select(($found - $levels) == [])
                 | [$levels[] as $s | $found | map(select(. == $s)) | length] | join(" | ")
               ' "$dir/cves.json")" && [[ -n "$counts" ]]; then
+                scanned+=("$arch")
                 echo "| linux/$arch | $counts | Scanned |"
               elif [[ -f "$dir/no-credentials" ]]; then
                 echo "| linux/$arch | - | - | - | - | - | Unavailable: no Docker Hub credentials |"
@@ -555,8 +557,27 @@ jobs:
             echo
             echo 'These are package/advisory findings in the PR build. Docker Hub can apply registry-side VEX assessments after publication, so its counts may differ.'
             echo
-            echo "Download the \`scout-preview-linux-*\` [run artifacts]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) for package and CVE details."
-          } | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "Expand **View vulnerability report (packages and CVEs)** in the **Docker Scout preview** job for details, or download the \`scout-preview-linux-*\` [JSON artifacts]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"
+          if (( ${#scanned[@]} == 0 )); then exit 0; fi
+
+          # Package and advisory text comes from the PR image, not the workflow.
+          marker="$(uuidgen)"
+          echo "::stop-commands::$marker"
+          for arch in "${scanned[@]}"; do
+            printf '\nPackage findings for linux/%s\n' "$arch"
+            jq -r '
+              .vulnerabilities | if length == 0 then "No findings." else
+                (["Severity", "Advisory", "Package", "Installed version"],
+                 (sort_by(.severity as $s | ["Critical","High","Medium","Low","Unknown"] | index($s))[]
+                  | [.severity, (.identifiers[0].value // .cve // "Not reported"),
+                     (.location.dependency.package.name // "Not reported"),
+                     (.location.dependency.version // "Not reported")])) | @tsv
+              end
+            ' "reports/scout-preview-linux-$arch/cves.json"
+          done
+          echo "::$marker::"
 
   candidate-manifest:
     name: Assemble promotion manifest

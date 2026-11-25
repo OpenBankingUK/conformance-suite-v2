@@ -235,10 +235,13 @@ unchanged findings over time: Scout advisories, package matching and VEX
 assessments can evolve independently of the image digest. A DHI digest update
 can also change the shipped base contents and findings.
 
-On a PR into `main`, open **Checks → Docker Scout preview** for the absolute
-critical, high, medium, low and unspecified findings in each final image
-(`linux/amd64` and `linux/arm64`). Each row counts affected package/advisory
-pairs on that platform, not distinct CVE IDs across packages or platforms.
+On a PR into `main`, open **Docker Scout preview** from the PR checks, then
+expand **View vulnerability report (packages and CVEs)**. The job log lists
+severity totals and affected packages, installed versions and advisories for
+each final image (`linux/amd64` and `linux/arm64`); no download is needed.
+The workflow run's **Summary** also shows the totals. Each row counts affected
+package/advisory pairs on that platform, not distinct CVE IDs across packages
+or platforms.
 The check scans the PR merge build's attested OCI archives without pushing an
 image. Download `scout-preview-linux-amd64` or `scout-preview-linux-arm64`
 from the workflow run's artifacts for the full Scout JSON, including packages

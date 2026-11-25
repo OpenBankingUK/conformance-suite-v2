@@ -26,9 +26,10 @@ removed multi-platform OS/container scans or surveillance of published images.
 Existing vulnerability issues and historical reports are not marked fixed or
 deleted; automatic updates stop.
 
-For PRs into `main`, **Checks → Docker Scout preview** shows the final
-`linux/amd64` and `linux/arm64` images' findings by severity. An unavailable
-scan is labelled separately from a successful scan with no findings.
+For PRs into `main`, open **Docker Scout preview** from the PR checks and
+expand **View vulnerability report (packages and CVEs)** for the final
+`linux/amd64` and `linux/arm64` images' severity counts and package findings.
+An unavailable scan is labelled separately from a successful scan with no findings.
 `Image (linux/amd64)` still shows the **Docker Scout impact** comparison with
 the published `2.0.0-beta-latest` and whether the runtime base digest changed.
 Neither Scout report is a merge or publication requirement. See
