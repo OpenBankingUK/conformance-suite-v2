@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.28] - 2026-11-25
+
+### Changed
+
+- Upgrade the locked cryptography runtime dependency from 50.0.1 to 50.0.2.
+- Refresh the pinned DHI Python 3.14 Alpine builder and runtime base images
+  for amd64 and arm64.
+- Add advisory Docker Scout previews for the final amd64 and arm64 PR images,
+  applying verified signed VEX for the exact DHI runtime base and reporting
+  severity totals, affected packages and CVEs in the PR check log. These
+  reports do not block merging or publication.
+
 ## [2.0.0-beta.27] - 2026-11-24
 
 ### Changed
@@ -944,7 +956,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.27...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.28...HEAD
+[2.0.0-beta.28]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.27...v2.0.0-beta.28
 [2.0.0-beta.27]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.26...v2.0.0-beta.27
 [2.0.0-beta.26]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.25...v2.0.0-beta.26
 [2.0.0-beta.25]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.24...v2.0.0-beta.25
