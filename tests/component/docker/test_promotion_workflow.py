@@ -404,6 +404,11 @@ fi
 """,
         "docker": r"""#!/bin/bash
 case "$*" in
+  "scout vex get "*)
+    [[ "${TEST_VEX_FAIL:-}" != true ]] || exit 47
+    [[ "$*" == "scout vex get --verify --platform $PLATFORM --output $RUNNER_TEMP/scout-impact/base.vex.json registry://$RUNTIME_BASE" ]] || exit 48
+    printf '{"statements":[]}\n' > "${8}"
+    ;;
   "buildx imagetools inspect "*)
     [[ "${TEST_SCOUT_FAIL:-}" != manifest ]] || exit 41
     if [[ "$*" == *"{{.Manifest.Digest}}"* ]]; then
@@ -425,8 +430,8 @@ case "$*" in
     ;;
   "scout cves "*)
     if [[ "$*" == *"--format gitlab"* ]]; then
-      [[ "$*" == "scout cves oci-dir://$RUNNER_TEMP/scout-impact/oci --platform $PLATFORM --format gitlab --output "* ]] || exit 45
-      cp "$TEST_REPORT" "$9" || exit 46
+      [[ "$*" == "scout cves oci-dir://$RUNNER_TEMP/scout-impact/oci --platform $PLATFORM --vex-location $RUNNER_TEMP/scout-impact/base.vex.json --format gitlab --output "* ]] || exit 45
+      cp "$TEST_REPORT" "${11}" || exit 46
       # Simulate a scanner leaving output on disk before reporting a failure.
       [[ "${TEST_SCOUT_FAIL:-}" != cves ]]
       exit
@@ -480,6 +485,7 @@ esac
         "DOCKER_SCOUT_HUB_PASSWORD": "stub",  # pragma: allowlist secret -- fake test stub
         "TEST_PROVENANCE": str(provenance_path),
         "TEST_SCOUT_FAIL": failure,
+        "TEST_VEX_FAIL": "false",
     }
 
 
@@ -590,7 +596,7 @@ def test_pr_scout_preview_reports_both_final_images_without_a_published_baseline
     assert "Package findings for linux/arm64\nNo findings." in log
 
 
-@pytest.mark.parametrize("cause", ["credentials", "cves", "invalid-report"])
+@pytest.mark.parametrize("cause", ["credentials", "vex", "cves", "invalid-report"])
 def test_pr_scout_preview_distinguishes_unavailable_scans_from_zero_findings(tmp_path: Path, cause: str) -> None:
     env = _scout_environment(tmp_path, {}, failure=cause)
     fixture = tmp_path / "input.json"
@@ -598,6 +604,8 @@ def test_pr_scout_preview_distinguishes_unavailable_scans_from_zero_findings(tmp
     env.update(PR_SCOUT_PREVIEW="true", COMPARE_BETA="false", TEST_REPORT=str(fixture))
     if cause == "credentials":
         env["DOCKER_SCOUT_HUB_PASSWORD"] = ""
+    elif cause == "vex":
+        env["TEST_VEX_FAIL"] = "true"
     result = _run_script(_shell("ci.yml", SCOUT_STEP), env)
     assert result.returncode == 0, result.stderr
     reports = tmp_path / "reports"
@@ -609,7 +617,10 @@ def test_pr_scout_preview_distinguishes_unavailable_scans_from_zero_findings(tmp
     (reports / "scout-preview-linux-arm64").mkdir()
     (reports / "scout-preview-linux-arm64/cves.json").write_text('{"scan":{"status":"success"},"vulnerabilities":[]}')
     summary, log = _preview_report(tmp_path)
-    reason = "no Docker Hub credentials" if cause == "credentials" else "see the Image job"
+    reason = {
+        "credentials": "no Docker Hub credentials",
+        "vex": "signed runtime-base VEX could not be verified",
+    }.get(cause, "see the Image job")
     assert f"| linux/amd64 | - | - | - | - | - | Unavailable: {reason} |" in summary
     assert "| linux/arm64 | 0 | 0 | 0 | 0 | 0 | Scanned |" in summary
     assert summary in log

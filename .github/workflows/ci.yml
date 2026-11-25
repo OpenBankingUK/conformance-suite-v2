@@ -222,7 +222,7 @@ jobs:
 
       - name: Resolve runtime base for the Scout impact report
         id: runtime_base
-        if: matrix.slug == 'linux-amd64' && needs.plan.outputs.is_hardened == 'true'
+        if: needs.plan.outputs.is_hardened == 'true'
         continue-on-error: true
         run: |
           set -euo pipefail
@@ -333,7 +333,15 @@ jobs:
           tar -xf "$ARCHIVE" -C "$work/oci"
 
           if [[ "$PR_SCOUT_PREVIEW" == "true" ]]; then
+            if ! docker scout vex get --verify --platform "$PLATFORM" \
+                --output "$work/base.vex.json" "registry://$RUNTIME_BASE" \
+                || [[ ! -s "$work/base.vex.json" ]]; then
+              echo "::warning title=Scout preview unavailable::Could not retrieve and verify the signed runtime-base VEX for $PLATFORM."
+              touch "$report/vex-unavailable"
+              exit 0
+            fi
             if docker scout cves "oci-dir://$work/oci" --platform "$PLATFORM" \
+                --vex-location "$work/base.vex.json" \
                 --format gitlab --output "$work/cves.json"; then
               mv "$work/cves.json" "$report/cves.json"
             else
@@ -442,6 +450,7 @@ jobs:
           path: |
             ${{ runner.temp }}/scout-preview/cves.json
             ${{ runner.temp }}/scout-preview/no-credentials
+            ${{ runner.temp }}/scout-preview/vex-unavailable
           retention-days: 7
           overwrite: true
 
@@ -550,6 +559,8 @@ jobs:
                 echo "| linux/$arch | $counts | Scanned |"
               elif [[ -f "$dir/no-credentials" ]]; then
                 echo "| linux/$arch | - | - | - | - | - | Unavailable: no Docker Hub credentials |"
+              elif [[ -f "$dir/vex-unavailable" ]]; then
+                echo "| linux/$arch | - | - | - | - | - | Unavailable: signed runtime-base VEX could not be verified |"
               else
                 echo "| linux/$arch | - | - | - | - | - | Unavailable: see the Image job |"
               fi

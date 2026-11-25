@@ -243,13 +243,15 @@ The workflow run's **Summary** also shows the totals. Each row counts affected
 package/advisory pairs on that platform, not distinct CVE IDs across packages
 or platforms.
 The check scans the PR merge build's attested OCI archives without pushing an
-image. Download `scout-preview-linux-amd64` or `scout-preview-linux-arm64`
-from the workflow run's artifacts for the full Scout JSON, including packages
-and CVEs (retained seven days). **Unavailable** means the build or report
-was unavailable, not that there were zero findings. The archive scan is a
-snapshot: Docker Hub can apply registry-side VEX assessments that aren't
-available on the unpublished archive. Neither findings nor a missing report
-block the PR or promotion.
+image, applying Docker's signature-verified, platform-specific VEX for the
+exact pinned DHI runtime base. Download `scout-preview-linux-amd64` or
+`scout-preview-linux-arm64` from the workflow run's artifacts for the full
+Scout JSON, including packages and CVEs (retained seven days). **Unavailable**
+means the build, credentials, signed base VEX or report was unavailable, not
+that there were zero findings. The scan is a snapshot: Scout's CLI, advisory
+database, or base VEX may change, and the published image may therefore show
+different results later. Neither findings nor a missing report block the PR
+or promotion.
 
 For the delta rather than the totals, the `Image (linux/amd64)` job also adds
 a **Docker Scout impact** summary for every hardened build. It compares the

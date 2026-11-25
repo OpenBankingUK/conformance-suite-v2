@@ -29,7 +29,10 @@ deleted; automatic updates stop.
 For PRs into `main`, open **Docker Scout preview** from the PR checks and
 expand **View vulnerability report (packages and CVEs)** for the final
 `linux/amd64` and `linux/arm64` images' severity counts and package findings.
-An unavailable scan is labelled separately from a successful scan with no findings.
+The check applies Docker's signature-verified VEX for the exact pinned runtime
+base on each platform, so findings assessed as not affecting that base are
+filtered just as in a local scan using the same VEX file. An unavailable scan
+or VEX retrieval is labelled separately from a successful scan with no findings.
 `Image (linux/amd64)` still shows the **Docker Scout impact** comparison with
 the published `2.0.0-beta-latest` and whether the runtime base digest changed.
 Neither Scout report is a merge or publication requirement. See
@@ -39,9 +42,9 @@ for why published Scout results often stay the same between betas.
 ## Docker Scout VEX statements
 
 Docker signs a VEX document for each DHI image that marks many base-package
-CVEs as not affecting it. Docker Hub's Scout view of our derived image applies
-little of it, so it reports findings that Docker has already assessed for the
-base. Measured on 2026-11-17 for `2.0.0-beta.21` (`linux/amd64`, runtime base
+CVEs as not affecting it. What Docker Hub's Scout view applies can differ by
+image and release. The following comparison was measured on 2026-11-17 for
+`2.0.0-beta.21` (`linux/amd64`, runtime base
 `dhi.io/python:3.14-debian13@sha256:d20d953b…`):
 
 | Scout view | Vulnerabilities |
@@ -49,12 +52,18 @@ base. Measured on 2026-11-17 for `2.0.0-beta.21` (`linux/amd64`, runtime base
 | Published image, as shown on Docker Hub | 25 in 15 packages: 0 critical, 2 high, 6 medium, 12 low, 5 unspecified |
 | Same image with the DHI base VEX (`--vex-location`) | 7 in 7 packages: 0 critical, 0 high, 2 medium, 0 low, 5 unspecified |
 
-The base VEX for `linux/amd64` has 191 statements. Scout attaches only 47 to
-our image, all justified as `vulnerable_code_cannot_be_controlled_by_adversary`.
-It omits the `inline_mitigations_already_exist` statements, including those
-covering the `libexpat1` High findings. Scout also ignores a VEX document
-embedded in the image filesystem when the image has attestations, as ours do,
-so a Dockerfile change cannot fix this.
+For that image, the base VEX had 191 statements. Scout attached only 47 to our
+image, all justified as `vulnerable_code_cannot_be_controlled_by_adversary`.
+It omitted the `inline_mitigations_already_exist` statements, including those
+covering the `libexpat1` High findings. This behavior is not universal: for
+`2.0.0-beta.27` on `linux/amd64`, the registry scan did apply the DHI VEX
+statement marking musl CVE-2026-107891 as `not_affected`. The PR preview now
+fetches and verifies the signed VEX for its exact runtime base and supplies it
+to the archive scan; if it cannot verify that document, the platform result is
+reported as unavailable rather than showing unfiltered counts.
+
+Scout also ignores a VEX document embedded in the image filesystem when the
+image has attestations, as ours do, so a Dockerfile change cannot fix this.
 
 The pipeline does **not** attach VEX or create Scout exceptions. Either is a
 public security claim about our image, and Docker documents that an attached
