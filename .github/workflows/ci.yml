@@ -338,14 +338,14 @@ jobs:
                 || [[ ! -s "$work/base.vex.json" ]]; then
               echo "::warning title=Scout preview unavailable::Could not retrieve and verify the signed runtime-base VEX for $PLATFORM."
               touch "$report/vex-unavailable"
-              exit 0
-            fi
-            if docker scout cves "oci-dir://$work/oci" --platform "$PLATFORM" \
-                --vex-location "$work/base.vex.json" \
-                --format gitlab --output "$work/cves.json"; then
-              mv "$work/cves.json" "$report/cves.json"
             else
-              echo "::warning::Docker Scout could not scan the $PLATFORM image."
+              if docker scout cves "oci-dir://$work/oci" --platform "$PLATFORM" \
+                  --vex-location "$work/base.vex.json" \
+                  --format gitlab --output "$work/cves.json"; then
+                mv "$work/cves.json" "$report/cves.json"
+              else
+                echo "::warning::Docker Scout could not scan the $PLATFORM image."
+              fi
             fi
           fi
           if [[ "$COMPARE_BETA" != "true" ]]; then
