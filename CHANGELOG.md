@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Continue the published-beta Docker Scout comparison when signed runtime-base
+  VEX retrieval or verification fails for the PR preview.
+
 ## [2.0.0-beta.30] - 2026-11-26
 
 ### Fixed

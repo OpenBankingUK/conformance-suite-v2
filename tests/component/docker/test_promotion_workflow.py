@@ -535,6 +535,22 @@ def test_failed_scout_command_warns_and_cleans_both_state_directories(tmp_path: 
     assert not (Path(env["HOME"]) / ".docker" / "scout").exists()
 
 
+def test_vex_failure_does_not_skip_published_beta_comparison(tmp_path: Path) -> None:
+    env = _scout_environment(tmp_path, {})
+    env.update(PR_SCOUT_PREVIEW="true", TEST_VEX_FAIL="true")
+
+    result = _run_script(_shell("ci.yml", SCOUT_STEP), env)
+
+    assert result.returncode == 0, result.stderr
+    assert "Could not retrieve and verify the signed runtime-base VEX" in result.stdout
+    report = Path(env["RUNNER_TEMP"]) / "scout-preview"
+    assert (report / "vex-unavailable").exists()
+    assert not (report / "cves.json").exists()
+    summary = Path(env["GITHUB_STEP_SUMMARY"]).read_text()
+    assert "## Docker Scout impact (linux/amd64)" in summary
+    assert "`No changes`" in summary
+
+
 def _preview_report(tmp_path: Path) -> tuple[str, str]:
     path = tmp_path / "summary.md"
     env = {
