@@ -147,6 +147,96 @@ def test_run_manifest_v1_account_access_consent_adds_detached_jws_with_doubled_p
     assert "x-jws-signature" in observed_requests[0].headers
 
 
+@pytest.mark.parametrize(
+    ("step_id", "url", "expected_critical_headers"),
+    [
+        pytest.param(
+            "account-access-consent",
+            "https://api.example.com/obie/open-banking/v4.0/aisp/account-access-consents",
+            ["b64"],
+            id="ais-consent-legacy-profile",
+        ),
+        pytest.param(
+            "pis-v4-domestic-payment-consent-create-request",
+            "https://api.example.com/apis/v2/open-banking/v4.0/pisp/domestic-payment-consents",
+            [
+                "http://openbanking.org.uk/iat",
+                "http://openbanking.org.uk/iss",
+                "http://openbanking.org.uk/tan",
+            ],
+            id="pis-write-ob-v3-1-4-profile",
+        ),
+    ],
+)
+def test_run_manifest_v1_detached_jws_ignores_participant_path_prefix(
+    tmp_path: Path,
+    step_id: str,
+    url: str,
+    expected_critical_headers: list[str],
+) -> None:
+    """ASPSP participant path prefixes do not affect detached-JWS eligibility or profile.
+
+    Open Banking Read/Write resource URIs may carry an optional
+    ``[participant-path-prefix]`` before ``/open-banking``, supplied through
+    ``resourceBaseUrl`` (for example ``https://api.example.com/obie``).
+
+    Args:
+        tmp_path: Pytest temporary directory used for signing material.
+        step_id: Manifest step identifier.
+        url: Prefixed Open Banking write request URL.
+        expected_critical_headers: ``crit`` header identifying the selected profile.
+    """
+    observed_requests: list[httpx.Request] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "detached jws with participant path prefix",
+        "steps": [
+            {
+                "id": step_id,
+                "name": "Prefixed Open Banking write request",
+                "request": {
+                    "method": "POST",
+                    "url": url,
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture the outbound prefixed write request.
+
+        Args:
+            request: Outbound HTTP request emitted by the executor.
+
+        Returns:
+            Passing creation response.
+        """
+        observed_requests.append(request)
+        return httpx.Response(201, json={"Data": {}, "Risk": {}})
+
+    signing_config = executor_signing_config(tmp_path)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(parse_manifest(raw_manifest), client=client, fapi_signing_config=signing_config)
+
+    assert result.status == "passed"
+    observed_request = observed_requests[0]
+    assert str(observed_request.url) == url
+    assert signing_config.signing_certificate is not None
+    verified = jws.deserialize_compact(
+        observed_request.headers["x-jws-signature"],
+        jwk.import_key(
+            credential_bytes(signing_config.signing_certificate, label="FAPI signing certificate"), key_type="RSA"
+        ),
+        algorithms=["PS256"],
+        payload=observed_request.content,
+        registry=response_signature_registry(),
+    )
+    assert verified.headers()["crit"] == expected_critical_headers
+
+
 def test_run_manifest_v1_account_access_consent_skips_detached_jws_without_manifest_opt_in(tmp_path: Path) -> None:
     """Consent creation stays unsigned unless the manifest request opts into detached JWS."""
     observed_requests: list[httpx.Request] = []
@@ -461,8 +551,24 @@ def test_run_manifest_v1_detached_jws_policy_requires_signing_config() -> None:
     )
 
 
-def test_run_manifest_v1_detached_jws_policy_rejects_unsupported_url(tmp_path: Path) -> None:
-    """Explicit detached-JWS opt-in fails before dispatch on unsupported endpoints."""
+@pytest.mark.parametrize(
+    "url",
+    [
+        pytest.param("https://resource.example.com/open-banking/v4.0/aisp/accounts", id="unprefixed"),
+        pytest.param("https://resource.example.com/obie/open-banking/v4.0/aisp/accounts", id="participant-prefixed"),
+        pytest.param(
+            "https://resource.example.com/obie/open-banking/v4.0/aisp/account-access-consents-extra",
+            id="consent-lookalike",
+        ),
+    ],
+)
+def test_run_manifest_v1_detached_jws_policy_rejects_unsupported_url(tmp_path: Path, url: str) -> None:
+    """Explicit detached-JWS opt-in fails before dispatch on unsupported endpoints.
+
+    Args:
+        tmp_path: Pytest temporary directory used for signing material.
+        url: Unsupported request URL, with or without a participant path prefix.
+    """
     request_seen = False
     raw_manifest: dict[str, JsonValue] = {
         "schemaVersion": "v1",
@@ -473,7 +579,7 @@ def test_run_manifest_v1_detached_jws_policy_rejects_unsupported_url(tmp_path: P
                 "name": "Accounts list",
                 "request": {
                     "method": "POST",
-                    "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
+                    "url": url,
                     "detachedJws": {"source": "fapi-signing"},
                     "body": {"Data": {"Example": True}},
                 },

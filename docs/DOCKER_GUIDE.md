@@ -3,12 +3,12 @@
 [Project README](../README.md) | [Installation guide](INSTALLATION_GUIDE.md) |
 [Usage guide](USAGE_GUIDE.md)
 
-**FCS v2 `2.0.0-beta.28` is an evaluation beta, not a certification release.**
+**FCS v2 `2.0.0-beta.29` is an evaluation beta, not a certification release.**
 Use it to try the new Functional Conformance Suite and provide feedback. Do
 not use beta runs or reports as certification evidence, even if the builder
 or a result displays certification-related labels.
 
-The primary beta.28 workflow is the local browser UI: run the Docker image,
+The primary beta.29 workflow is the local browser UI: run the Docker image,
 build a test plan, and paste credentials into the builder. The image runs
 non-root and requires no manually supplied Django secret. The persistence,
 certificate mount, Compose, and CLI options later in this guide are advanced
@@ -56,7 +56,7 @@ If the repository requires authentication, log in to Docker Hub with
 credentials that grant access before pulling.
 
 For reproducible runs, replace `2.0.0-beta-latest` in the commands in this guide
-with an exact published tag, for example `2.0.0-beta.28` once published.
+with an exact published tag, for example `2.0.0-beta.29` once published.
 See [`CICD_STRATEGY.md`](CICD_STRATEGY.md) for the full preview/beta/GA
 versioning and promotion model. `latest` refers only to the current GA release.
 For convenient MVP beta evaluation, `2.0.0-beta-latest` tracks the highest
@@ -307,6 +307,72 @@ compatibility allowance for the FCS v1 callback; it does not depend on a claim
 that browsers block `0.0.0.0` OAuth redirects. Acceptance by a Directory or
 ASPSP remains environment-specific, and FCS assumes no test-tool exemption from
 the specifications above.
+
+## Advanced: outbound corporate proxy
+
+If your network only allows outbound HTTPS through a corporate proxy, pass the
+standard proxy variables to the container. FCS uses them for read/write run
+requests (discovery, token, consent and resource API calls) and for the
+builder's discovery metadata lookup.
+
+| Variable | Effect |
+| --- | --- |
+| `HTTPS_PROXY` | Proxy for `https://` targets, which covers every ASPSP request. |
+| `HTTP_PROXY` | Proxy for `http://` targets. |
+| `ALL_PROXY` | Proxy for both schemes when the scheme-specific variable is unset. |
+| `NO_PROXY` | Comma-separated hosts or domains that connect directly instead. |
+
+Keep proxy settings, and especially proxy credentials, out of the command line,
+where they are kept in shell history and appear in process listings. Put them
+in a file such as `proxy.env`, readable only by you:
+
+```text
+HTTPS_PROXY=http://proxy.example.com:8080
+```
+
+If the proxy requires authentication, insert `user:password@` immediately
+before the proxy host name in that value. Then pass the file with `--env-file`:
+
+```bash
+docker run --pull=always --rm -p 127.0.0.1:8443:8443 \
+  --env-file ./proxy.env \
+  docker.io/openbanking/conformance-suite-v2:2.0.0-beta-latest
+```
+
+Docker reads each `--env-file` line literally: do not quote values. Percent-encode
+reserved characters in the user name or password, for example `@` as `%40` and
+`:` as `%3A`. Values supplied with `-e` or `--env-file` are both stored in the
+container configuration and visible to anyone who can run `docker inspect`.
+
+Use an `http://` proxy URL, as above: FCS opens an HTTP `CONNECT` tunnel through
+the proxy, so TLS and transport-certificate mTLS run end to end between FCS and
+the ASPSP. A proxy that intercepts and re-signs TLS breaks mTLS; ask your network
+team to exempt the ASPSP hosts from inspection. SOCKS proxy URLs (`socks5://`,
+`socks5h://`) are not supported by this image.
+
+Through a proxy, the proxy resolves ASPSP host names and the container needs to
+resolve only the proxy host (plus any `NO_PROXY` hosts). A run error such as
+`Request failed for <url>: [Errno -2] Name does not resolve` names the request
+URL even when the name that failed was the proxy host. To check that the
+container can resolve your proxy host, run:
+
+```bash
+docker run --rm --entrypoint python3 \
+  docker.io/openbanking/conformance-suite-v2:2.0.0-beta-latest \
+  -c "import socket; print(socket.getaddrinfo('proxy.example.com', 8080, type=socket.SOCK_STREAM))"
+```
+
+The proxy variables do not affect:
+
+- dynamic client registration (DCR) requests, which currently ignore them and
+  connect directly;
+- the container health check, which probes the UI over loopback;
+- the browser UI and PSU callback, which your browser reaches directly on the
+  Docker host.
+
+FCS v1 environment variables such as `LOG_LEVEL`, `LOG_TRACER`,
+`LOG_HTTP_TRACE`, `DYNRES` and `DISABLE_JWS` are not read by FCS v2 and have no
+effect.
 
 ## Health check
 

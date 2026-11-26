@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.29] - 2026-11-26
+
+### Added
+
+- Document running the Docker image behind an outbound corporate proxy,
+  including which requests use the proxy, keeping proxy credentials off the
+  command line, TLS-inspection limits and proxy DNS troubleshooting. Note that
+  FCS v1 environment variables such as `DYNRES` and `DISABLE_JWS` have no effect
+  in v2.
+
+### Fixed
+
+- Apply detached JWS request signing to AIS account-access-consent and PIS write
+  requests when the ASPSP resource base URL includes a participant path prefix
+  before `/open-banking/`, such as `https://api.example.com/obie`. These requests
+  previously failed before dispatch with "Detached request signing is only
+  supported for AIS consent, PIS, and VRP write requests". Prefixed PIS writes
+  now also use the OB v3.1.4+ signing profile.
+
 ## [2.0.0-beta.28] - 2026-11-25
 
 ### Changed
@@ -956,7 +975,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.28...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.29...HEAD
+[2.0.0-beta.29]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.28...v2.0.0-beta.29
 [2.0.0-beta.28]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.27...v2.0.0-beta.28
 [2.0.0-beta.27]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.26...v2.0.0-beta.27
 [2.0.0-beta.26]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.25...v2.0.0-beta.26
