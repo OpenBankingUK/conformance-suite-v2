@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-beta.30] - 2026-11-26
+
+### Fixed
+
+- Honour standard proxy environment variables for Dynamic Client Registration
+  (DCR) HTTPS requests, including discovery, JWKS, registration and token calls.
+  Corporate-proxy users no longer need direct DNS resolution for ASPSP hosts
+  during DCR.
+
 ## [2.0.0-beta.29] - 2026-11-26
 
 ### Added
@@ -975,7 +984,8 @@ and preview/beta/GA promotion pipeline, as detailed below.
 - Existing masking continues to cover credentials, tokens, request objects, client assertions, detached JWS values, authorization codes, and sensitive headers across result JSON, NDJSON logs, API log snapshots, and browser downloads.
 - Internal manifest execution remains available only as implementation plumbing for compiled catalogue execution and certification validation; it is no longer exposed as a participant-facing run contract.
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.29...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.30...HEAD
+[2.0.0-beta.30]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.29...v2.0.0-beta.30
 [2.0.0-beta.29]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.28...v2.0.0-beta.29
 [2.0.0-beta.28]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.27...v2.0.0-beta.28
 [2.0.0-beta.27]: https://github.com/OpenBankingUK/conformance-suite-v2/compare/v2.0.0-beta.26...v2.0.0-beta.27
