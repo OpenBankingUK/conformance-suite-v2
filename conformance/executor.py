@@ -4982,10 +4982,34 @@ def _detached_jws_profile_for_request(resolved_url: str) -> OpenBankingDetachedJ
         PIS v4 write requests use the v3.1.4+/v4 profile; existing AIS consent
         signing keeps the legacy unencoded-payload profile.
     """
-    normalized_path = _normalize_url_path_for_match(urlsplit(resolved_url).path)
+    normalized_path = _ob_api_path_for_match(resolved_url)
     if normalized_path.startswith(_OB_PIS_PATH_PREFIXES) or _is_ob_vrp_path(normalized_path):
         return "ob-v3.1.4+"
     return "legacy-b64-false"
+
+
+def _ob_api_path_for_match(resolved_url: str) -> str:
+    """Return the Open Banking API path with any participant path prefix removed.
+
+    The Read/Write API resource URI path structure is
+    ``[participant-path-prefix]/open-banking/[version]/[resource-group]/...``,
+    where the participant path prefix is an optional ASPSP-specific path
+    (for example ``/obie`` or ``/apis``) carried in ``resourceBaseUrl``.
+    Detached-JWS eligibility and profile selection match the standard
+    ``/open-banking/...`` path, so the prefix must not affect either decision.
+
+    Args:
+        resolved_url: Fully resolved request URL.
+
+    Returns:
+        The normalized path starting at the first ``open-banking`` segment, or
+        the whole normalized path when it contains no such segment.
+    """
+    normalized_path = _normalize_url_path_for_match(urlsplit(resolved_url).path)
+    segments = normalized_path.split("/")
+    if "open-banking" not in segments:
+        return normalized_path
+    return "/".join(["", *segments[segments.index("open-banking") :]])
 
 
 def _is_ob_vrp_path(normalized_path: str) -> bool:
@@ -5018,11 +5042,12 @@ def _requires_ob_detached_jws(*, manifest_step: ManifestStep, resolved_url: str)
     Returns:
         ``True`` when the step targets the AIS account-access-consents endpoint,
         a PIS endpoint, or a VRP endpoint and is an eligible write method,
-        otherwise ``False``.
+        otherwise ``False``. Any ASPSP participant path prefix before
+        ``/open-banking`` is ignored.
     """
     if manifest_step.request.method not in {"POST", "PUT", "PATCH"}:
         return False
-    normalized_path = _normalize_url_path_for_match(urlsplit(resolved_url).path)
+    normalized_path = _ob_api_path_for_match(resolved_url)
     return (
         normalized_path in _OB_ACCOUNT_ACCESS_CONSENTS_PATHS
         or normalized_path.startswith(_OB_PIS_PATH_PREFIXES)
