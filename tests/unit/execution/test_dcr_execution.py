@@ -224,6 +224,7 @@ def test_dcr_ca_bundle_augments_default_trust_store() -> None:
     create_context.assert_called_once_with()
     context.load_verify_locations.assert_called_once_with(cafile=str(ca_bundle_path))
     assert client.call_args.kwargs["verify"] is context
+    assert client.call_args.kwargs["trust_env"] is True
 
 
 def test_dcr_jwks_accepts_rfc7517_extension_use_value() -> None:

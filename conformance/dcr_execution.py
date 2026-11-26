@@ -1539,7 +1539,7 @@ def build_dcr_mtls_client(config: DcrPlanConfiguration, *, timeout_seconds: floa
         timeout_seconds: Per-request timeout.
 
     Returns:
-        Caller-owned synchronous HTTP client with environment proxies disabled.
+        Caller-owned synchronous HTTP client that honours environment proxy settings.
 
     Raises:
         DcrExecutionError: If TLS material cannot be loaded.
@@ -1564,7 +1564,7 @@ def build_dcr_mtls_client(config: DcrPlanConfiguration, *, timeout_seconds: floa
         timeout=timeout_seconds,
         limits=limits,
         headers=headers,
-        trust_env=False,
+        trust_env=True,
     )
 
 
