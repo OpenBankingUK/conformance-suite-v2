@@ -7,7 +7,7 @@
 # organisation-owned credential. Both stages pin multi-architecture index
 # digests for reproducibility on amd64 and arm64; base updates require a
 # reviewed digest bump and scanner policy reassessment.
-FROM dhi.io/python:3.14-alpine-dev@sha256:94717b5a99b0949fd20ac41e8a4b28af64a23f755d58b8caf48403ec68380874 AS builder
+FROM dhi.io/python:3.14-alpine-dev@sha256:ee05e528039dac5da30a16e914dfe66a660e6966c115b413ae24f8f17d40009f AS builder
 
 # Install uv for fast, reproducible dependency resolution
 COPY --from=docker.io/astral/uv:0.13.8@sha256:d3b601f0c7b118bc1753febf7c41cc80981df678445e0254284eecf84db79a7d /uv /usr/local/bin/uv
